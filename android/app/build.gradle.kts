@@ -1,0 +1,107 @@
+import java.util.Properties
+import org.gradle.api.GradleException
+import org.gradle.api.tasks.compile.JavaCompile
+
+plugins {
+    id("com.android.application")
+    id("kotlin-android")
+    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
+    id("dev.flutter.flutter-gradle-plugin")
+}
+
+val keyProperties = Properties()
+val keyPropertiesFile = rootProject.file("key.properties")
+if (keyPropertiesFile.exists()) {
+    keyPropertiesFile.inputStream().use { keyProperties.load(it) }
+}
+val allowDebugReleaseSigning =
+    System.getenv("MEOW_ALLOW_DEBUG_RELEASE_SIGNING")?.equals("true", ignoreCase = true) == true
+
+android {
+    namespace = "com.etonify.meow_client"
+    compileSdk = flutter.compileSdkVersion
+    ndkVersion = flutter.ndkVersion
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_17.toString()
+    }
+
+    defaultConfig {
+        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
+        applicationId = "com.etonify.meow_client"
+        // You can update the following values to match your application needs.
+        // For more information, see: https://flutter.dev/to/review-gradle-config.
+        minSdk = flutter.minSdkVersion
+        targetSdk = flutter.targetSdkVersion
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
+    }
+
+    signingConfigs {
+        if (keyPropertiesFile.exists()) {
+            create("release") {
+                val storeFilePath = keyProperties.getProperty("storeFile")
+                check(!storeFilePath.isNullOrBlank()) {
+                    "storeFile is missing in android/key.properties"
+                }
+                storeFile = rootProject.file(storeFilePath)
+                storePassword = keyProperties.getProperty("storePassword")
+                keyAlias = keyProperties.getProperty("keyAlias")
+                keyPassword = keyProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig =
+                if (keyPropertiesFile.exists()) {
+                    signingConfigs.getByName("release")
+                } else if (allowDebugReleaseSigning) {
+                    signingConfigs.getByName("debug")
+                } else {
+                    throw GradleException(
+                        "Release signing requires android/key.properties. " +
+                            "Set MEOW_ALLOW_DEBUG_RELEASE_SIGNING=true only for local release testing.",
+                    )
+                }
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+        }
+    }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+            // Keep the old Happ native library on disk, but do not package it.
+            excludes += setOf("**/liberror-code.so")
+        }
+    }
+}
+
+flutter {
+    source = "../.."
+}
+
+dependencies {
+    implementation(files("libs/libbox.aar"))
+}
+
+tasks.withType<JavaCompile>().configureEach {
+    // Legacy Happ native crypt5 bridge is kept in-tree for reference,
+    // but crypt5/5.1 now uses the pure Dart implementation.
+    exclude(
+        "com/etonify/meow_client/happcrypto/**",
+        "com/happproxy/util/protection/**",
+        "su/happ/proxyutility/**",
+    )
+}

@@ -1,0 +1,162 @@
+name: Android Release APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_name:
+        description: "Optional versionName override, for example 0.1.0"
+        required: false
+        type: string
+      build_number:
+        description: "Optional versionCode override, for example 1"
+        required: false
+        type: string
+      split_per_abi:
+        description: "Build smaller split APKs per CPU architecture"
+        required: false
+        type: boolean
+        default: false
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  FLUTTER_VERSION: "3.44.0"
+  JAVA_VERSION: "21"
+  KEYSTORE_PATH: "android/app/etonify-release.jks"
+  BUILD_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.build_name || '' }}
+  BUILD_NUMBER: ${{ github.event_name == 'workflow_dispatch' && inputs.build_number || '' }}
+  SPLIT_PER_ABI: ${{ github.event_name == 'workflow_dispatch' && inputs.split_per_abi || 'false' }}
+
+jobs:
+  build-release-apk:
+    name: Build signed APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Show tool versions
+        run: |
+          java -version
+          flutter --version
+          dart --version
+
+      - name: Validate Android signing secrets
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          missing=0
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error title=Missing secret::$name is not configured in repository secrets"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Restore Android signing files
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          mkdir -p android/app
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "${KEYSTORE_PATH}"
+          cat > android/key.properties <<EOF
+          storePassword=${ANDROID_KEYSTORE_PASSWORD}
+          keyPassword=${ANDROID_KEY_PASSWORD}
+          keyAlias=${ANDROID_KEY_ALIAS}
+          storeFile=app/etonify-release.jks
+          EOF
+          chmod 600 "${KEYSTORE_PATH}" android/key.properties
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate localization
+        run: flutter gen-l10n
+
+      - name: Generate Pigeon bindings
+        shell: bash
+        run: |
+          if [ -f pigeons/singbox_api.dart ]; then
+            dart run pigeon --input pigeons/singbox_api.dart
+          else
+            echo "No Pigeon schema found; skipping."
+          fi
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+      - name: Build signed release APK
+        shell: bash
+        run: |
+          args=(--release)
+          if [ -n "${BUILD_NAME}" ]; then
+            args+=(--build-name "${BUILD_NAME}")
+          fi
+          if [ -n "${BUILD_NUMBER}" ]; then
+            args+=(--build-number "${BUILD_NUMBER}")
+          fi
+          if [ "${SPLIT_PER_ABI}" = "true" ]; then
+            args+=(--split-per-abi)
+          fi
+          flutter build apk "${args[@]}"
+
+      - name: List APK outputs
+        run: ls -lah build/app/outputs/flutter-apk/*.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: etonify-release-apk-${{ github.run_number }}
+          path: build/app/outputs/flutter-apk/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload APK to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" build/app/outputs/flutter-apk/*.apk --clobber
+          else
+            gh release create "$tag" build/app/outputs/flutter-apk/*.apk \
+              --title "Etonify ${tag}" \
+              --notes "Signed Android release APK built from ${GITHUB_SHA}."
+          fi

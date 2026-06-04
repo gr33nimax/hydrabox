@@ -1,0 +1,77 @@
+# Flutter / Dart
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Android generated/local files
+android/.gradle/
+android/.kotlin/
+android/build/
+android/app/build/
+android/local.properties
+android/key.properties
+android/app/*.jks
+android/app/*.keystore
+android/app/upload-keystore.jks
+android/app/release/
+*.apk
+*.aab
+*.idsig
+
+# iOS / macOS generated files
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/Generated.xcconfig
+ios/Flutter/ephemeral/
+ios/Flutter/.last_build_id
+macos/Pods/
+macos/Flutter/ephemeral/
+macos/Flutter/GeneratedPluginRegistrant.swift
+
+# Linux / Windows generated files
+linux/flutter/ephemeral/
+windows/flutter/ephemeral/
+
+# IDE/editor state
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# Local secrets and signing material
+.env
+.env.*
+*.pem
+*.p12
+*.mobileprovision
+*.provisionprofile
+*.jks
+*.keystore
+
+# Logs, diagnostics, and crash reports
+*.log
+flutter_*.log
+diagnostics/
+*.hprof
+*.trace
+
+# Local caches and temporary files
+*.tmp
+*.temp
+*.bak
+*.bak-*
+*~
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Local reference/source dumps, not required by this app
+hiddify-app-main/
+assets/happ_crypto/ 

@@ -1,0 +1,612 @@
+{
+  "@@locale": "ru",
+  "profiles": "Профили",
+  "close": "Закрыть",
+  "homeTab": "Главная",
+  "proxiesTab": "Прокси",
+  "proxiesTitle": "Прокси",
+  "proxySwitching": "Переключение",
+  "proxySelectorTitle": "Выбор",
+  "shareProxyTitle": "Поделиться",
+  "shareProxyLinkLabel": "Ссылка профиля",
+  "shareSingboxOutboundLabel": "Конфиг sing-box",
+  "copiedToClipboard": "{label} скопирован",
+  "@copiedToClipboard": {
+    "placeholders": {
+      "label": {
+        "type": "String"
+      }
+    }
+  },
+  "unavailableForThisType": "Недоступно для этого типа",
+  "sortByDefault": "Как в подписке",
+  "sortByLatency": "По задержке",
+  "sortByName": "По имени",
+  "sortByCountry": "По стране",
+  "settingsTitle": "Настройки",
+  "generalSectionTitle": "Общее",
+  "inboundTitle": "Входящие соединения",
+  "dnsTitle": "DNS",
+  "whitelistTitle": "Белые списки",
+  "whitelistSubtitle": "Дополнительный модуль Snowtun",
+  "experimentalTitle": "Экспериментальные",
+  "experimentalSubtitle": "Multipath, Fast Open и поведение переключения соединений",
+  "logsTitle": "Логи",
+  "logsSubtitle": "Конфиг sing-box и события приложения",
+  "urlTestTitle": "URLTest",
+  "urlTestSubtitle": "Проверка задержки и выбор lowest",
+  "vpnInTitle": "VPN TUN",
+  "proxyInTitle": "Прокси-вход",
+  "dnsDirectTitle": "Напрямую",
+  "dnsProxyTitle": "Через прокси",
+  "dnsIpPreferenceTitle": "Версия IP",
+  "aboutSectionTitle": "О клиенте",
+  "aboutSectionSubtitle": "Версия клиента, ядро, команда и служебная информация.",
+  "aboutHeroSubtitle": "Android VPN-клиент с упором на скорость, стабильность и чистый ежедневный UX.",
+  "aboutDevelopedBy": "Разработан командой MeowTeam.",
+  "aboutCoreSourceLabel": "исходный код ядра",
+  "coreVersionLabel": "Версия ядра",
+  "debugMenuTitle": "Отладка",
+  "debugMenuSubtitle": "Скрытый раздел для отладки и служебных действий.",
+  "debugNetworkHeartbeatTitle": "Проверка сети",
+  "debugNetworkHeartbeatSubtitle": "Повторно закрепляет сеть по умолчанию, если Android пропустил callback. Текущий интервал: {seconds} с. Применится при следующем запуске VPN.",
+  "@debugNetworkHeartbeatSubtitle": {
+    "placeholders": {
+      "seconds": { "type": "int" }
+    }
+  },
+  "debugWakeLockTitle": "Частичный wake lock",
+  "debugWakeLockSubtitle": "Держит CPU активным во время VPN. По умолчанию выключен, потому что на агрессивных прошивках может греть телефон.",
+  "debugRecordSnapshot": "Записать снимок производительности",
+  "debugSnapshotDone": "Снимок производительности добавлен в логи",
+  "teamPageTitle": "MeowTeam",
+  "teamIntroTitle": "Команда Etonify",
+  "teamIntroBody": "Мы небольшой командой разрабатываем свой VPN-клиент и постепенно доводим его до стабильного ежедневного состояния.",
+  "teamTimelineForkTitle": "Старт с форка Hiddify",
+  "teamTimelineForkBody": "Первые версии унаследовали интерфейс и большой legacy-код Hiddify. Несколько тестовых релизов помогли понять, что именно нужно менять.",
+  "teamTimelineRefactorTitle": "Большой рефактор",
+  "teamTimelineRefactorBody": "Старый backend нёс слишком много технического долга, костылей, dead code и сложного поведения. Мы провели глубокий рефактор и перестроили runtime-слой вокруг более чистого Android-first подхода.",
+  "teamTimelineCoreTitle": "Ядро MeowSingBox",
+  "teamTimelineCoreBody": "Клиент использует модифицированное ядро sing-box с доработками URLTest, очистки соединений и управления ресурсами.",
+  "teamTimelineNowTitle": "Etonify сейчас",
+  "teamTimelineNowBody": "Etonify продолжает развиваться: мы упрощаем UX, улучшаем стабильность Android и убираем технический долг, сохраняя быстрый VPN-опыт.",
+  "teamDeveloperDdosxdRole": "Разработчик MeowTeam",
+  "teamDeveloperYamixdevRole": "Разработчик MeowTeam",
+  "languageSettingTitle": "Язык",
+  "themeSettingTitle": "Тема",
+  "accentColorTitle": "Акцент",
+  "appearanceTitle": "Оформление",
+  "languageSystem": "Системный",
+  "languageEnglish": "English",
+  "languageRussian": "Русский",
+  "themeSystem": "Системная",
+  "themeLight": "Светлая",
+  "themeDark": "Тёмная",
+  "themeAmoled": "AMOLED",
+  "aboutResourcesTitle": "Ресурсы",
+  "aboutResourcesSubtitle": "Снимок Android по запросу. В фоне эти данные не собираются.",
+  "aboutResourcePss": "Память",
+  "aboutResourceNativeHeap": "Native heap",
+  "aboutResourceJavaHeap": "Java heap",
+  "aboutResourceSystemMemory": "Свободная RAM системы",
+  "aboutResourceBatteryTemp": "Температура батареи",
+  "appVersionLabel": "Версия клиента",
+  "currentProfileLabel": "Текущий профиль",
+  "selectedProxyLabel": "Выбранный прокси",
+  "onboardingStatusLabel": "Стартовый экран",
+  "onboardingSeen": "Завершён",
+  "showOnboardingAgain": "Показать стартовый экран снова",
+  "settingsFootnote": "Эти настройки локальны для этого устройства и хранятся в Hive.",
+  "connected": "Подключено",
+  "tapToConnect": "Нажмите для подключения",
+  "resolvingIp": "Определяем IP…",
+  "millisecondsUnit": " мс",
+  "refreshLatency": "Обновить задержку",
+  "checkingLatency": "Проверка задержки",
+  "checkingLatencyShort": "Проверка…",
+  "openTrafficDashboard": "Открыть мониторинг трафика",
+  "refreshActiveSubscription": "Обновить текущую подписку",
+  "refreshActiveSubscriptionUnavailable": "Ручной импорт нельзя обновить",
+  "activeSubscriptionRefreshComplete": "{name} обновлена",
+  "@activeSubscriptionRefreshComplete": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "trafficDashboardTitle": "Мониторинг трафика",
+  "trafficDashboardSubtitle": "Скорость, трафик за сессию и данные подключения",
+  "trafficDashboardDownload": "Загрузка",
+  "trafficDashboardUpload": "Отдача",
+  "trafficDashboardSessionTraffic": "Трафик сессии",
+  "trafficDashboardConnectedFor": "Время работы",
+  "trafficDashboardGraphTitle": "Трафик в реальном времени",
+  "trafficDashboardGraphMax": "Пик {speed}",
+  "@trafficDashboardGraphMax": {
+    "placeholders": {
+      "speed": { "type": "String" }
+    }
+  },
+  "trafficDashboardNoSamples": "Ждём данные трафика",
+  "trafficDashboardConnectionState": "Подключение",
+  "trafficDashboardCurrentProfile": "Профиль",
+  "trafficDashboardActiveProxy": "Прокси",
+  "trafficDashboardServerIp": "IP сервера",
+  "trafficDashboardDownloadTotal": "Скачано",
+  "trafficDashboardUploadTotal": "Отдано",
+  "trafficDashboardStateConnected": "Подключено",
+  "trafficDashboardStateConnecting": "Подключаемся",
+  "trafficDashboardStateDisconnected": "Отключено",
+  "trafficDashboardUptimeHours": "{hours} ч {minutes} мин",
+  "@trafficDashboardUptimeHours": {
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      },
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "trafficDashboardUptimeMinutes": "{minutes} мин {seconds} с",
+  "@trafficDashboardUptimeMinutes": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      },
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "trafficDashboardUptimeSeconds": "{seconds} с",
+  "@trafficDashboardUptimeSeconds": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "notAvailableShort": "н/д",
+  "daysLeft": "Осталось {days} дн.",
+  "@daysLeft": {
+    "placeholders": {
+      "days": {
+        "type": "int"
+      }
+    }
+  },
+  "daysLeftUnlimited": "Осталось ∞ дн.",
+  "unlimitedTraffic": "Безлимит",
+  "unlimitedSymbol": "∞",
+  "welcomeGreeting": "Привет",
+  "welcomeTitlePrefix": "Добро пожаловать в",
+  "welcomeSubtitle": "Быстрый Android VPN-клиент",
+  "welcomeTapHint": "нажмите, чтобы продолжить",
+  "hapticTitle": "Вибрация",
+  "hapticSubtitle": "Лёгкая вибрация для важных действий",
+  "hideServerIpTitle": "Скрывать IP сервера",
+  "hideServerIpSubtitle": "Маскирует последние два октета IP-адреса",
+  "progressiveBlurTitle": "Progressive blur",
+  "progressiveBlurSubtitle": "Размывает контент под хедерами и нижней навигацией",
+  "enableInboundTitle": "Включить",
+  "vpnInDescription": "VPN TUN — системный Android VPN для трафика телефона. Приложения могут видеть Android VPN, а правила решают, что идёт через прокси или напрямую.",
+  "vpnInboundEnabledSubtitle": "Создаёт VPN TUN-вход и маршрутизирует трафик через него",
+  "mtuTitle": "MTU",
+  "mtuSubtitle": "Размер пакета TUN-интерфейса",
+  "strictRouteTitle": "Не допускать обход VPN",
+  "strictRouteSubtitle": "Жёстко направляет трафик через VPN и снижает шанс утечек мимо туннеля",
+  "tunImplementationTitle": "Реализация TUN",
+  "tunImplementationSubtitle": "Способ обработки TUN внутри клиента",
+  "tunImplementationMixed": "Mixed",
+  "tunImplementationMixedSubtitle": "Автоматический режим. Выбирает более безопасный стек для текущего устройства и конфига.",
+  "tunImplementationSystem": "System",
+  "tunImplementationSystemSubtitle": "Системный Android-стек. Обычно легче, но зависит от прошивки устройства.",
+  "tunImplementationGvisor": "gVisor",
+  "tunImplementationGvisorSubtitle": "Пользовательский сетевой стек. Может быть совместимее, но иногда сильнее грузит CPU.",
+  "proxyInDescription": "Proxy In / mixed — локальный HTTP/SOCKS вход для приложений или устройств, которые настроены вручную. Это не системный Android VPN.",
+  "proxyInboundEnabledSubtitle": "Поднимает локальный mixed-inbound для приложений и устройств",
+  "allowLanConnectionsTitle": "Разрешить соединения из локальной сети",
+  "allowLanConnectionsSubtitle": "Если включено, слушать на 0.0.0.0, иначе на 127.0.0.1",
+  "portTitle": "Порт",
+  "proxyPortSubtitle": "Порт локального mixed-inbound",
+  "dnsUsePresetTitle": "Использовать пресет",
+  "dnsResolverTitle": "Резолвер",
+  "dnsDirectPresetSubtitle": "Рекомендуется udp://1.1.1.1",
+  "dnsDirectResolverSubtitle": "DNS для прямых запросов без прокси",
+  "dnsProxyPresetSubtitle": "Рекомендуется https://dns.cloudflare.com/dns-query",
+  "dnsProxyResolverSubtitle": "DNS для запросов через прокси",
+  "dnsResolverTypeTitle": "Вариант резолвера",
+  "dnsPresetDevice": "Сеть устройства",
+  "dnsPresetCustom": "Свой",
+  "dnsPresetDeviceSubtitle": "Использовать DNS текущей Android-сети.",
+  "dnsPresetCustomSubtitle": "Введите свой резолвер: udp://, tcp://, tls:// или https://.",
+  "dnsPresetUdpSubtitle": "Обычный UDP DNS. Быстрый, но без шифрования.",
+  "dnsPresetTcpSubtitle": "Обычный TCP DNS. На некоторых сетях стабильнее, но без шифрования.",
+  "dnsPresetTlsSubtitle": "DNS over TLS. Шифрованный DNS на порту 853.",
+  "dnsPresetHttpsSubtitle": "DNS over HTTPS. Шифрованный DNS через HTTPS, часто лучше через прокси.",
+  "dnsPreferIpv6Title": "Предпочитать IPv6",
+  "dnsPreferIpv6Subtitle": "Приоритет IPv6, если доступны обе версии адреса",
+  "urlTestUrlTitle": "URL проверки",
+  "urlTestUrlSubtitle": "Если в подписке задано своё значение, используется оно",
+  "urlTestIntervalTitle": "Интервал, сек.",
+  "urlTestIntervalSubtitle": "Частота проверки прокси для lowest",
+  "urlTestTimeoutTitle": "Таймаут проверки, сек.",
+  "urlTestTimeoutSubtitle": "Сколько ждать ответа от одного прокси перед ошибкой",
+  "urlTestConcurrencyTitle": "Поточность проверки",
+  "urlTestConcurrencySubtitle": "Сколько прокси URLTest проверяет одновременно",
+  "urlTestSingleRetestTitle": "Быстрая перепроверка, сек.",
+  "urlTestSingleRetestSubtitle": "Через сколько сделать одну быструю перепроверку после сбоя прокси",
+  "locationLookupTitle": "Локации",
+  "locationLookupSubtitle": "IP и страна через сами прокси",
+  "locationLookupLimitTitle": "Проверять лучших прокси",
+  "locationLookupLimitSubtitle": "После URLTest приложение определит внешний IP и страну у этого количества самых быстрых аутбаундов",
+  "serverRequestTitle": "Запрос к серверу",
+  "sendHwidTitle": "Отправлять HWID",
+  "sendHwidSubtitle": "Добавляет HWID устройства в запрос подписки",
+  "useCustomHwidTitle": "Использовать свой HWID",
+  "useCustomHwidSubtitle": "Подменяет HWID устройства вашим значением",
+  "customUserAgentTitle": "Свой User-Agent",
+  "customUserAgentSubtitle": "Переопределяет стандартный Etonify user-agent для этой подписки",
+  "customHwidTitle": "Свой HWID",
+  "customHwidSubtitle": "Используется только если включён свой HWID",
+  "customRequestHeadersTitle": "Свои заголовки",
+  "customRequestHeadersSubtitle": "По одному заголовку на строку в формате Header: value",
+  "hwidTitle": "HWID",
+  "hwidSubtitle": "Идентификатор устройства, который используют некоторые провайдеры подписок",
+  "hwidValueTitle": "Ваш HWID",
+  "coreStartFailedTitle": "Не удалось запустить ядро",
+  "coreStartFailedMessage": "Не удалось запустить sing-box.\n\n{message}",
+  "@coreStartFailedMessage": {
+    "placeholders": {
+      "message": {
+        "type": "String"
+      }
+    }
+  },
+  "vpnStopFailed": "VPN не удалось полностью выключить. Открой логи и попробуй ещё раз.",
+  "clearLogsTitle": "Очистить логи",
+  "logsFilterTitle": "Фильтр",
+  "logsFilterAll": "Все",
+  "singBoxLogLevelTitle": "Уровень логов sing-box",
+  "logLevelTrace": "Trace",
+  "logLevelDebug": "Debug",
+  "logLevelInfo": "Info",
+  "logLevelWarning": "Warning",
+  "logLevelError": "Error",
+  "noLogsTitle": "Логов пока нет",
+  "continueLabel": "Начать",
+  "subscriptionsTab": "Подписки",
+  "subscriptionsTitle": "Подписки",
+  "addSubscription": "Добавить подписку",
+  "scanQrCode": "Сканировать QR",
+  "showQrCode": "Показать QR",
+  "subscriptionQrTitle": "QR подписки",
+  "subscriptionQrHint": "Отсканируйте этот код на другом устройстве, чтобы импортировать подписку.",
+  "subscriptionQrUnsupported": "Эту подписку пока нельзя показать как QR.",
+  "invalidQrSubscription": "В QR-коде нет поддерживаемой ссылки подписки.",
+  "subscriptionUrl": "URL подписки",
+  "subscriptionUrlOrContent": "URL или содержимое",
+  "subscriptionUrlOrContentHint": "Вставьте URL, vless://, пачку ссылок или конфиг",
+  "importFromFile": "Из файла",
+  "invalidSubscriptionFile": "Не удалось прочитать файл подписки",
+  "subscriptionName": "Название (необязательно)",
+  "add": "Добавить",
+  "cancel": "Отмена",
+  "delete": "Удалить",
+  "refresh": "Обновить",
+  "reparseProxies": "Перепарсить прокси",
+  "subscriptionLocalImportBadge": "Локальный импорт",
+  "refreshAll": "Обновить все",
+  "subscriptionsRefreshAllComplete": "Обновлено подписок: {updated}, ошибок: {failed}",
+  "@subscriptionsRefreshAllComplete": {
+    "placeholders": {
+      "updated": { "type": "int" },
+      "failed": { "type": "int" }
+    }
+  },
+  "deleteSubscription": "Удалить подписку?",
+  "deleteSubscriptionConfirm": "Все прокси из этой подписки будут удалены.",
+  "subscriptionDetailsTitle": "Подписка",
+  "subscriptionMovedTitle": "Подписка переехала",
+  "ignoreAction": "Игнорировать",
+  "updateUrlAction": "Обновить URL",
+  "autoUpdateTitle": "Автообновление",
+  "disableAutoUpdateTitle": "Отключить автообновление",
+  "disabledLabel": "Отключено",
+  "refreshesEvery": "Обновляется через: {interval}",
+  "@refreshesEvery": {
+    "placeholders": {
+      "interval": { "type": "String" }
+    }
+  },
+  "usageTitle": "Использование",
+  "spentTraffic": "Потрачено {usage}",
+  "@spentTraffic": {
+    "placeholders": {
+      "usage": { "type": "String" }
+    }
+  },
+  "untilDate": "До {date}",
+  "@untilDate": {
+    "placeholders": {
+      "date": { "type": "String" }
+    }
+  },
+  "infoTitle": "Информация",
+  "supportUrlLabel": "Поддержка",
+  "websiteLabel": "Сайт",
+  "newUrlTitle": "NewURL",
+  "movedSubscriptionMessage": "Сервер сообщил, что подписка переехала на новый URL.",
+  "movedSubscriptionPrompt": "Сервер сообщает новый URL подписки. Обновить его сейчас или оставить текущий?",
+  "noSubscriptions": "Подписок пока нет",
+  "noProxies": "Нет прокси",
+  "noSubscriptionsHint": "Нажмите + чтобы добавить URL подписки",
+  "outboundsCount": "{count} прокси",
+  "@outboundsCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "subscriptionServersCount": "{count, plural, one{{count} сервер} few{{count} сервера} many{{count} серверов} other{{count} сервера}}",
+  "@subscriptionServersCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "subscriptionProxyTypeLabel": "Прокси",
+  "moreProxies": "…ещё {count} прокси",
+  "@moreProxies": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "lastUpdated": "Обновлено {time}",
+  "@lastUpdated": {
+    "placeholders": {
+      "time": { "type": "String" }
+    }
+  },
+  "trafficUsage": "{used} / {total}",
+  "@trafficUsage": {
+    "placeholders": {
+      "used": { "type": "String" },
+      "total": { "type": "String" }
+    }
+  },
+  "expired": "Истекла",
+  "loading": "Загрузка…",
+  "error": "Ошибка",
+  "invalidUrl": "Введите корректный URL",
+  "fetchFailed": "Не удалось загрузить подписку",
+  "subscriptionSavedWithFetchWarning": "Подписка сохранена, но сервер не ответил. Можно поменять HWID или заголовки и обновить её позже.",
+  "sourceLabel": "Источник",
+  "importedFromFileLabel": "Импортировано из файла: {name}",
+  "@importedFromFileLabel": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "deepLinkImportTitle": "Импорт подписки",
+  "deepLinkImportMessage": "Вы действительно хотите импортировать эту подписку?",
+  "deepLinkImportNameLabel": "Название",
+  "deepLinkImportAction": "Импортировать",
+  "deepLinkImportSourceLabel": "Исходная ссылка",
+  "deepLinkImportResolvedUrlLabel": "Расшифрованный URL подписки",
+  "deepLinkImportHappBadge": "Подписка Happ",
+  "deepLinkImportHappNotice": "Эта подписка предназначена для приложения Happ и может требовать HWID устройства. Etonify отправит HWID и User-Agent Happ только если ты подтвердишь импорт.",
+  "deepLinkImportHappSendHwidAction": "Отправить HWID и импортировать",
+  "deepLinkImportHappCancelAction": "Не импортировать",
+  "deepLinkImportUserAgentLabel": "User-Agent",
+  "deepLinkImportHwidLabel": "HWID",
+  "deepLinkImportHwidValue": "Будет отправлен только после подтверждения",
+  "deepLinkImportSuccess": "Подписка \"{name}\" импортирована",
+  "@deepLinkImportSuccess": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "happCryptoLinkImportedLabel": "Подписка импортирована через Happ Crypto Link",
+  "happCryptoLinkTitle": "Happ Crypto Link",
+  "happCryptUnsupportedTitle": "Happ crypt5",
+  "happCryptUnsupportedMessage": "Данная версия Happ Crypto Link пока что не поддерживается.",
+  "happImportTitle": "Подписка Happ",
+  "happImportMessage": "Эта подписка предназначена для приложения Happ и может требовать HWID устройства. Продолжай только если согласен отправить HWID и User-Agent Happ на сервер подписки.",
+  "subscriptionOperationSlowWarning": "Сервер подписки отвечает дольше обычного. Если это повторяется, проверь ссылку или сеть.",
+  "subscriptionOperationTimeout": "Сервер подписки не ответил вовремя. Проверь ссылку или сеть и попробуй снова.",
+  "continueAction": "Продолжить",
+  "routingTitle": "Маршрутизация",
+  "routingSubtitle": "Правила маршрутизации трафика",
+  "bypassLocalNetworkTitle": "Обход локальной сети",
+  "bypassLocalNetworkSubtitle": "Направляет приватные и LAN-адреса напрямую",
+  "russiaRoutesTitle": "Маршруты России",
+  "russiaRoutesRunetFreedomBadge": "runetfreedom",
+  "russiaRoutesDomainListBadge": "domain-list-community",
+  "russiaRoutesSubtitle": "Клиент локально копирует пакеты runetfreedom и скачивает нужные категории domain-list-community, после чего собирает локальные rule set файлы.",
+  "russiaRoutesInstallAction": "Подготовить",
+  "russiaRoutesReinstallAction": "Обновить",
+  "russiaRoutesUpdateAction": "Обновить",
+  "russiaRoutesEnableTitle": "Использовать маршруты России",
+  "russiaRoutesEnabledSubtitle": "Нужные маршруты будут применены автоматически: часть через прокси, часть напрямую.",
+  "russiaRoutesMissingSubtitle": "Сначала подготовь пакет маршрутов, чтобы его можно было включить.",
+  "russiaRoutesPreparingStatus": "Подготавливаем локальные маршруты...",
+  "russiaRoutesMissingStatus": "Локальные маршруты ещё не подготовлены",
+  "russiaRoutesMissingHint": "Клиент скопирует bundled runetfreedom `.srs`, скачает категории domain-list-community и соберёт локальные файлы маршрутов для sing-box.",
+  "@russiaRoutesReadyStatus": {
+    "placeholders": {
+      "versionTag": { "type": "String" }
+    }
+  },
+  "russiaRoutesReadyStatus": "Маршруты готовы, версия: {versionTag}",
+  "@russiaRoutesMeta": {
+    "placeholders": {
+      "installedAt": { "type": "String" },
+      "domainListUpdatedAt": { "type": "String" },
+      "categoryCount": { "type": "int" },
+      "domainCount": { "type": "int" }
+    }
+  },
+  "russiaRoutesMeta": "runetfreedom: {installedAt} · domain-list-community: {domainListUpdatedAt} · категорий: {categoryCount} · доменов: {domainCount}",
+  "adBlockTitle": "Блокировка рекламы",
+  "adBlockSubtitle": "Клиент сам скачивает локальный rule set и подключает его в routing.",
+  "adBlockDownloadAction": "Скачать",
+  "adBlockUpdateAction": "Обновить",
+  "adBlockEnableTitle": "Включить локальную блокировку",
+  "adBlockEnabledSubtitle": "Использовать скачанный локальный rule set для DNS и route reject.",
+  "adBlockMissingSubtitle": "Сначала скачай пакет фильтра, чтобы его можно было включить.",
+  "adBlockDownloadingStatus": "Скачиваем и собираем локальный фильтр...",
+  "adBlockMissingStatus": "Фильтр ещё не скачан",
+  "adBlockMissingHint": "Скачиваем список с AdGuard и сохраняем его локально для sing-box.",
+  "@adBlockReadyStatus": {
+    "placeholders": {
+      "blockedCount": { "type": "int" }
+    }
+  },
+  "adBlockReadyStatus": "Фильтр готов, доменов: {blockedCount}",
+  "@adBlockMeta": {
+    "placeholders": {
+      "updatedAt": { "type": "String" },
+      "allowedCount": { "type": "int" }
+    }
+  },
+  "adBlockMeta": "Обновлено: {updatedAt} · исключений: {allowedCount}",
+  "splitRoutingTitle": "Раздельная маршрутизация",
+  "splitRoutingSubtitle": "Направляет выбранные Android-пакеты через прокси или в обход него",
+  "splitRoutingModeTitle": "Режим",
+  "splitRoutingModeDisabled": "Выкл",
+  "splitRoutingModeDisabledSubtitle": "Использует обычную маршрутизацию для всех приложений",
+  "splitRoutingModeProxySelected": "Через прокси",
+  "splitRoutingModeProxySelectedSubtitle": "Только выбранные приложения пойдут через прокси",
+  "splitRoutingModeBypassSelected": "В обход прокси",
+  "splitRoutingModeBypassSelectedSubtitle": "Выбранные приложения будут идти напрямую в обход прокси",
+  "splitRoutingAppsTitle": "Приложения",
+  "splitRoutingPackagesTitle": "Имена пакетов",
+  "splitRoutingPackagesHint": "com.termux\norg.mozilla.firefox",
+  "splitRoutingPackagesHelper": "По одному имени Android-пакета на строку",
+  "splitRoutingPickAppsAction": "Выбрать приложения",
+  "splitRoutingPickAppsTitle": "Выбор приложений",
+  "splitRoutingSearchHint": "Поиск по приложению или имени пакета",
+  "splitRoutingAndroidOnly": "Выбор приложений доступен только на Android",
+  "splitRoutingLoadAppsFailed": "Не удалось загрузить список приложений",
+  "splitRoutingSelectedCount": "Выбрано: {count}",
+  "splitRoutingNoAppsTitle": "Приложения ещё не выбраны",
+  "splitRoutingNoAppsSubtitle": "Выбери Android-приложения, к которым нужно применить split routing",
+  "splitRoutingManualEditorTitle": "Ручной список пакетов",
+  "splitRoutingManualEditorSubtitle": "Используй это, если хочешь редактировать package names напрямую",
+  "snowtunTitle": "Snowtun",
+  "snowtunSubtitle": "Дополнительный модуль для особых подключений",
+  "snowtunDescription": "Устанавливайте Snowtun только если подписка явно требует этот модуль. Обычные VPN-подключения работают без него.",
+  "snowtunManifestUrlTitle": "URL манифеста",
+  "snowtunManifestUrlHint": "https://host.example/snowtun/manifest.json",
+  "snowtunUpdateAction": "Обновить с сервера",
+  "snowtunDeleteAction": "Удалить локальный бинарь",
+  "snowtunStatusTitle": "Локальный статус",
+  "snowtunInstalledLabel": "Установлен",
+  "snowtunInstalledYes": "Да",
+  "snowtunInstalledNo": "Нет",
+  "snowtunVersionLabel": "Версия",
+  "snowtunChecksumLabel": "SHA-256",
+  "snowtunSizeLabel": "Размер",
+  "snowtunChunkCountLabel": "Частей",
+  "snowtunPathLabel": "Путь к бинарю",
+  "snowtunInstalledAtLabel": "Установлен",
+  "snowtunImportSourceLabel": "Источник импорта",
+  "snowtunImportSourceValue": "только sing-box outbound",
+  "snowtunIdleStatus": "Готово.",
+  "snowtunFetchingManifest": "Подготавливаем скачивание…",
+  "snowtunDownloadingChunks": "Скачиваем…",
+  "@snowtunDownloadingChunks": {
+    "placeholders": {
+      "current": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "snowtunFinalizing": "Завершаем…",
+  "snowtunUpdated": "Скачивание завершено.",
+  "snowtunInstalledMessage": "Компонент установлен.",
+  "snowtunRemovingStatus": "Удаляем модуль…",
+  "snowtunReadyShort": "Готово.",
+  "snowtunNotInstalledShort": "Модуль ещё не установлен.",
+  "snowtunPreparingInstallStatus": "Подготавливаем установку…",
+  "snowtunDownloadingModuleStatus": "Скачиваем модуль…",
+  "snowtunInstallingStatus": "Устанавливаем…",
+  "snowtunStoragePrepareFailed": "Не удалось подготовить папку для Snowtun. Обнови приложение до свежей версии и попробуй ещё раз.",
+  "snowtunIntegrityFailed": "Файл с сервера не прошёл проверку целостности.",
+  "snowtunInstallPermissionRequired": "Разреши Etonify устанавливать дополнительные модули и попробуй ещё раз.",
+  "snowtunInstallPermissionTitle": "Разрешение на установку",
+  "snowtunInstallPermissionMessage": "Snowtun ставится как дополнительный модуль. Android должен разрешить установку из этого приложения; базовый VPN будет работать и без этого модуля.",
+  "snowtunInstallPermissionSkip": "Не сейчас",
+  "snowtunInstallPermissionAllow": "Разрешить",
+  "snowtunLaunchPrepareFailed": "Файл скачался, но Android не дал подготовить его к запуску.",
+  "snowtunDownloadedFileMissing": "Скачанный файл не найден.",
+  "snowtunDownloadModuleFailed": "Не удалось скачать модуль с сервера.",
+  "snowtunNoCompatibleModule": "Для этого устройства на сервере нет подходящего модуля.",
+  "snowtunInstallOrRemoveFailedWithDetail": "Android не смог установить или удалить модуль: {detail}",
+  "@snowtunInstallOrRemoveFailedWithDetail": {
+    "placeholders": {
+      "detail": { "type": "String" }
+    }
+  },
+  "snowtunInstallOrRemoveFailed": "Android не смог установить или удалить дополнительный модуль.",
+  "snowtunWrongAppVersion": "Этот модуль собран для другой версии приложения.",
+  "snowtunIncompatibleModulePackage": "Сервер отдал неподходящий пакет модуля.",
+  "snowtunGenericFailure": "Не удалось скачать или установить компонент.",
+  "snowtunModuleDescription": "Snowtun — дополнительный Android-модуль для отдельных типов outbound. Не устанавливайте его, если провайдер не требует.",
+  "snowtunInstalledSummary": "Уже установлено",
+  "snowtunNotInstalledSummary": "Ещё не установлено",
+  "snowtunInstallModuleAction": "Установить модуль",
+  "snowtunRemoveModuleAction": "Удалить модуль",
+  "@refreshIntervalDaysShort": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "refreshIntervalDaysShort": "{count} дн.",
+  "@refreshIntervalHoursShort": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "refreshIntervalHoursShort": "{count} ч.",
+  "@refreshIntervalMinutesShort": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "refreshIntervalMinutesShort": "{count} мин.",
+  "happCrypt5Supported": "Поддерживается",
+  "happCrypt5Unsupported": "Не поддерживается",
+  "happCrypt5Checking": "Проверяем поддержку декрипта happ://crypt5/...",
+  "happCrypt5SupportedDescription": "Ваше устройство умеет расшифровывать Happ crypt5 crypto link прямо в приложении.",
+  "happCrypt5UnsupportedDescription": "На этом устройстве декрипт Happ crypt5 сейчас недоступен.",
+  "subscriptionLikelyRequiresHwidTitle": "Похоже, нужен HWID",
+  "subscriptionLikelyRequiresHwidWarning": "Похоже, эта подписка требует HWID. Сервер вернул только один outbound с app/HWID в названии. Открой настройки подписки и включи отправку HWID.",
+  "subscriptionLikelyRequiresHwidMessage": "Сервер вернул только один outbound, и его название похоже на заглушку про app или HWID.\n\nОбычно это значит, что подписка ожидает HWID устройства в запросе.\n\nВключить отправку HWID сейчас и сразу обновить подписку?",
+  "subscriptionLikelyRequiresHwidAction": "Включить HWID",
+  "subscriptionHwidEnabledAndUpdated": "Отправка HWID включена. Подписка обновлена.",
+  "noValidOutboundsTitle": "Нет рабочих узлов",
+  "noValidOutboundsWarning": "В этой подписке не осталось ни одного рабочего outbound. Они были отфильтрованы во время валидации. Проверь подписку или обнови её.",
+  "noValidOutboundsMessage": "В этой подписке не осталось ни одного рабочего outbound.\n\nВсе узлы были отфильтрованы во время валидации ещё до запуска, поэтому клиент не будет пытаться стартовать sing-box с пустым набором прокси.\n\nПроверь подписку, обнови её или импортируй корректную.",
+  "noValidOutboundsAfterDropInvalidWarning": "В выбранной подписке не осталось ни одного рабочего outbound после drop invalid. Проверь подписку, похоже с ней что-то не так.",
+  "noValidOutboundsAfterDropInvalidMessage": "Все оставшиеся узлы в выбранной подписке были отброшены как невалидные во время запуска.\n\nКлиент остановился до того, как передать сломанный конфиг в sing-box.\n\nПроверь содержимое подписки и обнови или замени её.",
+  "@splitRoutingSelectedCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "experimentalTcpFastOpenTitle": "TCP Fast Open",
+  "experimentalTcpFastOpenSubtitle": "Может ускорить TCP handshake, но зависит от сети и поддержки сервера.",
+  "experimentalTcpMultiPathTitle": "TCP Multipath",
+  "experimentalTcpMultiPathSubtitle": "Пробует несколько сетевых путей. Может помочь при смене сети, но иногда греет телефон или работает нестабильно.",
+  "experimentalInterruptConnectionsTitle": "Рвать активные соединения при смене узла",
+  "experimentalInterruptConnectionsSubtitle": "Быстрее применяет смену прокси, но старые соединения приложений могут оборваться.",
+  "experimentalUrlTestStrictToleranceTitle": "URLTest tolerance 1 мс",
+  "experimentalUrlTestStrictToleranceSubtitle": "Строже выбирает самый быстрый прокси, но может чаще переключать сервер.",
+  "blockLeaksTitle": "Исправить некоторые утечки",
+  "blockLeaksSubtitle": "Блокирует только STUN/WebRTC-трафик, который может обходить прокси",
+  "addSubscriptionCaption": "Добавьте подписку по ссылке или файлу",
+  "pasteSubscriptionLink": "Вставьте ссылку подписки",
+  "orManually": "Или вручную",
+  "pasteAction": "Вставить"
+}

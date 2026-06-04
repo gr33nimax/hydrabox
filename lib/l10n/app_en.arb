@@ -1,0 +1,612 @@
+{
+  "@@locale": "en",
+  "profiles": "Profiles",
+  "close": "Close",
+  "homeTab": "Home",
+  "proxiesTab": "Proxies",
+  "proxiesTitle": "Proxies",
+  "proxySwitching": "Switching",
+  "proxySelectorTitle": "Selector",
+  "shareProxyTitle": "Share",
+  "shareProxyLinkLabel": "Share link",
+  "shareSingboxOutboundLabel": "sing-box outbound",
+  "copiedToClipboard": "{label} copied",
+  "@copiedToClipboard": {
+    "placeholders": {
+      "label": {
+        "type": "String"
+      }
+    }
+  },
+  "unavailableForThisType": "Unavailable for this type",
+  "sortByDefault": "Source order",
+  "sortByLatency": "By latency",
+  "sortByName": "By name",
+  "sortByCountry": "By country",
+  "settingsTitle": "Settings",
+  "generalSectionTitle": "General",
+  "inboundTitle": "Inbound",
+  "dnsTitle": "DNS",
+  "whitelistTitle": "Whitelist",
+  "whitelistSubtitle": "Optional Snowtun module",
+  "experimentalTitle": "Experimental",
+  "experimentalSubtitle": "Multipath, Fast Open, and connection switching behavior",
+  "logsTitle": "Logs",
+  "logsSubtitle": "Generated sing-box config and app events",
+  "urlTestTitle": "URLTest",
+  "urlTestSubtitle": "Latency check and lowest selection",
+  "vpnInTitle": "VPN In",
+  "proxyInTitle": "Proxy In",
+  "dnsDirectTitle": "Direct",
+  "dnsProxyTitle": "Via proxy",
+  "dnsIpPreferenceTitle": "IP version",
+  "aboutSectionTitle": "About client",
+  "aboutSectionSubtitle": "Client version, core, team, and service information.",
+  "aboutHeroSubtitle": "Android VPN client focused on speed, stability, and a clean daily experience.",
+  "aboutDevelopedBy": "Developed by MeowTeam.",
+  "aboutCoreSourceLabel": "core source code",
+  "coreVersionLabel": "Core version",
+  "debugMenuTitle": "Debug",
+  "debugMenuSubtitle": "Hidden area for debugging and service actions.",
+  "debugNetworkHeartbeatTitle": "Network heartbeat",
+  "debugNetworkHeartbeatSubtitle": "Re-asserts the default network if Android misses callbacks. Current interval: {seconds}s. Applies on next VPN start.",
+  "@debugNetworkHeartbeatSubtitle": {
+    "placeholders": {
+      "seconds": { "type": "int" }
+    }
+  },
+  "debugWakeLockTitle": "Partial wake lock",
+  "debugWakeLockSubtitle": "Keeps CPU awake while VPN runs. Off by default because it can heat the phone on aggressive firmware.",
+  "debugRecordSnapshot": "Record performance snapshot",
+  "debugSnapshotDone": "Performance snapshot added to logs",
+  "teamPageTitle": "MeowTeam",
+  "teamIntroTitle": "The team behind Etonify",
+  "teamIntroBody": "We are a small team building our own VPN client and improving it step by step.",
+  "teamTimelineForkTitle": "Started as a Hiddify fork",
+  "teamTimelineForkBody": "The early client inherited the UI and a large legacy codebase from Hiddify. A few test versions helped us understand what had to change.",
+  "teamTimelineRefactorTitle": "Large refactor",
+  "teamTimelineRefactorBody": "The old backend carried too much technical debt, patches, dead code, and behavior that was hard to maintain. We moved the client through a deep refactor and rebuilt the runtime layer around a cleaner Android-first flow.",
+  "teamTimelineCoreTitle": "MeowSingBox core",
+  "teamTimelineCoreBody": "The app uses a modified sing-box core with extra work around URLTest, connection cleanup, and resource handling.",
+  "teamTimelineNowTitle": "Etonify today",
+  "teamTimelineNowBody": "Etonify is still evolving: we keep simplifying UX, improving Android stability, and cutting technical debt without losing the speed-focused VPN experience.",
+  "teamDeveloperDdosxdRole": "MeowTeam developer",
+  "teamDeveloperYamixdevRole": "MeowTeam developer",
+  "languageSettingTitle": "Language",
+  "themeSettingTitle": "Theme",
+  "accentColorTitle": "Accent color",
+  "appearanceTitle": "Appearance",
+  "languageSystem": "System",
+  "languageEnglish": "English",
+  "languageRussian": "Russian",
+  "themeSystem": "System",
+  "themeLight": "Light",
+  "themeDark": "Dark",
+  "themeAmoled": "AMOLED",
+  "aboutResourcesTitle": "Resources",
+  "aboutResourcesSubtitle": "On-demand Android snapshot. It is not collected in the background.",
+  "aboutResourcePss": "Memory",
+  "aboutResourceNativeHeap": "Native heap",
+  "aboutResourceJavaHeap": "Java heap",
+  "aboutResourceSystemMemory": "Free system RAM",
+  "aboutResourceBatteryTemp": "Battery temperature",
+  "appVersionLabel": "Client version",
+  "currentProfileLabel": "Current profile",
+  "selectedProxyLabel": "Selected proxy",
+  "onboardingStatusLabel": "Intro",
+  "onboardingSeen": "Completed",
+  "showOnboardingAgain": "Show intro again",
+  "settingsFootnote": "These settings are local to this device and are stored in Hive.",
+  "connected": "Connected",
+  "tapToConnect": "Tap to Connect",
+  "resolvingIp": "Resolving IP…",
+  "millisecondsUnit": " ms",
+  "refreshLatency": "Refresh latency",
+  "checkingLatency": "Checking latency",
+  "checkingLatencyShort": "Checking…",
+  "openTrafficDashboard": "Open traffic dashboard",
+  "refreshActiveSubscription": "Refresh current subscription",
+  "refreshActiveSubscriptionUnavailable": "Manual imports cannot be refreshed",
+  "activeSubscriptionRefreshComplete": "{name} updated",
+  "@activeSubscriptionRefreshComplete": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "trafficDashboardTitle": "Traffic dashboard",
+  "trafficDashboardSubtitle": "Live speed, session totals, and connection info",
+  "trafficDashboardDownload": "Download",
+  "trafficDashboardUpload": "Upload",
+  "trafficDashboardSessionTraffic": "Session traffic",
+  "trafficDashboardConnectedFor": "Connected for",
+  "trafficDashboardGraphTitle": "Live traffic",
+  "trafficDashboardGraphMax": "Peak {speed}",
+  "@trafficDashboardGraphMax": {
+    "placeholders": {
+      "speed": { "type": "String" }
+    }
+  },
+  "trafficDashboardNoSamples": "Waiting for traffic data",
+  "trafficDashboardConnectionState": "Connection",
+  "trafficDashboardCurrentProfile": "Profile",
+  "trafficDashboardActiveProxy": "Proxy",
+  "trafficDashboardServerIp": "Server IP",
+  "trafficDashboardDownloadTotal": "Downloaded",
+  "trafficDashboardUploadTotal": "Uploaded",
+  "trafficDashboardStateConnected": "Connected",
+  "trafficDashboardStateConnecting": "Connecting",
+  "trafficDashboardStateDisconnected": "Disconnected",
+  "trafficDashboardUptimeHours": "{hours} h {minutes} min",
+  "@trafficDashboardUptimeHours": {
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      },
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "trafficDashboardUptimeMinutes": "{minutes} min {seconds} s",
+  "@trafficDashboardUptimeMinutes": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      },
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "trafficDashboardUptimeSeconds": "{seconds} s",
+  "@trafficDashboardUptimeSeconds": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "notAvailableShort": "N/A",
+  "daysLeft": "{days} days left",
+  "@daysLeft": {
+    "placeholders": {
+      "days": {
+        "type": "int"
+      }
+    }
+  },
+  "daysLeftUnlimited": "∞ days left",
+  "unlimitedTraffic": "Unlimited",
+  "unlimitedSymbol": "∞",
+  "welcomeGreeting": "Hi",
+  "welcomeTitlePrefix": "Welcome to",
+  "welcomeSubtitle": "Fast Android VPN client",
+  "welcomeTapHint": "tap anywhere to continue",
+  "hapticTitle": "Vibration",
+  "hapticSubtitle": "Light vibration for important actions",
+  "hideServerIpTitle": "Hide server IP",
+  "hideServerIpSubtitle": "Masks last two octets of the IP address",
+  "progressiveBlurTitle": "Progressive blur",
+  "progressiveBlurSubtitle": "Blurs content under headers and navigation bars",
+  "enableInboundTitle": "Enabled",
+  "vpnInDescription": "VPN TUN is the Android system VPN path for phone traffic. Apps see an Android VPN, while routing decides what goes through proxy or direct.",
+  "vpnInboundEnabledSubtitle": "Creates a VPN TUN inbound and routes traffic through it",
+  "mtuTitle": "MTU",
+  "mtuSubtitle": "TUN interface packet size",
+  "strictRouteTitle": "Prevent VPN bypass",
+  "strictRouteSubtitle": "Forces traffic through VPN and reduces the chance of traffic escaping the tunnel",
+  "tunImplementationTitle": "TUN implementation",
+  "tunImplementationSubtitle": "How the client handles the TUN stack",
+  "tunImplementationMixed": "Mixed",
+  "tunImplementationMixedSubtitle": "Automatic mode. Uses the safer stack for the current device and config.",
+  "tunImplementationSystem": "System",
+  "tunImplementationSystemSubtitle": "Android system stack. Usually lighter, but may depend on device firmware.",
+  "tunImplementationGvisor": "gVisor",
+  "tunImplementationGvisorSubtitle": "Userspace network stack. Can be more compatible, but may cost more CPU.",
+  "proxyInDescription": "Proxy In / mixed is a local HTTP/SOCKS entry for apps or other devices that you configure manually. It is not the Android system VPN.",
+  "proxyInboundEnabledSubtitle": "Starts a local mixed inbound for apps and devices",
+  "allowLanConnectionsTitle": "Allow LAN connections",
+  "allowLanConnectionsSubtitle": "If enabled, listen on 0.0.0.0, otherwise on 127.0.0.1",
+  "portTitle": "Port",
+  "proxyPortSubtitle": "Local mixed inbound port",
+  "dnsUsePresetTitle": "Use preset",
+  "dnsResolverTitle": "Resolver",
+  "dnsDirectPresetSubtitle": "Recommended: udp://1.1.1.1",
+  "dnsDirectResolverSubtitle": "DNS for direct requests without proxy",
+  "dnsProxyPresetSubtitle": "Recommended: https://dns.cloudflare.com/dns-query",
+  "dnsProxyResolverSubtitle": "DNS for requests through proxy",
+  "dnsResolverTypeTitle": "Resolver type",
+  "dnsPresetDevice": "Device network",
+  "dnsPresetCustom": "Custom",
+  "dnsPresetDeviceSubtitle": "Use DNS from the current Android network.",
+  "dnsPresetCustomSubtitle": "Enter your own resolver: udp://, tcp://, tls://, or https://.",
+  "dnsPresetUdpSubtitle": "Plain UDP DNS. Fast, but not encrypted.",
+  "dnsPresetTcpSubtitle": "Plain TCP DNS. More stable on some networks, but not encrypted.",
+  "dnsPresetTlsSubtitle": "DNS over TLS. Encrypted DNS on port 853.",
+  "dnsPresetHttpsSubtitle": "DNS over HTTPS. Encrypted DNS over HTTPS, often best through proxy.",
+  "dnsPreferIpv6Title": "Prefer IPv6",
+  "dnsPreferIpv6Subtitle": "Prefer IPv6 when both address versions are available",
+  "urlTestUrlTitle": "Test URL",
+  "urlTestUrlSubtitle": "If the subscription already defines a value, that value is used",
+  "urlTestIntervalTitle": "Interval, sec.",
+  "urlTestIntervalSubtitle": "How often proxies are checked for lowest",
+  "urlTestTimeoutTitle": "Timeout, sec.",
+  "urlTestTimeoutSubtitle": "How long to wait for one proxy test before failing it",
+  "urlTestConcurrencyTitle": "Test concurrency",
+  "urlTestConcurrencySubtitle": "How many proxies URLTest checks at the same time",
+  "urlTestSingleRetestTitle": "Quick retry delay, sec.",
+  "urlTestSingleRetestSubtitle": "How long to wait before one quick recheck after a proxy fails",
+  "locationLookupTitle": "Locations",
+  "locationLookupSubtitle": "IP and country through the proxies themselves",
+  "locationLookupLimitTitle": "Check best proxies",
+  "locationLookupLimitSubtitle": "After URLTest, the app resolves external IP and country for this many fastest outbounds",
+  "serverRequestTitle": "Server request",
+  "sendHwidTitle": "Send HWID",
+  "sendHwidSubtitle": "Adds the device HWID to the subscription request",
+  "useCustomHwidTitle": "Use custom HWID",
+  "useCustomHwidSubtitle": "Override the device HWID with your own value",
+  "customUserAgentTitle": "Custom User-Agent",
+  "customUserAgentSubtitle": "Overrides the default Etonify user agent for this subscription",
+  "customHwidTitle": "Custom HWID",
+  "customHwidSubtitle": "Used only when custom HWID is enabled",
+  "customRequestHeadersTitle": "Custom headers",
+  "customRequestHeadersSubtitle": "One header per line in Header: value format",
+  "hwidTitle": "HWID",
+  "hwidSubtitle": "Your device identifier used by some subscription providers",
+  "hwidValueTitle": "Your HWID",
+  "coreStartFailedTitle": "Failed to start core",
+  "coreStartFailedMessage": "sing-box failed to start.\n\n{message}",
+  "@coreStartFailedMessage": {
+    "placeholders": {
+      "message": {
+        "type": "String"
+      }
+    }
+  },
+  "vpnStopFailed": "VPN did not stop completely. Open logs and try again.",
+  "clearLogsTitle": "Clear logs",
+  "logsFilterTitle": "Filter",
+  "logsFilterAll": "All",
+  "singBoxLogLevelTitle": "sing-box log level",
+  "logLevelTrace": "Trace",
+  "logLevelDebug": "Debug",
+  "logLevelInfo": "Info",
+  "logLevelWarning": "Warning",
+  "logLevelError": "Error",
+  "noLogsTitle": "No logs yet",
+  "continueLabel": "Get started",
+  "subscriptionsTab": "Subscriptions",
+  "subscriptionsTitle": "Subscriptions",
+  "addSubscription": "Add subscription",
+  "scanQrCode": "Scan QR",
+  "showQrCode": "Show QR",
+  "subscriptionQrTitle": "Subscription QR",
+  "subscriptionQrHint": "Scan this code on another device to import the subscription.",
+  "subscriptionQrUnsupported": "This subscription cannot be shared as QR yet.",
+  "invalidQrSubscription": "The QR code does not contain a supported subscription link.",
+  "subscriptionUrl": "Subscription URL",
+  "subscriptionUrlOrContent": "URL or content",
+  "subscriptionUrlOrContentHint": "Paste a URL, vless:// link, link list, or config",
+  "importFromFile": "From file",
+  "invalidSubscriptionFile": "Failed to read the subscription file",
+  "subscriptionName": "Name (optional)",
+  "add": "Add",
+  "cancel": "Cancel",
+  "delete": "Delete",
+  "refresh": "Refresh",
+  "reparseProxies": "Reparse proxies",
+  "subscriptionLocalImportBadge": "Local import",
+  "refreshAll": "Refresh all",
+  "subscriptionsRefreshAllComplete": "Updated {updated} subscriptions, {failed} failed",
+  "@subscriptionsRefreshAllComplete": {
+    "placeholders": {
+      "updated": { "type": "int" },
+      "failed": { "type": "int" }
+    }
+  },
+  "deleteSubscription": "Delete subscription?",
+  "deleteSubscriptionConfirm": "This will remove all proxies from this subscription.",
+  "subscriptionDetailsTitle": "Subscription",
+  "subscriptionMovedTitle": "Subscription moved",
+  "ignoreAction": "Ignore",
+  "updateUrlAction": "Update URL",
+  "autoUpdateTitle": "Auto update",
+  "disableAutoUpdateTitle": "Disable auto update",
+  "disabledLabel": "Disabled",
+  "refreshesEvery": "Refreshes every: {interval}",
+  "@refreshesEvery": {
+    "placeholders": {
+      "interval": { "type": "String" }
+    }
+  },
+  "usageTitle": "Usage",
+  "spentTraffic": "Spent {usage}",
+  "@spentTraffic": {
+    "placeholders": {
+      "usage": { "type": "String" }
+    }
+  },
+  "untilDate": "Until {date}",
+  "@untilDate": {
+    "placeholders": {
+      "date": { "type": "String" }
+    }
+  },
+  "infoTitle": "Information",
+  "supportUrlLabel": "Support",
+  "websiteLabel": "Website",
+  "newUrlTitle": "NewURL",
+  "movedSubscriptionMessage": "The server reported that this subscription moved to a new URL.",
+  "movedSubscriptionPrompt": "The server reports a new subscription URL. Update it now or keep the current one?",
+  "noSubscriptions": "No subscriptions yet",
+  "noProxies": "No proxies",
+  "noSubscriptionsHint": "Tap + to add a subscription URL",
+  "outboundsCount": "{count} proxies",
+  "@outboundsCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "subscriptionServersCount": "{count, plural, one{{count} server} other{{count} servers}}",
+  "@subscriptionServersCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "subscriptionProxyTypeLabel": "Proxies",
+  "moreProxies": "…{count} more proxies",
+  "@moreProxies": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "lastUpdated": "Updated {time}",
+  "@lastUpdated": {
+    "placeholders": {
+      "time": { "type": "String" }
+    }
+  },
+  "trafficUsage": "{used} / {total}",
+  "@trafficUsage": {
+    "placeholders": {
+      "used": { "type": "String" },
+      "total": { "type": "String" }
+    }
+  },
+  "expired": "Expired",
+  "loading": "Loading…",
+  "error": "Error",
+  "invalidUrl": "Please enter a valid URL",
+  "fetchFailed": "Failed to fetch subscription",
+  "subscriptionSavedWithFetchWarning": "The subscription was saved, but the server did not respond. You can change HWID or headers and refresh it later.",
+  "sourceLabel": "Source",
+  "importedFromFileLabel": "Imported from file: {name}",
+  "@importedFromFileLabel": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "deepLinkImportTitle": "Import subscription",
+  "deepLinkImportMessage": "Do you really want to import this subscription?",
+  "deepLinkImportNameLabel": "Name",
+  "deepLinkImportAction": "Import",
+  "deepLinkImportSourceLabel": "Source link",
+  "deepLinkImportResolvedUrlLabel": "Resolved subscription URL",
+  "deepLinkImportHappBadge": "Happ subscription",
+  "deepLinkImportHappNotice": "This subscription is intended for the Happ app and may require your device HWID. Etonify will send the HWID and Happ User-Agent only if you confirm this import.",
+  "deepLinkImportHappSendHwidAction": "Send HWID and import",
+  "deepLinkImportHappCancelAction": "Do not import",
+  "deepLinkImportUserAgentLabel": "User-Agent",
+  "deepLinkImportHwidLabel": "HWID",
+  "deepLinkImportHwidValue": "Will be sent only after confirmation",
+  "deepLinkImportSuccess": "Subscription \"{name}\" imported",
+  "@deepLinkImportSuccess": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "happCryptoLinkImportedLabel": "Imported via Happ Crypto Link",
+  "happCryptoLinkTitle": "Happ Crypto Link",
+  "happCryptUnsupportedTitle": "Happ crypt5",
+  "happCryptUnsupportedMessage": "This Happ Crypto Link version is not supported yet.",
+  "happImportTitle": "Happ subscription",
+  "happImportMessage": "This subscription is intended for the Happ app and may require your device HWID. Continue only if you agree to send the HWID and Happ User-Agent to the subscription server.",
+  "subscriptionOperationSlowWarning": "The subscription server is taking longer than usual. Check the link or network if this keeps happening.",
+  "subscriptionOperationTimeout": "The subscription server did not respond in time. Check the link or network and try again.",
+  "continueAction": "Continue",
+  "routingTitle": "Routing",
+  "routingSubtitle": "Traffic routing rules",
+  "bypassLocalNetworkTitle": "Bypass local network",
+  "bypassLocalNetworkSubtitle": "Route private and LAN addresses directly",
+  "russiaRoutesTitle": "Russia routes",
+  "russiaRoutesRunetFreedomBadge": "runetfreedom",
+  "russiaRoutesDomainListBadge": "domain-list-community",
+  "russiaRoutesSubtitle": "The client locally copies runetfreedom bundles and downloads the required domain-list-community categories, then builds local rule-set files.",
+  "russiaRoutesInstallAction": "Prepare",
+  "russiaRoutesReinstallAction": "Update",
+  "russiaRoutesUpdateAction": "Update",
+  "russiaRoutesEnableTitle": "Use Russia routes",
+  "russiaRoutesEnabledSubtitle": "Required routes will be applied automatically: some through the proxy, some directly.",
+  "russiaRoutesMissingSubtitle": "Prepare the route package first in order to use it.",
+  "russiaRoutesPreparingStatus": "Preparing local route files...",
+  "russiaRoutesMissingStatus": "Local routes are not prepared yet",
+  "russiaRoutesMissingHint": "The client will copy bundled runetfreedom `.srs`, download domain-list-community categories, and build local route files for sing-box.",
+  "@russiaRoutesReadyStatus": {
+    "placeholders": {
+      "versionTag": { "type": "String" }
+    }
+  },
+  "russiaRoutesReadyStatus": "Routes are ready, version: {versionTag}",
+  "@russiaRoutesMeta": {
+    "placeholders": {
+      "installedAt": { "type": "String" },
+      "domainListUpdatedAt": { "type": "String" },
+      "categoryCount": { "type": "int" },
+      "domainCount": { "type": "int" }
+    }
+  },
+  "russiaRoutesMeta": "runetfreedom: {installedAt} · domain-list-community: {domainListUpdatedAt} · categories: {categoryCount} · domains: {domainCount}",
+  "adBlockTitle": "Ad blocking",
+  "adBlockSubtitle": "The client downloads a local rule-set itself and wires it into routing.",
+  "adBlockDownloadAction": "Download",
+  "adBlockUpdateAction": "Update",
+  "adBlockEnableTitle": "Enable local blocking",
+  "adBlockEnabledSubtitle": "Use the downloaded local rule-set for DNS and route reject.",
+  "adBlockMissingSubtitle": "Download the filter package first in order to use it.",
+  "adBlockDownloadingStatus": "Downloading and building the local filter...",
+  "adBlockMissingStatus": "Filter is not downloaded yet",
+  "adBlockMissingHint": "We download the list from AdGuard and keep it locally for sing-box.",
+  "@adBlockReadyStatus": {
+    "placeholders": {
+      "blockedCount": { "type": "int" }
+    }
+  },
+  "adBlockReadyStatus": "Filter is ready, domains: {blockedCount}",
+  "@adBlockMeta": {
+    "placeholders": {
+      "updatedAt": { "type": "String" },
+      "allowedCount": { "type": "int" }
+    }
+  },
+  "adBlockMeta": "Updated: {updatedAt} · exceptions: {allowedCount}",
+  "splitRoutingTitle": "Split routing",
+  "splitRoutingSubtitle": "Route selected Android packages through the proxy or bypass it",
+  "splitRoutingModeTitle": "Mode",
+  "splitRoutingModeDisabled": "Off",
+  "splitRoutingModeDisabledSubtitle": "Use the normal routing flow for all apps",
+  "splitRoutingModeProxySelected": "Proxy selected",
+  "splitRoutingModeProxySelectedSubtitle": "Only the selected apps go through the proxy",
+  "splitRoutingModeBypassSelected": "Bypass selected",
+  "splitRoutingModeBypassSelectedSubtitle": "Selected apps bypass the proxy and go direct",
+  "splitRoutingAppsTitle": "Applications",
+  "splitRoutingPackagesTitle": "Package names",
+  "splitRoutingPackagesHint": "com.termux\norg.mozilla.firefox",
+  "splitRoutingPackagesHelper": "One Android package name per line",
+  "splitRoutingPickAppsAction": "Choose apps",
+  "splitRoutingPickAppsTitle": "Choose apps",
+  "splitRoutingSearchHint": "Search by app or package name",
+  "splitRoutingAndroidOnly": "App picker is available on Android only",
+  "splitRoutingLoadAppsFailed": "Failed to load installed apps",
+  "splitRoutingSelectedCount": "{count} selected",
+  "splitRoutingNoAppsTitle": "No apps selected yet",
+  "splitRoutingNoAppsSubtitle": "Pick Android apps to apply split routing to them",
+  "splitRoutingManualEditorTitle": "Manual package list",
+  "splitRoutingManualEditorSubtitle": "Use this if you want to edit package names directly",
+  "snowtunTitle": "Snowtun",
+  "snowtunSubtitle": "Optional module for special connections",
+  "snowtunDescription": "Install Snowtun only if a subscription explicitly needs it. Normal VPN connections work without this module.",
+  "snowtunManifestUrlTitle": "Manifest URL",
+  "snowtunManifestUrlHint": "https://host.example/snowtun/manifest.json",
+  "snowtunUpdateAction": "Update from server",
+  "snowtunDeleteAction": "Delete local binary",
+  "snowtunStatusTitle": "Local status",
+  "snowtunInstalledLabel": "Installed",
+  "snowtunInstalledYes": "Yes",
+  "snowtunInstalledNo": "No",
+  "snowtunVersionLabel": "Version",
+  "snowtunChecksumLabel": "SHA-256",
+  "snowtunSizeLabel": "Size",
+  "snowtunChunkCountLabel": "Chunks",
+  "snowtunPathLabel": "Binary path",
+  "snowtunInstalledAtLabel": "Installed at",
+  "snowtunImportSourceLabel": "Import source",
+  "snowtunImportSourceValue": "sing-box outbound only",
+  "snowtunIdleStatus": "Ready.",
+  "snowtunFetchingManifest": "Preparing download…",
+  "snowtunDownloadingChunks": "Downloading…",
+  "@snowtunDownloadingChunks": {
+    "placeholders": {
+      "current": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "snowtunFinalizing": "Finishing…",
+  "snowtunUpdated": "Download completed.",
+  "snowtunInstalledMessage": "The component is installed.",
+  "snowtunRemovingStatus": "Removing module…",
+  "snowtunReadyShort": "Ready.",
+  "snowtunNotInstalledShort": "The module is not installed yet.",
+  "snowtunPreparingInstallStatus": "Preparing install…",
+  "snowtunDownloadingModuleStatus": "Downloading module…",
+  "snowtunInstallingStatus": "Installing…",
+  "snowtunStoragePrepareFailed": "Failed to prepare Snowtun storage. Update the app and try again.",
+  "snowtunIntegrityFailed": "The downloaded file failed the integrity check.",
+  "snowtunInstallPermissionRequired": "Allow Etonify to install additional modules, then try again.",
+  "snowtunInstallPermissionTitle": "Install permission",
+  "snowtunInstallPermissionMessage": "Snowtun is installed as an optional module. Android needs permission to install from this app; the base VPN still works without this module.",
+  "snowtunInstallPermissionSkip": "Not now",
+  "snowtunInstallPermissionAllow": "Allow",
+  "snowtunLaunchPrepareFailed": "The file was downloaded, but Android did not allow preparing it for launch.",
+  "snowtunDownloadedFileMissing": "The downloaded file was not found.",
+  "snowtunDownloadModuleFailed": "Failed to download the module from the server.",
+  "snowtunNoCompatibleModule": "No compatible Snowtun module is available for this device.",
+  "snowtunInstallOrRemoveFailedWithDetail": "Android failed to install or remove the module: {detail}",
+  "@snowtunInstallOrRemoveFailedWithDetail": {
+    "placeholders": {
+      "detail": { "type": "String" }
+    }
+  },
+  "snowtunInstallOrRemoveFailed": "Android failed to install or remove the optional module.",
+  "snowtunWrongAppVersion": "This module was built for a different app version.",
+  "snowtunIncompatibleModulePackage": "The server returned an incompatible module package.",
+  "snowtunGenericFailure": "Failed to download or install the component.",
+  "snowtunModuleDescription": "Snowtun is an optional Android module for specific outbound types. Leave it uninstalled unless your provider requires it.",
+  "snowtunInstalledSummary": "Already installed",
+  "snowtunNotInstalledSummary": "Not installed yet",
+  "snowtunInstallModuleAction": "Install module",
+  "snowtunRemoveModuleAction": "Remove module",
+  "@refreshIntervalDaysShort": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "refreshIntervalDaysShort": "{count} d",
+  "@refreshIntervalHoursShort": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "refreshIntervalHoursShort": "{count} h",
+  "@refreshIntervalMinutesShort": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "refreshIntervalMinutesShort": "{count} min",
+  "happCrypt5Supported": "Supported",
+  "happCrypt5Unsupported": "Not supported",
+  "happCrypt5Checking": "Checking happ://crypt5/... decrypt support",
+  "happCrypt5SupportedDescription": "Your device can decrypt Happ crypt5 crypto links directly in the app.",
+  "happCrypt5UnsupportedDescription": "Happ crypt5 decrypt is currently unavailable on this device.",
+  "subscriptionLikelyRequiresHwidTitle": "HWID may be required",
+  "subscriptionLikelyRequiresHwidWarning": "This subscription probably requires HWID. The server returned only one outbound with app/HWID in its name. Open the subscription settings and enable HWID sending.",
+  "subscriptionLikelyRequiresHwidMessage": "The server returned only one outbound, and its name looks like a placeholder related to app or HWID.\n\nThis usually means the subscription expects the device HWID in the request.\n\nEnable HWID sending now and update the subscription again?",
+  "subscriptionLikelyRequiresHwidAction": "Enable HWID",
+  "subscriptionHwidEnabledAndUpdated": "HWID sending enabled. The subscription was updated.",
+  "noValidOutboundsTitle": "No working nodes",
+  "noValidOutboundsWarning": "There are no working outbounds left in this subscription. They were filtered out during validation. Check the subscription or update it.",
+  "noValidOutboundsMessage": "This subscription does not have any working outbounds left.\n\nAll nodes were filtered out during validation before startup, so the client will not try to launch sing-box with an empty proxy set.\n\nCheck the subscription, refresh it, or import a valid one.",
+  "noValidOutboundsAfterDropInvalidWarning": "There are no working outbounds left in the selected subscription after invalid nodes were dropped. Check the subscription, something looks wrong with it.",
+  "noValidOutboundsAfterDropInvalidMessage": "All remaining nodes in the selected subscription were dropped as invalid during startup.\n\nThe client stopped before handing a broken config to sing-box.\n\nCheck the subscription content and update or replace it.",
+  "@splitRoutingSelectedCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "experimentalTcpFastOpenTitle": "TCP Fast Open",
+  "experimentalTcpFastOpenSubtitle": "May reduce TCP handshake time, but support depends on the network and server.",
+  "experimentalTcpMultiPathTitle": "TCP Multipath",
+  "experimentalTcpMultiPathSubtitle": "Tries multiple network paths. Can help handoff, but may heat the phone or behave unstably.",
+  "experimentalInterruptConnectionsTitle": "Interrupt active connections on node change",
+  "experimentalInterruptConnectionsSubtitle": "Applies proxy changes faster, but old app connections can be dropped.",
+  "experimentalUrlTestStrictToleranceTitle": "URLTest 1 ms tolerance",
+  "experimentalUrlTestStrictToleranceSubtitle": "Selects the lowest-latency proxy more strictly, but may switch servers more often.",
+  "blockLeaksTitle": "Fix some leaks",
+  "blockLeaksSubtitle": "Blocks only STUN/WebRTC traffic that may bypass the proxy",
+  "addSubscriptionCaption": "Add a subscription from a link or file",
+  "pasteSubscriptionLink": "Paste subscription link",
+  "orManually": "Or manually",
+  "pasteAction": "Paste"
+}
