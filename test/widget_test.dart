@@ -884,7 +884,6 @@ void main() {
         home: SettingsAboutPage(
           versionLabel: '0.1.0',
           onShowOnboarding: () {},
-          onOpenWhitelist: () {},
         ),
       ),
     );

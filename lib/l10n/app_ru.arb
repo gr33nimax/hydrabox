@@ -28,7 +28,7 @@
   "inboundTitle": "Входящие соединения",
   "dnsTitle": "DNS",
   "whitelistTitle": "Белые списки",
-  "whitelistSubtitle": "Дополнительный модуль Snowtun",
+  "whitelistSubtitle": "Резервные инструменты маршрутизации",
   "experimentalTitle": "Экспериментальные",
   "experimentalSubtitle": "Multipath, Fast Open и поведение переключения соединений",
   "logsTitle": "Логи",
@@ -90,6 +90,77 @@
   "aboutResourceJavaHeap": "Java heap",
   "aboutResourceSystemMemory": "Свободная RAM системы",
   "aboutResourceBatteryTemp": "Температура батареи",
+  "updatesTitle": "Обновления",
+  "updatesSubtitle": "Проверка GitHub Releases и скачивание APK под устройство.",
+  "updatesChecking": "Проверка обновлений…",
+  "updatesCheckAction": "Проверить",
+  "updatesRetryAction": "Повторить",
+  "updatesDownloadAction": "Скачать обновление",
+  "updatesDownloadWarning": "Не закрывайте Etonify до завершения загрузки.",
+  "updatesUpToDateTitle": "Etonify обновлён",
+  "updatesUpToDateSubtitle": "Установленная версия: {version}",
+  "@updatesUpToDateSubtitle": {
+    "placeholders": {
+      "version": { "type": "String" }
+    }
+  },
+  "updatesAvailableTitle": "Доступно обновление",
+  "updatesAvailableSubtitle": "{version} · {size}",
+  "@updatesAvailableSubtitle": {
+    "placeholders": {
+      "version": { "type": "String" },
+      "size": { "type": "String" }
+    }
+  },
+  "updatesDownloadingTitle": "Скачиваем обновление",
+  "updatesDownloadedTitle": "Обновление скачано",
+  "updatesDownloadedSubtitle": "Сохранено в кэше обновлений: {fileName}",
+  "@updatesDownloadedSubtitle": {
+    "placeholders": {
+      "fileName": { "type": "String" }
+    }
+  },
+  "updatesErrorTitle": "Не удалось проверить обновления",
+  "updatesErrorSubtitle": "Если GitHub заблокирован в этой сети, Etonify попробует снова завтра.",
+  "updatesCurrentVersion": "Текущая версия",
+  "updatesLatestVersion": "Новая версия",
+  "updatesAsset": "APK",
+  "updatesLastChecked": "Проверено: {time}",
+  "@updatesLastChecked": {
+    "placeholders": {
+      "time": { "type": "String" }
+    }
+  },
+  "updatesReleaseNotesTitle": "Что нового",
+  "updatesNoReleaseNotes": "В релизе нет описания изменений.",
+  "updatesProgressBytes": "{downloaded} / {total}",
+  "@updatesProgressBytes": {
+    "placeholders": {
+      "downloaded": { "type": "String" },
+      "total": { "type": "String" }
+    }
+  },
+  "updatesProgressSpeedEta": "{speed}/с · осталось {eta}",
+  "@updatesProgressSpeedEta": {
+    "placeholders": {
+      "speed": { "type": "String" },
+      "eta": { "type": "String" }
+    }
+  },
+  "updatesEtaSeconds": "{seconds} с",
+  "@updatesEtaSeconds": {
+    "placeholders": {
+      "seconds": { "type": "int" }
+    }
+  },
+  "updatesEtaMinutes": "{minutes} мин {seconds} с",
+  "@updatesEtaMinutes": {
+    "placeholders": {
+      "minutes": { "type": "int" },
+      "seconds": { "type": "int" }
+    }
+  },
+  "updatesUnknownSize": "Размер неизвестен",
   "appVersionLabel": "Версия клиента",
   "currentProfileLabel": "Текущий профиль",
   "selectedProxyLabel": "Выбранный прокси",
@@ -188,8 +259,14 @@
   "hapticSubtitle": "Лёгкая вибрация для важных действий",
   "hideServerIpTitle": "Скрывать IP сервера",
   "hideServerIpSubtitle": "Маскирует последние два октета IP-адреса",
-  "progressiveBlurTitle": "Progressive blur",
-  "progressiveBlurSubtitle": "Размывает контент под хедерами и нижней навигацией",
+  "performanceModeTitle": "Режим производительности",
+  "performanceModeCool": "Cool",
+  "performanceModeBalanced": "Balanced",
+  "performanceModePerformance": "Performance",
+  "performanceModeCoolSubtitle": "Минимальный нагрев и фоновая нагрузка для ежедневного Android-режима.",
+  "performanceModeBalancedSubtitle": "Умеренные проверки и расход батареи.",
+  "performanceModePerformanceSubtitle": "Более быстрые проверки, но выше CPU, трафик и нагрев.",
+  "performanceModeRecommendation": "Рекомендуем пока оставлять Cool. Эта настройка скоро будет переработана.",
   "enableInboundTitle": "Включить",
   "vpnInDescription": "VPN TUN — системный Android VPN для трафика телефона. Приложения могут видеть Android VPN, а правила решают, что идёт через прокси или напрямую.",
   "vpnInboundEnabledSubtitle": "Создаёт VPN TUN-вход и маршрутизирует трафик через него",
@@ -494,69 +571,6 @@
   "splitRoutingNoAppsSubtitle": "Выбери Android-приложения, к которым нужно применить split routing",
   "splitRoutingManualEditorTitle": "Ручной список пакетов",
   "splitRoutingManualEditorSubtitle": "Используй это, если хочешь редактировать package names напрямую",
-  "snowtunTitle": "Snowtun",
-  "snowtunSubtitle": "Дополнительный модуль для особых подключений",
-  "snowtunDescription": "Устанавливайте Snowtun только если подписка явно требует этот модуль. Обычные VPN-подключения работают без него.",
-  "snowtunManifestUrlTitle": "URL манифеста",
-  "snowtunManifestUrlHint": "https://host.example/snowtun/manifest.json",
-  "snowtunUpdateAction": "Обновить с сервера",
-  "snowtunDeleteAction": "Удалить локальный бинарь",
-  "snowtunStatusTitle": "Локальный статус",
-  "snowtunInstalledLabel": "Установлен",
-  "snowtunInstalledYes": "Да",
-  "snowtunInstalledNo": "Нет",
-  "snowtunVersionLabel": "Версия",
-  "snowtunChecksumLabel": "SHA-256",
-  "snowtunSizeLabel": "Размер",
-  "snowtunChunkCountLabel": "Частей",
-  "snowtunPathLabel": "Путь к бинарю",
-  "snowtunInstalledAtLabel": "Установлен",
-  "snowtunImportSourceLabel": "Источник импорта",
-  "snowtunImportSourceValue": "только sing-box outbound",
-  "snowtunIdleStatus": "Готово.",
-  "snowtunFetchingManifest": "Подготавливаем скачивание…",
-  "snowtunDownloadingChunks": "Скачиваем…",
-  "@snowtunDownloadingChunks": {
-    "placeholders": {
-      "current": { "type": "int" },
-      "total": { "type": "int" }
-    }
-  },
-  "snowtunFinalizing": "Завершаем…",
-  "snowtunUpdated": "Скачивание завершено.",
-  "snowtunInstalledMessage": "Компонент установлен.",
-  "snowtunRemovingStatus": "Удаляем модуль…",
-  "snowtunReadyShort": "Готово.",
-  "snowtunNotInstalledShort": "Модуль ещё не установлен.",
-  "snowtunPreparingInstallStatus": "Подготавливаем установку…",
-  "snowtunDownloadingModuleStatus": "Скачиваем модуль…",
-  "snowtunInstallingStatus": "Устанавливаем…",
-  "snowtunStoragePrepareFailed": "Не удалось подготовить папку для Snowtun. Обнови приложение до свежей версии и попробуй ещё раз.",
-  "snowtunIntegrityFailed": "Файл с сервера не прошёл проверку целостности.",
-  "snowtunInstallPermissionRequired": "Разреши Etonify устанавливать дополнительные модули и попробуй ещё раз.",
-  "snowtunInstallPermissionTitle": "Разрешение на установку",
-  "snowtunInstallPermissionMessage": "Snowtun ставится как дополнительный модуль. Android должен разрешить установку из этого приложения; базовый VPN будет работать и без этого модуля.",
-  "snowtunInstallPermissionSkip": "Не сейчас",
-  "snowtunInstallPermissionAllow": "Разрешить",
-  "snowtunLaunchPrepareFailed": "Файл скачался, но Android не дал подготовить его к запуску.",
-  "snowtunDownloadedFileMissing": "Скачанный файл не найден.",
-  "snowtunDownloadModuleFailed": "Не удалось скачать модуль с сервера.",
-  "snowtunNoCompatibleModule": "Для этого устройства на сервере нет подходящего модуля.",
-  "snowtunInstallOrRemoveFailedWithDetail": "Android не смог установить или удалить модуль: {detail}",
-  "@snowtunInstallOrRemoveFailedWithDetail": {
-    "placeholders": {
-      "detail": { "type": "String" }
-    }
-  },
-  "snowtunInstallOrRemoveFailed": "Android не смог установить или удалить дополнительный модуль.",
-  "snowtunWrongAppVersion": "Этот модуль собран для другой версии приложения.",
-  "snowtunIncompatibleModulePackage": "Сервер отдал неподходящий пакет модуля.",
-  "snowtunGenericFailure": "Не удалось скачать или установить компонент.",
-  "snowtunModuleDescription": "Snowtun — дополнительный Android-модуль для отдельных типов outbound. Не устанавливайте его, если провайдер не требует.",
-  "snowtunInstalledSummary": "Уже установлено",
-  "snowtunNotInstalledSummary": "Ещё не установлено",
-  "snowtunInstallModuleAction": "Установить модуль",
-  "snowtunRemoveModuleAction": "Удалить модуль",
   "@refreshIntervalDaysShort": {
     "placeholders": {
       "count": { "type": "int" }

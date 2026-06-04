@@ -4,21 +4,17 @@ on:
   workflow_dispatch:
     inputs:
       build_name:
-        description: "Optional versionName override, for example 0.1.0"
+        description: "Optional versionName override, for example 0.1.0 or v0.1.0"
         required: false
         type: string
       build_number:
         description: "Optional versionCode override, for example 1"
         required: false
         type: string
-      split_per_abi:
-        description: "Build smaller split APKs per CPU architecture"
-        required: false
-        type: boolean
-        default: false
   push:
     tags:
       - "v*"
+      - "[0-9]*"
 
 permissions:
   contents: write
@@ -33,17 +29,37 @@ env:
   KEYSTORE_PATH: "android/app/etonify-release.jks"
   BUILD_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.build_name || '' }}
   BUILD_NUMBER: ${{ github.event_name == 'workflow_dispatch' && inputs.build_number || '' }}
-  SPLIT_PER_ABI: ${{ github.event_name == 'workflow_dispatch' && inputs.split_per_abi || 'false' }}
 
 jobs:
   build-release-apk:
-    name: Build signed APK
+    name: Build signed APK matrix
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 90
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Resolve release version
+        shell: bash
+        run: |
+          raw="${BUILD_NAME}"
+          if [ -z "$raw" ]; then
+            if [[ "${GITHUB_REF:-}" == refs/tags/* ]]; then
+              raw="${GITHUB_REF_NAME}"
+            else
+              raw="$(awk -F': ' '/^version:/ {print $2; exit}' pubspec.yaml | cut -d+ -f1)"
+            fi
+          fi
+          raw="${raw#v}"
+          if ! [[ "$raw" =~ ^[0-9]+(\.[0-9]+){1,3}([._-][0-9A-Za-z]+)*$ ]]; then
+            echo "::error title=Invalid release version::Use 0.1.0 or v0.1.0, got '${raw}'"
+            exit 1
+          fi
+          echo "RELEASE_VERSION=${raw}" >> "$GITHUB_ENV"
+          echo "TAG_NAME=${raw}" >> "$GITHUB_ENV"
+          echo "RELEASE_TITLE=v${raw}" >> "$GITHUB_ENV"
+          echo "Resolved release: tag=${raw}, title=v${raw}"
 
       - name: Set up JDK
         uses: actions/setup-java@v4
@@ -71,9 +87,10 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          HAPP_CRYPTO_ASSETS_PASSPHRASE: ${{ secrets.HAPP_CRYPTO_ASSETS_PASSPHRASE }}
         run: |
           missing=0
-          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD HAPP_CRYPTO_ASSETS_PASSPHRASE; do
             if [ -z "${!name}" ]; then
               echo "::error title=Missing secret::$name is not configured in repository secrets"
               missing=1
@@ -99,6 +116,60 @@ jobs:
           EOF
           chmod 600 "${KEYSTORE_PATH}" android/key.properties
 
+      - name: Restore private Happ crypto assets
+        shell: bash
+        env:
+          HAPP_CRYPTO_ASSETS_PASSPHRASE: ${{ secrets.HAPP_CRYPTO_ASSETS_PASSPHRASE }}
+        run: |
+          encrypted_assets=".github/private/happ_crypto_assets.zip.gpg"
+          if [ ! -s "${encrypted_assets}" ]; then
+            echo "::error title=Missing encrypted Happ crypto assets::${encrypted_assets} is missing or empty"
+            exit 1
+          fi
+          tmp_dir="$(mktemp -d)"
+          gpg --batch --yes --pinentry-mode loopback \
+            --passphrase "$HAPP_CRYPTO_ASSETS_PASSPHRASE" \
+            --output "${tmp_dir}/happ_crypto_assets.zip" \
+            --decrypt "${encrypted_assets}"
+          unzip -q "${tmp_dir}/happ_crypto_assets.zip" -d "${tmp_dir}/unzipped"
+          mkdir -p assets/happ_crypto
+          if [ -d "${tmp_dir}/unzipped/assets/happ_crypto" ]; then
+            cp -R "${tmp_dir}/unzipped/assets/happ_crypto/." assets/happ_crypto/
+          else
+            cp -R "${tmp_dir}/unzipped/." assets/happ_crypto/
+          fi
+          for file in selectors.json expanded_rsa_keys.json crypt51_rsa_keys.json native_rsa_keys.json; do
+            if [ ! -s "assets/happ_crypto/${file}" ]; then
+              echo "::error title=Missing Happ crypto asset::assets/happ_crypto/${file} is missing or empty"
+              exit 1
+            fi
+          done
+          python3 - <<'PY'
+          from pathlib import Path
+
+          pubspec = Path("pubspec.yaml")
+          lines = pubspec.read_text(encoding="utf-8").splitlines()
+          entries = [
+              "    - assets/happ_crypto/crypt51_rsa_keys.json",
+              "    - assets/happ_crypto/expanded_rsa_keys.json",
+              "    - assets/happ_crypto/native_rsa_keys.json",
+              "    - assets/happ_crypto/selectors.json",
+          ]
+          if all(entry in lines for entry in entries):
+              raise SystemExit(0)
+          out = []
+          inserted = False
+          for line in lines:
+              out.append(line)
+              if line.strip() == "assets:" and not inserted:
+                  out.extend(entries)
+                  inserted = True
+          if not inserted:
+              raise SystemExit("Could not find flutter assets section in pubspec.yaml")
+          pubspec.write_text("\n".join(out) + "\n", encoding="utf-8")
+          PY
+          rm -rf "${tmp_dir}"
+
       - name: Install dependencies
         run: flutter pub get
 
@@ -106,57 +177,84 @@ jobs:
         run: flutter gen-l10n
 
       - name: Generate Pigeon bindings
-        shell: bash
-        run: |
-          if [ -f pigeons/singbox_api.dart ]; then
-            dart run pigeon --input pigeons/singbox_api.dart
-          else
-            echo "No Pigeon schema found; skipping."
-          fi
+        run: dart run pigeon --input pigeons/singbox_api.dart
 
       - name: Analyze
         run: flutter analyze
 
       - name: Test
+        env:
+          HAPP_CRYPTO_TESTS: "true"
         run: flutter test
 
-      - name: Build signed release APK
+      - name: Build universal and ABI APKs
         shell: bash
         run: |
-          args=(--release)
-          if [ -n "${BUILD_NAME}" ]; then
-            args+=(--build-name "${BUILD_NAME}")
-          fi
+          mkdir -p build/release-apks
+
+          common_args=(
+            --release
+            --obfuscate
+            --build-name "${RELEASE_VERSION}"
+            --split-debug-info=build/debug-info/android
+          )
           if [ -n "${BUILD_NUMBER}" ]; then
-            args+=(--build-number "${BUILD_NUMBER}")
+            common_args+=(--build-number "${BUILD_NUMBER}")
           fi
-          if [ "${SPLIT_PER_ABI}" = "true" ]; then
-            args+=(--split-per-abi)
-          fi
-          flutter build apk "${args[@]}"
+
+          flutter build apk "${common_args[@]}"
+          cp build/app/outputs/flutter-apk/app-release.apk \
+            "build/release-apks/etonify-v${RELEASE_VERSION}-universal.apk"
+
+          flutter build apk "${common_args[@]}" --split-per-abi
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
+            "build/release-apks/etonify-v${RELEASE_VERSION}-arm64-v8a.apk"
+          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk \
+            "build/release-apks/etonify-v${RELEASE_VERSION}-armeabi-v7a.apk"
+          cp build/app/outputs/flutter-apk/app-x86_64-release.apk \
+            "build/release-apks/etonify-v${RELEASE_VERSION}-x86_64.apk"
 
       - name: List APK outputs
-        run: ls -lah build/app/outputs/flutter-apk/*.apk
+        run: ls -lah build/release-apks/*.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: etonify-release-apk-${{ github.run_number }}
-          path: build/app/outputs/flutter-apk/*.apk
+          name: etonify-release-apks-${{ github.run_number }}
+          path: build/release-apks/*.apk
           if-no-files-found: error
           retention-days: 14
 
-      - name: Upload APK to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Upload Dart debug symbols
+        uses: actions/upload-artifact@v4
+        with:
+          name: etonify-dart-debug-info-${{ github.run_number }}
+          path: build/debug-info/android/**
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create or update draft GitHub Release
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          tag="${GITHUB_REF_NAME}"
-          if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" build/app/outputs/flutter-apk/*.apk --clobber
+          notes_file="build/release-notes.md"
+          cat > "$notes_file" <<EOF
+          Signed Android APKs built from ${GITHUB_SHA}.
+
+          Assets:
+          - etonify-v${RELEASE_VERSION}-universal.apk
+          - etonify-v${RELEASE_VERSION}-arm64-v8a.apk
+          - etonify-v${RELEASE_VERSION}-armeabi-v7a.apk
+          - etonify-v${RELEASE_VERSION}-x86_64.apk
+          EOF
+
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release edit "$TAG_NAME" --title "$RELEASE_TITLE" --notes-file "$notes_file"
+            gh release upload "$TAG_NAME" build/release-apks/*.apk --clobber
           else
-            gh release create "$tag" build/app/outputs/flutter-apk/*.apk \
-              --title "Etonify ${tag}" \
-              --notes "Signed Android release APK built from ${GITHUB_SHA}."
+            gh release create "$TAG_NAME" build/release-apks/*.apk \
+              --draft \
+              --title "$RELEASE_TITLE" \
+              --notes-file "$notes_file"
           fi

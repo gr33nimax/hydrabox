@@ -28,7 +28,7 @@
   "inboundTitle": "Inbound",
   "dnsTitle": "DNS",
   "whitelistTitle": "Whitelist",
-  "whitelistSubtitle": "Optional Snowtun module",
+  "whitelistSubtitle": "Reserved routing tools",
   "experimentalTitle": "Experimental",
   "experimentalSubtitle": "Multipath, Fast Open, and connection switching behavior",
   "logsTitle": "Logs",
@@ -90,6 +90,77 @@
   "aboutResourceJavaHeap": "Java heap",
   "aboutResourceSystemMemory": "Free system RAM",
   "aboutResourceBatteryTemp": "Battery temperature",
+  "updatesTitle": "Updates",
+  "updatesSubtitle": "Check GitHub Releases and download the matching APK.",
+  "updatesChecking": "Checking for updates…",
+  "updatesCheckAction": "Check now",
+  "updatesRetryAction": "Retry",
+  "updatesDownloadAction": "Download update",
+  "updatesDownloadWarning": "Keep Etonify open until the download finishes.",
+  "updatesUpToDateTitle": "Etonify is up to date",
+  "updatesUpToDateSubtitle": "Installed version: {version}",
+  "@updatesUpToDateSubtitle": {
+    "placeholders": {
+      "version": { "type": "String" }
+    }
+  },
+  "updatesAvailableTitle": "Update available",
+  "updatesAvailableSubtitle": "{version} · {size}",
+  "@updatesAvailableSubtitle": {
+    "placeholders": {
+      "version": { "type": "String" },
+      "size": { "type": "String" }
+    }
+  },
+  "updatesDownloadingTitle": "Downloading update",
+  "updatesDownloadedTitle": "Update downloaded",
+  "updatesDownloadedSubtitle": "Saved to app update cache: {fileName}",
+  "@updatesDownloadedSubtitle": {
+    "placeholders": {
+      "fileName": { "type": "String" }
+    }
+  },
+  "updatesErrorTitle": "Could not check updates",
+  "updatesErrorSubtitle": "If GitHub is blocked on this network, Etonify will try again tomorrow.",
+  "updatesCurrentVersion": "Current version",
+  "updatesLatestVersion": "Latest version",
+  "updatesAsset": "APK",
+  "updatesLastChecked": "Last checked: {time}",
+  "@updatesLastChecked": {
+    "placeholders": {
+      "time": { "type": "String" }
+    }
+  },
+  "updatesReleaseNotesTitle": "What's new",
+  "updatesNoReleaseNotes": "This release does not include notes.",
+  "updatesProgressBytes": "{downloaded} / {total}",
+  "@updatesProgressBytes": {
+    "placeholders": {
+      "downloaded": { "type": "String" },
+      "total": { "type": "String" }
+    }
+  },
+  "updatesProgressSpeedEta": "{speed}/s · {eta} left",
+  "@updatesProgressSpeedEta": {
+    "placeholders": {
+      "speed": { "type": "String" },
+      "eta": { "type": "String" }
+    }
+  },
+  "updatesEtaSeconds": "{seconds}s",
+  "@updatesEtaSeconds": {
+    "placeholders": {
+      "seconds": { "type": "int" }
+    }
+  },
+  "updatesEtaMinutes": "{minutes}m {seconds}s",
+  "@updatesEtaMinutes": {
+    "placeholders": {
+      "minutes": { "type": "int" },
+      "seconds": { "type": "int" }
+    }
+  },
+  "updatesUnknownSize": "Unknown size",
   "appVersionLabel": "Client version",
   "currentProfileLabel": "Current profile",
   "selectedProxyLabel": "Selected proxy",
@@ -188,8 +259,14 @@
   "hapticSubtitle": "Light vibration for important actions",
   "hideServerIpTitle": "Hide server IP",
   "hideServerIpSubtitle": "Masks last two octets of the IP address",
-  "progressiveBlurTitle": "Progressive blur",
-  "progressiveBlurSubtitle": "Blurs content under headers and navigation bars",
+  "performanceModeTitle": "Performance mode",
+  "performanceModeCool": "Cool",
+  "performanceModeBalanced": "Balanced",
+  "performanceModePerformance": "Performance",
+  "performanceModeCoolSubtitle": "Lowest heat and background load for daily Android use.",
+  "performanceModeBalancedSubtitle": "Moderate checks and battery use.",
+  "performanceModePerformanceSubtitle": "Faster checks with more CPU, traffic, and heat.",
+  "performanceModeRecommendation": "Recommended: keep Cool for now. This setting will be reworked soon.",
   "enableInboundTitle": "Enabled",
   "vpnInDescription": "VPN TUN is the Android system VPN path for phone traffic. Apps see an Android VPN, while routing decides what goes through proxy or direct.",
   "vpnInboundEnabledSubtitle": "Creates a VPN TUN inbound and routes traffic through it",
@@ -494,69 +571,6 @@
   "splitRoutingNoAppsSubtitle": "Pick Android apps to apply split routing to them",
   "splitRoutingManualEditorTitle": "Manual package list",
   "splitRoutingManualEditorSubtitle": "Use this if you want to edit package names directly",
-  "snowtunTitle": "Snowtun",
-  "snowtunSubtitle": "Optional module for special connections",
-  "snowtunDescription": "Install Snowtun only if a subscription explicitly needs it. Normal VPN connections work without this module.",
-  "snowtunManifestUrlTitle": "Manifest URL",
-  "snowtunManifestUrlHint": "https://host.example/snowtun/manifest.json",
-  "snowtunUpdateAction": "Update from server",
-  "snowtunDeleteAction": "Delete local binary",
-  "snowtunStatusTitle": "Local status",
-  "snowtunInstalledLabel": "Installed",
-  "snowtunInstalledYes": "Yes",
-  "snowtunInstalledNo": "No",
-  "snowtunVersionLabel": "Version",
-  "snowtunChecksumLabel": "SHA-256",
-  "snowtunSizeLabel": "Size",
-  "snowtunChunkCountLabel": "Chunks",
-  "snowtunPathLabel": "Binary path",
-  "snowtunInstalledAtLabel": "Installed at",
-  "snowtunImportSourceLabel": "Import source",
-  "snowtunImportSourceValue": "sing-box outbound only",
-  "snowtunIdleStatus": "Ready.",
-  "snowtunFetchingManifest": "Preparing download…",
-  "snowtunDownloadingChunks": "Downloading…",
-  "@snowtunDownloadingChunks": {
-    "placeholders": {
-      "current": { "type": "int" },
-      "total": { "type": "int" }
-    }
-  },
-  "snowtunFinalizing": "Finishing…",
-  "snowtunUpdated": "Download completed.",
-  "snowtunInstalledMessage": "The component is installed.",
-  "snowtunRemovingStatus": "Removing module…",
-  "snowtunReadyShort": "Ready.",
-  "snowtunNotInstalledShort": "The module is not installed yet.",
-  "snowtunPreparingInstallStatus": "Preparing install…",
-  "snowtunDownloadingModuleStatus": "Downloading module…",
-  "snowtunInstallingStatus": "Installing…",
-  "snowtunStoragePrepareFailed": "Failed to prepare Snowtun storage. Update the app and try again.",
-  "snowtunIntegrityFailed": "The downloaded file failed the integrity check.",
-  "snowtunInstallPermissionRequired": "Allow Etonify to install additional modules, then try again.",
-  "snowtunInstallPermissionTitle": "Install permission",
-  "snowtunInstallPermissionMessage": "Snowtun is installed as an optional module. Android needs permission to install from this app; the base VPN still works without this module.",
-  "snowtunInstallPermissionSkip": "Not now",
-  "snowtunInstallPermissionAllow": "Allow",
-  "snowtunLaunchPrepareFailed": "The file was downloaded, but Android did not allow preparing it for launch.",
-  "snowtunDownloadedFileMissing": "The downloaded file was not found.",
-  "snowtunDownloadModuleFailed": "Failed to download the module from the server.",
-  "snowtunNoCompatibleModule": "No compatible Snowtun module is available for this device.",
-  "snowtunInstallOrRemoveFailedWithDetail": "Android failed to install or remove the module: {detail}",
-  "@snowtunInstallOrRemoveFailedWithDetail": {
-    "placeholders": {
-      "detail": { "type": "String" }
-    }
-  },
-  "snowtunInstallOrRemoveFailed": "Android failed to install or remove the optional module.",
-  "snowtunWrongAppVersion": "This module was built for a different app version.",
-  "snowtunIncompatibleModulePackage": "The server returned an incompatible module package.",
-  "snowtunGenericFailure": "Failed to download or install the component.",
-  "snowtunModuleDescription": "Snowtun is an optional Android module for specific outbound types. Leave it uninstalled unless your provider requires it.",
-  "snowtunInstalledSummary": "Already installed",
-  "snowtunNotInstalledSummary": "Not installed yet",
-  "snowtunInstallModuleAction": "Install module",
-  "snowtunRemoveModuleAction": "Remove module",
   "@refreshIntervalDaysShort": {
     "placeholders": {
       "count": { "type": "int" }

@@ -289,11 +289,6 @@ interface SingboxHostApi {
   fun getHappCrypt5Support(callback: (Result<Map<String?, Any?>>) -> Unit)
   fun getInstalledApps(callback: (Result<List<Map<String?, Any?>?>>) -> Unit)
   fun setQuickSettingsTileLabel(label: String, callback: (Result<Unit>) -> Unit)
-  fun ensureExecutable(path: String, callback: (Result<Unit>) -> Unit)
-  fun getSnowtunModuleStatus(splitName: String, nativeLibraryName: String, callback: (Result<Map<String?, Any?>>) -> Unit)
-  fun installSnowtunModule(apkPath: String, expectedPackageName: String, splitName: String, callback: (Result<Unit>) -> Unit)
-  fun removeSnowtunModule(splitName: String, callback: (Result<Unit>) -> Unit)
-  fun requestInstallPackagesPermission(callback: (Result<Unit>) -> Unit)
 
   companion object {
     /** The codec used by SingboxHostApi. */
@@ -804,103 +799,6 @@ interface SingboxHostApi {
             val args = message as List<Any?>
             val labelArg = args[0] as String
             api.setQuickSettingsTileLabel(labelArg) { result: Result<Unit> ->
-              val error = result.exceptionOrNull()
-              if (error != null) {
-                reply.reply(SingboxApiPigeonUtils.wrapError(error))
-              } else {
-                reply.reply(SingboxApiPigeonUtils.wrapResult(null))
-              }
-            }
-          }
-        } else {
-          channel.setMessageHandler(null)
-        }
-      }
-      run {
-        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.meow_client.SingboxHostApi.ensureExecutable$separatedMessageChannelSuffix", codec)
-        if (api != null) {
-          channel.setMessageHandler { message, reply ->
-            val args = message as List<Any?>
-            val pathArg = args[0] as String
-            api.ensureExecutable(pathArg) { result: Result<Unit> ->
-              val error = result.exceptionOrNull()
-              if (error != null) {
-                reply.reply(SingboxApiPigeonUtils.wrapError(error))
-              } else {
-                reply.reply(SingboxApiPigeonUtils.wrapResult(null))
-              }
-            }
-          }
-        } else {
-          channel.setMessageHandler(null)
-        }
-      }
-      run {
-        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.meow_client.SingboxHostApi.getSnowtunModuleStatus$separatedMessageChannelSuffix", codec)
-        if (api != null) {
-          channel.setMessageHandler { message, reply ->
-            val args = message as List<Any?>
-            val splitNameArg = args[0] as String
-            val nativeLibraryNameArg = args[1] as String
-            api.getSnowtunModuleStatus(splitNameArg, nativeLibraryNameArg) { result: Result<Map<String?, Any?>> ->
-              val error = result.exceptionOrNull()
-              if (error != null) {
-                reply.reply(SingboxApiPigeonUtils.wrapError(error))
-              } else {
-                val data = result.getOrNull()
-                reply.reply(SingboxApiPigeonUtils.wrapResult(data))
-              }
-            }
-          }
-        } else {
-          channel.setMessageHandler(null)
-        }
-      }
-      run {
-        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.meow_client.SingboxHostApi.installSnowtunModule$separatedMessageChannelSuffix", codec)
-        if (api != null) {
-          channel.setMessageHandler { message, reply ->
-            val args = message as List<Any?>
-            val apkPathArg = args[0] as String
-            val expectedPackageNameArg = args[1] as String
-            val splitNameArg = args[2] as String
-            api.installSnowtunModule(apkPathArg, expectedPackageNameArg, splitNameArg) { result: Result<Unit> ->
-              val error = result.exceptionOrNull()
-              if (error != null) {
-                reply.reply(SingboxApiPigeonUtils.wrapError(error))
-              } else {
-                reply.reply(SingboxApiPigeonUtils.wrapResult(null))
-              }
-            }
-          }
-        } else {
-          channel.setMessageHandler(null)
-        }
-      }
-      run {
-        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.meow_client.SingboxHostApi.removeSnowtunModule$separatedMessageChannelSuffix", codec)
-        if (api != null) {
-          channel.setMessageHandler { message, reply ->
-            val args = message as List<Any?>
-            val splitNameArg = args[0] as String
-            api.removeSnowtunModule(splitNameArg) { result: Result<Unit> ->
-              val error = result.exceptionOrNull()
-              if (error != null) {
-                reply.reply(SingboxApiPigeonUtils.wrapError(error))
-              } else {
-                reply.reply(SingboxApiPigeonUtils.wrapResult(null))
-              }
-            }
-          }
-        } else {
-          channel.setMessageHandler(null)
-        }
-      }
-      run {
-        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.meow_client.SingboxHostApi.requestInstallPackagesPermission$separatedMessageChannelSuffix", codec)
-        if (api != null) {
-          channel.setMessageHandler { _, reply ->
-            api.requestInstallPackagesPermission{ result: Result<Unit> ->
               val error = result.exceptionOrNull()
               if (error != null) {
                 reply.reply(SingboxApiPigeonUtils.wrapError(error))

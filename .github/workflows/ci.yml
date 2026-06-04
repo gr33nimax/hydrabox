@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - develop
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: "3.44.0"
+  JAVA_VERSION: "21"
+
+jobs:
+  flutter-checks:
+    name: Flutter checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Show tool versions
+        run: |
+          java -version
+          flutter --version
+          dart --version
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate localization
+        run: flutter gen-l10n
+
+      - name: Generate Pigeon bindings
+        shell: bash
+        run: |
+          if [ -f pigeons/singbox_api.dart ]; then
+            dart run pigeon --input pigeons/singbox_api.dart
+          else
+            echo "No Pigeon schema found; skipping."
+          fi
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test

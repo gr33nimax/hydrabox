@@ -9,8 +9,6 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <!-- Needed for per-app routing UI to enumerate installed applications. -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/>
-    <!-- Used only by the optional Snowtun split-module installer flow. -->
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <!-- Default performance mode keeps wake lock off; this backs the explicit performance path. -->
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
 

@@ -105,26 +105,4 @@ abstract class SingboxHostApi {
 
   @async
   void setQuickSettingsTileLabel(String label);
-
-  @async
-  void ensureExecutable(String path);
-
-  @async
-  Map<String?, Object?> getSnowtunModuleStatus(
-    String splitName,
-    String nativeLibraryName,
-  );
-
-  @async
-  void installSnowtunModule(
-    String apkPath,
-    String expectedPackageName,
-    String splitName,
-  );
-
-  @async
-  void removeSnowtunModule(String splitName);
-
-  @async
-  void requestInstallPackagesPermission();
 }

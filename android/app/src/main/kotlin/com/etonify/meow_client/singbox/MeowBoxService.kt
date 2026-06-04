@@ -8,7 +8,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.os.PowerManager
@@ -50,8 +49,6 @@ class MeowBoxService(
     }
 
     private val executor = Executors.newSingleThreadExecutor()
-
-    private var protectServer: SnowtunProtectServer? = null
 
     @Volatile
     private var commandServer: CommandServer? = null
@@ -221,9 +218,6 @@ class MeowBoxService(
         }
         val configHash = config.hashCode()
         val preparedConfig = prepareConfig(config)
-        if (!startProtectServerIfNeeded(preparedConfig)) {
-            return
-        }
         try {
             val server = commandServer ?: createCommandServer()
             Log.i(TAG, "starting/reloading libbox service")
@@ -277,7 +271,6 @@ class MeowBoxService(
         commandServer = null
         unregisterRuntimeReceiver()
         MeowDefaultNetworkMonitor.stop()
-        stopProtectServer()
         forceCloseTunFd(source)
         runCleanupStep("disconnect command client source=$source") {
             SingboxController.disconnectClient()
@@ -359,39 +352,6 @@ class MeowBoxService(
             runCatching { server.close() }
             throw error
         }
-    }
-
-    private fun startProtectServerIfNeeded(config: String): Boolean {
-        if (!config.contains("\"protect_path\"")) {
-            stopProtectServer()
-            return true
-        }
-        val vpnService = service as? VpnService ?: return true
-        if (protectServer != null) {
-            return true
-        }
-        val server = SnowtunProtectServer(
-            vpnService,
-            SnowtunProtectServer.DEFAULT_SOCKET_PATH,
-        )
-        return runCatching {
-            server.start()
-            protectServer = server
-            true
-        }.getOrElse { error ->
-            protectServer = null
-            Log.e(TAG, "failed to start protect server", error)
-            MeowDiagnostics.log(TAG, "failed to start protect server", error)
-            fail("Failed to start protect server: ${error.message ?: error}")
-            false
-        }
-    }
-
-    private fun stopProtectServer() {
-        runCatching { protectServer?.stop() }.onFailure {
-            MeowDiagnostics.log(TAG, "protect server stop failed", it)
-        }
-        protectServer = null
     }
 
     private fun runCleanupStep(label: String, block: () -> Unit) {

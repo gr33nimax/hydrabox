@@ -10,6 +10,20 @@ const _legacyBazaruCrypt5Link =
 const _legacyVipCrypt5Link =
     'happ://crypt5/rwlbvcel5ygYEIGL8j18LXR9ciC/KWAvquDsXc70T2zhF1eg8LoJHQF1r5jglJdlDOadfF7hvA7234wCQBBHh8jZKqDfbcDkekU0eOXAJBtlQZ0/AIf9QmJtm2DQncnuwwmFHHKQMvq1o7RnXI8+bmO75HRFHh2HUOHvTuB+IXmmeLrSpxfUTpJOtZ4EYFdLwlQ6pzzu4IMb0=yGo0m06lAPXcwaQdB9XYwUdaF5cS/IWYO6jTThYXgBS1oPd+97MMfJRqj4IjwzZQPn/UQFdxvQlXMrc3+7xARp/uwOkA5t6BMgUF9ELHz1jhGSvfQNtfuIOKcBHT5t4hHjIMufz0eT4u0Ihez8eoMZ/SaruxMoUd/cR173KqFShs3u49qwHYTpOK4EQqUjOpM2CMmbEZTAK4WFvzkAYcu7eM1QYriwqnb1RNempYCG8Ww2JoXE6WAOPlkO8MoyJtAkaL7EDfYoGn78CQf3cbwKRTZ7l/0g4P4vx95OelsoRBCgEv5f5sPt8fgN0uht2ZGbtoKkZTlOsIpTUMAsNemt3H8jUOX3xU2m0AKFvakogIFiZRmwy1v22AR7eW51/Hu6ZOcITMaJBKTLfxcO/SF5iLfiVMJOf7fVq9FrSgKPWIhO01AlQQattbVrYbhRGhE4lOCrUcE6bHmxZSVNPyN35qZEm+nzAqm0Ycf2XgAr1su9o/NswP1EdP7pgjtTUMqAPB4cA9qnthWGjpLvOULBd96eZv8SyAfpmA7b+FghL7+Ita0gMlAk1FvGHVg9ArPkKRavEZxWNuK9n2fayAUB+QwNjBPxQVkcO9BzSWE0Luq9w6C6FugIr8RLcyzCefH8CLNROG/566kSS5iuNCkl5RCHKxCggCK84fHg54Bxs=FChgfd';
 
+bool get _runHappCryptoAssetTests =>
+    Platform.environment['HAPP_CRYPTO_TESTS'] == 'true';
+
+bool _skipWhenHappCryptoAssetsAreUnavailable() {
+  if (!_runHappCryptoAssetTests) {
+    markTestSkipped(
+      'Happ crypto asset tests require HAPP_CRYPTO_TESTS=true and '
+      'private assets restored into assets/happ_crypto.',
+    );
+    return true;
+  }
+  return false;
+}
+
 void main() {
   test('happRequestInfo enables HWID and Happ user agent', () {
     final info = HappCryptoLinkDecoder.happRequestInfo();
@@ -30,6 +44,7 @@ void main() {
   });
 
   test('crypt5 local decoder handles sampled corpora when present', () async {
+    if (_skipWhenHappCryptoAssetsAreUnavailable()) return;
     TestWidgetsFlutterBinding.ensureInitialized();
     final files = [
       File('/home/ddosxd/code/all-happ-keys/unique_links.txt'),
@@ -51,6 +66,7 @@ void main() {
   });
 
   test('crypt5 local decoder handles legacy marker links', () async {
+    if (_skipWhenHappCryptoAssetsAreUnavailable()) return;
     TestWidgetsFlutterBinding.ensureInitialized();
 
     expect(
@@ -64,6 +80,7 @@ void main() {
   });
 
   test('crypt5 legacy keyset includes sampled marker families', () {
+    if (_skipWhenHappCryptoAssetsAreUnavailable()) return;
     final keyset =
         (jsonDecode(
                   File(

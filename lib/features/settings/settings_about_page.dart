@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:gap/gap.dart';
+import 'package:meow_client/features/settings/settings_update_page.dart';
 import 'package:meow_client/features/settings/settings_ui.dart';
 import 'package:meow_client/l10n/generated/app_localizations.dart';
 import 'package:meow_client/logging/app_log_store.dart';
@@ -14,7 +15,6 @@ class SettingsAboutPage extends StatefulWidget {
     super.key,
     required this.versionLabel,
     required this.onShowOnboarding,
-    required this.onOpenWhitelist,
   });
 
   static final Uri _coreSourceUri = Uri.parse(
@@ -23,7 +23,6 @@ class SettingsAboutPage extends StatefulWidget {
 
   final String versionLabel;
   final VoidCallback onShowOnboarding;
-  final VoidCallback onOpenWhitelist;
 
   @override
   State<SettingsAboutPage> createState() => _SettingsAboutPageState();
@@ -69,6 +68,15 @@ class _SettingsAboutPageState extends State<SettingsAboutPage> {
     );
   }
 
+  void _openUpdatePage() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) =>
+            SettingsUpdatePage(currentVersion: widget.versionLabel),
+      ),
+    );
+  }
+
   Future<void> _refreshPerformanceSnapshot() async {
     if (_performanceBusy) return;
     setState(() => _performanceBusy = true);
@@ -97,7 +105,7 @@ class _SettingsAboutPageState extends State<SettingsAboutPage> {
           appBottomSafePadding(context, 24),
         ),
         children: [
-          _AboutHero(onTap: _openTeamPage, onDoubleTap: _toggleDebugVisible),
+          _AboutHero(onDoubleTap: _toggleDebugVisible),
           const Gap(settingsIslandGap),
           Padding(
             padding: settingsScreenPadding,
@@ -117,6 +125,8 @@ class _SettingsAboutPageState extends State<SettingsAboutPage> {
                   busy: _performanceBusy,
                   onRefresh: _refreshPerformanceSnapshot,
                 ),
+                const Gap(12),
+                _AboutUpdatesCard(onOpenUpdates: _openUpdatePage),
                 AnimatedSwitcher(
                   duration: const Duration(milliseconds: 180),
                   switchInCurve: Curves.easeOutCubic,
@@ -125,10 +135,6 @@ class _SettingsAboutPageState extends State<SettingsAboutPage> {
                       ? Padding(
                           padding: const EdgeInsets.only(top: 12),
                           child: _AboutDebugCard(
-                            onOpenWhitelist: () {
-                              Navigator.of(context).pop();
-                              widget.onOpenWhitelist();
-                            },
                             onShowOnboarding: () {
                               Navigator.of(context).pop();
                               widget.onShowOnboarding();
@@ -147,9 +153,8 @@ class _SettingsAboutPageState extends State<SettingsAboutPage> {
 }
 
 class _AboutHero extends StatelessWidget {
-  const _AboutHero({required this.onTap, required this.onDoubleTap});
+  const _AboutHero({required this.onDoubleTap});
 
-  final VoidCallback onTap;
   final VoidCallback onDoubleTap;
 
   @override
@@ -159,7 +164,6 @@ class _AboutHero extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
 
     return GestureDetector(
-      onTap: onTap,
       onDoubleTap: onDoubleTap,
       child: Padding(
         padding: settingsScreenPadding,
@@ -168,7 +172,11 @@ class _AboutHero extends StatelessWidget {
           borderRadius: BorderRadius.circular(24),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
-            onTap: onTap,
+            onTap: () {
+              if (AppVisualEffects.of(context).hapticEnabled) {
+                HapticFeedback.selectionClick();
+              }
+            },
             child: DecoratedBox(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(24),
@@ -288,6 +296,49 @@ class _AboutInfoCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _AboutUpdatesCard extends StatelessWidget {
+  const _AboutUpdatesCard({required this.onOpenUpdates});
+
+  final VoidCallback onOpenUpdates;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
+    final cs = theme.colorScheme;
+    return Card(
+      margin: EdgeInsets.zero,
+      child: ListTile(
+        onTap: onOpenUpdates,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+        leading: Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: cs.primaryContainer,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Icon(
+            Icons.system_update_rounded,
+            color: cs.onPrimaryContainer,
+          ),
+        ),
+        title: Text(
+          l10n.updatesTitle,
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(l10n.updatesSubtitle),
+        ),
+        trailing: const Icon(Icons.chevron_right_rounded),
       ),
     );
   }
@@ -694,12 +745,8 @@ class _DeveloperCard extends StatelessWidget {
 }
 
 class _AboutDebugCard extends StatelessWidget {
-  const _AboutDebugCard({
-    required this.onOpenWhitelist,
-    required this.onShowOnboarding,
-  });
+  const _AboutDebugCard({required this.onShowOnboarding});
 
-  final VoidCallback onOpenWhitelist;
   final VoidCallback onShowOnboarding;
 
   @override
@@ -729,12 +776,6 @@ class _AboutDebugCard extends StatelessWidget {
               ),
             ),
             const Gap(14),
-            FilledButton.tonalIcon(
-              onPressed: onOpenWhitelist,
-              icon: const Icon(Icons.verified_user_rounded),
-              label: Text(l10n.whitelistTitle),
-            ),
-            const Gap(8),
             FilledButton.tonalIcon(
               onPressed: onShowOnboarding,
               icon: const Icon(Icons.rocket_launch_rounded),

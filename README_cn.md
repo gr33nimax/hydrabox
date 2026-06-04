@@ -37,6 +37,7 @@ Etonify 仍处于早期公开开发阶段。目前 Android 是唯一的生产目
 - DNS 预设与自定义 DNS resolver，支持 UDP、TCP、DoT、DoH 和设备 DNS。
 - Russia routing helpers 与本地 AdGuard 风格规则。
 - 流量仪表板，显示实时速度、会话统计、活动 profile、活动 proxy 和轻量图表。
+- GitHub Releases 更新中心，可按设备架构选择 APK 并显示下载进度。
 - Runtime 日志、诊断、内存清理 hooks，以及对已知敏感值的脱敏。
 - 应用内已有 RU/EN 本地化，计划继续扩展用户界面翻译。
 
@@ -80,6 +81,7 @@ adb install -r build\app\outputs\flutter-apk\app-release.apk
 - `lib/l10n/generated` 下的生成文件会保留在源码树中，因为应用会直接导入它们。
 - `third_party/flutter_circle_flags` 是 `pubspec.yaml` 中需要的本地 path dependency。
 - 第三方组件和项目历史说明记录在 [NOTICE.md](NOTICE.md)。
+- 官方 release 构建可以包含通过 GitHub Actions secrets 恢复的私有 Happ crypto compatibility assets。这些 assets 不属于公开源码树。
 
 ## 许可证
 

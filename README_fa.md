@@ -37,6 +37,7 @@ Etonify در مرحله‌ی اولیه‌ی توسعه‌ی عمومی است. 
 - DNS preset و DNS resolver سفارشی، شامل UDP، TCP، DoT، DoH و DNS دستگاه.
 - Russia routing helpers و ruleهای محلی شبیه AdGuard.
 - داشبورد ترافیک با سرعت زنده، آمار session، profile فعال، proxy فعال و نمودار سبک.
+- مرکز به‌روزرسانی GitHub Releases با انتخاب APK بر اساس معماری دستگاه و نمایش پیشرفت دانلود.
 - runtime logs، diagnostics، hooks پاک‌سازی حافظه و redaction برای مقادیر حساس شناخته‌شده.
 - لوکالایزیشن RU/EN در خود برنامه؛ ترجمه‌های بیشتر در برنامه‌ی آینده است.
 
@@ -80,6 +81,7 @@ adb install -r build\app\outputs\flutter-apk\app-release.apk
 - فایل‌های تولیدشده‌ی localization در `lib/l10n/generated` در source tree نگهداری می‌شوند، چون برنامه مستقیماً آن‌ها را import می‌کند.
 - `third_party/flutter_circle_flags` به عنوان local path dependency در `pubspec.yaml` لازم است.
 - توضیحات مربوط به componentهای شخص ثالث و پیشینه‌ی پروژه در [NOTICE.md](NOTICE.md) آمده است.
+- buildهای رسمی release می‌توانند private Happ crypto compatibility assets را از GitHub Actions secrets بازیابی و داخل APK قرار دهند. این assets بخشی از source tree عمومی نیستند.
 
 ## مجوز
 

@@ -227,7 +227,7 @@ abstract class AppLocalizations {
   /// No description provided for @whitelistSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Optional Snowtun module'**
+  /// **'Reserved routing tools'**
   String get whitelistSubtitle;
 
   /// No description provided for @experimentalTitle.
@@ -566,6 +566,168 @@ abstract class AppLocalizations {
   /// **'Battery temperature'**
   String get aboutResourceBatteryTemp;
 
+  /// No description provided for @updatesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Updates'**
+  String get updatesTitle;
+
+  /// No description provided for @updatesSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Check GitHub Releases and download the matching APK.'**
+  String get updatesSubtitle;
+
+  /// No description provided for @updatesChecking.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking for updates…'**
+  String get updatesChecking;
+
+  /// No description provided for @updatesCheckAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Check now'**
+  String get updatesCheckAction;
+
+  /// No description provided for @updatesRetryAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get updatesRetryAction;
+
+  /// No description provided for @updatesDownloadAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Download update'**
+  String get updatesDownloadAction;
+
+  /// No description provided for @updatesDownloadWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep Etonify open until the download finishes.'**
+  String get updatesDownloadWarning;
+
+  /// No description provided for @updatesUpToDateTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Etonify is up to date'**
+  String get updatesUpToDateTitle;
+
+  /// No description provided for @updatesUpToDateSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Installed version: {version}'**
+  String updatesUpToDateSubtitle(String version);
+
+  /// No description provided for @updatesAvailableTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Update available'**
+  String get updatesAvailableTitle;
+
+  /// No description provided for @updatesAvailableSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'{version} · {size}'**
+  String updatesAvailableSubtitle(String version, String size);
+
+  /// No description provided for @updatesDownloadingTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading update'**
+  String get updatesDownloadingTitle;
+
+  /// No description provided for @updatesDownloadedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Update downloaded'**
+  String get updatesDownloadedTitle;
+
+  /// No description provided for @updatesDownloadedSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved to app update cache: {fileName}'**
+  String updatesDownloadedSubtitle(String fileName);
+
+  /// No description provided for @updatesErrorTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not check updates'**
+  String get updatesErrorTitle;
+
+  /// No description provided for @updatesErrorSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'If GitHub is blocked on this network, Etonify will try again tomorrow.'**
+  String get updatesErrorSubtitle;
+
+  /// No description provided for @updatesCurrentVersion.
+  ///
+  /// In en, this message translates to:
+  /// **'Current version'**
+  String get updatesCurrentVersion;
+
+  /// No description provided for @updatesLatestVersion.
+  ///
+  /// In en, this message translates to:
+  /// **'Latest version'**
+  String get updatesLatestVersion;
+
+  /// No description provided for @updatesAsset.
+  ///
+  /// In en, this message translates to:
+  /// **'APK'**
+  String get updatesAsset;
+
+  /// No description provided for @updatesLastChecked.
+  ///
+  /// In en, this message translates to:
+  /// **'Last checked: {time}'**
+  String updatesLastChecked(String time);
+
+  /// No description provided for @updatesReleaseNotesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'What\'s new'**
+  String get updatesReleaseNotesTitle;
+
+  /// No description provided for @updatesNoReleaseNotes.
+  ///
+  /// In en, this message translates to:
+  /// **'This release does not include notes.'**
+  String get updatesNoReleaseNotes;
+
+  /// No description provided for @updatesProgressBytes.
+  ///
+  /// In en, this message translates to:
+  /// **'{downloaded} / {total}'**
+  String updatesProgressBytes(String downloaded, String total);
+
+  /// No description provided for @updatesProgressSpeedEta.
+  ///
+  /// In en, this message translates to:
+  /// **'{speed}/s · {eta} left'**
+  String updatesProgressSpeedEta(String speed, String eta);
+
+  /// No description provided for @updatesEtaSeconds.
+  ///
+  /// In en, this message translates to:
+  /// **'{seconds}s'**
+  String updatesEtaSeconds(int seconds);
+
+  /// No description provided for @updatesEtaMinutes.
+  ///
+  /// In en, this message translates to:
+  /// **'{minutes}m {seconds}s'**
+  String updatesEtaMinutes(int minutes, int seconds);
+
+  /// No description provided for @updatesUnknownSize.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown size'**
+  String get updatesUnknownSize;
+
   /// No description provided for @appVersionLabel.
   ///
   /// In en, this message translates to:
@@ -878,17 +1040,53 @@ abstract class AppLocalizations {
   /// **'Masks last two octets of the IP address'**
   String get hideServerIpSubtitle;
 
-  /// No description provided for @progressiveBlurTitle.
+  /// No description provided for @performanceModeTitle.
   ///
   /// In en, this message translates to:
-  /// **'Progressive blur'**
-  String get progressiveBlurTitle;
+  /// **'Performance mode'**
+  String get performanceModeTitle;
 
-  /// No description provided for @progressiveBlurSubtitle.
+  /// No description provided for @performanceModeCool.
   ///
   /// In en, this message translates to:
-  /// **'Blurs content under headers and navigation bars'**
-  String get progressiveBlurSubtitle;
+  /// **'Cool'**
+  String get performanceModeCool;
+
+  /// No description provided for @performanceModeBalanced.
+  ///
+  /// In en, this message translates to:
+  /// **'Balanced'**
+  String get performanceModeBalanced;
+
+  /// No description provided for @performanceModePerformance.
+  ///
+  /// In en, this message translates to:
+  /// **'Performance'**
+  String get performanceModePerformance;
+
+  /// No description provided for @performanceModeCoolSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Lowest heat and background load for daily Android use.'**
+  String get performanceModeCoolSubtitle;
+
+  /// No description provided for @performanceModeBalancedSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Moderate checks and battery use.'**
+  String get performanceModeBalancedSubtitle;
+
+  /// No description provided for @performanceModePerformanceSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Faster checks with more CPU, traffic, and heat.'**
+  String get performanceModePerformanceSubtitle;
+
+  /// No description provided for @performanceModeRecommendation.
+  ///
+  /// In en, this message translates to:
+  /// **'Recommended: keep Cool for now. This setting will be reworked soon.'**
+  String get performanceModeRecommendation;
 
   /// No description provided for @enableInboundTitle.
   ///
@@ -2190,318 +2388,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Use this if you want to edit package names directly'**
   String get splitRoutingManualEditorSubtitle;
-
-  /// No description provided for @snowtunTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Snowtun'**
-  String get snowtunTitle;
-
-  /// No description provided for @snowtunSubtitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Optional module for special connections'**
-  String get snowtunSubtitle;
-
-  /// No description provided for @snowtunDescription.
-  ///
-  /// In en, this message translates to:
-  /// **'Install Snowtun only if a subscription explicitly needs it. Normal VPN connections work without this module.'**
-  String get snowtunDescription;
-
-  /// No description provided for @snowtunManifestUrlTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Manifest URL'**
-  String get snowtunManifestUrlTitle;
-
-  /// No description provided for @snowtunManifestUrlHint.
-  ///
-  /// In en, this message translates to:
-  /// **'https://host.example/snowtun/manifest.json'**
-  String get snowtunManifestUrlHint;
-
-  /// No description provided for @snowtunUpdateAction.
-  ///
-  /// In en, this message translates to:
-  /// **'Update from server'**
-  String get snowtunUpdateAction;
-
-  /// No description provided for @snowtunDeleteAction.
-  ///
-  /// In en, this message translates to:
-  /// **'Delete local binary'**
-  String get snowtunDeleteAction;
-
-  /// No description provided for @snowtunStatusTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Local status'**
-  String get snowtunStatusTitle;
-
-  /// No description provided for @snowtunInstalledLabel.
-  ///
-  /// In en, this message translates to:
-  /// **'Installed'**
-  String get snowtunInstalledLabel;
-
-  /// No description provided for @snowtunInstalledYes.
-  ///
-  /// In en, this message translates to:
-  /// **'Yes'**
-  String get snowtunInstalledYes;
-
-  /// No description provided for @snowtunInstalledNo.
-  ///
-  /// In en, this message translates to:
-  /// **'No'**
-  String get snowtunInstalledNo;
-
-  /// No description provided for @snowtunVersionLabel.
-  ///
-  /// In en, this message translates to:
-  /// **'Version'**
-  String get snowtunVersionLabel;
-
-  /// No description provided for @snowtunChecksumLabel.
-  ///
-  /// In en, this message translates to:
-  /// **'SHA-256'**
-  String get snowtunChecksumLabel;
-
-  /// No description provided for @snowtunSizeLabel.
-  ///
-  /// In en, this message translates to:
-  /// **'Size'**
-  String get snowtunSizeLabel;
-
-  /// No description provided for @snowtunChunkCountLabel.
-  ///
-  /// In en, this message translates to:
-  /// **'Chunks'**
-  String get snowtunChunkCountLabel;
-
-  /// No description provided for @snowtunPathLabel.
-  ///
-  /// In en, this message translates to:
-  /// **'Binary path'**
-  String get snowtunPathLabel;
-
-  /// No description provided for @snowtunInstalledAtLabel.
-  ///
-  /// In en, this message translates to:
-  /// **'Installed at'**
-  String get snowtunInstalledAtLabel;
-
-  /// No description provided for @snowtunImportSourceLabel.
-  ///
-  /// In en, this message translates to:
-  /// **'Import source'**
-  String get snowtunImportSourceLabel;
-
-  /// No description provided for @snowtunImportSourceValue.
-  ///
-  /// In en, this message translates to:
-  /// **'sing-box outbound only'**
-  String get snowtunImportSourceValue;
-
-  /// No description provided for @snowtunIdleStatus.
-  ///
-  /// In en, this message translates to:
-  /// **'Ready.'**
-  String get snowtunIdleStatus;
-
-  /// No description provided for @snowtunFetchingManifest.
-  ///
-  /// In en, this message translates to:
-  /// **'Preparing download…'**
-  String get snowtunFetchingManifest;
-
-  /// No description provided for @snowtunDownloadingChunks.
-  ///
-  /// In en, this message translates to:
-  /// **'Downloading…'**
-  String snowtunDownloadingChunks(int current, int total);
-
-  /// No description provided for @snowtunFinalizing.
-  ///
-  /// In en, this message translates to:
-  /// **'Finishing…'**
-  String get snowtunFinalizing;
-
-  /// No description provided for @snowtunUpdated.
-  ///
-  /// In en, this message translates to:
-  /// **'Download completed.'**
-  String get snowtunUpdated;
-
-  /// No description provided for @snowtunInstalledMessage.
-  ///
-  /// In en, this message translates to:
-  /// **'The component is installed.'**
-  String get snowtunInstalledMessage;
-
-  /// No description provided for @snowtunRemovingStatus.
-  ///
-  /// In en, this message translates to:
-  /// **'Removing module…'**
-  String get snowtunRemovingStatus;
-
-  /// No description provided for @snowtunReadyShort.
-  ///
-  /// In en, this message translates to:
-  /// **'Ready.'**
-  String get snowtunReadyShort;
-
-  /// No description provided for @snowtunNotInstalledShort.
-  ///
-  /// In en, this message translates to:
-  /// **'The module is not installed yet.'**
-  String get snowtunNotInstalledShort;
-
-  /// No description provided for @snowtunPreparingInstallStatus.
-  ///
-  /// In en, this message translates to:
-  /// **'Preparing install…'**
-  String get snowtunPreparingInstallStatus;
-
-  /// No description provided for @snowtunDownloadingModuleStatus.
-  ///
-  /// In en, this message translates to:
-  /// **'Downloading module…'**
-  String get snowtunDownloadingModuleStatus;
-
-  /// No description provided for @snowtunInstallingStatus.
-  ///
-  /// In en, this message translates to:
-  /// **'Installing…'**
-  String get snowtunInstallingStatus;
-
-  /// No description provided for @snowtunStoragePrepareFailed.
-  ///
-  /// In en, this message translates to:
-  /// **'Failed to prepare Snowtun storage. Update the app and try again.'**
-  String get snowtunStoragePrepareFailed;
-
-  /// No description provided for @snowtunIntegrityFailed.
-  ///
-  /// In en, this message translates to:
-  /// **'The downloaded file failed the integrity check.'**
-  String get snowtunIntegrityFailed;
-
-  /// No description provided for @snowtunInstallPermissionRequired.
-  ///
-  /// In en, this message translates to:
-  /// **'Allow Etonify to install additional modules, then try again.'**
-  String get snowtunInstallPermissionRequired;
-
-  /// No description provided for @snowtunInstallPermissionTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Install permission'**
-  String get snowtunInstallPermissionTitle;
-
-  /// No description provided for @snowtunInstallPermissionMessage.
-  ///
-  /// In en, this message translates to:
-  /// **'Snowtun is installed as an optional module. Android needs permission to install from this app; the base VPN still works without this module.'**
-  String get snowtunInstallPermissionMessage;
-
-  /// No description provided for @snowtunInstallPermissionSkip.
-  ///
-  /// In en, this message translates to:
-  /// **'Not now'**
-  String get snowtunInstallPermissionSkip;
-
-  /// No description provided for @snowtunInstallPermissionAllow.
-  ///
-  /// In en, this message translates to:
-  /// **'Allow'**
-  String get snowtunInstallPermissionAllow;
-
-  /// No description provided for @snowtunLaunchPrepareFailed.
-  ///
-  /// In en, this message translates to:
-  /// **'The file was downloaded, but Android did not allow preparing it for launch.'**
-  String get snowtunLaunchPrepareFailed;
-
-  /// No description provided for @snowtunDownloadedFileMissing.
-  ///
-  /// In en, this message translates to:
-  /// **'The downloaded file was not found.'**
-  String get snowtunDownloadedFileMissing;
-
-  /// No description provided for @snowtunDownloadModuleFailed.
-  ///
-  /// In en, this message translates to:
-  /// **'Failed to download the module from the server.'**
-  String get snowtunDownloadModuleFailed;
-
-  /// No description provided for @snowtunNoCompatibleModule.
-  ///
-  /// In en, this message translates to:
-  /// **'No compatible Snowtun module is available for this device.'**
-  String get snowtunNoCompatibleModule;
-
-  /// No description provided for @snowtunInstallOrRemoveFailedWithDetail.
-  ///
-  /// In en, this message translates to:
-  /// **'Android failed to install or remove the module: {detail}'**
-  String snowtunInstallOrRemoveFailedWithDetail(String detail);
-
-  /// No description provided for @snowtunInstallOrRemoveFailed.
-  ///
-  /// In en, this message translates to:
-  /// **'Android failed to install or remove the optional module.'**
-  String get snowtunInstallOrRemoveFailed;
-
-  /// No description provided for @snowtunWrongAppVersion.
-  ///
-  /// In en, this message translates to:
-  /// **'This module was built for a different app version.'**
-  String get snowtunWrongAppVersion;
-
-  /// No description provided for @snowtunIncompatibleModulePackage.
-  ///
-  /// In en, this message translates to:
-  /// **'The server returned an incompatible module package.'**
-  String get snowtunIncompatibleModulePackage;
-
-  /// No description provided for @snowtunGenericFailure.
-  ///
-  /// In en, this message translates to:
-  /// **'Failed to download or install the component.'**
-  String get snowtunGenericFailure;
-
-  /// No description provided for @snowtunModuleDescription.
-  ///
-  /// In en, this message translates to:
-  /// **'Snowtun is an optional Android module for specific outbound types. Leave it uninstalled unless your provider requires it.'**
-  String get snowtunModuleDescription;
-
-  /// No description provided for @snowtunInstalledSummary.
-  ///
-  /// In en, this message translates to:
-  /// **'Already installed'**
-  String get snowtunInstalledSummary;
-
-  /// No description provided for @snowtunNotInstalledSummary.
-  ///
-  /// In en, this message translates to:
-  /// **'Not installed yet'**
-  String get snowtunNotInstalledSummary;
-
-  /// No description provided for @snowtunInstallModuleAction.
-  ///
-  /// In en, this message translates to:
-  /// **'Install module'**
-  String get snowtunInstallModuleAction;
-
-  /// No description provided for @snowtunRemoveModuleAction.
-  ///
-  /// In en, this message translates to:
-  /// **'Remove module'**
-  String get snowtunRemoveModuleAction;
 
   /// No description provided for @refreshIntervalDaysShort.
   ///

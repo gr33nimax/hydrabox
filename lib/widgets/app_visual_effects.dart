@@ -27,7 +27,7 @@ class AppVisualEffects extends InheritedWidget {
 class _AppVisualEffectsFallback extends AppVisualEffects {
   const _AppVisualEffectsFallback()
     : super(
-        progressiveBlurEnabled: true,
+        progressiveBlurEnabled: false,
         hapticEnabled: true,
         child: const SizedBox.shrink(),
       );

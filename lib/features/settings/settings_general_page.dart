@@ -62,14 +62,12 @@ class SettingsGeneralPage extends StatelessWidget {
     this.dynamicLightScheme,
     required this.currentHapticEnabled,
     required this.currentHideServerIp,
-    required this.currentProgressiveBlurEnabled,
     required this.currentPerformanceMode,
     required this.onLocaleChanged,
     required this.onThemePreferenceChanged,
     required this.onAccentColorChanged,
     required this.onHapticChanged,
     required this.onHideServerIpChanged,
-    required this.onProgressiveBlurChanged,
     required this.onPerformanceModeChanged,
   });
 
@@ -79,14 +77,12 @@ class SettingsGeneralPage extends StatelessWidget {
   final ColorScheme? dynamicLightScheme;
   final bool currentHapticEnabled;
   final bool currentHideServerIp;
-  final bool currentProgressiveBlurEnabled;
   final AppPerformanceMode currentPerformanceMode;
   final ValueChanged<String> onLocaleChanged;
   final ValueChanged<AppThemePreference> onThemePreferenceChanged;
   final ValueChanged<String> onAccentColorChanged;
   final ValueChanged<bool> onHapticChanged;
   final ValueChanged<bool> onHideServerIpChanged;
-  final ValueChanged<bool> onProgressiveBlurChanged;
   final ValueChanged<AppPerformanceMode> onPerformanceModeChanged;
 
   String _localeName(AppLocalizations l10n, String code) => switch (code) {
@@ -265,40 +261,48 @@ class SettingsGeneralPage extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Performance mode',
+                              l10n.performanceModeTitle,
                               style: theme.textTheme.titleMedium,
                             ),
                             const Gap(4),
                             Text(
                               switch (currentPerformanceMode) {
                                 AppPerformanceMode.cool =>
-                                  'Cool: lowest heat and background load',
+                                  l10n.performanceModeCoolSubtitle,
                                 AppPerformanceMode.balanced =>
-                                  'Balanced: moderate checks and battery use',
+                                  l10n.performanceModeBalancedSubtitle,
                                 AppPerformanceMode.performance =>
-                                  'Performance: faster checks, more load',
+                                  l10n.performanceModePerformanceSubtitle,
                               },
                               style: theme.textTheme.bodyMedium?.copyWith(
                                 color: cs.onSurfaceVariant,
                               ),
                             ),
+                            const Gap(6),
+                            Text(
+                              l10n.performanceModeRecommendation,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: cs.onSurfaceVariant,
+                                height: 1.3,
+                              ),
+                            ),
                             const Gap(12),
                             SegmentedButton<AppPerformanceMode>(
-                              segments: const [
+                              segments: [
                                 ButtonSegment(
                                   value: AppPerformanceMode.cool,
-                                  icon: Icon(Icons.ac_unit_rounded),
-                                  label: Text('Cool'),
+                                  icon: const Icon(Icons.ac_unit_rounded),
+                                  label: Text(l10n.performanceModeCool),
                                 ),
                                 ButtonSegment(
                                   value: AppPerformanceMode.balanced,
-                                  icon: Icon(Icons.battery_saver_rounded),
-                                  label: Text('Balanced'),
+                                  icon: const Icon(Icons.battery_saver_rounded),
+                                  label: Text(l10n.performanceModeBalanced),
                                 ),
                                 ButtonSegment(
                                   value: AppPerformanceMode.performance,
-                                  icon: Icon(Icons.flash_on_rounded),
-                                  label: Text('Performance'),
+                                  icon: const Icon(Icons.flash_on_rounded),
+                                  label: Text(l10n.performanceModePerformance),
                                 ),
                               ],
                               selected: {currentPerformanceMode},
@@ -311,25 +315,6 @@ class SettingsGeneralPage extends StatelessWidget {
                       ),
                     ],
                   ),
-                ),
-              ),
-            ),
-
-            const Gap(settingsIslandGap),
-
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Card(
-                margin: EdgeInsets.zero,
-                child: SwitchListTile(
-                  secondary: SettingsLeadingIcon(
-                    icon: Icons.blur_on_rounded,
-                    color: cs.primary,
-                  ),
-                  title: Text(l10n.progressiveBlurTitle),
-                  subtitle: Text(l10n.progressiveBlurSubtitle),
-                  value: currentProgressiveBlurEnabled,
-                  onChanged: onProgressiveBlurChanged,
                 ),
               ),
             ),

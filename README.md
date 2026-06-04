@@ -37,6 +37,7 @@ Etonify is in early public development. Android is the only production target ri
 - DNS presets and custom DNS resolver support, including UDP, TCP, DoT, DoH, and device DNS modes.
 - Russia routing helpers and local AdGuard-style rule support.
 - Traffic dashboard with live speed, session totals, active profile, active proxy, and a lightweight graph.
+- GitHub release update center with ABI-aware APK selection and download progress.
 - Runtime logs, diagnostics, memory cleanup hooks, and redaction for known sensitive values.
 - RU/EN app localization, with more user-facing translations planned.
 
@@ -80,6 +81,7 @@ For public distribution, create a real release keystore and `android/key.propert
 - Generated l10n files under `lib/l10n/generated` are part of the source tree because the app imports them directly.
 - `third_party/flutter_circle_flags` is required by `pubspec.yaml` as a local path dependency.
 - Third-party attribution notes are tracked in [NOTICE.md](NOTICE.md).
+- Official release builds can include private Happ crypto compatibility assets restored from GitHub Actions secrets. These assets are not part of the public source tree.
 
 ## License
 

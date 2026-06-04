@@ -2,12 +2,8 @@ package com.etonify.meow_client
 
 import android.app.Activity
 import android.app.ActivityManager
-import android.app.PendingIntent
-import android.content.BroadcastReceiver
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.pm.PackageInfo
-import android.content.pm.PackageInstaller
 import android.content.pm.ApplicationInfo
 import android.net.Uri
 import android.net.VpnService
@@ -16,8 +12,6 @@ import android.os.Debug
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
-import android.system.ErrnoException
-import android.system.Os
 import android.util.Log
 // Legacy Happ native crypt5 path is intentionally disabled. Crypt5/5.1 is now
 // decrypted in Dart from extracted selector/key tables.
@@ -41,15 +35,12 @@ import java.io.File
 import java.io.FileOutputStream
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
-import java.util.UUID
 import java.util.concurrent.Executors
 
 class MainActivity : FlutterActivity() {
     companion object {
         private const val TAG = "MeowMainActivity"
         private const val QUICK_TILE_LABEL_FILE = "quick_tile_label.txt"
-        private const val SNOWTUN_INSTALL_STATUS_ACTION =
-            "com.etonify.meow_client.SNOWTUN_INSTALL_STATUS"
     }
     private val vpnPrepareRequestCode = 2048
     private val exportDocumentRequestCode = 2049
@@ -61,11 +52,6 @@ class MainActivity : FlutterActivity() {
     private var pendingPrepareResult: MethodChannel.Result? = null
     private var pendingExportResult: MethodChannel.Result? = null
     private var pendingExportContent: String? = null
-    private var pendingSnowtunSessionResult: MethodChannel.Result? = null
-    private var pendingSnowtunSessionOperation: String? = null
-    private var pendingSnowtunSessionId: Int? = null
-    private var pendingSnowtunSessionNonce: String? = null
-    private var pendingSnowtunStatusReceiver: BroadcastReceiver? = null
     private var deepLinkEventSink: EventChannel.EventSink? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private val ioExecutor = Executors.newSingleThreadExecutor()
@@ -449,410 +435,6 @@ class MainActivity : FlutterActivity() {
             MeowQuickSettingsTileService.requestRefresh(this)
         }.onFailure { error ->
             Log.w(TAG, "failed to write quick tile label", error)
-        }
-    }
-
-    private fun ensureExecutable(path: String?, result: MethodChannel.Result) {
-        val normalized = path?.trim().orEmpty()
-        if (normalized.isBlank()) {
-            result.error("empty_path", "Binary path is empty", null)
-            return
-        }
-        val file = File(normalized)
-        if (!file.exists()) {
-            result.error("missing_file", "Binary file does not exist", null)
-            return
-        }
-        val readable = file.setReadable(true, true)
-        val writable = file.setWritable(true, true)
-        var executable = file.setExecutable(true, true)
-        var chmodFallback: String? = null
-        if (!executable) {
-            try {
-                Os.chmod(normalized, 0b111_000_000)
-                executable = file.canExecute()
-                chmodFallback = "android.system.Os.chmod"
-            } catch (error: ErrnoException) {
-                chmodFallback = "android.system.Os.chmod failed: ${error.message}"
-                Log.w(TAG, "chmod fallback failed for $normalized", error)
-            } catch (error: Throwable) {
-                chmodFallback = "android.system.Os.chmod failed: ${error.message}"
-                Log.w(TAG, "chmod fallback failed for $normalized", error)
-            }
-        }
-        if (!executable) {
-            result.error(
-                "chmod_failed",
-                "Failed to mark Snowtun binary executable",
-                mapOf(
-                    "readable" to readable,
-                    "writable" to writable,
-                    "executable" to executable,
-                    "canExecute" to file.canExecute(),
-                    "chmodFallback" to chmodFallback,
-                    "path" to normalized,
-                ),
-            )
-            return
-        }
-        result.success(true)
-    }
-
-    private fun currentPackageInfo(): PackageInfo {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            packageManager.getPackageInfo(
-                packageName,
-                android.content.pm.PackageManager.PackageInfoFlags.of(0),
-            )
-        } else {
-            @Suppress("DEPRECATION")
-            packageManager.getPackageInfo(packageName, 0)
-        }
-    }
-
-    private fun currentApplicationInfo(): ApplicationInfo {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            packageManager.getApplicationInfo(
-                packageName,
-                android.content.pm.PackageManager.ApplicationInfoFlags.of(0),
-            )
-        } else {
-            @Suppress("DEPRECATION")
-            packageManager.getApplicationInfo(packageName, 0)
-        }
-    }
-
-    private fun packageLongVersionCode(info: PackageInfo): Long {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            info.longVersionCode
-        } else {
-            @Suppress("DEPRECATION")
-            info.versionCode.toLong()
-        }
-    }
-
-    private fun getSnowtunModuleStatus(
-        splitName: String?,
-        nativeLibraryName: String?,
-    ): Map<String, Any?> {
-        val normalizedSplitName = splitName?.trim().orEmpty().ifEmpty { "snowtun" }
-        val normalizedLibraryName = nativeLibraryName?.trim().orEmpty().ifEmpty {
-            "libsnowtun.so"
-        }
-        val packageInfo = currentPackageInfo()
-        val applicationInfo = currentApplicationInfo()
-        val splitNames = applicationInfo.splitNames?.toList() ?: emptyList()
-        val nativeLibraryDir = applicationInfo.nativeLibraryDir.orEmpty()
-        val binaryCandidates = listOf(
-            File(nativeLibraryDir, normalizedLibraryName),
-            File(nativeLibraryDir, normalizedLibraryName.removeSuffix(".so")),
-        )
-        val binaryPath = binaryCandidates.firstOrNull { it.exists() }?.absolutePath
-        val versionName = packageInfo.versionName.orEmpty()
-        return linkedMapOf(
-            "packageName" to packageName,
-            "versionName" to versionName,
-            "versionCode" to packageLongVersionCode(packageInfo),
-            "splitName" to normalizedSplitName,
-            "nativeLibraryName" to normalizedLibraryName,
-            "splitInstalled" to splitNames.contains(normalizedSplitName),
-            "splitNames" to splitNames,
-            "binaryPath" to binaryPath,
-            "nativeLibraryDir" to nativeLibraryDir,
-            "canRequestPackageInstalls" to
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    packageManager.canRequestPackageInstalls()
-                } else {
-                    true
-                },
-        )
-    }
-
-    private fun clearPendingSnowtunSession() {
-        val receiver = pendingSnowtunStatusReceiver
-        if (receiver != null) {
-            runCatching { unregisterReceiver(receiver) }
-            pendingSnowtunStatusReceiver = null
-        }
-        pendingSnowtunSessionResult = null
-        pendingSnowtunSessionOperation = null
-        pendingSnowtunSessionId = null
-        pendingSnowtunSessionNonce = null
-    }
-
-    private fun isSnowtunOperationAlreadyApplied(
-        operation: String,
-        splitName: String,
-    ): Boolean {
-        val status = getSnowtunModuleStatus(splitName, "libsnowtun.so")
-        val installed = status["splitInstalled"] == true
-        return when (operation) {
-            "remove" -> !installed
-            else -> installed
-        }
-    }
-
-    private fun registerSnowtunStatusReceiver() {
-        if (pendingSnowtunStatusReceiver != null) {
-            return
-        }
-        val receiver =
-            object : BroadcastReceiver() {
-                override fun onReceive(context: android.content.Context?, intent: Intent?) {
-                    if (intent?.action != SNOWTUN_INSTALL_STATUS_ACTION) {
-                        return
-                    }
-                    val result = pendingSnowtunSessionResult ?: return
-                    val expectedSessionId = pendingSnowtunSessionId ?: return
-                    val expectedNonce = pendingSnowtunSessionNonce ?: return
-                    val receivedSessionId = intent.getIntExtra("sessionId", -1)
-                    val receivedNonce = intent.getStringExtra("nonce")
-                    if (receivedSessionId != expectedSessionId || receivedNonce != expectedNonce) {
-                        Log.w(
-                            TAG,
-                            "ignored Snowtun status with mismatched session expected=$expectedSessionId received=$receivedSessionId",
-                        )
-                        return
-                    }
-                    val operation = pendingSnowtunSessionOperation ?: "install"
-                    val splitName = intent.getStringExtra("splitName") ?: "snowtun"
-                    val status = intent.getIntExtra(
-                        PackageInstaller.EXTRA_STATUS,
-                        PackageInstaller.STATUS_FAILURE,
-                    )
-                    val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
-                    if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
-                        val confirmationIntent =
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
-                            } else {
-                                @Suppress("DEPRECATION")
-                                intent.getParcelableExtra(Intent.EXTRA_INTENT)
-                            }
-                        if (confirmationIntent == null) {
-                            clearPendingSnowtunSession()
-                            result.error(
-                                "install_confirmation_missing",
-                                "Android did not provide an install confirmation intent.",
-                                null,
-                            )
-                            return
-                        }
-                        confirmationIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        startActivity(confirmationIntent)
-                        return
-                    }
-                    clearPendingSnowtunSession()
-                    if (status == PackageInstaller.STATUS_SUCCESS) {
-                        Log.i(TAG, "snowtun $operation success split=$splitName")
-                        result.success(true)
-                        return
-                    }
-                    if (isSnowtunOperationAlreadyApplied(operation, splitName)) {
-                        Log.i(TAG, "snowtun $operation already applied split=$splitName status=$status message=$message")
-                        result.success(true)
-                        return
-                    }
-                    val errorCode = when (operation) {
-                        "remove" -> "remove_split_failed"
-                        else -> "install_split_failed"
-                    }
-                    Log.e(TAG, "snowtun $operation failed split=$splitName status=$status message=$message")
-                    result.error(
-                        errorCode,
-                        message ?: "Snowtun split operation failed.",
-                        mapOf("status" to status, "message" to message, "operation" to operation),
-                    )
-                }
-            }
-        pendingSnowtunStatusReceiver = receiver
-        val filter = IntentFilter(SNOWTUN_INSTALL_STATUS_ACTION)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(receiver, filter, RECEIVER_NOT_EXPORTED)
-        } else {
-            @Suppress("DEPRECATION")
-            registerReceiver(receiver, filter)
-        }
-    }
-
-    private fun installSnowtunModule(
-        apkPath: String?,
-        expectedPackageName: String?,
-        splitName: String?,
-        result: MethodChannel.Result,
-    ) {
-        val normalizedPath = apkPath?.trim().orEmpty()
-        val targetPackage = expectedPackageName?.trim().orEmpty().ifEmpty { packageName }
-        val normalizedSplitName = splitName?.trim().orEmpty().ifEmpty { "snowtun" }
-        if (pendingSnowtunSessionResult != null) {
-            result.error("install_in_progress", "Another Snowtun module operation is already running.", null)
-            return
-        }
-        if (normalizedPath.isBlank()) {
-            result.error("empty_path", "APK path is empty.", null)
-            return
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-            !packageManager.canRequestPackageInstalls()
-        ) {
-            result.error(
-                "install_permission_required",
-                "Allow Etonify to install additional modules first.",
-                null,
-            )
-            return
-        }
-        val apkFile = File(normalizedPath)
-        if (!apkFile.exists()) {
-            result.error("missing_file", "Downloaded split APK does not exist.", null)
-            return
-        }
-
-        val installer = packageManager.packageInstaller
-        val params =
-            PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_INHERIT_EXISTING)
-                .apply {
-                    setAppPackageName(targetPackage)
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        setPackageSource(PackageInstaller.PACKAGE_SOURCE_DOWNLOADED_FILE)
-                    }
-                }
-        val sessionId = installer.createSession(params)
-        var session: PackageInstaller.Session? = null
-        try {
-            Log.i(
-                TAG,
-                "snowtun install start apk=$normalizedPath package=$targetPackage split=$normalizedSplitName sessionId=$sessionId",
-            )
-            session = installer.openSession(sessionId)
-            session.run {
-                Log.i(TAG, "snowtun install opened session=$sessionId size=${apkFile.length()}")
-                session.openWrite(apkFile.name, 0, apkFile.length()).use { output ->
-                    apkFile.inputStream().use { input ->
-                        input.copyTo(output)
-                    }
-                    session.fsync(output)
-                }
-                Log.i(TAG, "snowtun install wrote split apk session=$sessionId")
-                val nonce = UUID.randomUUID().toString()
-                pendingSnowtunSessionResult = result
-                pendingSnowtunSessionOperation = "install"
-                pendingSnowtunSessionId = sessionId
-                pendingSnowtunSessionNonce = nonce
-                registerSnowtunStatusReceiver()
-                val flags =
-                    PendingIntent.FLAG_UPDATE_CURRENT or
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                            PendingIntent.FLAG_MUTABLE
-                        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                            PendingIntent.FLAG_IMMUTABLE
-                        } else {
-                            0
-                        }
-                val pendingIntent = PendingIntent.getBroadcast(
-                    this@MainActivity,
-                    sessionId,
-                    Intent(SNOWTUN_INSTALL_STATUS_ACTION).setPackage(packageName).putExtra(
-                        "splitName",
-                        normalizedSplitName,
-                    ).putExtra("sessionId", sessionId).putExtra("nonce", nonce),
-                    flags,
-                )
-                Log.i(TAG, "snowtun install committing session=$sessionId")
-                session.commit(pendingIntent.intentSender)
-            }
-        } catch (error: Throwable) {
-            Log.e(TAG, "snowtun install failed session=$sessionId", error)
-            clearPendingSnowtunSession()
-            runCatching { installer.abandonSession(sessionId) }
-            result.error("install_split_failed", error.message ?: error.toString(), null)
-        } finally {
-            runCatching { session?.close() }
-        }
-    }
-
-    private fun removeSnowtunModule(splitName: String?, result: MethodChannel.Result) {
-        val normalizedSplitName = splitName?.trim().orEmpty().ifEmpty { "snowtun" }
-        if (pendingSnowtunSessionResult != null) {
-            result.error("install_in_progress", "Another Snowtun module operation is already running.", null)
-            return
-        }
-        val status = getSnowtunModuleStatus(normalizedSplitName, "libsnowtun.so")
-        if (status["splitInstalled"] != true) {
-            result.success(true)
-            return
-        }
-        val installer = packageManager.packageInstaller
-        val params =
-            PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_INHERIT_EXISTING)
-                .apply {
-                    setAppPackageName(packageName)
-                }
-        val sessionId = installer.createSession(params)
-        var session: PackageInstaller.Session? = null
-        try {
-            Log.i(TAG, "snowtun remove start split=$normalizedSplitName sessionId=$sessionId")
-            session = installer.openSession(sessionId)
-            session.run {
-                session.removeSplit(normalizedSplitName)
-                Log.i(TAG, "snowtun remove marked split for removal session=$sessionId")
-                val nonce = UUID.randomUUID().toString()
-                pendingSnowtunSessionResult = result
-                pendingSnowtunSessionOperation = "remove"
-                pendingSnowtunSessionId = sessionId
-                pendingSnowtunSessionNonce = nonce
-                registerSnowtunStatusReceiver()
-                val flags =
-                    PendingIntent.FLAG_UPDATE_CURRENT or
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                            PendingIntent.FLAG_MUTABLE
-                        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                            PendingIntent.FLAG_IMMUTABLE
-                        } else {
-                            0
-                        }
-                val pendingIntent = PendingIntent.getBroadcast(
-                    this@MainActivity,
-                    sessionId,
-                    Intent(SNOWTUN_INSTALL_STATUS_ACTION).setPackage(packageName).putExtra(
-                        "splitName",
-                        normalizedSplitName,
-                    ).putExtra("sessionId", sessionId).putExtra("nonce", nonce),
-                    flags,
-                )
-                Log.i(TAG, "snowtun remove committing session=$sessionId")
-                session.commit(pendingIntent.intentSender)
-            }
-        } catch (error: Throwable) {
-            Log.e(TAG, "snowtun remove failed session=$sessionId", error)
-            clearPendingSnowtunSession()
-            runCatching { installer.abandonSession(sessionId) }
-            result.error("remove_split_failed", error.message ?: error.toString(), null)
-        } finally {
-            runCatching { session?.close() }
-        }
-    }
-
-    private fun requestInstallPackagesPermission(result: MethodChannel.Result) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-            result.success(true)
-            return
-        }
-        val intent = Intent(
-            Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-            Uri.parse("package:$packageName"),
-        ).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        try {
-            startActivity(intent)
-            result.success(true)
-        } catch (error: Throwable) {
-            result.error(
-                "install_permission_request_failed",
-                error.message ?: error.toString(),
-                null,
-            )
         }
     }
 
@@ -1282,6 +864,8 @@ class MainActivity : FlutterActivity() {
                                 "model" to Build.MODEL,
                                 "sdkInt" to Build.VERSION.SDK_INT,
                                 "release" to Build.VERSION.RELEASE,
+                                "abi" to Build.SUPPORTED_ABIS.firstOrNull().orEmpty(),
+                                "supportedAbis" to Build.SUPPORTED_ABIS.toList(),
                             ),
                         ),
                     )
@@ -1318,35 +902,6 @@ class MainActivity : FlutterActivity() {
                 override fun setQuickSettingsTileLabel(label: String, callback: (Result<Unit>) -> Unit) {
                     writeQuickSettingsTileLabel(label)
                     callback(Result.success(Unit))
-                }
-
-                override fun ensureExecutable(path: String, callback: (Result<Unit>) -> Unit) {
-                    ensureExecutable(path, unitResult(callback))
-                }
-
-                override fun getSnowtunModuleStatus(
-                    splitName: String,
-                    nativeLibraryName: String,
-                    callback: (Result<Map<String?, Any?>>) -> Unit,
-                ) {
-                    callback(Result.success(pigeonMap(getSnowtunModuleStatus(splitName, nativeLibraryName))))
-                }
-
-                override fun installSnowtunModule(
-                    apkPath: String,
-                    expectedPackageName: String,
-                    splitName: String,
-                    callback: (Result<Unit>) -> Unit,
-                ) {
-                    installSnowtunModule(apkPath, expectedPackageName, splitName, unitResult(callback))
-                }
-
-                override fun removeSnowtunModule(splitName: String, callback: (Result<Unit>) -> Unit) {
-                    removeSnowtunModule(splitName, unitResult(callback))
-                }
-
-                override fun requestInstallPackagesPermission(callback: (Result<Unit>) -> Unit) {
-                    requestInstallPackagesPermission(unitResult(callback))
                 }
             },
         )
@@ -1448,6 +1003,8 @@ class MainActivity : FlutterActivity() {
                             "model" to Build.MODEL,
                             "sdkInt" to Build.VERSION.SDK_INT,
                             "release" to Build.VERSION.RELEASE,
+                            "abi" to Build.SUPPORTED_ABIS.firstOrNull().orEmpty(),
+                            "supportedAbis" to Build.SUPPORTED_ABIS.toList(),
                         ),
                     )
                 }
@@ -1544,36 +1101,6 @@ class MainActivity : FlutterActivity() {
                 "setQuickSettingsTileLabel" -> {
                     writeQuickSettingsTileLabel(call.argument("label"))
                     result.success(true)
-                }
-
-                "ensureExecutable" -> {
-                    ensureExecutable(call.argument("path"), result)
-                }
-
-                "getSnowtunModuleStatus" -> {
-                    result.success(
-                        getSnowtunModuleStatus(
-                            call.argument("splitName"),
-                            call.argument("nativeLibraryName"),
-                        ),
-                    )
-                }
-
-                "installSnowtunModule" -> {
-                    installSnowtunModule(
-                        call.argument("apkPath"),
-                        call.argument("expectedPackageName"),
-                        call.argument("splitName"),
-                        result,
-                    )
-                }
-
-                "removeSnowtunModule" -> {
-                    removeSnowtunModule(call.argument("splitName"), result)
-                }
-
-                "requestInstallPackagesPermission" -> {
-                    requestInstallPackagesPermission(result)
                 }
 
                 "stop" -> {

@@ -17,9 +17,9 @@ import 'package:meow_client/core/lowest_proxy_groups.dart';
 import 'package:meow_client/data/adblock/ad_block_rule_set_service.dart';
 import 'package:meow_client/data/local/app_settings_store.dart';
 import 'package:meow_client/data/routing/russia_route_data_service.dart';
-import 'package:meow_client/data/snowtun/snowtun_binary_service.dart';
 import 'package:meow_client/data/subscription/happ_crypto_link.dart';
 import 'package:meow_client/data/subscription/subscription_store.dart';
+import 'package:meow_client/data/update/app_update_service.dart';
 import 'package:meow_client/features/home/home_page.dart';
 import 'package:meow_client/features/home/traffic_dashboard_page.dart';
 import 'package:meow_client/features/proxies/proxies_page.dart';
@@ -33,7 +33,6 @@ import 'package:meow_client/features/settings/settings_logs_page.dart';
 import 'package:meow_client/features/settings/settings_page.dart';
 import 'package:meow_client/features/settings/settings_routing_page.dart';
 import 'package:meow_client/features/settings/settings_subscriptions_page.dart';
-import 'package:meow_client/features/settings/settings_whitelist_page.dart';
 import 'package:meow_client/features/subscriptions/subscriptions_page.dart';
 import 'package:meow_client/features/welcome/welcome_page.dart';
 import 'package:meow_client/l10n/generated/app_localizations.dart';
@@ -68,6 +67,7 @@ enum AppConnectionPhase {
 }
 
 class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
+  static const _clientVersionLabel = '0.1.0';
   static final RegExp _quickTileCountryCodePattern = RegExp(r'^[A-Z]{2}$');
   static const _lowestProxyTag = lowestProxyTag;
   static const _urlTestStatusUnavailable = 'unavailable';
@@ -177,8 +177,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   bool _adBlockEnabled = false;
   AdBlockRuleSetStatus _adBlockStatus =
       const AdBlockRuleSetStatus.unavailable();
-  SnowtunBinaryStatus _snowtunBinaryStatus =
-      const SnowtunBinaryStatus.unavailable();
   bool _useRussiaRouteData = false;
   RussiaRouteDataStatus _russiaRouteDataStatus =
       const RussiaRouteDataStatus.unavailable();
@@ -2131,7 +2129,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     late AppSettingsState state;
     var adBlockStatus = const AdBlockRuleSetStatus.unavailable();
     var russiaRouteDataStatus = const RussiaRouteDataStatus.unavailable();
-    var snowtunBinaryStatus = const SnowtunBinaryStatus.unavailable();
     final useInMemoryBootstrap = widget.store is MemoryAppSettingsStore;
     try {
       if (useInMemoryBootstrap) {
@@ -2153,11 +2150,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
             .loadStatus();
       } catch (_) {
         russiaRouteDataStatus = const RussiaRouteDataStatus.unavailable();
-      }
-      try {
-        snowtunBinaryStatus = await SnowtunBinaryService.instance.loadStatus();
-      } catch (_) {
-        snowtunBinaryStatus = const SnowtunBinaryStatus.unavailable();
       }
     } catch (error, stackTrace) {
       debugPrint('Failed to bootstrap app, using defaults: $error');
@@ -2216,9 +2208,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       );
     }
 
-    final progressiveBlurEnabled = state.progressiveBlurConfigured
-        ? state.progressiveBlurEnabled
-        : await _defaultProgressiveBlurEnabled();
+    const progressiveBlurEnabled = false;
 
     final resolvedSubscriptions = useInMemoryBootstrap
         ? const _ResolvedSubscriptions(
@@ -2293,7 +2283,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       _blockLeaks = state.blockLeaks;
       _adBlockEnabled = state.adBlockEnabled;
       _adBlockStatus = adBlockStatus;
-      _snowtunBinaryStatus = snowtunBinaryStatus;
       _useRussiaRouteData = state.useRussiaRouteData;
       _russiaRouteDataStatus = russiaRouteDataStatus;
       _bypassLocalNetwork = state.bypassLocalNetwork;
@@ -2321,6 +2310,13 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     if (_foregroundLifecycleActive) {
       _startSubscriptionAutoRefresh();
       unawaited(_updateRussiaRouteDataIfDue());
+      if (!useInMemoryBootstrap) {
+        unawaited(
+          AppUpdateService.instance.checkForUpdates(
+            currentVersion: _clientVersionLabel,
+          ),
+        );
+      }
     }
     if (!useInMemoryBootstrap && subscriptions.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -2399,23 +2395,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     );
   }
 
-  Future<bool> _defaultProgressiveBlurEnabled() async {
-    try {
-      final info = await SingboxRuntime.instance.getPlatformDeviceInfo();
-      final manufacturer = info['manufacturer']?.toString().toLowerCase() ?? '';
-      final brand = info['brand']?.toString().toLowerCase() ?? '';
-      final sdkInt = switch (info['sdkInt']) {
-        final int value => value,
-        final String value => int.tryParse(value) ?? 0,
-        _ => 0,
-      };
-      return sdkInt > 35 &&
-          (manufacturer.contains('oneplus') || brand.contains('oneplus'));
-    } catch (_) {
-      return false;
-    }
-  }
-
   void _haptic() {
     if (_hapticEnabled) {
       HapticFeedback.lightImpact();
@@ -2443,12 +2422,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     _ => false,
   };
 
-  bool get _effectiveProgressiveBlurEnabled {
-    if (Platform.isAndroid && _balancedMode) {
-      return false;
-    }
-    return _progressiveBlurEnabled && !_proxyPanelInteractionActive;
-  }
+  bool get _effectiveProgressiveBlurEnabled => false;
 
   int get _networkHeartbeatIntervalSeconds => _balancedMode
       ? (_coolMode
@@ -2836,16 +2810,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     _saveStateSoon();
   }
 
-  Future<void> _refreshSnowtunStatus() async {
-    final status = await SnowtunBinaryService.instance.loadStatus();
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _snowtunBinaryStatus = status;
-    });
-  }
-
   Future<void> _toggleConnection({String source = 'unknown'}) async {
     _haptic();
     if (_connected) {
@@ -2930,11 +2894,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       _setConnectionPhase(AppConnectionPhase.preparing);
     });
 
-    await _refreshSnowtunStatus();
-    if (!mounted) {
-      return;
-    }
-
     final granted = await SingboxRuntime.instance.prepareVpn(
       requiresVpn: _vpnInboundEnabled,
     );
@@ -2942,11 +2901,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       setState(() {
         _setConnectionPhase(AppConnectionPhase.idle);
       });
-      return;
-    }
-
-    await _refreshSnowtunStatus();
-    if (!mounted) {
       return;
     }
 
@@ -3291,8 +3245,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     final config = SingboxConfigBuilder.buildProxyChainOutboundConfig(
       chain: chain,
       target: target,
-      snowtunBinaryPath: _snowtunBinaryStatus.binaryPath,
-      snowtunProtectPath: SingboxConfigBuilder.defaultSnowtunProtectPath(),
+      snowtunBinaryPath: null,
+      snowtunProtectPath: null,
       vpnInboundEnabled: _vpnInboundEnabled,
       tcpFastOpenEnabled: _experimentalTcpFastOpen,
       tcpMultiPathEnabled: _experimentalTcpMultiPath,
@@ -3435,13 +3389,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       _hideServerIp = value;
     });
     _publishTrafficDashboardSnapshot();
-    _saveStateSoon();
-  }
-
-  void _setProgressiveBlurEnabled(bool value) {
-    setState(() {
-      _progressiveBlurEnabled = value;
-    });
     _saveStateSoon();
   }
 
@@ -4125,12 +4072,10 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
           onThemePreferenceChanged: _setThemePreference,
           currentHapticEnabled: _hapticEnabled,
           currentHideServerIp: _hideServerIp,
-          currentProgressiveBlurEnabled: _progressiveBlurEnabled,
           currentPerformanceMode: _performanceMode,
           onAccentColorChanged: _setAccentColor,
           onHapticChanged: _setHapticEnabled,
           onHideServerIpChanged: _setHideServerIp,
-          onProgressiveBlurChanged: _setProgressiveBlurEnabled,
           onPerformanceModeChanged: _setPerformanceMode,
         ),
       ),
@@ -4219,66 +4164,17 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     );
   }
 
-  Future<void> _showWhitelistSettingsPage() async {
-    final navigator = _navigatorKey.currentState;
-    if (navigator == null) return;
-    await navigator.push(
-      MaterialPageRoute<void>(
-        builder: (context) => SettingsWhitelistPage(
-          currentSnowtunStatus: _snowtunBinaryStatus,
-          onUpdateSnowtunBinary:
-              ({
-                required void Function(SnowtunDownloadProgress progress)
-                onProgress,
-              }) => _downloadSnowtunBinary(onProgress: onProgress),
-          onDeleteSnowtunBinary: _deleteSnowtunBinary,
-        ),
-      ),
-    );
-  }
-
   Future<void> _showAboutSettingsPage() async {
     final navigator = _navigatorKey.currentState;
     if (navigator == null) return;
     await navigator.push(
       MaterialPageRoute<void>(
         builder: (context) => SettingsAboutPage(
-          versionLabel: '0.1.0',
-          onOpenWhitelist: _showWhitelistSettingsPage,
+          versionLabel: _clientVersionLabel,
           onShowOnboarding: _resetOnboarding,
         ),
       ),
     );
-  }
-
-  Future<SnowtunBinaryStatus> _downloadSnowtunBinary({
-    void Function(SnowtunDownloadProgress progress)? onProgress,
-  }) async {
-    final status = await SnowtunBinaryService.instance.installLatest(
-      onProgress: onProgress,
-    );
-    if (!mounted) {
-      return status;
-    }
-    setState(() {
-      _snowtunBinaryStatus = status;
-    });
-    _emitCurrentConfigLog('snowtun module updated');
-    _saveStateSoon();
-    return status;
-  }
-
-  Future<SnowtunBinaryStatus> _deleteSnowtunBinary() async {
-    final status = await SnowtunBinaryService.instance.deleteInstalled();
-    if (!mounted) {
-      return status;
-    }
-    setState(() {
-      _snowtunBinaryStatus = status;
-    });
-    _emitCurrentConfigLog('snowtun module deleted');
-    _saveStateSoon();
-    return status;
   }
 
   void _setBlockLeaks(bool value) {
@@ -5143,8 +5039,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       interruptExistingConnections: _experimentalInterruptExistingConnections,
       urlTestStrictTolerance: _experimentalUrlTestStrictTolerance,
       markAllServersRussia: _activeSubscription?.markAllServersRussia ?? false,
-      snowtunBinaryPath: _snowtunBinaryStatus.binaryPath,
-      snowtunProtectPath: SingboxConfigBuilder.defaultSnowtunProtectPath(),
+      snowtunBinaryPath: null,
+      snowtunProtectPath: null,
       outputConfigPath: outputConfigPath,
       returnConfig: returnConfig,
     );
@@ -6833,7 +6729,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
               key: const ValueKey('welcome'),
               onContinue: _completeOnboarding,
               brandName: 'Etonify',
-              versionLabel: '0.1.0',
+              versionLabel: _clientVersionLabel,
             ),
             visibleRows: _proxyPanelVisibleRows(),
             hasActiveProfile: _activeProfileCache != null,

@@ -74,7 +74,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get whitelistTitle => 'Whitelist';
 
   @override
-  String get whitelistSubtitle => 'Optional Snowtun module';
+  String get whitelistSubtitle => 'Reserved routing tools';
 
   @override
   String get experimentalTitle => 'Experimental';
@@ -258,6 +258,106 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aboutResourceBatteryTemp => 'Battery temperature';
 
   @override
+  String get updatesTitle => 'Updates';
+
+  @override
+  String get updatesSubtitle =>
+      'Check GitHub Releases and download the matching APK.';
+
+  @override
+  String get updatesChecking => 'Checking for updates…';
+
+  @override
+  String get updatesCheckAction => 'Check now';
+
+  @override
+  String get updatesRetryAction => 'Retry';
+
+  @override
+  String get updatesDownloadAction => 'Download update';
+
+  @override
+  String get updatesDownloadWarning =>
+      'Keep Etonify open until the download finishes.';
+
+  @override
+  String get updatesUpToDateTitle => 'Etonify is up to date';
+
+  @override
+  String updatesUpToDateSubtitle(String version) {
+    return 'Installed version: $version';
+  }
+
+  @override
+  String get updatesAvailableTitle => 'Update available';
+
+  @override
+  String updatesAvailableSubtitle(String version, String size) {
+    return '$version · $size';
+  }
+
+  @override
+  String get updatesDownloadingTitle => 'Downloading update';
+
+  @override
+  String get updatesDownloadedTitle => 'Update downloaded';
+
+  @override
+  String updatesDownloadedSubtitle(String fileName) {
+    return 'Saved to app update cache: $fileName';
+  }
+
+  @override
+  String get updatesErrorTitle => 'Could not check updates';
+
+  @override
+  String get updatesErrorSubtitle =>
+      'If GitHub is blocked on this network, Etonify will try again tomorrow.';
+
+  @override
+  String get updatesCurrentVersion => 'Current version';
+
+  @override
+  String get updatesLatestVersion => 'Latest version';
+
+  @override
+  String get updatesAsset => 'APK';
+
+  @override
+  String updatesLastChecked(String time) {
+    return 'Last checked: $time';
+  }
+
+  @override
+  String get updatesReleaseNotesTitle => 'What\'s new';
+
+  @override
+  String get updatesNoReleaseNotes => 'This release does not include notes.';
+
+  @override
+  String updatesProgressBytes(String downloaded, String total) {
+    return '$downloaded / $total';
+  }
+
+  @override
+  String updatesProgressSpeedEta(String speed, String eta) {
+    return '$speed/s · $eta left';
+  }
+
+  @override
+  String updatesEtaSeconds(int seconds) {
+    return '${seconds}s';
+  }
+
+  @override
+  String updatesEtaMinutes(int minutes, int seconds) {
+    return '${minutes}m ${seconds}s';
+  }
+
+  @override
+  String get updatesUnknownSize => 'Unknown size';
+
+  @override
   String get appVersionLabel => 'Client version';
 
   @override
@@ -429,11 +529,32 @@ class AppLocalizationsEn extends AppLocalizations {
   String get hideServerIpSubtitle => 'Masks last two octets of the IP address';
 
   @override
-  String get progressiveBlurTitle => 'Progressive blur';
+  String get performanceModeTitle => 'Performance mode';
 
   @override
-  String get progressiveBlurSubtitle =>
-      'Blurs content under headers and navigation bars';
+  String get performanceModeCool => 'Cool';
+
+  @override
+  String get performanceModeBalanced => 'Balanced';
+
+  @override
+  String get performanceModePerformance => 'Performance';
+
+  @override
+  String get performanceModeCoolSubtitle =>
+      'Lowest heat and background load for daily Android use.';
+
+  @override
+  String get performanceModeBalancedSubtitle =>
+      'Moderate checks and battery use.';
+
+  @override
+  String get performanceModePerformanceSubtitle =>
+      'Faster checks with more CPU, traffic, and heat.';
+
+  @override
+  String get performanceModeRecommendation =>
+      'Recommended: keep Cool for now. This setting will be reworked soon.';
 
   @override
   String get enableInboundTitle => 'Enabled';
@@ -1188,181 +1309,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get splitRoutingManualEditorSubtitle =>
       'Use this if you want to edit package names directly';
-
-  @override
-  String get snowtunTitle => 'Snowtun';
-
-  @override
-  String get snowtunSubtitle => 'Optional module for special connections';
-
-  @override
-  String get snowtunDescription =>
-      'Install Snowtun only if a subscription explicitly needs it. Normal VPN connections work without this module.';
-
-  @override
-  String get snowtunManifestUrlTitle => 'Manifest URL';
-
-  @override
-  String get snowtunManifestUrlHint =>
-      'https://host.example/snowtun/manifest.json';
-
-  @override
-  String get snowtunUpdateAction => 'Update from server';
-
-  @override
-  String get snowtunDeleteAction => 'Delete local binary';
-
-  @override
-  String get snowtunStatusTitle => 'Local status';
-
-  @override
-  String get snowtunInstalledLabel => 'Installed';
-
-  @override
-  String get snowtunInstalledYes => 'Yes';
-
-  @override
-  String get snowtunInstalledNo => 'No';
-
-  @override
-  String get snowtunVersionLabel => 'Version';
-
-  @override
-  String get snowtunChecksumLabel => 'SHA-256';
-
-  @override
-  String get snowtunSizeLabel => 'Size';
-
-  @override
-  String get snowtunChunkCountLabel => 'Chunks';
-
-  @override
-  String get snowtunPathLabel => 'Binary path';
-
-  @override
-  String get snowtunInstalledAtLabel => 'Installed at';
-
-  @override
-  String get snowtunImportSourceLabel => 'Import source';
-
-  @override
-  String get snowtunImportSourceValue => 'sing-box outbound only';
-
-  @override
-  String get snowtunIdleStatus => 'Ready.';
-
-  @override
-  String get snowtunFetchingManifest => 'Preparing download…';
-
-  @override
-  String snowtunDownloadingChunks(int current, int total) {
-    return 'Downloading…';
-  }
-
-  @override
-  String get snowtunFinalizing => 'Finishing…';
-
-  @override
-  String get snowtunUpdated => 'Download completed.';
-
-  @override
-  String get snowtunInstalledMessage => 'The component is installed.';
-
-  @override
-  String get snowtunRemovingStatus => 'Removing module…';
-
-  @override
-  String get snowtunReadyShort => 'Ready.';
-
-  @override
-  String get snowtunNotInstalledShort => 'The module is not installed yet.';
-
-  @override
-  String get snowtunPreparingInstallStatus => 'Preparing install…';
-
-  @override
-  String get snowtunDownloadingModuleStatus => 'Downloading module…';
-
-  @override
-  String get snowtunInstallingStatus => 'Installing…';
-
-  @override
-  String get snowtunStoragePrepareFailed =>
-      'Failed to prepare Snowtun storage. Update the app and try again.';
-
-  @override
-  String get snowtunIntegrityFailed =>
-      'The downloaded file failed the integrity check.';
-
-  @override
-  String get snowtunInstallPermissionRequired =>
-      'Allow Etonify to install additional modules, then try again.';
-
-  @override
-  String get snowtunInstallPermissionTitle => 'Install permission';
-
-  @override
-  String get snowtunInstallPermissionMessage =>
-      'Snowtun is installed as an optional module. Android needs permission to install from this app; the base VPN still works without this module.';
-
-  @override
-  String get snowtunInstallPermissionSkip => 'Not now';
-
-  @override
-  String get snowtunInstallPermissionAllow => 'Allow';
-
-  @override
-  String get snowtunLaunchPrepareFailed =>
-      'The file was downloaded, but Android did not allow preparing it for launch.';
-
-  @override
-  String get snowtunDownloadedFileMissing =>
-      'The downloaded file was not found.';
-
-  @override
-  String get snowtunDownloadModuleFailed =>
-      'Failed to download the module from the server.';
-
-  @override
-  String get snowtunNoCompatibleModule =>
-      'No compatible Snowtun module is available for this device.';
-
-  @override
-  String snowtunInstallOrRemoveFailedWithDetail(String detail) {
-    return 'Android failed to install or remove the module: $detail';
-  }
-
-  @override
-  String get snowtunInstallOrRemoveFailed =>
-      'Android failed to install or remove the optional module.';
-
-  @override
-  String get snowtunWrongAppVersion =>
-      'This module was built for a different app version.';
-
-  @override
-  String get snowtunIncompatibleModulePackage =>
-      'The server returned an incompatible module package.';
-
-  @override
-  String get snowtunGenericFailure =>
-      'Failed to download or install the component.';
-
-  @override
-  String get snowtunModuleDescription =>
-      'Snowtun is an optional Android module for specific outbound types. Leave it uninstalled unless your provider requires it.';
-
-  @override
-  String get snowtunInstalledSummary => 'Already installed';
-
-  @override
-  String get snowtunNotInstalledSummary => 'Not installed yet';
-
-  @override
-  String get snowtunInstallModuleAction => 'Install module';
-
-  @override
-  String get snowtunRemoveModuleAction => 'Remove module';
 
   @override
   String refreshIntervalDaysShort(int count) {

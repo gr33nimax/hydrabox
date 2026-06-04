@@ -74,7 +74,7 @@ class AppLocalizationsRu extends AppLocalizations {
   String get whitelistTitle => 'Белые списки';
 
   @override
-  String get whitelistSubtitle => 'Дополнительный модуль Snowtun';
+  String get whitelistSubtitle => 'Резервные инструменты маршрутизации';
 
   @override
   String get experimentalTitle => 'Экспериментальные';
@@ -258,6 +258,106 @@ class AppLocalizationsRu extends AppLocalizations {
   String get aboutResourceBatteryTemp => 'Температура батареи';
 
   @override
+  String get updatesTitle => 'Обновления';
+
+  @override
+  String get updatesSubtitle =>
+      'Проверка GitHub Releases и скачивание APK под устройство.';
+
+  @override
+  String get updatesChecking => 'Проверка обновлений…';
+
+  @override
+  String get updatesCheckAction => 'Проверить';
+
+  @override
+  String get updatesRetryAction => 'Повторить';
+
+  @override
+  String get updatesDownloadAction => 'Скачать обновление';
+
+  @override
+  String get updatesDownloadWarning =>
+      'Не закрывайте Etonify до завершения загрузки.';
+
+  @override
+  String get updatesUpToDateTitle => 'Etonify обновлён';
+
+  @override
+  String updatesUpToDateSubtitle(String version) {
+    return 'Установленная версия: $version';
+  }
+
+  @override
+  String get updatesAvailableTitle => 'Доступно обновление';
+
+  @override
+  String updatesAvailableSubtitle(String version, String size) {
+    return '$version · $size';
+  }
+
+  @override
+  String get updatesDownloadingTitle => 'Скачиваем обновление';
+
+  @override
+  String get updatesDownloadedTitle => 'Обновление скачано';
+
+  @override
+  String updatesDownloadedSubtitle(String fileName) {
+    return 'Сохранено в кэше обновлений: $fileName';
+  }
+
+  @override
+  String get updatesErrorTitle => 'Не удалось проверить обновления';
+
+  @override
+  String get updatesErrorSubtitle =>
+      'Если GitHub заблокирован в этой сети, Etonify попробует снова завтра.';
+
+  @override
+  String get updatesCurrentVersion => 'Текущая версия';
+
+  @override
+  String get updatesLatestVersion => 'Новая версия';
+
+  @override
+  String get updatesAsset => 'APK';
+
+  @override
+  String updatesLastChecked(String time) {
+    return 'Проверено: $time';
+  }
+
+  @override
+  String get updatesReleaseNotesTitle => 'Что нового';
+
+  @override
+  String get updatesNoReleaseNotes => 'В релизе нет описания изменений.';
+
+  @override
+  String updatesProgressBytes(String downloaded, String total) {
+    return '$downloaded / $total';
+  }
+
+  @override
+  String updatesProgressSpeedEta(String speed, String eta) {
+    return '$speed/с · осталось $eta';
+  }
+
+  @override
+  String updatesEtaSeconds(int seconds) {
+    return '$seconds с';
+  }
+
+  @override
+  String updatesEtaMinutes(int minutes, int seconds) {
+    return '$minutes мин $seconds с';
+  }
+
+  @override
+  String get updatesUnknownSize => 'Размер неизвестен';
+
+  @override
   String get appVersionLabel => 'Версия клиента';
 
   @override
@@ -429,11 +529,32 @@ class AppLocalizationsRu extends AppLocalizations {
   String get hideServerIpSubtitle => 'Маскирует последние два октета IP-адреса';
 
   @override
-  String get progressiveBlurTitle => 'Progressive blur';
+  String get performanceModeTitle => 'Режим производительности';
 
   @override
-  String get progressiveBlurSubtitle =>
-      'Размывает контент под хедерами и нижней навигацией';
+  String get performanceModeCool => 'Cool';
+
+  @override
+  String get performanceModeBalanced => 'Balanced';
+
+  @override
+  String get performanceModePerformance => 'Performance';
+
+  @override
+  String get performanceModeCoolSubtitle =>
+      'Минимальный нагрев и фоновая нагрузка для ежедневного Android-режима.';
+
+  @override
+  String get performanceModeBalancedSubtitle =>
+      'Умеренные проверки и расход батареи.';
+
+  @override
+  String get performanceModePerformanceSubtitle =>
+      'Более быстрые проверки, но выше CPU, трафик и нагрев.';
+
+  @override
+  String get performanceModeRecommendation =>
+      'Рекомендуем пока оставлять Cool. Эта настройка скоро будет переработана.';
 
   @override
   String get enableInboundTitle => 'Включить';
@@ -1195,180 +1316,6 @@ class AppLocalizationsRu extends AppLocalizations {
   @override
   String get splitRoutingManualEditorSubtitle =>
       'Используй это, если хочешь редактировать package names напрямую';
-
-  @override
-  String get snowtunTitle => 'Snowtun';
-
-  @override
-  String get snowtunSubtitle => 'Дополнительный модуль для особых подключений';
-
-  @override
-  String get snowtunDescription =>
-      'Устанавливайте Snowtun только если подписка явно требует этот модуль. Обычные VPN-подключения работают без него.';
-
-  @override
-  String get snowtunManifestUrlTitle => 'URL манифеста';
-
-  @override
-  String get snowtunManifestUrlHint =>
-      'https://host.example/snowtun/manifest.json';
-
-  @override
-  String get snowtunUpdateAction => 'Обновить с сервера';
-
-  @override
-  String get snowtunDeleteAction => 'Удалить локальный бинарь';
-
-  @override
-  String get snowtunStatusTitle => 'Локальный статус';
-
-  @override
-  String get snowtunInstalledLabel => 'Установлен';
-
-  @override
-  String get snowtunInstalledYes => 'Да';
-
-  @override
-  String get snowtunInstalledNo => 'Нет';
-
-  @override
-  String get snowtunVersionLabel => 'Версия';
-
-  @override
-  String get snowtunChecksumLabel => 'SHA-256';
-
-  @override
-  String get snowtunSizeLabel => 'Размер';
-
-  @override
-  String get snowtunChunkCountLabel => 'Частей';
-
-  @override
-  String get snowtunPathLabel => 'Путь к бинарю';
-
-  @override
-  String get snowtunInstalledAtLabel => 'Установлен';
-
-  @override
-  String get snowtunImportSourceLabel => 'Источник импорта';
-
-  @override
-  String get snowtunImportSourceValue => 'только sing-box outbound';
-
-  @override
-  String get snowtunIdleStatus => 'Готово.';
-
-  @override
-  String get snowtunFetchingManifest => 'Подготавливаем скачивание…';
-
-  @override
-  String snowtunDownloadingChunks(int current, int total) {
-    return 'Скачиваем…';
-  }
-
-  @override
-  String get snowtunFinalizing => 'Завершаем…';
-
-  @override
-  String get snowtunUpdated => 'Скачивание завершено.';
-
-  @override
-  String get snowtunInstalledMessage => 'Компонент установлен.';
-
-  @override
-  String get snowtunRemovingStatus => 'Удаляем модуль…';
-
-  @override
-  String get snowtunReadyShort => 'Готово.';
-
-  @override
-  String get snowtunNotInstalledShort => 'Модуль ещё не установлен.';
-
-  @override
-  String get snowtunPreparingInstallStatus => 'Подготавливаем установку…';
-
-  @override
-  String get snowtunDownloadingModuleStatus => 'Скачиваем модуль…';
-
-  @override
-  String get snowtunInstallingStatus => 'Устанавливаем…';
-
-  @override
-  String get snowtunStoragePrepareFailed =>
-      'Не удалось подготовить папку для Snowtun. Обнови приложение до свежей версии и попробуй ещё раз.';
-
-  @override
-  String get snowtunIntegrityFailed =>
-      'Файл с сервера не прошёл проверку целостности.';
-
-  @override
-  String get snowtunInstallPermissionRequired =>
-      'Разреши Etonify устанавливать дополнительные модули и попробуй ещё раз.';
-
-  @override
-  String get snowtunInstallPermissionTitle => 'Разрешение на установку';
-
-  @override
-  String get snowtunInstallPermissionMessage =>
-      'Snowtun ставится как дополнительный модуль. Android должен разрешить установку из этого приложения; базовый VPN будет работать и без этого модуля.';
-
-  @override
-  String get snowtunInstallPermissionSkip => 'Не сейчас';
-
-  @override
-  String get snowtunInstallPermissionAllow => 'Разрешить';
-
-  @override
-  String get snowtunLaunchPrepareFailed =>
-      'Файл скачался, но Android не дал подготовить его к запуску.';
-
-  @override
-  String get snowtunDownloadedFileMissing => 'Скачанный файл не найден.';
-
-  @override
-  String get snowtunDownloadModuleFailed =>
-      'Не удалось скачать модуль с сервера.';
-
-  @override
-  String get snowtunNoCompatibleModule =>
-      'Для этого устройства на сервере нет подходящего модуля.';
-
-  @override
-  String snowtunInstallOrRemoveFailedWithDetail(String detail) {
-    return 'Android не смог установить или удалить модуль: $detail';
-  }
-
-  @override
-  String get snowtunInstallOrRemoveFailed =>
-      'Android не смог установить или удалить дополнительный модуль.';
-
-  @override
-  String get snowtunWrongAppVersion =>
-      'Этот модуль собран для другой версии приложения.';
-
-  @override
-  String get snowtunIncompatibleModulePackage =>
-      'Сервер отдал неподходящий пакет модуля.';
-
-  @override
-  String get snowtunGenericFailure =>
-      'Не удалось скачать или установить компонент.';
-
-  @override
-  String get snowtunModuleDescription =>
-      'Snowtun — дополнительный Android-модуль для отдельных типов outbound. Не устанавливайте его, если провайдер не требует.';
-
-  @override
-  String get snowtunInstalledSummary => 'Уже установлено';
-
-  @override
-  String get snowtunNotInstalledSummary => 'Ещё не установлено';
-
-  @override
-  String get snowtunInstallModuleAction => 'Установить модуль';
-
-  @override
-  String get snowtunRemoveModuleAction => 'Удалить модуль';
 
   @override
   String refreshIntervalDaysShort(int count) {
