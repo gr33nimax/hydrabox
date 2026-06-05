@@ -67,7 +67,7 @@ enum AppConnectionPhase {
 }
 
 class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
-  static const _clientVersionLabel = '0.1.0';
+  static const _clientVersionLabel = '0.1.1';
   static final RegExp _quickTileCountryCodePattern = RegExp(r'^[A-Z]{2}$');
   static const _lowestProxyTag = lowestProxyTag;
   static const _urlTestStatusUnavailable = 'unavailable';
@@ -112,6 +112,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   Timer? _trafficUiUpdateTimer;
   Timer? _resumeForegroundSyncTimer;
   Timer? _networkReconnectWatchdogTimer;
+  Timer? _postConnectUrlTestTimer;
   StreamSubscription<Map<String, dynamic>>? _singboxEventsSubscription;
   bool _autoRefreshInFlight = false;
   bool _ownsStore = false;
@@ -197,6 +198,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   int _downlinkTotalBytes = 0;
   DateTime? _connectedSince;
   List<TrafficSample> _trafficSamples = const <TrafficSample>[];
+  bool _trafficDashboardOpen = false;
   final ValueNotifier<TrafficDashboardSnapshot> _trafficDashboardSnapshot =
       ValueNotifier<TrafficDashboardSnapshot>(TrafficDashboardSnapshot.empty);
   Map<String, dynamic>? _pendingTrafficStatusEvent;
@@ -252,6 +254,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   ColorScheme? _dynamicLightScheme;
   ColorScheme? _dynamicDarkScheme;
   int _activeOutboundIpRefreshToken = 0;
+  int _postConnectUrlTestGeneration = 0;
   static const _activeOutboundIpRefreshMinInterval = Duration(minutes: 5);
   int _groupsEventsSinceLastDiagnosticsLog = 0;
   DateTime? _lastGroupsDiagnosticsLogAt;
@@ -1432,6 +1435,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     _locationLookupTimer?.cancel();
     _resumeForegroundSyncTimer?.cancel();
     _networkReconnectWatchdogTimer?.cancel();
+    _postConnectUrlTestTimer?.cancel();
     _pendingRuntimeSelectTimer?.cancel();
     _locationLookupRefreshRequested = false;
     for (final waiter in _locationLookupWaiters) {
@@ -2023,24 +2027,31 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     if (context == null) {
       return;
     }
-    _publishTrafficDashboardSnapshot();
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      enableDrag: true,
-      isDismissible: true,
-      useSafeArea: false,
-      builder: (context) => DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.88,
-        minChildSize: 0.32,
-        maxChildSize: 0.94,
-        builder: (context, scrollController) => TrafficDashboardPage(
-          snapshotListenable: _trafficDashboardSnapshot,
-          scrollController: scrollController,
+    _trafficDashboardOpen = true;
+    _publishTrafficDashboardSnapshot(force: true);
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        enableDrag: true,
+        isDismissible: true,
+        useSafeArea: false,
+        builder: (context) => DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.88,
+          minChildSize: 0.32,
+          maxChildSize: 0.94,
+          builder: (context, scrollController) => TrafficDashboardPage(
+            snapshotListenable: _trafficDashboardSnapshot,
+            scrollController: scrollController,
+          ),
         ),
-      ),
-    );
+      );
+    } finally {
+      _trafficDashboardOpen = false;
+      _trafficSamples = const <TrafficSample>[];
+      _trafficDashboardSnapshot.value = TrafficDashboardSnapshot.empty;
+    }
   }
 
   Future<void> _offerLikelyHwidFix(Subscription subscription) async {
@@ -2431,7 +2442,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       : _performanceNetworkHeartbeatIntervalSeconds;
 
   void _recordTrafficSample(DateTime now) {
-    if (!_connected || !_trafficAvailable) {
+    if (!_trafficDashboardOpen || !_connected || !_trafficAvailable) {
       return;
     }
     final cutoff = now.subtract(const Duration(minutes: 5));
@@ -2484,7 +2495,10 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     );
   }
 
-  void _publishTrafficDashboardSnapshot() {
+  void _publishTrafficDashboardSnapshot({bool force = false}) {
+    if (!_trafficDashboardOpen && !force) {
+      return;
+    }
     final snapshot = _currentTrafficDashboardSnapshot();
     if (_trafficDashboardSnapshot.value != snapshot) {
       _trafficDashboardSnapshot.value = snapshot;
@@ -2534,6 +2548,9 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     _trafficUiUpdateTimer?.cancel();
     _trafficUiUpdateTimer = null;
     _pendingTrafficStatusEvent = null;
+    _postConnectUrlTestGeneration++;
+    _postConnectUrlTestTimer?.cancel();
+    _postConnectUrlTestTimer = null;
     _urlTestFallbackTimer?.cancel();
     _urlTestFallbackTimer = null;
     if (_invalidOutboundRetryScheduled) {
@@ -2875,6 +2892,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         _unavailableLatencyTags.clear();
         _latencyErrors.clear();
         _singleOutboundPingRefreshScheduled = false;
+        _postConnectUrlTestGeneration++;
+        _postConnectUrlTestTimer?.cancel();
         _applyRuntimeStateToDerivedCaches();
       });
       unawaited(_syncQuickSettingsTileLabel());
@@ -3004,6 +3023,10 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
           );
           _clearRuntimeProxySelectionGuard(generation: selectionGeneration);
           _scheduleActiveOutboundIpRefresh();
+          _schedulePostConnectSelectedProxyUrlTest(
+            reason: 'proxy_selected',
+            delay: const Duration(milliseconds: 1200),
+          );
         } catch (error) {
           if (!mounted || selectionGeneration != _runtimeSelectGeneration) {
             return;
@@ -3099,6 +3122,34 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         _urlTestMethodInFlight = false;
       }
     }());
+  }
+
+  void _schedulePostConnectSelectedProxyUrlTest({
+    required String reason,
+    Duration delay = const Duration(milliseconds: 2500),
+  }) {
+    if (!_foregroundLifecycleActive || _selectedProxyTag.trim().isEmpty) {
+      return;
+    }
+    final generation = ++_postConnectUrlTestGeneration;
+    _postConnectUrlTestTimer?.cancel();
+    _postConnectUrlTestTimer = Timer(delay, () {
+      if (!mounted ||
+          generation != _postConnectUrlTestGeneration ||
+          !_connected ||
+          !_foregroundLifecycleActive ||
+          _runtimeTransitionInProgress ||
+          _urlTestInFlight ||
+          _urlTestMethodInFlight) {
+        return;
+      }
+      AppLogStore.info(
+        'proxy',
+        'post-connect selected proxy URLTest reason=$reason '
+            'selected=$_selectedProxyTag',
+      );
+      _triggerSelectedProxyUrlTest();
+    });
   }
 
   Future<void> _addProxyChain(String detourTag, String targetRef) async {
@@ -3981,6 +4032,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
 
     final selectedSubscriptionId = await navigator.push<String>(
       MaterialPageRoute<String>(
+        allowSnapshotting: false,
         builder: (context) => SubscriptionsPage(
           activeSubscriptionId: _activeProfileId,
           openAddOnStart: openAddOnStart,
@@ -3988,6 +4040,10 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         ),
       ),
     );
+
+    if (mounted) {
+      setState(() {});
+    }
 
     if (selectedSubscriptionId != null &&
         selectedSubscriptionId.isNotEmpty &&
@@ -4307,15 +4363,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   }
 
   void _setSplitRoutingPackages(List<String> value) {
-    final normalized = <String>[];
-    final seen = <String>{};
-    for (final package in value) {
-      final trimmed = package.trim();
-      if (trimmed.isEmpty || !seen.add(trimmed)) {
-        continue;
-      }
-      normalized.add(trimmed);
-    }
+    final normalized = normalizeSplitRoutingPackages(value);
     if (_splitRoutingPackages.join('\n') == normalized.join('\n')) {
       return;
     }
@@ -5114,6 +5162,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
               _unavailableLatencyTags.clear();
               _latencyErrors.clear();
               _singleOutboundPingRefreshScheduled = false;
+              _postConnectUrlTestGeneration++;
+              _postConnectUrlTestTimer?.cancel();
               _applyRuntimeStateToDerivedCaches();
             }
           });
@@ -5125,6 +5175,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
             unawaited(_handleRuntimeError(error, wasRetryScheduled));
           } else if (running) {
             _scheduleActiveOutboundIpRefresh();
+            _schedulePostConnectSelectedProxyUrlTest(reason: 'runtime_running');
             if (!_coolMode) {
               _scheduleBestOutboundLocationRefresh(
                 delay: _balancedMode
@@ -5287,6 +5338,12 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         _runtimeTransitionInProgress) {
       return;
     }
+    if (reason == 'default_interface') {
+      _schedulePostConnectSelectedProxyUrlTest(
+        reason: 'default_interface_changed',
+        delay: const Duration(milliseconds: 900),
+      );
+    }
     final generation = ++_networkReconnectGeneration;
     _networkReconnectWatchdogTimer?.cancel();
     _networkReconnectWatchdogTimer = Timer(const Duration(seconds: 5), () {
@@ -5340,6 +5397,9 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
             _downlinkTotalBytes > 0;
         if (!running) {
           _resetTrafficDashboardData();
+          _postConnectUrlTestGeneration++;
+          _postConnectUrlTestTimer?.cancel();
+          _postConnectUrlTestTimer = null;
         } else {
           _recordTrafficSample(now);
         }
@@ -5347,6 +5407,9 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       _publishTrafficDashboardSnapshot();
       if (running) {
         _scheduleActiveOutboundIpRefresh();
+        _schedulePostConnectSelectedProxyUrlTest(
+          reason: 'runtime_sync_running',
+        );
       }
     } catch (_) {
       // Ignore transient sync failures: live EventChannel events still drive state.

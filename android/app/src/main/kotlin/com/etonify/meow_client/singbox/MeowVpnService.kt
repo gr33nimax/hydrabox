@@ -66,8 +66,8 @@ class MeowVpnService : VpnService() {
         }
         if (!MeowApplication.wakeLockEnabled) {
             SingboxController.log(
-                "warning",
-                "wakelock disabled: VPN core can be paused by device idle/doze tag=$WAKE_LOCK_TAG",
+                "info",
+                "wakelock disabled: keeping VPN core active without partial wakelock tag=$WAKE_LOCK_TAG",
             )
             return
         }

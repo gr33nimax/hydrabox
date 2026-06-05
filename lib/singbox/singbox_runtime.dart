@@ -475,21 +475,14 @@ class SingboxRuntime {
       return const <Map<String, dynamic>>[];
     }
     try {
-      return await _withMethodChannelFallback<List<Map<String, dynamic>>>(
-        () async => _normalizeMapList(await _hostApi.getInstalledApps()),
-        () async {
-          final value = await _methods.invokeListMethod<dynamic>(
-            'getInstalledApps',
-          );
-          if (value == null) {
-            return const <Map<String, dynamic>>[];
-          }
-          return value
-              .whereType<Map>()
-              .map((item) => Map<String, dynamic>.from(item))
-              .toList(growable: false);
-        },
+      // Pigeon map generics are stricter than Android's runtime payload shape
+      // here: the codec can return _Map<Object?, Object?> and generated Pigeon
+      // code casts it before our normalizer runs. Keep installed-apps on the
+      // legacy MethodChannel until it is migrated to a typed Pigeon DTO.
+      final value = await _methods.invokeListMethod<dynamic>(
+        'getInstalledApps',
       );
+      return _normalizeMapList(value);
     } on MissingPluginException {
       return const <Map<String, dynamic>>[];
     }

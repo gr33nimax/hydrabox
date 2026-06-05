@@ -39,7 +39,7 @@ class FetchResult {
 class SubscriptionFetcher {
   SubscriptionFetcher._();
 
-  static const _userAgent = 'Etonify/0.1.0';
+  static const _userAgent = 'Etonify/0.1.1';
   static const _maxSubscriptionResponseBytes = 16 * 1024 * 1024;
 
   /// Fetches and parses a subscription from [url].

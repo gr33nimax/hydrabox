@@ -560,7 +560,7 @@
   "splitRoutingAppsTitle": "Applications",
   "splitRoutingPackagesTitle": "Package names",
   "splitRoutingPackagesHint": "com.termux\norg.mozilla.firefox",
-  "splitRoutingPackagesHelper": "One Android package name per line",
+  "splitRoutingPackagesHelper": "Package names only, for example org.telegram.messenger. App display names are ignored",
   "splitRoutingPickAppsAction": "Choose apps",
   "splitRoutingPickAppsTitle": "Choose apps",
   "splitRoutingSearchHint": "Search by app or package name",

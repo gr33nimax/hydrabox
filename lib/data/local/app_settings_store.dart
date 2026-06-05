@@ -12,6 +12,29 @@ enum SplitRoutingMode { disabled, proxySelected, bypassSelected }
 
 enum AppPerformanceMode { cool, balanced, performance }
 
+final RegExp _androidPackageNamePattern = RegExp(
+  r'^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$',
+);
+
+bool isAndroidPackageName(String value) {
+  final normalized = value.trim();
+  return normalized.length <= 255 &&
+      _androidPackageNamePattern.hasMatch(normalized);
+}
+
+List<String> normalizeSplitRoutingPackages(Iterable<String> values) {
+  final normalized = <String>[];
+  final seen = <String>{};
+  for (final package in values) {
+    final value = package.trim();
+    if (value.isEmpty || !isAndroidPackageName(value) || !seen.add(value)) {
+      continue;
+    }
+    normalized.add(value);
+  }
+  return normalized;
+}
+
 class AppSettingsState {
   const AppSettingsState({
     required this.onboardingCompleted,
@@ -277,16 +300,7 @@ abstract class AppSettingsStore {
 
     List<String> packageListValue(String key) {
       final raw = map[key]?.toString() ?? '';
-      final values = <String>[];
-      final seen = <String>{};
-      for (final segment in raw.split(RegExp(r'[\n,;]'))) {
-        final value = segment.trim();
-        if (value.isEmpty || !seen.add(value)) {
-          continue;
-        }
-        values.add(value);
-      }
-      return values;
+      return normalizeSplitRoutingPackages(raw.split(RegExp(r'[\n,;]')));
     }
 
     final performanceMode = switch (map[_performanceModeKey]) {
@@ -485,7 +499,9 @@ abstract class AppSettingsStore {
         SplitRoutingMode.proxySelected => 'proxy_selected',
         SplitRoutingMode.bypassSelected => 'bypass_selected',
       },
-      _splitRoutingPackagesKey: state.splitRoutingPackages.join('\n'),
+      _splitRoutingPackagesKey: normalizeSplitRoutingPackages(
+        state.splitRoutingPackages,
+      ).join('\n'),
       _singBoxLogLevelKey: state.singBoxLogLevel,
       _experimentalTcpFastOpenKey: state.experimentalTcpFastOpen ? '1' : '0',
       _experimentalTcpMultiPathKey: state.experimentalTcpMultiPath ? '1' : '0',

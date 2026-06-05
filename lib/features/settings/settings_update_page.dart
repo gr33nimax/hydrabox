@@ -348,7 +348,12 @@ class _UpdateInfoCard extends StatelessWidget {
               value: info == null ? '—' : 'v${info!.version}',
             ),
             const Gap(8),
-            _InfoRow(label: l10n.updatesAsset, value: info?.asset.name ?? '—'),
+            _InfoRow(
+              label: l10n.updatesAsset,
+              value: info?.asset.name ?? '—',
+              valueMaxLines: 2,
+              vertical: true,
+            ),
             if (checkedAt != null) ...[
               const Gap(8),
               Text(
@@ -512,34 +517,53 @@ class _ReleaseNoteLine extends StatelessWidget {
 }
 
 class _InfoRow extends StatelessWidget {
-  const _InfoRow({required this.label, required this.value});
+  const _InfoRow({
+    required this.label,
+    required this.value,
+    this.valueMaxLines = 1,
+    this.vertical = false,
+  });
 
   final String label;
   final String value;
+  final int valueMaxLines;
+  final bool vertical;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final labelStyle = theme.textTheme.bodyMedium?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    final valueStyle = theme.textTheme.bodyMedium?.copyWith(
+      fontWeight: FontWeight.w700,
+    );
+    if (vertical) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: labelStyle),
+          const Gap(4),
+          Text(
+            value,
+            maxLines: valueMaxLines,
+            overflow: TextOverflow.ellipsis,
+            style: valueStyle,
+          ),
+        ],
+      );
+    }
     return Row(
       children: [
-        Expanded(
-          child: Text(
-            label,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ),
+        Expanded(child: Text(label, style: labelStyle)),
         const Gap(12),
         Flexible(
           child: Text(
             value,
-            maxLines: 1,
+            maxLines: valueMaxLines,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.right,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
+            style: valueStyle,
           ),
         ),
       ],

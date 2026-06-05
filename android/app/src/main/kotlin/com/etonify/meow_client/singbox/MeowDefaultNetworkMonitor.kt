@@ -252,7 +252,7 @@ object MeowDefaultNetworkMonitor {
         }
         notificationGeneration.incrementAndGet()
         if (newListener != null) {
-            notifyListener()
+            notifyListener(immediate = true)
         }
     }
 
@@ -280,7 +280,7 @@ object MeowDefaultNetworkMonitor {
         }
     }
 
-    private fun notifyListener() {
+    private fun notifyListener(immediate: Boolean = false) {
         val generation = notificationGeneration.incrementAndGet()
         val capturedNetwork = synchronized(lock) {
             if (listener == null) return
@@ -295,7 +295,11 @@ object MeowDefaultNetworkMonitor {
         mainHandler.post {
             pendingNotifyRunnable?.let(mainHandler::removeCallbacks)
             pendingNotifyRunnable = runnable
-            mainHandler.postDelayed(runnable, NETWORK_CHANGE_DEBOUNCE_MS)
+            if (immediate) {
+                mainHandler.post(runnable)
+            } else {
+                mainHandler.postDelayed(runnable, NETWORK_CHANGE_DEBOUNCE_MS)
+            }
         }
     }
 

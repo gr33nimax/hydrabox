@@ -2326,7 +2326,7 @@ abstract class AppLocalizations {
   /// No description provided for @splitRoutingPackagesHelper.
   ///
   /// In en, this message translates to:
-  /// **'One Android package name per line'**
+  /// **'Package names only, for example org.telegram.messenger. App display names are ignored'**
   String get splitRoutingPackagesHelper;
 
   /// No description provided for @splitRoutingPickAppsAction.

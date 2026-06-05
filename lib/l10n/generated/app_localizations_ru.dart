@@ -1279,7 +1279,7 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get splitRoutingPackagesHelper =>
-      'По одному имени Android-пакета на строку';
+      'Только package name, например org.telegram.messenger. Названия приложений игнорируются';
 
   @override
   String get splitRoutingPickAppsAction => 'Выбрать приложения';

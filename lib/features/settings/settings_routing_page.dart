@@ -136,20 +136,18 @@ class _SettingsRoutingPageState extends State<SettingsRoutingPage> {
   }
 
   List<String> _selectedPackages() {
-    final values = <String>[];
-    final seen = <String>{};
-    for (final value in _packagesController.text.split(RegExp(r'[\n,;]'))) {
-      final trimmed = value.trim();
-      if (trimmed.isEmpty || !seen.add(trimmed)) {
-        continue;
-      }
-      values.add(trimmed);
-    }
-    return values;
+    return normalizeSplitRoutingPackages(
+      _packagesController.text.split(RegExp(r'[\n,;]')),
+    );
   }
 
   void _commitPackages() {
-    widget.onSplitRoutingPackagesChanged(_selectedPackages());
+    final packages = _selectedPackages();
+    widget.onSplitRoutingPackagesChanged(packages);
+    final normalizedText = packages.join('\n');
+    if (_packagesController.text.trim() != normalizedText) {
+      _packagesController.text = normalizedText;
+    }
   }
 
   void _showOperationError(Object error) {
@@ -884,6 +882,134 @@ class _InstalledApp {
   }
 }
 
+class _ScoredInstalledApp {
+  const _ScoredInstalledApp(this.app, this.score, this.index);
+
+  final _InstalledApp app;
+  final int score;
+  final int index;
+}
+
+String _normalizeAppSearchText(String value) {
+  return value
+      .toLowerCase()
+      .replaceAll(RegExp(r'[._\-]+'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+}
+
+String _compactAppSearchText(String value) {
+  return value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9а-яё]+'), '');
+}
+
+int _installedAppSearchScore(_InstalledApp app, String rawQuery) {
+  final query = _normalizeAppSearchText(rawQuery);
+  if (query.isEmpty) {
+    return 0;
+  }
+  final queryCompact = _compactAppSearchText(rawQuery);
+  final label = _normalizeAppSearchText(app.label);
+  final packageName = _normalizeAppSearchText(app.packageName);
+  final labelCompact = _compactAppSearchText(app.label);
+  final packageCompact = _compactAppSearchText(app.packageName);
+  final tokens = query
+      .split(' ')
+      .where((token) => token.isNotEmpty)
+      .toList(growable: false);
+  final words = <String>[
+    ...label.split(' '),
+    ...packageName.split(' '),
+  ].where((word) => word.isNotEmpty).toList(growable: false);
+
+  if (label == query || packageName == query) return 0;
+  if (label.startsWith(query)) return 4;
+  if (packageName.startsWith(query)) return 6;
+  if (label.contains(query)) return 10;
+  if (packageName.contains(query)) return 12;
+  if (queryCompact.isNotEmpty &&
+      (labelCompact.contains(queryCompact) ||
+          packageCompact.contains(queryCompact))) {
+    return 14;
+  }
+  if (tokens.isNotEmpty &&
+      tokens.every((token) => words.any((word) => word.startsWith(token)))) {
+    return 18;
+  }
+  if (tokens.isNotEmpty &&
+      tokens.every(
+        (token) => label.contains(token) || packageName.contains(token),
+      )) {
+    return 24;
+  }
+  if (queryCompact.length >= 3 &&
+      words.any((word) => _isCloseAppSearchMatch(queryCompact, word))) {
+    return 34;
+  }
+  return -1;
+}
+
+@visibleForTesting
+int installedAppSearchScoreForTest({
+  required String label,
+  required String packageName,
+  required String query,
+}) {
+  return _installedAppSearchScore(
+    _InstalledApp(
+      packageName: packageName,
+      label: label,
+      system: false,
+      launchable: true,
+    ),
+    query,
+  );
+}
+
+bool _isCloseAppSearchMatch(String query, String word) {
+  final compactWord = _compactAppSearchText(word);
+  if (compactWord.length < 3) {
+    return false;
+  }
+  if (compactWord.startsWith(query) || compactWord.contains(query)) {
+    return true;
+  }
+  final lengthDelta = (compactWord.length - query.length).abs();
+  if (lengthDelta > 2) {
+    return false;
+  }
+  return _boundedEditDistance(query, compactWord, 2) <= 2;
+}
+
+int _boundedEditDistance(String a, String b, int maxDistance) {
+  if ((a.length - b.length).abs() > maxDistance) {
+    return maxDistance + 1;
+  }
+  var previous = List<int>.generate(b.length + 1, (index) => index);
+  for (var i = 1; i <= a.length; i++) {
+    final current = List<int>.filled(b.length + 1, i);
+    var rowMin = current[0];
+    for (var j = 1; j <= b.length; j++) {
+      final substitutionCost = a.codeUnitAt(i - 1) == b.codeUnitAt(j - 1)
+          ? 0
+          : 1;
+      final value = [
+        previous[j] + 1,
+        current[j - 1] + 1,
+        previous[j - 1] + substitutionCost,
+      ].reduce((left, right) => left < right ? left : right);
+      current[j] = value;
+      if (value < rowMin) {
+        rowMin = value;
+      }
+    }
+    if (rowMin > maxDistance) {
+      return maxDistance + 1;
+    }
+    previous = current;
+  }
+  return previous[b.length];
+}
+
 class _RoutingModeCard extends StatelessWidget {
   const _RoutingModeCard({
     required this.icon,
@@ -1088,19 +1214,36 @@ class _AppPickerSheetState extends State<_AppPickerSheet> {
     super.dispose();
   }
 
+  List<_InstalledApp> _visibleApps() {
+    if (_query.isEmpty) {
+      return widget.apps;
+    }
+    final scoredApps = widget.apps
+        .asMap()
+        .entries
+        .map((entry) {
+          return _ScoredInstalledApp(
+            entry.value,
+            _installedAppSearchScore(entry.value, _query),
+            entry.key,
+          );
+        })
+        .where((entry) => entry.score >= 0)
+        .toList(growable: false);
+    scoredApps.sort((a, b) {
+      final scoreCompare = a.score.compareTo(b.score);
+      if (scoreCompare != 0) {
+        return scoreCompare;
+      }
+      return a.index.compareTo(b.index);
+    });
+    return scoredApps.map((entry) => entry.app).toList(growable: false);
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final filteredApps = widget.apps
-        .where((app) {
-          if (_query.isEmpty) {
-            return true;
-          }
-          final query = _query.toLowerCase();
-          return app.label.toLowerCase().contains(query) ||
-              app.packageName.toLowerCase().contains(query);
-        })
-        .toList(growable: false);
+    final visibleApps = _visibleApps();
 
     return Padding(
       padding: EdgeInsets.only(
@@ -1140,9 +1283,9 @@ class _AppPickerSheetState extends State<_AppPickerSheet> {
           const Gap(12),
           Expanded(
             child: ListView.builder(
-              itemCount: filteredApps.length,
+              itemCount: visibleApps.length,
               itemBuilder: (context, index) {
-                final app = filteredApps[index];
+                final app = visibleApps[index];
                 final selected = _selected.contains(app.packageName);
                 return CheckboxListTile(
                   value: selected,

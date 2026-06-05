@@ -163,63 +163,61 @@ class _AboutHero extends StatelessWidget {
     final cs = theme.colorScheme;
     final l10n = AppLocalizations.of(context);
 
-    return GestureDetector(
-      onDoubleTap: onDoubleTap,
-      child: Padding(
-        padding: settingsScreenPadding,
-        child: Material(
-          color: cs.surfaceContainerHighest.withValues(alpha: .54),
-          borderRadius: BorderRadius.circular(24),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: () {
-              if (AppVisualEffects.of(context).hapticEnabled) {
-                HapticFeedback.selectionClick();
-              }
-            },
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(
-                  color: cs.outlineVariant.withValues(alpha: .38),
-                ),
+    return Padding(
+      padding: settingsScreenPadding,
+      child: Material(
+        color: cs.surfaceContainerHighest.withValues(alpha: .54),
+        borderRadius: BorderRadius.circular(24),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () {
+            if (AppVisualEffects.of(context).hapticEnabled) {
+              HapticFeedback.selectionClick();
+            }
+          },
+          onDoubleTap: onDoubleTap,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: cs.outlineVariant.withValues(alpha: .38),
               ),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(22, 24, 22, 22),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: cs.primaryContainer.withValues(alpha: .72),
-                        borderRadius: BorderRadius.circular(18),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(22, 24, 22, 22),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: cs.primaryContainer.withValues(alpha: .72),
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
                       ),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 10,
-                        ),
-                        child: Text(
-                          'Etonify',
-                          style: theme.textTheme.headlineMedium?.copyWith(
-                            color: cs.onPrimaryContainer,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 0,
-                            height: .95,
-                          ),
+                      child: Text(
+                        'Etonify',
+                        style: theme.textTheme.headlineMedium?.copyWith(
+                          color: cs.onPrimaryContainer,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0,
+                          height: .95,
                         ),
                       ),
                     ),
-                    const Gap(12),
-                    Text(
-                      l10n.aboutHeroSubtitle,
-                      style: theme.textTheme.bodyLarge?.copyWith(
-                        color: cs.onSurfaceVariant,
-                        height: 1.35,
-                      ),
+                  ),
+                  const Gap(12),
+                  Text(
+                    l10n.aboutHeroSubtitle,
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      color: cs.onSurfaceVariant,
+                      height: 1.35,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),

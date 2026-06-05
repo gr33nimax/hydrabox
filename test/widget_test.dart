@@ -882,16 +882,16 @@ void main() {
         supportedLocales: AppLocalizations.supportedLocales,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         home: SettingsAboutPage(
-          versionLabel: '0.1.0',
+          versionLabel: '0.1.1',
           onShowOnboarding: () {},
         ),
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Etonify v0.1.0'), findsNothing);
+    expect(find.text('Etonify v0.1.1'), findsNothing);
     expect(find.text('Client version'), findsOneWidget);
-    expect(find.text('0.1.0'), findsOneWidget);
+    expect(find.text('0.1.1'), findsOneWidget);
     expect(find.text('MeowVPN'), findsNothing);
     expect(find.text('dudosxdev/sing-box'), findsOneWidget);
 

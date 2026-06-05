@@ -1586,7 +1586,13 @@ void main() {
         subscription,
         vpnInboundEnabled: true,
         splitRoutingMode: SplitRoutingMode.proxySelected,
-        splitRoutingPackages: const ['com.example.app', 'com.example.app', ''],
+        splitRoutingPackages: const [
+          'Telegram',
+          'com.example.app',
+          'bad package',
+          'com.example.app',
+          '',
+        ],
       ).build();
 
       final tunInbound = (config['inbounds'] as List).cast<Map>().firstWhere(

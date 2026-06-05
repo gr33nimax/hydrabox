@@ -2,6 +2,7 @@ package com.etonify.meow_client.singbox
 
 import android.os.Handler
 import android.os.Looper
+import android.net.TrafficStats
 import android.os.SystemClock
 import android.util.Log
 import com.etonify.meow_client.MeowApplication
@@ -16,6 +17,8 @@ import io.nekohasekai.libbox.OutboundGroupIterator
 import io.nekohasekai.libbox.StatusMessage
 import io.nekohasekai.libbox.StringIterator
 import java.util.concurrent.Executors
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
@@ -26,6 +29,7 @@ object SingboxController {
     private const val GROUPS_EVENT_THROTTLE_COOL_MS = 1_500L
     private const val GROUPS_EVENT_THROTTLE_BALANCED_MS = 750L
     private const val GROUPS_EVENT_THROTTLE_PERFORMANCE_MS = 500L
+    private const val TRAFFIC_POLL_INTERVAL_MS = 1_000L
     private val mainHandler = Handler(Looper.getMainLooper())
     private val commandExecutor = Executors.newSingleThreadExecutor()
     private val lookupExecutor = Executors.newFixedThreadPool(4)
@@ -77,6 +81,20 @@ object SingboxController {
         private set
 
     private var commandClient: CommandClient? = null
+    private var trafficPollActive = false
+    private var trafficBaselineRx = TrafficStats.UNSUPPORTED.toLong()
+    private var trafficBaselineTx = TrafficStats.UNSUPPORTED.toLong()
+    private var lastTrafficRx = TrafficStats.UNSUPPORTED.toLong()
+    private var lastTrafficTx = TrafficStats.UNSUPPORTED.toLong()
+    private var lastTrafficUptimeMs = 0L
+    private val trafficPollRunnable = object : Runnable {
+        override fun run() {
+            pollAndroidTraffic()
+            if (trafficPollActive) {
+                mainHandler.postDelayed(this, TRAFFIC_POLL_INTERVAL_MS)
+            }
+        }
+    }
     private val clientHandler = object : CommandClientHandler {
         override fun connected() {
             Log.i(TAG, "command client connected")
@@ -245,6 +263,12 @@ object SingboxController {
             if (running && commandClient == null) {
                 connectClient()
             }
+            if (running) {
+                startTrafficPolling()
+            }
+        } else {
+            stopTrafficPolling(reset = false)
+            disconnectClient()
         }
     }
 
@@ -261,8 +285,12 @@ object SingboxController {
         emitCurrentState(error)
         emitCurrentStatus()
         if (value) {
-            connectClient()
+            if (eventSink != null) {
+                connectClient()
+                startTrafficPolling()
+            }
         } else {
+            stopTrafficPolling(reset = true)
             disconnectClient()
         }
     }
@@ -337,16 +365,17 @@ object SingboxController {
 
     fun connectClient() {
         commandExecutor.execute {
-            disconnectClient()
+            disconnectClientOnExecutor("reconnect")
             runCatching {
+                if (!running || eventSink == null) {
+                    return@runCatching
+                }
                 MeowApplication.ensureLibboxSetup()
                 Log.i(TAG, "connecting command client")
                 MeowDiagnostics.log(TAG, "connecting command client")
                 val options = CommandClientOptions().apply {
-                    addCommand(Libbox.CommandStatus)
                     addCommand(Libbox.CommandGroup)
                     addCommand(Libbox.CommandLog)
-                    statusInterval = 1_000_000_000L
                 }
                 val client = Libbox.newCommandClient(clientHandler, options)
                 client.connect()
@@ -359,11 +388,112 @@ object SingboxController {
     }
 
     fun disconnectClient() {
+        commandExecutor.execute {
+            disconnectClientOnExecutor("async")
+        }
+    }
+
+    fun disconnectClientBlocking(timeoutMs: Long = 1_500L): Boolean {
+        val latch = CountDownLatch(1)
+        commandExecutor.execute {
+            try {
+                disconnectClientOnExecutor("blocking")
+            } finally {
+                latch.countDown()
+            }
+        }
+        return runCatching { latch.await(timeoutMs, TimeUnit.MILLISECONDS) }
+            .getOrDefault(false)
+    }
+
+    private fun disconnectClientOnExecutor(reason: String) {
         val client = commandClient ?: return
-        Log.i(TAG, "disconnecting command client")
-        MeowDiagnostics.log(TAG, "disconnecting command client")
-        runCatching { client.disconnect() }
         commandClient = null
+        Log.i(TAG, "disconnecting command client reason=$reason")
+        MeowDiagnostics.log(TAG, "disconnecting command client reason=$reason")
+        runCatching { client.disconnect() }
+    }
+
+    private fun startTrafficPolling() {
+        if (trafficPollActive) return
+        val rx = TrafficStats.getUidRxBytes(android.os.Process.myUid())
+        val tx = TrafficStats.getUidTxBytes(android.os.Process.myUid())
+        trafficPollActive = true
+        trafficBaselineRx = rx
+        trafficBaselineTx = tx
+        lastTrafficRx = rx
+        lastTrafficTx = tx
+        lastTrafficUptimeMs = SystemClock.uptimeMillis()
+        mainHandler.removeCallbacks(trafficPollRunnable)
+        mainHandler.postDelayed(trafficPollRunnable, TRAFFIC_POLL_INTERVAL_MS)
+    }
+
+    private fun stopTrafficPolling(reset: Boolean) {
+        trafficPollActive = false
+        mainHandler.removeCallbacks(trafficPollRunnable)
+        trafficBaselineRx = TrafficStats.UNSUPPORTED.toLong()
+        trafficBaselineTx = TrafficStats.UNSUPPORTED.toLong()
+        lastTrafficRx = TrafficStats.UNSUPPORTED.toLong()
+        lastTrafficTx = TrafficStats.UNSUPPORTED.toLong()
+        lastTrafficUptimeMs = 0L
+        if (reset) {
+            uplink = 0
+            downlink = 0
+            uplinkTotal = 0
+            downlinkTotal = 0
+            emitCurrentStatus()
+        }
+    }
+
+    private fun pollAndroidTraffic() {
+        if (!running || eventSink == null) {
+            stopTrafficPolling(reset = false)
+            return
+        }
+        val rx = TrafficStats.getUidRxBytes(android.os.Process.myUid())
+        val tx = TrafficStats.getUidTxBytes(android.os.Process.myUid())
+        if (rx == TrafficStats.UNSUPPORTED.toLong() ||
+            tx == TrafficStats.UNSUPPORTED.toLong() ||
+            trafficBaselineRx == TrafficStats.UNSUPPORTED.toLong() ||
+            trafficBaselineTx == TrafficStats.UNSUPPORTED.toLong()
+        ) {
+            emitCoalescedStatus(
+                mapOf(
+                    "type" to "status",
+                    "uplink" to 0L,
+                    "downlink" to 0L,
+                    "uplinkTotal" to 0L,
+                    "downlinkTotal" to 0L,
+                    "connectionsIn" to 0,
+                    "connectionsOut" to 0,
+                    "trafficAvailable" to false,
+                ),
+            )
+            return
+        }
+        val now = SystemClock.uptimeMillis()
+        val elapsedMs = (now - lastTrafficUptimeMs).coerceAtLeast(1L)
+        val rxDelta = (rx - lastTrafficRx).coerceAtLeast(0L)
+        val txDelta = (tx - lastTrafficTx).coerceAtLeast(0L)
+        downlink = rxDelta * 1000L / elapsedMs
+        uplink = txDelta * 1000L / elapsedMs
+        downlinkTotal = (rx - trafficBaselineRx).coerceAtLeast(0L)
+        uplinkTotal = (tx - trafficBaselineTx).coerceAtLeast(0L)
+        lastTrafficRx = rx
+        lastTrafficTx = tx
+        lastTrafficUptimeMs = now
+        emitCoalescedStatus(
+            mapOf(
+                "type" to "status",
+                "uplink" to uplink,
+                "downlink" to downlink,
+                "uplinkTotal" to uplinkTotal,
+                "downlinkTotal" to downlinkTotal,
+                "connectionsIn" to 0,
+                "connectionsOut" to 0,
+                "trafficAvailable" to true,
+            ),
+        )
     }
 
     private fun <T> withStandaloneCommandClient(block: (CommandClient) -> T): T {

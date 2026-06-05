@@ -1910,7 +1910,7 @@ class _SubscriptionDetailsPageState extends State<_SubscriptionDetailsPage> {
                               decoration: InputDecoration(
                                 labelText: l10n.customUserAgentTitle,
                                 helperText: l10n.customUserAgentSubtitle,
-                                hintText: 'Etonify/0.1.0',
+                                hintText: 'Etonify/0.1.1',
                               ),
                             ),
                             const Gap(12),

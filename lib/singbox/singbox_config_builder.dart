@@ -477,16 +477,7 @@ class SingboxConfigBuilder {
   }
 
   List<String> _normalizedSplitRoutingPackages() {
-    final normalized = <String>[];
-    final seen = <String>{};
-    for (final package in splitRoutingPackages) {
-      final value = package.trim();
-      if (value.isEmpty || !seen.add(value)) {
-        continue;
-      }
-      normalized.add(value);
-    }
-    return normalized;
+    return normalizeSplitRoutingPackages(splitRoutingPackages);
   }
 
   List<Outbound> _visibleOutbounds() {

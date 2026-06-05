@@ -273,7 +273,7 @@ class MeowBoxService(
         MeowDefaultNetworkMonitor.stop()
         forceCloseTunFd(source)
         runCleanupStep("disconnect command client source=$source") {
-            SingboxController.disconnectClient()
+            SingboxController.disconnectClientBlocking()
         }
         if (server != null) {
             runCleanupStep("closeService source=$source") {
@@ -517,11 +517,9 @@ class MeowBoxService(
         runCatching {
             if (idle) {
                 SingboxController.log(
-                    "warning",
-                    "core pause requested by Android device idle/doze; " +
-                        "wakeLockEnabled=${MeowApplication.wakeLockEnabled}",
+                    "info",
+                    "Android device idle/doze entered; keeping VPN core active",
                 )
-                server.pause()
             } else {
                 SingboxController.log(
                     "info",

@@ -1273,7 +1273,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get splitRoutingPackagesHint => 'com.termux\norg.mozilla.firefox';
 
   @override
-  String get splitRoutingPackagesHelper => 'One Android package name per line';
+  String get splitRoutingPackagesHelper =>
+      'Package names only, for example org.telegram.messenger. App display names are ignored';
 
   @override
   String get splitRoutingPickAppsAction => 'Choose apps';

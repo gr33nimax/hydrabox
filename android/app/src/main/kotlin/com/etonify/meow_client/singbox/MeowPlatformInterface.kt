@@ -374,7 +374,24 @@ class MeowVpnPlatformInterface(
         allowed: Boolean,
     ) {
         while (iterator.hasNext()) {
-            val packageName = iterator.next()
+            val packageName = iterator.next().trim()
+            if (packageName.isBlank()) {
+                continue
+            }
+            if (packageName == service.packageName) {
+                MeowDiagnostics.log(
+                    "MeowVpnPlatform",
+                    "openTun skip own package=$packageName",
+                )
+                continue
+            }
+            if (!isAndroidPackageName(packageName)) {
+                MeowDiagnostics.log(
+                    "MeowVpnPlatform",
+                    "openTun skip invalid package=$packageName allowed=$allowed",
+                )
+                continue
+            }
             runCatching {
                 if (allowed) {
                     builder.addAllowedApplication(packageName)
@@ -393,9 +410,17 @@ class MeowVpnPlatformInterface(
                 if (error !is PackageManager.NameNotFoundException) {
                     throw error
                 }
+                MeowDiagnostics.log(
+                    "MeowVpnPlatform",
+                    "openTun skip missing package=$packageName allowed=$allowed",
+                )
             }
         }
     }
+
+    private fun isAndroidPackageName(value: String): Boolean =
+        value.length <= 255 &&
+            Regex("^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+$").matches(value)
 
     private fun RoutePrefix.toIpPrefix(): IpPrefix {
         return IpPrefix(InetAddress.getByName(address()), prefix())
