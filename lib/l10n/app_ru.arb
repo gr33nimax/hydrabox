@@ -96,7 +96,27 @@
   "updatesCheckAction": "Проверить",
   "updatesRetryAction": "Повторить",
   "updatesDownloadAction": "Скачать обновление",
+  "updatesInstallAction": "Установить APK",
   "updatesDownloadWarning": "Не закрывайте Etonify до завершения загрузки.",
+  "updatesOpeningInstaller": "Открываем системный установщик…",
+  "updatesInstallPermissionHint": "Разрешите установку APK для Etonify, затем нажмите «Установить APK» ещё раз.",
+  "updatesDownloadedFileMissing": "Файл обновления не найден. Скачайте APK заново.",
+  "updatesDeleteCachedApkAction": "Удалить установочный APK",
+  "updatesDeleteCachedApkTitle": "Удалить установочный APK?",
+  "updatesDeleteCachedApkMessage": "Будет удалён скачанный APK обновления {version} и старые временные APK-файлы Etonify из кэша приложения.",
+  "@updatesDeleteCachedApkMessage": {
+    "placeholders": {
+      "version": {}
+    }
+  },
+  "updatesDeleteCachedApkDone": "Кэш обновлений очищен. Удалено файлов: {count}.",
+  "@updatesDeleteCachedApkDone": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "updatesUpToDateTitle": "Etonify обновлён",
   "updatesUpToDateSubtitle": "Установленная версия: {version}",
   "@updatesUpToDateSubtitle": {

@@ -277,8 +277,38 @@ class AppLocalizationsRu extends AppLocalizations {
   String get updatesDownloadAction => 'Скачать обновление';
 
   @override
+  String get updatesInstallAction => 'Установить APK';
+
+  @override
   String get updatesDownloadWarning =>
       'Не закрывайте Etonify до завершения загрузки.';
+
+  @override
+  String get updatesOpeningInstaller => 'Открываем системный установщик…';
+
+  @override
+  String get updatesInstallPermissionHint =>
+      'Разрешите установку APK для Etonify, затем нажмите «Установить APK» ещё раз.';
+
+  @override
+  String get updatesDownloadedFileMissing =>
+      'Файл обновления не найден. Скачайте APK заново.';
+
+  @override
+  String get updatesDeleteCachedApkAction => 'Удалить установочный APK';
+
+  @override
+  String get updatesDeleteCachedApkTitle => 'Удалить установочный APK?';
+
+  @override
+  String updatesDeleteCachedApkMessage(Object version) {
+    return 'Будет удалён скачанный APK обновления $version и старые временные APK-файлы Etonify из кэша приложения.';
+  }
+
+  @override
+  String updatesDeleteCachedApkDone(int count) {
+    return 'Кэш обновлений очищен. Удалено файлов: $count.';
+  }
 
   @override
   String get updatesUpToDateTitle => 'Etonify обновлён';

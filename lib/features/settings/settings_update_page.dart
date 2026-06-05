@@ -6,6 +6,7 @@ import 'package:gap/gap.dart';
 import 'package:meow_client/data/update/app_update_service.dart';
 import 'package:meow_client/features/settings/settings_ui.dart';
 import 'package:meow_client/l10n/generated/app_localizations.dart';
+import 'package:meow_client/singbox/singbox_runtime.dart';
 import 'package:meow_client/widgets/progressive_blur_scaffold.dart';
 
 class SettingsUpdatePage extends StatefulWidget {
@@ -22,6 +23,9 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage> {
   AppUpdateDownloadProgress? _downloadProgress;
   bool _checking = false;
   bool _downloading = false;
+  bool _installing = false;
+  bool _clearingUpdateCache = false;
+  String? _downloadedFilePath;
 
   @override
   void initState() {
@@ -30,7 +34,7 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage> {
   }
 
   Future<void> _check({required bool manual}) async {
-    if (_checking || _downloading) return;
+    if (_checking || _downloading || _clearingUpdateCache) return;
     setState(() {
       _checking = true;
       if (manual) {
@@ -45,11 +49,12 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage> {
     setState(() {
       _result = result;
       _checking = false;
+      _downloadedFilePath = result.downloadedFilePath;
     });
   }
 
   Future<void> _download(AppUpdateInfo info) async {
-    if (_downloading || _checking) return;
+    if (_downloading || _checking || _clearingUpdateCache) return;
     setState(() {
       _downloading = true;
       _downloadProgress = const AppUpdateDownloadProgress(
@@ -68,12 +73,15 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage> {
         },
       );
       if (!mounted) return;
+      final filePath = _downloadProgress?.filePath;
       setState(() {
         _downloading = false;
+        _downloadedFilePath = filePath;
         _result = AppUpdateCheckResult(
           status: AppUpdateStatus.downloaded,
           checkedAt: DateTime.now(),
           info: info,
+          downloadedFilePath: filePath,
         );
       });
     } catch (error) {
@@ -90,12 +98,122 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage> {
     }
   }
 
+  Future<void> _installDownloaded() async {
+    if (_checking || _downloading || _installing || _clearingUpdateCache) {
+      return;
+    }
+    final path = _cachedInstallerPath ?? '';
+    if (path.isEmpty) {
+      setState(() {
+        _result = AppUpdateCheckResult(
+          status: AppUpdateStatus.error,
+          checkedAt: DateTime.now(),
+          info: _result?.info,
+          error: AppLocalizations.of(context).updatesDownloadedFileMissing,
+        );
+      });
+      return;
+    }
+    setState(() => _installing = true);
+    try {
+      final canInstall = await SingboxRuntime.instance.canInstallApks();
+      if (!canInstall) {
+        await SingboxRuntime.instance.openApkInstallSettings();
+        if (!mounted) return;
+        setState(() => _installing = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              AppLocalizations.of(context).updatesInstallPermissionHint,
+            ),
+          ),
+        );
+        return;
+      }
+      await SingboxRuntime.instance.installDownloadedApk(path);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _result = AppUpdateCheckResult(
+          status: AppUpdateStatus.error,
+          checkedAt: DateTime.now(),
+          info: _result?.info,
+          error: error.toString(),
+          downloadedFilePath: path,
+        );
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _installing = false);
+      }
+    }
+  }
+
+  String? get _cachedInstallerPath {
+    final savedPath = _downloadedFilePath?.trim();
+    if (savedPath != null && savedPath.isNotEmpty) return savedPath;
+    final progressPath = _downloadProgress?.filePath?.trim();
+    if (progressPath != null && progressPath.isNotEmpty) return progressPath;
+    return null;
+  }
+
+  Future<void> _deleteCachedInstaller() async {
+    if (_checking || _downloading || _installing || _clearingUpdateCache) {
+      return;
+    }
+    final l10n = AppLocalizations.of(context);
+    final version = _result?.info?.version.trim().isNotEmpty == true
+        ? 'v${_result!.info!.version}'
+        : widget.currentVersion;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(l10n.updatesDeleteCachedApkTitle),
+        content: Text(l10n.updatesDeleteCachedApkMessage(version)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(l10n.cancel),
+          ),
+          FilledButton.tonalIcon(
+            onPressed: () => Navigator.of(context).pop(true),
+            icon: const Icon(Icons.delete_sweep_rounded),
+            label: Text(l10n.delete),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _clearingUpdateCache = true);
+    final deleted = await AppUpdateService.instance.deleteCachedInstallers(
+      currentVersion: widget.currentVersion,
+    );
+    final metadata = await AppUpdateService.instance.loadMetadata();
+    if (!mounted) return;
+    setState(() {
+      _clearingUpdateCache = false;
+      _downloadedFilePath = null;
+      _downloadProgress = null;
+      _result = AppUpdateCheckResult(
+        status: metadata.lastStatus,
+        checkedAt: metadata.lastCheckAt ?? DateTime.now(),
+        info: metadata.latestInfo,
+        error: metadata.lastError,
+      );
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(l10n.updatesDeleteCachedApkDone(deleted))),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final result = _result;
     final info = result?.info;
+    final cachedInstallerPath = _cachedInstallerPath;
 
     return ProgressiveBlurScaffold(
       appBar: AppBar(
@@ -103,7 +221,7 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage> {
         actions: [
           IconButton(
             tooltip: l10n.updatesCheckAction,
-            onPressed: _checking || _downloading
+            onPressed: _checking || _downloading || _installing
                 ? null
                 : () => _check(manual: true),
             icon: const Icon(Icons.refresh_rounded),
@@ -128,6 +246,23 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage> {
             currentVersion: widget.currentVersion,
             info: info,
             checkedAt: result?.checkedAt,
+            action: _UpdateActionButton(
+              result: result,
+              checking: _checking,
+              downloading: _downloading,
+              installing: _installing,
+              onCheck: () => _check(manual: true),
+              onDownload: info == null ? null : () => _download(info),
+              onInstall: cachedInstallerPath == null
+                  ? null
+                  : _installDownloaded,
+            ),
+            cacheAction: cachedInstallerPath == null
+                ? null
+                : _CachedInstallerButton(
+                    clearing: _clearingUpdateCache,
+                    onDelete: _deleteCachedInstaller,
+                  ),
           ),
           if (_downloading || _downloadProgress != null) ...[
             const Gap(12),
@@ -154,14 +289,6 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage> {
               ),
             ),
           ],
-          const Gap(22),
-          _UpdateActionButton(
-            result: result,
-            checking: _checking,
-            downloading: _downloading,
-            onCheck: () => _check(manual: true),
-            onDownload: info == null ? null : () => _download(info),
-          ),
         ],
       ),
       resizeToAvoidBottomInset: false,
@@ -194,9 +321,11 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage> {
           _formatBytes(info.asset.sizeBytes, l10n),
         ),
       AppUpdateStatus.downloaded => l10n.updatesDownloadedSubtitle(
-        _downloadProgress?.filePath == null
+        (_downloadedFilePath ?? _downloadProgress?.filePath) == null
             ? ''
-            : File(_downloadProgress!.filePath!).uri.pathSegments.last,
+            : File(
+                (_downloadedFilePath ?? _downloadProgress!.filePath)!,
+              ).uri.pathSegments.last,
       ),
       AppUpdateStatus.upToDate => l10n.updatesUpToDateSubtitle(
         widget.currentVersion,
@@ -212,25 +341,41 @@ class _UpdateActionButton extends StatelessWidget {
     required this.result,
     required this.checking,
     required this.downloading,
+    required this.installing,
     required this.onCheck,
     required this.onDownload,
+    required this.onInstall,
   });
 
   final AppUpdateCheckResult? result;
   final bool checking;
   final bool downloading;
+  final bool installing;
   final VoidCallback onCheck;
   final VoidCallback? onDownload;
+  final VoidCallback? onInstall;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    if (downloading) {
+    if (downloading || installing) {
       return Text(
-        l10n.updatesDownloadWarning,
+        installing ? l10n.updatesOpeningInstaller : l10n.updatesDownloadWarning,
         textAlign: TextAlign.center,
         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
           color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+      );
+    }
+    if (result?.status == AppUpdateStatus.downloaded) {
+      return FilledButton.icon(
+        onPressed: checking ? null : onInstall,
+        style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(56)),
+        icon: const Icon(Icons.install_mobile_rounded),
+        label: Text(
+          l10n.updatesInstallAction,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
       );
     }
@@ -238,20 +383,65 @@ class _UpdateActionButton extends StatelessWidget {
       return FilledButton(
         onPressed: checking ? null : onDownload,
         style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(56)),
-        child: Text(l10n.updatesDownloadAction),
+        child: Text(
+          l10n.updatesDownloadAction,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       );
     }
     if (result?.status == AppUpdateStatus.error) {
       return FilledButton.tonal(
         onPressed: checking ? null : onCheck,
         style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(56)),
-        child: Text(l10n.updatesRetryAction),
+        child: Text(
+          l10n.updatesRetryAction,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       );
     }
     return OutlinedButton(
       onPressed: checking ? null : onCheck,
       style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(52)),
-      child: Text(l10n.updatesCheckAction),
+      child: Text(
+        l10n.updatesCheckAction,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
+}
+
+class _CachedInstallerButton extends StatelessWidget {
+  const _CachedInstallerButton({
+    required this.clearing,
+    required this.onDelete,
+  });
+
+  final bool clearing;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return OutlinedButton.icon(
+      onPressed: clearing ? null : onDelete,
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size.fromHeight(48),
+        foregroundColor: Theme.of(context).colorScheme.error,
+      ),
+      icon: clearing
+          ? const SizedBox.square(
+              dimension: 18,
+              child: CircularProgressIndicator(strokeWidth: 3),
+            )
+          : const Icon(Icons.delete_sweep_rounded),
+      label: Text(
+        l10n.updatesDeleteCachedApkAction,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
     );
   }
 }
@@ -271,8 +461,9 @@ class _UpdateHero extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
+    final compact = MediaQuery.sizeOf(context).height < 720;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(6, 44, 6, 34),
+      padding: EdgeInsets.fromLTRB(6, compact ? 18 : 44, 6, compact ? 18 : 34),
       child: Column(
         children: [
           Text(
@@ -283,7 +474,7 @@ class _UpdateHero extends StatelessWidget {
               letterSpacing: 0,
             ),
           ),
-          const Gap(16),
+          Gap(compact ? 10 : 16),
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 180),
             child: checking
@@ -305,7 +496,7 @@ class _UpdateHero extends StatelessWidget {
                     ),
                   ),
           ),
-          const Gap(14),
+          Gap(compact ? 8 : 14),
           Text(
             subtitle,
             textAlign: TextAlign.center,
@@ -325,11 +516,15 @@ class _UpdateInfoCard extends StatelessWidget {
     required this.currentVersion,
     required this.info,
     required this.checkedAt,
+    required this.action,
+    required this.cacheAction,
   });
 
   final String currentVersion;
   final AppUpdateInfo? info;
   final DateTime? checkedAt;
+  final Widget action;
+  final Widget? cacheAction;
 
   @override
   Widget build(BuildContext context) {
@@ -347,6 +542,9 @@ class _UpdateInfoCard extends StatelessWidget {
               label: l10n.updatesLatestVersion,
               value: info == null ? '—' : 'v${info!.version}',
             ),
+            const Gap(14),
+            action,
+            if (cacheAction != null) ...[const Gap(8), cacheAction!],
             const Gap(8),
             _InfoRow(
               label: l10n.updatesAsset,

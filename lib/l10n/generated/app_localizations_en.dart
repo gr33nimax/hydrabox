@@ -277,8 +277,38 @@ class AppLocalizationsEn extends AppLocalizations {
   String get updatesDownloadAction => 'Download update';
 
   @override
+  String get updatesInstallAction => 'Install APK';
+
+  @override
   String get updatesDownloadWarning =>
       'Keep Etonify open until the download finishes.';
+
+  @override
+  String get updatesOpeningInstaller => 'Opening the system installer…';
+
+  @override
+  String get updatesInstallPermissionHint =>
+      'Allow APK installs for Etonify, then tap “Install APK” again.';
+
+  @override
+  String get updatesDownloadedFileMissing =>
+      'The update file is missing. Download the APK again.';
+
+  @override
+  String get updatesDeleteCachedApkAction => 'Delete installer APK';
+
+  @override
+  String get updatesDeleteCachedApkTitle => 'Delete installer APK?';
+
+  @override
+  String updatesDeleteCachedApkMessage(Object version) {
+    return 'This will delete the downloaded $version update APK and old temporary Etonify APK files from the app cache.';
+  }
+
+  @override
+  String updatesDeleteCachedApkDone(int count) {
+    return 'Update cache cleaned. Files deleted: $count.';
+  }
 
   @override
   String get updatesUpToDateTitle => 'Etonify is up to date';

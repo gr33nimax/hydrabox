@@ -161,6 +161,7 @@ class AppUpdateCheckResult {
     this.info,
     this.error,
     this.fromCache = false,
+    this.downloadedFilePath,
   });
 
   final AppUpdateStatus status;
@@ -168,6 +169,7 @@ class AppUpdateCheckResult {
   final AppUpdateInfo? info;
   final String? error;
   final bool fromCache;
+  final String? downloadedFilePath;
 }
 
 class AppUpdateDownloadProgress {
@@ -232,12 +234,20 @@ class AppUpdateService {
   }) async {
     final metadata = await loadMetadata();
     if (!manual && !metadata.isDue) {
+      final downloadedFilePath = await _validDownloadedPathFor(
+        metadata.latestInfo,
+        metadata.downloadedUpdatePath,
+      );
+      final status = downloadedFilePath != null
+          ? AppUpdateStatus.downloaded
+          : metadata.lastStatus;
       return AppUpdateCheckResult(
-        status: metadata.lastStatus,
+        status: status,
         checkedAt: metadata.lastCheckAt ?? DateTime.now(),
         info: metadata.latestInfo,
         error: metadata.lastError,
         fromCache: true,
+        downloadedFilePath: downloadedFilePath,
       );
     }
 
@@ -268,25 +278,54 @@ class AppUpdateService {
         ),
         asset: asset,
       );
-      final status = isRemoteVersionNewer(version, currentVersion)
+      var status = isRemoteVersionNewer(version, currentVersion)
           ? AppUpdateStatus.updateAvailable
           : AppUpdateStatus.upToDate;
+      final downloadedFilePath = status == AppUpdateStatus.updateAvailable
+          ? await _validDownloadedPathFor(info, metadata.downloadedUpdatePath)
+          : null;
+      if (downloadedFilePath != null) {
+        status = AppUpdateStatus.downloaded;
+      }
       await _saveMetadata(
         AppUpdateMetadata(
           lastCheckAtMillis: checkedAt.millisecondsSinceEpoch,
           lastStatus: status,
           latestInfo: info,
-          downloadedUpdatePath: metadata.downloadedUpdatePath,
+          downloadedUpdatePath: downloadedFilePath,
         ),
       );
       return AppUpdateCheckResult(
         status: status,
         checkedAt: checkedAt,
         info: info,
+        downloadedFilePath: downloadedFilePath,
       );
     } catch (error) {
       final message = error.toString();
       AppLogStore.warning('updates', 'GitHub update check failed: $message');
+      final downloadedFilePath = await _validDownloadedPathFor(
+        metadata.latestInfo,
+        metadata.downloadedUpdatePath,
+      );
+      if (downloadedFilePath != null) {
+        await _saveMetadata(
+          AppUpdateMetadata(
+            lastCheckAtMillis: checkedAt.millisecondsSinceEpoch,
+            lastStatus: AppUpdateStatus.downloaded,
+            lastError: message,
+            latestInfo: metadata.latestInfo,
+            downloadedUpdatePath: downloadedFilePath,
+          ),
+        );
+        return AppUpdateCheckResult(
+          status: AppUpdateStatus.downloaded,
+          checkedAt: checkedAt,
+          info: metadata.latestInfo,
+          error: message,
+          downloadedFilePath: downloadedFilePath,
+        );
+      }
       await _saveMetadata(
         AppUpdateMetadata(
           lastCheckAtMillis: checkedAt.millisecondsSinceEpoch,
@@ -353,11 +392,36 @@ class AppUpdateService {
     AppUpdateInfo info, {
     required void Function(AppUpdateDownloadProgress progress) onProgress,
   }) async {
-    await cleanupOldDownloads();
     final directory = await _updatesDirectory();
     final fileName = sanitizeAssetFileName(info.asset.name);
     final target = File('${directory.path}${Platform.pathSeparator}$fileName');
+    final existingPath = await _validDownloadedPathFor(info, target.path);
+    if (existingPath != null) {
+      await cleanupOldDownloads(keepPath: existingPath);
+      await _saveMetadata(
+        AppUpdateMetadata(
+          lastCheckAtMillis: DateTime.now().millisecondsSinceEpoch,
+          lastStatus: AppUpdateStatus.downloaded,
+          latestInfo: info,
+          downloadedUpdatePath: existingPath,
+        ),
+      );
+      onProgress(
+        AppUpdateDownloadProgress(
+          downloadedBytes: await File(existingPath).length(),
+          totalBytes: info.asset.sizeBytes,
+          bytesPerSecond: 0,
+          done: true,
+          filePath: existingPath,
+        ),
+      );
+      return;
+    }
+    await cleanupOldDownloads(keepPath: target.path);
     final temp = File('${target.path}.part');
+    if (target.existsSync()) {
+      await target.delete();
+    }
     if (temp.existsSync()) {
       await temp.delete();
     }
@@ -461,6 +525,68 @@ class AppUpdateService {
       if (keep != null && entity.path == keep) continue;
       await entity.delete();
     }
+  }
+
+  Future<int> deleteCachedInstallers({required String currentVersion}) async {
+    final directory = await _updatesDirectory();
+    var deleted = 0;
+    if (directory.existsSync()) {
+      await for (final entity in directory.list(followLinks: false)) {
+        if (entity is! File) continue;
+        final name = entity.uri.pathSegments.last.toLowerCase();
+        final matches =
+            name.startsWith('etonify-') &&
+            (name.endsWith('.apk') || name.endsWith('.apk.part'));
+        if (!matches) continue;
+        try {
+          await entity.delete();
+          deleted++;
+        } catch (error) {
+          AppLogStore.warning(
+            'updates',
+            'Failed to delete cached update APK: $error',
+          );
+        }
+      }
+    }
+
+    final metadata = await loadMetadata();
+    final info = metadata.latestInfo;
+    final status = info == null
+        ? AppUpdateStatus.unknown
+        : isRemoteVersionNewer(info.version, currentVersion)
+        ? AppUpdateStatus.updateAvailable
+        : AppUpdateStatus.upToDate;
+    await _saveMetadata(
+      AppUpdateMetadata(
+        lastCheckAtMillis: metadata.lastCheckAtMillis,
+        lastStatus: status,
+        lastError: metadata.lastError,
+        latestInfo: info,
+      ),
+    );
+    return deleted;
+  }
+
+  Future<String?> _validDownloadedPathFor(
+    AppUpdateInfo? info,
+    String? path,
+  ) async {
+    if (info == null) return null;
+    final normalizedPath = path?.trim();
+    if (normalizedPath == null || normalizedPath.isEmpty) return null;
+    final file = File(normalizedPath);
+    if (!file.existsSync()) return null;
+    if (!file.path.toLowerCase().endsWith('.apk')) return null;
+    final expectedName = sanitizeAssetFileName(info.asset.name).toLowerCase();
+    final actualName = file.uri.pathSegments.last.toLowerCase();
+    if (actualName != expectedName) return null;
+    final length = await file.length();
+    if (length <= 0) return null;
+    if (info.asset.sizeBytes > 0 && length != info.asset.sizeBytes) {
+      return null;
+    }
+    return file.path;
   }
 
   static List<AppUpdateAsset> _parseAssets(Object? value) {

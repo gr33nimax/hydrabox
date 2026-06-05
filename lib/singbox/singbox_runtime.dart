@@ -370,6 +370,42 @@ class SingboxRuntime {
     );
   }
 
+  Future<bool> canInstallApks() async {
+    if (!Platform.isAndroid) {
+      return false;
+    }
+    try {
+      final value = await _methods.invokeMethod<bool>('canInstallApks');
+      return value == true;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
+  Future<void> openApkInstallSettings() async {
+    if (!Platform.isAndroid) {
+      return;
+    }
+    try {
+      await _methods.invokeMethod<void>('openApkInstallSettings');
+    } on MissingPluginException {
+      // Ignore on non-Android bridge builds.
+    }
+  }
+
+  Future<void> installDownloadedApk(String path) async {
+    if (!Platform.isAndroid) {
+      return;
+    }
+    final normalizedPath = path.trim();
+    if (normalizedPath.isEmpty) {
+      throw ArgumentError.value(path, 'path', 'APK path is empty');
+    }
+    await _methods.invokeMethod<void>('installDownloadedApk', {
+      'path': normalizedPath,
+    });
+  }
+
   Future<String> getAndroidId() async {
     final value = await _withMethodChannelFallback<String?>(
       () => _hostApi.getAndroidId(),

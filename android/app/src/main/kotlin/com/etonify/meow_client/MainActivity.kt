@@ -13,6 +13,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.util.Log
+import androidx.core.content.FileProvider
 // Legacy Happ native crypt5 path is intentionally disabled. Crypt5/5.1 is now
 // decrypted in Dart from extracted selector/key tables.
 // import com.etonify.meow_client.happcrypto.Crypto5IsolatedService
@@ -103,6 +104,48 @@ class MainActivity : FlutterActivity() {
 
     private fun pigeonMapList(source: List<Map<String, Any>>): List<Map<String?, Any?>?> =
         source.map { entry -> pigeonMap(entry) }
+
+    private fun canRequestApkInstalls(): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            packageManager.canRequestPackageInstalls()
+        } else {
+            true
+        }
+
+    private fun openApkInstallSettings() {
+        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Intent(
+                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                Uri.parse("package:$packageName"),
+            )
+        } else {
+            Intent(Settings.ACTION_SECURITY_SETTINGS)
+        }
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(intent)
+    }
+
+    private fun installDownloadedApk(path: String) {
+        val file = File(path)
+        require(file.exists() && file.isFile) { "APK file does not exist." }
+        require(file.name.lowercase().endsWith(".apk")) { "File is not an APK." }
+        if (!canRequestApkInstalls()) {
+            openApkInstallSettings()
+            throw IllegalStateException("APK install permission is not granted.")
+        }
+        val uri = FileProvider.getUriForFile(
+            this,
+            "$packageName.fileprovider",
+            file,
+        )
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+        }
+        startActivity(intent)
+    }
 
     private fun buildImportDeepLinkPayload(uri: Uri?): Map<String, Any?>? {
         if (uri == null) {
@@ -1244,6 +1287,27 @@ class MainActivity : FlutterActivity() {
                         putExtra(Intent.EXTRA_TITLE, suggestedName)
                     }
                     startActivityForResult(intent, exportDocumentRequestCode)
+                }
+
+                "canInstallApks" -> {
+                    result.success(canRequestApkInstalls())
+                }
+
+                "openApkInstallSettings" -> {
+                    runCatching { openApkInstallSettings() }
+                        .onSuccess { result.success(true) }
+                        .onFailure { result.error("open_install_settings_failed", it.message, null) }
+                }
+
+                "installDownloadedApk" -> {
+                    val path = call.argument<String>("path")?.trim().orEmpty()
+                    if (path.isEmpty()) {
+                        result.error("missing_apk_path", "APK path is empty", null)
+                        return@setMethodCallHandler
+                    }
+                    runCatching { installDownloadedApk(path) }
+                        .onSuccess { result.success(true) }
+                        .onFailure { result.error("install_apk_failed", it.message, null) }
                 }
 
                 "getAndroidId" -> {

@@ -96,7 +96,27 @@
   "updatesCheckAction": "Check now",
   "updatesRetryAction": "Retry",
   "updatesDownloadAction": "Download update",
+  "updatesInstallAction": "Install APK",
   "updatesDownloadWarning": "Keep Etonify open until the download finishes.",
+  "updatesOpeningInstaller": "Opening the system installer…",
+  "updatesInstallPermissionHint": "Allow APK installs for Etonify, then tap “Install APK” again.",
+  "updatesDownloadedFileMissing": "The update file is missing. Download the APK again.",
+  "updatesDeleteCachedApkAction": "Delete installer APK",
+  "updatesDeleteCachedApkTitle": "Delete installer APK?",
+  "updatesDeleteCachedApkMessage": "This will delete the downloaded {version} update APK and old temporary Etonify APK files from the app cache.",
+  "@updatesDeleteCachedApkMessage": {
+    "placeholders": {
+      "version": {}
+    }
+  },
+  "updatesDeleteCachedApkDone": "Update cache cleaned. Files deleted: {count}.",
+  "@updatesDeleteCachedApkDone": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "updatesUpToDateTitle": "Etonify is up to date",
   "updatesUpToDateSubtitle": "Installed version: {version}",
   "@updatesUpToDateSubtitle": {

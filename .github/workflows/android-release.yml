@@ -11,10 +11,6 @@ on:
         description: "Optional versionCode override, for example 1"
         required: false
         type: string
-  push:
-    tags:
-      - "v*"
-      - "[0-9]*"
 
 permissions:
   contents: write
@@ -187,7 +183,7 @@ jobs:
           HAPP_CRYPTO_TESTS: "true"
         run: flutter test
 
-      - name: Build universal and ABI APKs
+      - name: Build obfuscated universal and ABI APKs
         shell: bash
         run: |
           mkdir -p build/release-apks
@@ -241,6 +237,7 @@ jobs:
           notes_file="build/release-notes.md"
           cat > "$notes_file" <<EOF
           Signed Android APKs built from ${GITHUB_SHA}.
+          Dart obfuscation is enabled. Debug symbols are attached as a separate workflow artifact.
 
           Assets:
           - etonify-v${RELEASE_VERSION}-universal.apk

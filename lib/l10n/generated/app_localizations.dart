@@ -602,11 +602,59 @@ abstract class AppLocalizations {
   /// **'Download update'**
   String get updatesDownloadAction;
 
+  /// No description provided for @updatesInstallAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Install APK'**
+  String get updatesInstallAction;
+
   /// No description provided for @updatesDownloadWarning.
   ///
   /// In en, this message translates to:
   /// **'Keep Etonify open until the download finishes.'**
   String get updatesDownloadWarning;
+
+  /// No description provided for @updatesOpeningInstaller.
+  ///
+  /// In en, this message translates to:
+  /// **'Opening the system installer…'**
+  String get updatesOpeningInstaller;
+
+  /// No description provided for @updatesInstallPermissionHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow APK installs for Etonify, then tap “Install APK” again.'**
+  String get updatesInstallPermissionHint;
+
+  /// No description provided for @updatesDownloadedFileMissing.
+  ///
+  /// In en, this message translates to:
+  /// **'The update file is missing. Download the APK again.'**
+  String get updatesDownloadedFileMissing;
+
+  /// No description provided for @updatesDeleteCachedApkAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete installer APK'**
+  String get updatesDeleteCachedApkAction;
+
+  /// No description provided for @updatesDeleteCachedApkTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete installer APK?'**
+  String get updatesDeleteCachedApkTitle;
+
+  /// No description provided for @updatesDeleteCachedApkMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'This will delete the downloaded {version} update APK and old temporary Etonify APK files from the app cache.'**
+  String updatesDeleteCachedApkMessage(Object version);
+
+  /// No description provided for @updatesDeleteCachedApkDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Update cache cleaned. Files deleted: {count}.'**
+  String updatesDeleteCachedApkDone(int count);
 
   /// No description provided for @updatesUpToDateTitle.
   ///
