@@ -33,11 +33,20 @@ class MeowApplication : Application() {
             val updatedAtMillis: Long,
         )
 
+        data class RuntimeIntentState(
+            val pid: Int,
+            val mode: String,
+            val reason: String,
+            val updatedAtMillis: Long,
+        )
+
         private const val RUNTIME_FLAGS_PREF = "meow_runtime_flags"
         private const val FLAG_WAKE_LOCK = "wake_lock_enabled"
         private const val FLAG_HEARTBEAT = "network_heartbeat_enabled"
         private const val FLAG_HEARTBEAT_INTERVAL_SECONDS = "network_heartbeat_interval_seconds"
         private const val FLAG_PERFORMANCE_MODE = "performance_mode"
+        private const val FLAG_MEMORY_LIMIT_ENABLED = "memory_limit_enabled"
+        private const val RUNTIME_INTENT_MAX_AGE_MS = 120_000L
 
         lateinit var application: MeowApplication
         @Volatile
@@ -48,6 +57,8 @@ class MeowApplication : Application() {
             get() = File(application.filesDir, "singbox-config.json")
         val serviceStateFile: File
             get() = File(application.filesDir, "singbox-service-state.txt")
+        val runtimeIntentFile: File
+            get() = File(application.filesDir, "singbox-runtime-intent.txt")
 
         private val runtimeFlagsPrefs
             get() = application.getSharedPreferences(
@@ -78,15 +89,31 @@ class MeowApplication : Application() {
             }
 
         var performanceMode: String
-            get() = runtimeFlagsPrefs.getString(FLAG_PERFORMANCE_MODE, "cool") ?: "cool"
+            get() {
+                return when (runtimeFlagsPrefs.getString(FLAG_PERFORMANCE_MODE, "standard") ?: "standard") {
+                    "cool" -> "standard"
+                    "economy" -> "economy"
+                    "balanced", "performance" -> "standard"
+                    else -> "standard"
+                }
+            }
             set(value) {
                 val normalized = when (value) {
-                    "performance" -> "performance"
-                    "balanced" -> "balanced"
-                    else -> "cool"
+                    "cool", "standard" -> "standard"
+                    "economy" -> "economy"
+                    "performance", "balanced" -> "standard"
+                    else -> "standard"
                 }
                 runtimeFlagsPrefs.edit()
                     .putString(FLAG_PERFORMANCE_MODE, normalized)
+                    .apply()
+            }
+
+        var memoryLimitEnabled: Boolean
+            get() = runtimeFlagsPrefs.getBoolean(FLAG_MEMORY_LIMIT_ENABLED, true)
+            set(value) {
+                runtimeFlagsPrefs.edit()
+                    .putBoolean(FLAG_MEMORY_LIMIT_ENABLED, value)
                     .apply()
             }
 
@@ -104,16 +131,23 @@ class MeowApplication : Application() {
                 val baseDir = File(app.filesDir, "singbox-base").apply { mkdirs() }
                 val workingDir = File(app.getExternalFilesDir(null) ?: app.filesDir, "singbox-work").apply { mkdirs() }
                 val tempDir = File(app.cacheDir, "singbox-tmp").apply { mkdirs() }
+                val memoryLimitFlag = memoryLimitEnabled
                 val setupOptions = SetupOptions().apply {
                     basePath = baseDir.absolutePath
                     workingPath = workingDir.absolutePath
                     tempPath = tempDir.absolutePath
                     logMaxLines = if (performanceMode == "performance") 3000 else 800
                     debug = (app.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+                    oomKillerEnabled = memoryLimitFlag
+                    oomKillerDisabled = !memoryLimitFlag
+                    oomMemoryLimit = 0L
                 }
                 Libbox.setup(setupOptions)
                 libboxReady = true
-                MeowDiagnostics.log("Application", "ensureLibboxSetup done pid=${android.os.Process.myPid()}")
+                MeowDiagnostics.log(
+                    "Application",
+                    "ensureLibboxSetup done pid=${android.os.Process.myPid()} memoryLimit=${if (memoryLimitFlag) "enabled" else "disabled"}",
+                )
             }
         }
 
@@ -140,11 +174,44 @@ class MeowApplication : Application() {
             )
         }
 
+        fun writeRuntimeIntent(mode: String, reason: String) {
+            val pid = android.os.Process.myPid()
+            val updatedAtMillis = System.currentTimeMillis()
+            runtimeIntentFile.parentFile?.mkdirs()
+            runtimeIntentFile.writeText(
+                buildString {
+                    append("pid=")
+                    append(pid)
+                    append('\n')
+                    append("mode=")
+                    append(mode)
+                    append('\n')
+                    append("reason=")
+                    append(reason)
+                    append('\n')
+                    append("updatedAtMillis=")
+                    append(updatedAtMillis)
+                    append('\n')
+                },
+            )
+            MeowDiagnostics.log(
+                "Application",
+                "writeRuntimeIntent pid=$pid mode=$mode reason=$reason updatedAtMillis=$updatedAtMillis",
+            )
+        }
+
         fun clearServiceState() {
             val deleted = runCatching {
                 !serviceStateFile.exists() || serviceStateFile.delete()
             }.getOrDefault(false)
             MeowDiagnostics.log("Application", "clearServiceState deleted=$deleted")
+        }
+
+        fun clearRuntimeIntent() {
+            val deleted = runCatching {
+                !runtimeIntentFile.exists() || runtimeIntentFile.delete()
+            }.getOrDefault(false)
+            MeowDiagnostics.log("Application", "clearRuntimeIntent deleted=$deleted")
         }
 
         fun readServiceState(): ServiceState? {
@@ -170,6 +237,40 @@ class MeowApplication : Application() {
                     null
                 } else {
                     ServiceState(pid = pid, mode = mode, updatedAtMillis = updatedAtMillis)
+                }
+            }.getOrNull()
+        }
+
+        fun readRuntimeIntent(): RuntimeIntentState? {
+            return runCatching {
+                if (!runtimeIntentFile.exists()) {
+                    return null
+                }
+                var pid = -1
+                var mode = ""
+                var reason = ""
+                var updatedAtMillis = 0L
+                for (line in runtimeIntentFile.readLines()) {
+                    val index = line.indexOf('=')
+                    if (index <= 0) continue
+                    val key = line.substring(0, index)
+                    val value = line.substring(index + 1)
+                    when (key) {
+                        "pid" -> pid = value.toIntOrNull() ?: -1
+                        "mode" -> mode = value
+                        "reason" -> reason = value
+                        "updatedAtMillis" -> updatedAtMillis = value.toLongOrNull() ?: 0L
+                    }
+                }
+                if (pid <= 0 || mode.isBlank()) {
+                    null
+                } else {
+                    RuntimeIntentState(
+                        pid = pid,
+                        mode = mode,
+                        reason = reason,
+                        updatedAtMillis = updatedAtMillis,
+                    )
                 }
             }.getOrNull()
         }
@@ -202,6 +303,28 @@ class MeowApplication : Application() {
             }
         }
 
+        fun describeRuntimeIntent(): String {
+            val state = readRuntimeIntent()
+            if (state == null) {
+                return "intent=missing"
+            }
+            val ageMs = System.currentTimeMillis() - state.updatedAtMillis
+            return buildString {
+                append("intentPid=")
+                append(state.pid)
+                append(" mode=")
+                append(state.mode)
+                append(" reason=")
+                append(state.reason)
+                append(" updatedAtMillis=")
+                append(state.updatedAtMillis)
+                append(" ageMs=")
+                append(ageMs)
+                append(" fresh=")
+                append(ageMs in 0..RUNTIME_INTENT_MAX_AGE_MS)
+            }
+        }
+
         fun isRecordedServiceAlive(mode: String? = null): Boolean {
             val state = readServiceState() ?: return false
             if (mode != null && state.mode != mode) {
@@ -214,6 +337,15 @@ class MeowApplication : Application() {
                     .trim()
             }.getOrDefault("")
             return cmdline.contains(application.packageName)
+        }
+
+        fun isRuntimeIntentFresh(mode: String? = null): Boolean {
+            val state = readRuntimeIntent() ?: return false
+            if (mode != null && state.mode != mode) {
+                return false
+            }
+            val ageMs = System.currentTimeMillis() - state.updatedAtMillis
+            return ageMs in 0..RUNTIME_INTENT_MAX_AGE_MS
         }
     }
 }

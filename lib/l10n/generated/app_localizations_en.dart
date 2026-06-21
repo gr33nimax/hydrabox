@@ -47,6 +47,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get unavailableForThisType => 'Unavailable for this type';
 
   @override
+  String get sort => 'Sort';
+
+  @override
   String get sortByDefault => 'Source order';
 
   @override
@@ -90,7 +93,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get logsSubtitle => 'Generated sing-box config and app events';
 
   @override
-  String get urlTestTitle => 'URLTest';
+  String get urlTestTitle => 'Server checks';
 
   @override
   String get urlTestSubtitle => 'Latency check and lowest selection';
@@ -126,6 +129,55 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get aboutCoreSourceLabel => 'core source code';
+
+  @override
+  String get telegramChannelLabel => 'Etonify Telegram';
+
+  @override
+  String get legalTermsTitle => 'Terms of Use';
+
+  @override
+  String get legalPrivacyTitle => 'Privacy Policy';
+
+  @override
+  String get legalTermsSummary =>
+      'Rules for responsible use and project disclaimers.';
+
+  @override
+  String get legalPrivacySummary =>
+      'What Etonify stores locally and what it does not collect.';
+
+  @override
+  String get legalGateTitle => 'Before using Etonify';
+
+  @override
+  String legalGateSubtitle(String version) {
+    return 'Starting with version $version, please read and accept the Terms and Privacy Policy to continue.';
+  }
+
+  @override
+  String get legalAcceptAction => 'Accept and continue';
+
+  @override
+  String get legalAcceptHint => 'Open both documents to enable continue.';
+
+  @override
+  String get legalDocumentReadAction => 'I have read it';
+
+  @override
+  String get legalContactAction => 'Contact';
+
+  @override
+  String get legalImportBlockedMessage =>
+      'Accept Terms and Privacy Policy before importing subscriptions.';
+
+  @override
+  String get legalTermsBody =>
+      '# Etonify Terms of Use\n\nEtonify is an Android VPN client made by MeowTeam for private, everyday network access. The app does not provide VPN servers by itself. You are responsible for the subscriptions, profiles, and servers you add.\n\nUse Etonify only in a legal and responsible way. Do not use the client for fraud, attacks, harassment, malware distribution, or other illegal activity. MeowTeam is not responsible for how users apply third-party VPN profiles or network access.\n\nEtonify is provided as-is. We work on stability and security, but we cannot guarantee that every provider, route, DNS resolver, network, or Android firmware will behave perfectly. If something breaks, send feedback through the official Telegram channel or the contacts on the MeowTeam page.\n\nSome features need Android permissions: VPN service creates the system VPN tunnel, camera scans QR codes, notifications show service state, package visibility helps split tunneling, and APK install permission is used only for user-requested updates.\n\nBy continuing, you confirm that you understand these rules and accept responsibility for your own use of the client.';
+
+  @override
+  String get legalPrivacyBody =>
+      '# Etonify Privacy Policy\n\nEtonify does not include analytics, advertising SDKs, or hidden tracking. MeowTeam does not sell your data and does not collect your VPN keys on our servers.\n\nYour subscriptions, imported profiles, selected server, settings, and logs are stored locally on your device. Some backup/export features can create files that contain VPN keys. Keep exported profiles private, especially if you export without password encryption.\n\nWhen you import or refresh a subscription, Etonify connects directly to the URL you provided. A Happ subscription may require HWID and a Happ user agent; Etonify asks before sending HWID.\n\nLogs are meant for troubleshooting. We try to redact secrets before showing or exporting logs, but you should still review exported logs before sharing them publicly.\n\nIf you have questions or want something removed from feedback you sent manually, contact us through the official Telegram channel or MeowTeam contacts.';
 
   @override
   String get coreVersionLabel => 'Core version';
@@ -201,6 +253,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get teamDeveloperYamixdevRole => 'MeowTeam developer';
+
+  @override
+  String get teamTelegramRole => 'Official channel and release news';
 
   @override
   String get languageSettingTitle => 'Language';
@@ -291,6 +346,78 @@ class AppLocalizationsEn extends AppLocalizations {
       'Allow APK installs for Etonify, then tap “Install APK” again.';
 
   @override
+  String get updatesInstallPermissionTitle => 'Permission required';
+
+  @override
+  String get updatesInstallPermissionMessage =>
+      'Allow Etonify to install unknown apps before it can open the downloaded APK installer. Without this permission you can only download the file manually.';
+
+  @override
+  String get updatesInstallPermissionOpen => 'Open settings';
+
+  @override
+  String get updatesInstallPermissionGranted =>
+      'APK install permission is enabled.';
+
+  @override
+  String get updatesInstallModeTitle => 'Update installation';
+
+  @override
+  String get updatesInstallModeAsk => 'Ask every time';
+
+  @override
+  String get updatesInstallModeAskSubtitle =>
+      'Etonify will ask whether to download manually or install automatically.';
+
+  @override
+  String get updatesInstallModeManual => 'Manual';
+
+  @override
+  String get updatesInstallModeManualSubtitle =>
+      'The client downloads the APK and shows an install button.';
+
+  @override
+  String get updatesInstallModeAuto => 'Automatic';
+
+  @override
+  String get updatesInstallModeAutoSubtitle =>
+      'The client downloads the APK and opens the Android installer.';
+
+  @override
+  String get updatesInstallMethodTitle =>
+      'How should this update be installed?';
+
+  @override
+  String get updatesInstallMethodManualTitle => 'Download manually';
+
+  @override
+  String get updatesInstallMethodManualSubtitle =>
+      'The APK is saved in the update cache. You can install it later.';
+
+  @override
+  String get updatesInstallMethodAutoTitle => 'Download and install';
+
+  @override
+  String get updatesInstallMethodAutoSubtitle =>
+      'After download, Etonify opens the Android system installer.';
+
+  @override
+  String get updatesInstallMethodRemember => 'Remember this choice';
+
+  @override
+  String get updatesApkVerificationTitle => 'APK check';
+
+  @override
+  String get updatesApkVerificationVerified => 'SHA-256 matches';
+
+  @override
+  String get updatesApkVerificationUnavailable =>
+      'SHA-256 is not provided by this release';
+
+  @override
+  String get updatesApkVerificationFailed => 'SHA-256 does not match';
+
+  @override
   String get updatesDownloadedFileMissing =>
       'The update file is missing. Download the APK again.';
 
@@ -325,6 +452,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String updatesAvailableSubtitle(String version, String size) {
     return '$version · $size';
   }
+
+  @override
+  String get updatesAvailableSnack => 'Client update available';
+
+  @override
+  String updatesAvailableSnackVersion(Object version) {
+    return 'Client update $version is available';
+  }
+
+  @override
+  String get updatesOpenAction => 'Open';
 
   @override
   String get updatesDownloadingTitle => 'Downloading update';
@@ -565,6 +703,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get performanceModeCool => 'Cool';
 
   @override
+  String get performanceModeStandard => 'Standard';
+
+  @override
+  String get performanceModeEconomy => 'Economy';
+
+  @override
   String get performanceModeBalanced => 'Balanced';
 
   @override
@@ -573,6 +717,14 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get performanceModeCoolSubtitle =>
       'Lowest heat and background load for daily Android use.';
+
+  @override
+  String get performanceModeStandardSubtitle =>
+      'Stable daily mode: automatic ping every 5 minutes, moderate concurrency, and less background load.';
+
+  @override
+  String get performanceModeEconomySubtitle =>
+      'Minimum extra background work: automatic ping every 5 minutes, fewer parallel checks, and no automatic server geolocation.';
 
   @override
   String get performanceModeBalancedSubtitle =>
@@ -584,7 +736,28 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get performanceModeRecommendation =>
-      'Recommended: keep Cool for now. This setting will be reworked soon.';
+      'Recommended: keep Standard. Use Economy when battery life matters more than fast background checks.';
+
+  @override
+  String get memoryLimitTitle => 'Memory limit';
+
+  @override
+  String get memoryLimitEnabledSubtitle =>
+      'Recommended. Lets sing-box stop before memory pressure can destabilize the app. Changes take effect after app restart.';
+
+  @override
+  String get memoryLimitDisabledSubtitle =>
+      'Disabled. Can help with false memory-limit errors, but may increase RAM use and crash risk. Takes effect after app restart.';
+
+  @override
+  String get memoryLimitDisableWarningTitle => 'Disable memory limit?';
+
+  @override
+  String get memoryLimitDisableWarningMessage =>
+      'Use this only if VPN start fails with a memory-limit error. Disabling the limit can increase RAM usage, heat, and the chance Android kills the app. The change takes effect after restarting Etonify.';
+
+  @override
+  String get memoryLimitDisableConfirm => 'Disable';
 
   @override
   String get enableInboundTitle => 'Enabled';
@@ -596,6 +769,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get vpnInboundEnabledSubtitle =>
       'Creates a VPN TUN inbound and routes traffic through it';
+
+  @override
+  String get inboundNoneEnabled =>
+      'Enable VPN TUN or Proxy In before starting.';
 
   @override
   String get mtuTitle => 'MTU';
@@ -671,6 +848,17 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get dnsDirectResolverSubtitle =>
       'DNS for direct requests without proxy';
+
+  @override
+  String get dnsRussiaDirectTitle => 'DNS for Russia routes';
+
+  @override
+  String get dnsRussiaDirectSubtitle =>
+      'Used only when Russia routes are enabled. Russian domains resolve directly through this DNS so sites and apps reach direct routing faster.';
+
+  @override
+  String get dnsRussiaDirectResolverSubtitle =>
+      'Default: udp://77.88.8.8. Keep a fast Russian DNS when using “all except RU through VPN”.';
 
   @override
   String get dnsProxyPresetSubtitle =>
@@ -765,6 +953,25 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get locationLookupLimitSubtitle =>
       'After URLTest, the app resolves external IP and country for this many fastest outbounds';
+
+  @override
+  String get locationLookupTimeoutTitle => 'Request timeout';
+
+  @override
+  String get locationLookupTimeoutSubtitle =>
+      'How long to wait for external IP and country for one server';
+
+  @override
+  String get locationLookupConcurrencyTitle => 'Parallel requests';
+
+  @override
+  String get locationLookupConcurrencySubtitle =>
+      'How many location requests may run at the same time';
+
+  @override
+  String settingsSecondsShort(int seconds) {
+    return '${seconds}s';
+  }
 
   @override
   String get serverRequestTitle => 'Server request';
@@ -865,7 +1072,45 @@ class AppLocalizationsEn extends AppLocalizations {
   String get subscriptionsTitle => 'Subscriptions';
 
   @override
+  String get settingsProfilesChecksTitle => 'Profiles and checks';
+
+  @override
+  String get settingsProfilesChecksSubtitle =>
+      'Server checks · HWID · profile options';
+
+  @override
   String get addSubscription => 'Add subscription';
+
+  @override
+  String get addSubscriptionQuickTitle => 'Add profile';
+
+  @override
+  String get addSubscriptionQuickSubtitle =>
+      'Choose how to import a subscription.';
+
+  @override
+  String get addSubscriptionFromClipboard => 'Clipboard';
+
+  @override
+  String get addSubscriptionManual => 'Manual';
+
+  @override
+  String get addSubscriptionReadingClipboard => 'Reading clipboard…';
+
+  @override
+  String get addSubscriptionReadingFile => 'Reading file…';
+
+  @override
+  String get addSubscriptionImporting => 'Importing subscription…';
+
+  @override
+  String get addSubscriptionSaving => 'Saving profile…';
+
+  @override
+  String get addSubscriptionDone => 'Subscription added';
+
+  @override
+  String get clipboardEmpty => 'Clipboard is empty';
 
   @override
   String get scanQrCode => 'Scan QR';
@@ -1025,6 +1270,9 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get subscriptionReparseRecommended => 'Reparse needed';
+
+  @override
   String get subscriptionProxyTypeLabel => 'Proxies';
 
   @override
@@ -1099,6 +1347,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get deepLinkImportHappSendHwidAction => 'Send HWID and import';
 
   @override
+  String get deepLinkImportHappWithoutHwidAction => 'Import without HWID';
+
+  @override
   String get deepLinkImportHappCancelAction => 'Do not import';
 
   @override
@@ -1133,7 +1384,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get happImportMessage =>
-      'This subscription is intended for the Happ app and may require your device HWID. Continue only if you agree to send the HWID and Happ User-Agent to the subscription server.';
+      'This subscription is intended for the Happ app and may require your device HWID. You can send HWID now, import without HWID, or cancel. If the provider requires HWID, importing without it may show placeholder nodes about an unsupported device.';
 
   @override
   String get subscriptionOperationSlowWarning =>
@@ -1170,7 +1421,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get russiaRoutesSubtitle =>
-      'The client locally copies runetfreedom bundles and downloads the required domain-list-community categories, then builds local rule-set files.';
+      'The client downloads the live runetfreedom sing-box.zip, verifies required rule-set files, and uses the bundled fallback if it fails.';
 
   @override
   String get russiaRoutesInstallAction => 'Prepare';
@@ -1186,7 +1437,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get russiaRoutesEnabledSubtitle =>
-      'Required routes will be applied automatically: some through the proxy, some directly.';
+      'Required routes will be applied automatically: reachable Russian services go direct, everything else stays on VPN.';
 
   @override
   String get russiaRoutesMissingSubtitle =>
@@ -1200,11 +1451,26 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get russiaRoutesMissingHint =>
-      'The client will copy bundled runetfreedom `.srs`, download domain-list-community categories, and build local route files for sing-box.';
+      'The client will download runetfreedom sing-box.zip, verify required `.srs`, and use the bundled fallback if needed.';
 
   @override
   String russiaRoutesReadyStatus(String versionTag) {
     return 'Routes are ready, version: $versionTag';
+  }
+
+  @override
+  String get russiaRoutesLiveSource => 'runetfreedom sing-box.zip';
+
+  @override
+  String get russiaRoutesBundledSource => 'bundled fallback';
+
+  @override
+  String russiaRoutesSourceMeta(
+    String source,
+    String verifiedAt,
+    int fileCount,
+  ) {
+    return 'Source: $source · verified: $verifiedAt · files: $fileCount';
   }
 
   @override
@@ -1267,7 +1533,18 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get splitRoutingSubtitle =>
-      'Route selected Android packages through the proxy or bypass it';
+      'Route selected Android apps through VPN TUN or fully outside the VPN.';
+
+  @override
+  String get splitRoutingUnavailableTitle => 'Temporarily unavailable';
+
+  @override
+  String get splitRoutingUnavailableMessage =>
+      'Split tunneling does not work correctly right now. We are working on a fix. Follow updates.';
+
+  @override
+  String get splitRoutingTunOnly =>
+      'Per-app split tunneling works only when VPN TUN is enabled. Local Proxy In cannot see Android app package names.';
 
   @override
   String get splitRoutingModeTitle => 'Mode';
@@ -1280,18 +1557,18 @@ class AppLocalizationsEn extends AppLocalizations {
       'Use the normal routing flow for all apps';
 
   @override
-  String get splitRoutingModeProxySelected => 'Proxy selected';
+  String get splitRoutingModeProxySelected => 'Through VPN';
 
   @override
   String get splitRoutingModeProxySelectedSubtitle =>
-      'Only the selected apps go through the proxy';
+      'Only selected apps enter VPN TUN and use the selected server';
 
   @override
-  String get splitRoutingModeBypassSelected => 'Bypass selected';
+  String get splitRoutingModeBypassSelected => 'Outside VPN';
 
   @override
   String get splitRoutingModeBypassSelectedSubtitle =>
-      'Selected apps bypass the proxy and go direct';
+      'Selected apps do not enter VPN TUN and go direct';
 
   @override
   String get splitRoutingAppsTitle => 'Applications';
@@ -1441,6 +1718,34 @@ class AppLocalizationsEn extends AppLocalizations {
       'Selects the lowest-latency proxy more strictly, but may switch servers more often.';
 
   @override
+  String get tlsFragmentationTitle => 'TLS fragmentation';
+
+  @override
+  String get tlsFragmentationSubtitle =>
+      'Fragments TLS handshakes for proxy outbounds. It can help with DPI, but may slow connection setup.';
+
+  @override
+  String get tlsFragmentationModeDisabled => 'Disabled';
+
+  @override
+  String get tlsFragmentationModeDisabledSubtitle =>
+      'Does not change server TLS settings.';
+
+  @override
+  String get tlsFragmentationModeRecord => 'TLS record fragment';
+
+  @override
+  String get tlsFragmentationModeRecordSubtitle =>
+      'Softer mode. Try this first.';
+
+  @override
+  String get tlsFragmentationModeFragment => 'TLS fragment';
+
+  @override
+  String get tlsFragmentationModeFragmentSubtitle =>
+      'More aggressive mode with a 300 ms fallback delay.';
+
+  @override
   String get blockLeaksTitle => 'Fix some leaks';
 
   @override
@@ -1458,4 +1763,113 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get pasteAction => 'Paste';
+
+  @override
+  String get cancelAction => 'Cancel';
+
+  @override
+  String get backupTitle => 'Data & backup';
+
+  @override
+  String get backupSubtitle => 'Export settings or move subscriptions safely';
+
+  @override
+  String get backupExportSettings => 'Export settings';
+
+  @override
+  String get backupExportSettingsSubtitle =>
+      'Saves only safe client settings, without subscriptions or keys';
+
+  @override
+  String get backupExportProfileEncrypted =>
+      'Export subscriptions with password';
+
+  @override
+  String get backupExportProfileEncryptedSubtitle =>
+      'Recommended. Stores subscriptions, selected nodes and raw profile data encrypted with AES-256-GCM';
+
+  @override
+  String get backupExportProfilePlain =>
+      'Export subscriptions without encryption';
+
+  @override
+  String get backupExportProfilePlainSubtitle =>
+      'Only use this for trusted local transfer. The file contains VPN keys';
+
+  @override
+  String get backupImportFile => 'Import Etonify file';
+
+  @override
+  String get backupImportFileSubtitle =>
+      'Supports .etonify-settings.json and .etonify-profile from Etonify 0.2.0+';
+
+  @override
+  String get backupPlainWarningTitle => 'The file will contain VPN keys';
+
+  @override
+  String get backupPlainWarningMessage =>
+      'Plain export is readable by anyone who gets the file. Use encrypted export unless you fully trust the storage and transfer path.';
+
+  @override
+  String get backupPlainImportTitle => 'Plain profile file';
+
+  @override
+  String get backupPlainImportMessage =>
+      'This file contains subscriptions and VPN keys without encryption. Import it only if you trust the source.';
+
+  @override
+  String get backupPasswordCreateTitle => 'Create export password';
+
+  @override
+  String get backupPasswordEnterTitle => 'Enter profile password';
+
+  @override
+  String get backupPasswordHint => 'Password';
+
+  @override
+  String get backupSaved => 'Backup file saved';
+
+  @override
+  String get backupImported => 'Import completed';
+
+  @override
+  String get backupUnsupportedVersion =>
+      'This backup format is not supported by this client version.';
+
+  @override
+  String get backupNewerVersionTitle => 'Backup from a newer client';
+
+  @override
+  String backupNewerVersionMessage(String version) {
+    return 'This file was created by Etonify $version. Some settings may not apply correctly. Continue?';
+  }
+
+  @override
+  String get splitRoutingEmptyWhitelist =>
+      'Choose at least one app or disable split tunneling before starting VPN.';
+
+  @override
+  String get connectionStagePreparing => 'Preparing VPN';
+
+  @override
+  String get connectionStageConfiguring => 'Building config';
+
+  @override
+  String get connectionStageStarting => 'Starting core';
+
+  @override
+  String get connectionStageStopping => 'Stopping VPN';
+
+  @override
+  String get connectionStageRecovering => 'Recovering';
+
+  @override
+  String get connectionStageSelectingProxy => 'Selecting server';
+
+  @override
+  String get vpnStartTimedOut =>
+      'VPN did not start within 15 seconds. Startup was stopped.';
+
+  @override
+  String get vpnStartFailed => 'Failed to start VPN.';
 }

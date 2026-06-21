@@ -4,9 +4,58 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:meow_client/data/subscription/subscription_fetcher.dart';
 import 'package:meow_client/data/subscription/subscription_store.dart';
+import 'package:meow_client/models/subscription.dart';
 
 void main() {
   group('SubscriptionFetcher', () {
+    test('uses current Etonify user agent by default', () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(server.close);
+
+      late String? userAgent;
+      server.listen((request) async {
+        userAgent = request.headers.value('user-agent');
+        request.response.write(
+          'vless://uuid@server.com:443?type=tcp&security=tls#Node1',
+        );
+        await request.response.close();
+      });
+
+      await SubscriptionFetcher.fetch(
+        'http://${server.address.host}:${server.port}/sub',
+      );
+
+      expect(userAgent, SubscriptionFetcher.defaultUserAgent);
+    });
+
+    test('sends custom user agent and X-HWID when requested', () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(server.close);
+
+      late String? userAgent;
+      late String? hwid;
+      server.listen((request) async {
+        userAgent = request.headers.value('user-agent');
+        hwid = request.headers.value('x-hwid');
+        request.response.write(
+          'vless://uuid@server.com:443?type=tcp&security=tls#Node1',
+        );
+        await request.response.close();
+      });
+
+      await SubscriptionFetcher.fetch(
+        'http://${server.address.host}:${server.port}/sub',
+        requestInfo: const SubscriptionInfo(
+          customUserAgent: 'CustomClient/9.9',
+          requireHwid: true,
+          customHwid: 'spoofed-hwid',
+        ),
+      );
+
+      expect(userAgent, 'CustomClient/9.9');
+      expect(hwid, 'spoofed-hwid');
+    });
+
     test('decodes profile-title with base64 prefix', () async {
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       addTearDown(server.close);

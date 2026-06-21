@@ -5,6 +5,11 @@ import android.app.ActivityManager
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ApplicationInfo
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.net.VpnService
 import android.os.Build
@@ -23,7 +28,10 @@ import com.etonify.meow_client.singbox.MeowDiagnostics
 import com.etonify.meow_client.singbox.MeowProxyService
 import com.etonify.meow_client.singbox.MeowVpnService
 import com.etonify.meow_client.singbox.SingboxController
+import com.etonify.meow_client.generated.EndpointProbeRequestMessage
+import com.etonify.meow_client.generated.EndpointProbeResultMessage
 import com.etonify.meow_client.generated.FlutterError as PigeonFlutterError
+import com.etonify.meow_client.generated.NetworkInterfaceStateMessage
 import com.etonify.meow_client.generated.RuntimeFlagsMessage
 import com.etonify.meow_client.generated.SingboxHostApi
 import io.flutter.embedding.android.FlutterActivity
@@ -32,6 +40,7 @@ import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import io.nekohasekai.libbox.Libbox
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.file.Files
@@ -104,6 +113,32 @@ class MainActivity : FlutterActivity() {
 
     private fun pigeonMapList(source: List<Map<String, Any>>): List<Map<String?, Any?>?> =
         source.map { entry -> pigeonMap(entry) }
+
+    private fun getOwnPackageInfoCompat(): PackageInfo =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            packageManager.getPackageInfo(
+                packageName,
+                PackageManager.PackageInfoFlags.of(0),
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.getPackageInfo(packageName, 0)
+        }
+
+    private fun getAppVersionInfo(): Map<String, Any> {
+        val info = getOwnPackageInfoCompat()
+        val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            info.longVersionCode
+        } else {
+            @Suppress("DEPRECATION")
+            info.versionCode.toLong()
+        }
+        return linkedMapOf(
+            "packageName" to packageName,
+            "versionName" to (info.versionName ?: ""),
+            "versionCode" to versionCode,
+        )
+    }
 
     private fun canRequestApkInstalls(): Boolean =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -303,11 +338,25 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun runtimeStopTargets(): List<Class<out android.app.Service>> {
-        val primary = when (SingboxController.serviceMode) {
+    private fun currentRuntimeModeForStop(): String {
+        val controllerMode = SingboxController.serviceMode.trim().lowercase()
+        if (controllerMode == "vpn" || controllerMode == "proxy") {
+            return controllerMode
+        }
+        val recordedMode = MeowApplication.readServiceState()?.mode?.trim()?.lowercase().orEmpty()
+        return if (recordedMode == "proxy") "proxy" else "vpn"
+    }
+
+    private fun runtimeStopTargetForMode(mode: String): Class<out android.app.Service> {
+        return when (mode) {
             "proxy" -> MeowProxyService::class.java
             else -> MeowVpnService::class.java
         }
+    }
+
+    private fun runtimeCleanupTargets(
+        primary: Class<out android.app.Service>,
+    ): List<Class<out android.app.Service>> {
         val secondary = if (primary == MeowVpnService::class.java) {
             MeowProxyService::class.java
         } else {
@@ -316,53 +365,130 @@ class MainActivity : FlutterActivity() {
         return listOf(primary, secondary)
     }
 
+    private fun cleanupStoppedRuntimeState(
+        reason: String,
+        source: String,
+        stopRequestedAtMillis: Long,
+        targets: List<Class<out android.app.Service>>,
+        force: Boolean,
+    ): Boolean {
+        val runtimeIntent = MeowApplication.readRuntimeIntent()
+        val freshStartAfterStop =
+            runtimeIntent != null &&
+                runtimeIntent.updatedAtMillis > stopRequestedAtMillis &&
+                MeowApplication.isRuntimeIntentFresh(runtimeIntent.mode)
+        if (freshStartAfterStop) {
+            MeowDiagnostics.log(
+                TAG,
+                "cleanupStoppedRuntimeState skipped fresh start reason=$reason source=$source " +
+                    "intent=${MeowApplication.describeRuntimeIntent()}",
+            )
+            return false
+        }
+        if (force) {
+            SingboxController.log(
+                "warning",
+                "force runtime cleanup reason=$reason source=$source " +
+                    "running=${SingboxController.running} mode=${SingboxController.serviceMode} " +
+                    "activeOwner=${MeowBoxService.hasActiveRuntimeOwner(SingboxController.serviceMode)}",
+            )
+            MeowBoxService.requestStopAll("force_cleanup:$reason:$source")
+            MeowDefaultNetworkMonitor.stop()
+            SingboxController.forceMarkServiceStopped("force_cleanup:$reason:$source")
+        }
+        for (serviceClass in targets) {
+            runCatching {
+                stopService(Intent(this, serviceClass))
+            }.onFailure {
+                MeowDiagnostics.log(TAG, "stopService failed target=${serviceClass.simpleName}", it)
+            }
+        }
+        MeowApplication.clearServiceState()
+        MeowApplication.clearRuntimeIntent()
+        MeowQuickSettingsTileService.requestRefresh(this)
+        MeowDiagnostics.log(
+            TAG,
+            "cleanupStoppedRuntimeState completed reason=$reason source=$source force=$force " +
+                "targets=${targets.joinToString { it.simpleName }}",
+        )
+        return true
+    }
+
     private fun dispatchStopRuntime(reason: String, onComplete: (Boolean) -> Unit) {
-        val targets = runtimeStopTargets()
+        val modeAtRequest = currentRuntimeModeForStop()
+        val primaryTarget = runtimeStopTargetForMode(modeAtRequest)
+        val cleanupTargets = runtimeCleanupTargets(primaryTarget)
+        val stopRequestedAtMillis = System.currentTimeMillis()
         MeowDiagnostics.log(
             TAG,
             "dispatchStopRuntime reason=$reason running=${SingboxController.running} " +
-                "mode=${SingboxController.serviceMode} targets=${targets.joinToString { it.simpleName }}",
+                "mode=${SingboxController.serviceMode} requestedMode=$modeAtRequest " +
+                "primary=${primaryTarget.simpleName} cleanup=${cleanupTargets.joinToString { it.simpleName }}",
         )
         SingboxController.log(
             "warning",
             "android stop requested reason=$reason running=${SingboxController.running} " +
                 "mode=${SingboxController.serviceMode}",
         )
-        MeowBoxService.requestStopAll("main_activity_stop:$reason")
-        for (serviceClass in targets) {
-            runCatching {
-                startService(
-                    Intent(this, serviceClass)
-                        .setAction(MeowBoxService.ACTION_STOP)
-                        .putExtra(MeowBoxService.EXTRA_STOP_REASON, reason),
-                )
-            }.onFailure {
-                MeowDiagnostics.log(TAG, "ACTION_STOP failed target=${serviceClass.simpleName}", it)
-            }
+        MeowBoxService.requestStopForMode(modeAtRequest, "main_activity_stop:$reason")
+        runCatching {
+            startService(
+                Intent(this, primaryTarget)
+                    .setAction(MeowBoxService.ACTION_STOP)
+                    .putExtra(MeowBoxService.EXTRA_STOP_REASON, reason),
+            )
+        }.onFailure {
+            MeowDiagnostics.log(TAG, "ACTION_STOP failed target=${primaryTarget.simpleName}", it)
         }
         mainHandler.postDelayed({
             if (!SingboxController.running) {
-                for (serviceClass in targets) {
-                    runCatching {
-                        stopService(Intent(this, serviceClass))
-                    }.onFailure {
-                        MeowDiagnostics.log(TAG, "stopService failed target=${serviceClass.simpleName}", it)
-                    }
-                }
-                MeowApplication.clearServiceState()
-                MeowQuickSettingsTileService.requestRefresh(this)
-                MeowDiagnostics.log(TAG, "dispatchStopRuntime safety stopService completed reason=$reason")
+                cleanupStoppedRuntimeState(
+                    reason = reason,
+                    source = "safety_delay",
+                    stopRequestedAtMillis = stopRequestedAtMillis,
+                    targets = cleanupTargets,
+                    force = false,
+                )
+            } else {
+                MeowDiagnostics.log(
+                    TAG,
+                    "dispatchStopRuntime safety stopService skipped reason=$reason " +
+                        "running=${SingboxController.running} " +
+                        "activeOwner=${MeowBoxService.hasActiveRuntimeOwner(modeAtRequest)} " +
+                        "intent=${MeowApplication.describeRuntimeIntent()}",
+                )
             }
         }, 1_200L)
         if (!SingboxController.running) {
+            cleanupStoppedRuntimeState(
+                reason = reason,
+                source = "already_stopped",
+                stopRequestedAtMillis = stopRequestedAtMillis,
+                targets = cleanupTargets,
+                force = false,
+            )
             onComplete(true)
             return
         }
         SingboxController.awaitStopped { stopped ->
             if (!stopped) {
-                onComplete(false)
+                val cleaned = cleanupStoppedRuntimeState(
+                    reason = reason,
+                    source = "await_timeout",
+                    stopRequestedAtMillis = stopRequestedAtMillis,
+                    targets = cleanupTargets,
+                    force = true,
+                )
+                onComplete(cleaned || !SingboxController.running)
                 return@awaitStopped
             }
+            cleanupStoppedRuntimeState(
+                reason = reason,
+                source = "await_stopped",
+                stopRequestedAtMillis = stopRequestedAtMillis,
+                targets = cleanupTargets,
+                force = false,
+            )
             onComplete(true)
         }
     }
@@ -397,9 +523,15 @@ class MainActivity : FlutterActivity() {
             } else {
                 MeowVpnService::class.java
             }
+            val stopRequestedAtMillis = System.currentTimeMillis()
+            val cleanupTargets = runtimeCleanupTargets(currentService)
             MeowDiagnostics.log(
                 TAG,
                 "issuing ACTION_STOP for mode switch currentMode=${SingboxController.serviceMode} targetMode=$targetMode currentService=${currentService.simpleName}",
+            )
+            MeowBoxService.requestStopForMode(
+                SingboxController.serviceMode,
+                "mode_switch_to_$targetMode",
             )
             startService(
                 Intent(this, currentService)
@@ -407,6 +539,15 @@ class MainActivity : FlutterActivity() {
                     .putExtra(MeowBoxService.EXTRA_STOP_REASON, "mode_switch_to_$targetMode"),
             )
             SingboxController.awaitStopped { stopped ->
+                if (!stopped) {
+                    cleanupStoppedRuntimeState(
+                        reason = "mode_switch_to_$targetMode",
+                        source = "await_timeout",
+                        stopRequestedAtMillis = stopRequestedAtMillis,
+                        targets = cleanupTargets,
+                        force = true,
+                    )
+                }
                 val serviceIntent = Intent(this, targetService).setAction(MeowBoxService.ACTION_START)
                 Log.i(TAG, "starting target service after mode switch target=${targetService.simpleName} stopped=$stopped")
                 MeowDiagnostics.log(
@@ -513,7 +654,9 @@ class MainActivity : FlutterActivity() {
             "wakeLockEnabled" to MeowApplication.wakeLockEnabled,
             "networkHeartbeatEnabled" to MeowApplication.networkHeartbeatEnabled,
             "networkHeartbeatIntervalSeconds" to MeowApplication.networkHeartbeatIntervalSeconds,
+            "memoryLimitEnabled" to MeowApplication.memoryLimitEnabled,
             "serviceState" to MeowApplication.describeRecordedServiceState(),
+            "runtimeIntent" to MeowApplication.describeRuntimeIntent(),
             "totalPssKb" to processMemory?.totalPss,
             "totalPrivateDirtyKb" to processMemory?.totalPrivateDirty,
             "nativeHeapAllocatedKb" to (Debug.getNativeHeapAllocatedSize() / 1024L),
@@ -530,6 +673,76 @@ class MainActivity : FlutterActivity() {
         )
     }
 
+    private fun cleanupStaleRuntimeStateIfNeeded(reason: String): Boolean {
+        if (!SingboxController.running) {
+            return false
+        }
+        val mode = currentRuntimeModeForStop()
+        if (MeowBoxService.hasActiveRuntimeOwner(mode)) {
+            return false
+        }
+        MeowDiagnostics.log(
+            TAG,
+            "cleanupStaleRuntimeStateIfNeeded reason=$reason mode=$mode " +
+                "controllerMode=${SingboxController.serviceMode} " +
+                "service=${MeowApplication.describeRecordedServiceState()} " +
+                "intent=${MeowApplication.describeRuntimeIntent()}",
+        )
+        val primary = runtimeStopTargetForMode(mode)
+        return cleanupStoppedRuntimeState(
+            reason = "stale_runtime_$reason",
+            source = "status",
+            stopRequestedAtMillis = System.currentTimeMillis(),
+            targets = runtimeCleanupTargets(primary),
+            force = true,
+        )
+    }
+
+    private fun runtimeStatusMap(): Map<String?, Any?> {
+        val staleRuntimeStateCleaned = cleanupStaleRuntimeStateIfNeeded("status")
+        val recordedState = MeowApplication.readServiceState()
+        val runtimeIntent = MeowApplication.readRuntimeIntent()
+        val activeRuntimeOwner = MeowBoxService.hasActiveRuntimeOwner(
+            SingboxController.serviceMode.takeIf { it.isNotBlank() },
+        )
+        return mapOf(
+            "running" to SingboxController.running,
+            "mode" to SingboxController.serviceMode,
+            "uplink" to SingboxController.uplink,
+            "downlink" to SingboxController.downlink,
+            "uplinkTotal" to SingboxController.uplinkTotal,
+            "downlinkTotal" to SingboxController.downlinkTotal,
+            "recordedServiceAlive" to MeowApplication.isRecordedServiceAlive(),
+            "recordedServiceMode" to recordedState?.mode,
+            "recordedServicePid" to recordedState?.pid,
+            "recordedServiceUpdatedAtMillis" to recordedState?.updatedAtMillis,
+            "recordedServiceState" to MeowApplication.describeRecordedServiceState(),
+            "activeRuntimeOwner" to activeRuntimeOwner,
+            "staleRuntimeStateCleaned" to staleRuntimeStateCleaned,
+            "runtimeIntentFresh" to MeowApplication.isRuntimeIntentFresh(),
+            "runtimeIntentMode" to runtimeIntent?.mode,
+            "runtimeIntentReason" to runtimeIntent?.reason,
+            "runtimeIntentPid" to runtimeIntent?.pid,
+            "runtimeIntentUpdatedAtMillis" to runtimeIntent?.updatedAtMillis,
+            "runtimeIntentState" to MeowApplication.describeRuntimeIntent(),
+        )
+    }
+
+    private fun logsWithNativeDiagnostics(content: String): String {
+        val nativeDiagnostics = MeowDiagnostics.readTail()
+        if (nativeDiagnostics.isBlank()) {
+            return content
+        }
+        return buildString {
+            append(content)
+            if (content.isNotBlank()) {
+                append("\n\n")
+            }
+            append("# Native diagnostics\n")
+            append(nativeDiagnostics)
+        }
+    }
+
     private fun getInstalledApps(): List<Map<String, Any>> {
         val packageManager = packageManager
         val installedApps = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -540,7 +753,42 @@ class MainActivity : FlutterActivity() {
             @Suppress("DEPRECATION")
             packageManager.getInstalledApplications(0)
         }
-        return installedApps
+        val launchIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val launcherApps = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            packageManager.queryIntentActivities(
+                launchIntent,
+                android.content.pm.PackageManager.ResolveInfoFlags.of(0),
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.queryIntentActivities(launchIntent, 0)
+        }
+        val launchablePackages = launcherApps
+            .mapNotNull { it.activityInfo?.packageName }
+            .toMutableSet()
+        val appsByPackage = linkedMapOf<String, ApplicationInfo>()
+        for (appInfo in installedApps) {
+            appsByPackage[appInfo.packageName] = appInfo
+        }
+        for (packageName in launchablePackages) {
+            if (appsByPackage.containsKey(packageName)) {
+                continue
+            }
+            runCatching {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    packageManager.getApplicationInfo(
+                        packageName,
+                        android.content.pm.PackageManager.ApplicationInfoFlags.of(0),
+                    )
+                } else {
+                    @Suppress("DEPRECATION")
+                    packageManager.getApplicationInfo(packageName, 0)
+                }
+            }.onSuccess { appInfo ->
+                appsByPackage[appInfo.packageName] = appInfo
+            }
+        }
+        return appsByPackage.values
             .asSequence()
             .filterNot { it.packageName == packageName }
             .map { appInfo ->
@@ -554,7 +802,10 @@ class MainActivity : FlutterActivity() {
                     "packageName" to appInfo.packageName,
                     "label" to if (label.isNotEmpty()) label else appInfo.packageName,
                     "system" to isSystem,
-                    "launchable" to (packageManager.getLaunchIntentForPackage(appInfo.packageName) != null),
+                    "launchable" to (
+                        appInfo.packageName in launchablePackages ||
+                            packageManager.getLaunchIntentForPackage(appInfo.packageName) != null
+                        ),
                 )
             }
             .sortedWith(
@@ -565,6 +816,39 @@ class MainActivity : FlutterActivity() {
             )
             .toList()
     }
+
+    private fun getInstalledAppIcon(packageName: String?, sizePx: Int?): ByteArray? {
+        val normalizedPackage = packageName?.trim().orEmpty()
+        if (!isAndroidPackageName(normalizedPackage) || normalizedPackage == this.packageName) {
+            return null
+        }
+        val size = (sizePx ?: 48).coerceIn(24, 96)
+        val icon = runCatching {
+            packageManager.getApplicationIcon(normalizedPackage)
+        }.getOrNull() ?: return null
+        return renderDrawableToPng(icon, size)
+    }
+
+    private fun renderDrawableToPng(drawable: Drawable, size: Int): ByteArray? {
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        return try {
+            val canvas = Canvas(bitmap)
+            drawable.setBounds(0, 0, size, size)
+            drawable.draw(canvas)
+            val stream = ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.PNG, 90, stream)
+            stream.toByteArray()
+        } catch (error: Throwable) {
+            MeowDiagnostics.log(TAG, "failed to render installed app icon", error)
+            null
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    private fun isAndroidPackageName(value: String): Boolean =
+        value.length <= 255 &&
+            Regex("^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+$").matches(value)
 
     /*
     private fun decodeHappCrypt5(link: String?, result: MethodChannel.Result) {
@@ -700,6 +984,7 @@ class MainActivity : FlutterActivity() {
                                 "networkHeartbeatEnabled" to MeowApplication.networkHeartbeatEnabled,
                                 "networkHeartbeatIntervalSeconds" to MeowApplication.networkHeartbeatIntervalSeconds,
                                 "performanceMode" to MeowApplication.performanceMode,
+                                "memoryLimitEnabled" to MeowApplication.memoryLimitEnabled,
                             ),
                         ),
                     )
@@ -720,6 +1005,7 @@ class MainActivity : FlutterActivity() {
                         heartbeatChanged = true
                     }
                     flags.performanceMode?.let { MeowApplication.performanceMode = it }
+                    flags.memoryLimitEnabled?.let { MeowApplication.memoryLimitEnabled = it }
                     if (heartbeatChanged) {
                         MeowDefaultNetworkMonitor.refreshHeartbeat()
                     }
@@ -826,18 +1112,7 @@ class MainActivity : FlutterActivity() {
                 }
 
                 override fun status(callback: (Result<Map<String?, Any?>>) -> Unit) {
-                    callback(
-                        Result.success(
-                            mapOf(
-                                "running" to SingboxController.running,
-                                "mode" to SingboxController.serviceMode,
-                                "uplink" to SingboxController.uplink,
-                                "downlink" to SingboxController.downlink,
-                                "uplinkTotal" to SingboxController.uplinkTotal,
-                                "downlinkTotal" to SingboxController.downlinkTotal,
-                            ),
-                        ),
-                    )
+                    callback(Result.success(runtimeStatusMap()))
                 }
 
                 override fun lookupOutboundExternalInfo(
@@ -856,13 +1131,62 @@ class MainActivity : FlutterActivity() {
                     }
                 }
 
+                override fun getNetworkInterfaceState(
+                    callback: (Result<NetworkInterfaceStateMessage>) -> Unit,
+                ) {
+                    val state = MeowDefaultNetworkMonitor.currentInterfaceState("host_api")
+                    callback(
+                        Result.success(
+                            NetworkInterfaceStateMessage(
+                                available = state.available,
+                                interfaceName = state.interfaceName.ifBlank { null },
+                                interfaceIndex = state.interfaceIndex.toLong(),
+                                generation = state.generation,
+                                reason = state.reason,
+                                updatedAtMillis = state.updatedAtMillis,
+                            ),
+                        ),
+                    )
+                }
+
+                override fun probeProxyEndpoint(
+                    request: EndpointProbeRequestMessage,
+                    callback: (Result<EndpointProbeResultMessage>) -> Unit,
+                ) {
+                    SingboxController.probeProxyEndpoint(
+                        tag = request.tag,
+                        host = request.host,
+                        port = request.port.toInt(),
+                        timeoutMs = request.timeoutMs.toInt(),
+                    ) { probeResult ->
+                        probeResult
+                            .onSuccess { value ->
+                                callback(
+                                    Result.success(
+                                        EndpointProbeResultMessage(
+                                            tag = value["tag"]?.toString().orEmpty(),
+                                            reachable = value["reachable"] == true,
+                                            latencyMs = (value["latencyMs"] as? Number)?.toLong(),
+                                            errorCode = value["errorCode"]?.toString()?.takeIf { it.isNotBlank() },
+                                            checkedAtMillis =
+                                                (value["checkedAtMillis"] as? Number)?.toLong()
+                                                    ?: System.currentTimeMillis(),
+                                            protectedSocket = value["protectedSocket"] == true,
+                                        ),
+                                    ),
+                                )
+                            }
+                            .onFailure { callback(errorResult("probe_endpoint_failed", it.message)) }
+                    }
+                }
+
                 override fun exportLogs(
                     content: String,
                     suggestedName: String,
                     callback: (Result<String?>) -> Unit,
                 ) {
                     pendingExportResult = nullableStringResult(callback)
-                    pendingExportContent = content
+                    pendingExportContent = logsWithNativeDiagnostics(content)
                     val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
                         addCategory(Intent.CATEGORY_OPENABLE)
                         type = "text/plain"
@@ -912,6 +1236,10 @@ class MainActivity : FlutterActivity() {
                             ),
                         ),
                     )
+                }
+
+                override fun getAppVersionInfo(callback: (Result<Map<String?, Any?>>) -> Unit) {
+                    callback(Result.success(pigeonMap(getAppVersionInfo())))
                 }
 
                 override fun getCoreVersion(callback: (Result<String>) -> Unit) {
@@ -1052,6 +1380,10 @@ class MainActivity : FlutterActivity() {
                     )
                 }
 
+                "getAppVersionInfo" -> {
+                    result.success(getAppVersionInfo())
+                }
+
                 "getCoreVersion" -> {
                     result.success(Libbox.version())
                 }
@@ -1067,6 +1399,7 @@ class MainActivity : FlutterActivity() {
                             "networkHeartbeatEnabled" to MeowApplication.networkHeartbeatEnabled,
                             "networkHeartbeatIntervalSeconds" to MeowApplication.networkHeartbeatIntervalSeconds,
                             "performanceMode" to MeowApplication.performanceMode,
+                            "memoryLimitEnabled" to MeowApplication.memoryLimitEnabled,
                         ),
                     )
                 }
@@ -1076,6 +1409,7 @@ class MainActivity : FlutterActivity() {
                     val heartbeat = call.argument<Boolean>("networkHeartbeatEnabled")
                     val heartbeatInterval = call.argument<Int>("networkHeartbeatIntervalSeconds")
                     val performanceMode = call.argument<String>("performanceMode")
+                    val memoryLimitEnabled = call.argument<Boolean>("memoryLimitEnabled")
                     var heartbeatChanged = false
                     if (wakeLock != null) {
                         MeowApplication.wakeLockEnabled = wakeLock
@@ -1090,6 +1424,9 @@ class MainActivity : FlutterActivity() {
                     }
                     if (performanceMode != null) {
                         MeowApplication.performanceMode = performanceMode
+                    }
+                    if (memoryLimitEnabled != null) {
+                        MeowApplication.memoryLimitEnabled = memoryLimitEnabled
                     }
                     if (heartbeatChanged) {
                         MeowDefaultNetworkMonitor.refreshHeartbeat()
@@ -1248,16 +1585,7 @@ class MainActivity : FlutterActivity() {
                 }
 
                 "status" -> {
-                    result.success(
-                        mapOf(
-                            "running" to SingboxController.running,
-                            "mode" to SingboxController.serviceMode,
-                            "uplink" to SingboxController.uplink,
-                            "downlink" to SingboxController.downlink,
-                            "uplinkTotal" to SingboxController.uplinkTotal,
-                            "downlinkTotal" to SingboxController.downlinkTotal,
-                        ),
-                    )
+                    result.success(runtimeStatusMap())
                 }
 
                 "lookupOutboundExternalInfo" -> {
@@ -1275,12 +1603,40 @@ class MainActivity : FlutterActivity() {
                     }
                 }
 
+                "getNetworkInterfaceState" -> {
+                    val state = MeowDefaultNetworkMonitor.currentInterfaceState("method_channel")
+                    result.success(
+                        mapOf(
+                            "available" to state.available,
+                            "interfaceName" to state.interfaceName,
+                            "interfaceIndex" to state.interfaceIndex,
+                            "generation" to state.generation,
+                            "reason" to state.reason,
+                            "updatedAtMillis" to state.updatedAtMillis,
+                        ),
+                    )
+                }
+
+                "probeProxyEndpoint" -> {
+                    val tag = call.argument<String>("tag")?.trim().orEmpty()
+                    val host = call.argument<String>("host")?.trim().orEmpty()
+                    val port = call.argument<Number>("port")?.toInt() ?: 0
+                    val timeoutMs = call.argument<Number>("timeoutMs")?.toInt() ?: 3_000
+                    SingboxController.probeProxyEndpoint(tag, host, port, timeoutMs) { probeResult ->
+                        probeResult.onSuccess {
+                            result.success(it)
+                        }.onFailure {
+                            result.error("probe_endpoint_failed", it.message, null)
+                        }
+                    }
+                }
+
                 "exportLogs" -> {
                     val content = call.argument<String>("content") ?: ""
                     val suggestedName = call.argument<String>("suggestedName")
                         ?: "meow-logs-${System.currentTimeMillis()}.txt"
                     pendingExportResult = result
-                    pendingExportContent = content
+                    pendingExportContent = logsWithNativeDiagnostics(content)
                     val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
                         addCategory(Intent.CATEGORY_OPENABLE)
                         type = "text/plain"
@@ -1355,6 +1711,17 @@ class MainActivity : FlutterActivity() {
                                 }
                             }
                     }.start()
+                }
+
+                "getInstalledAppIcon" -> {
+                    val packageName = call.argument<String>("packageName")
+                    val sizePx = call.argument<Int>("sizePx")
+                    ioExecutor.execute {
+                        val iconBytes = getInstalledAppIcon(packageName, sizePx)
+                        mainHandler.post {
+                            result.success(iconBytes)
+                        }
+                    }
                 }
                 else -> result.notImplemented()
             }

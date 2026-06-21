@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:gap/gap.dart';
+import 'package:meow_client/data/local/app_settings_store.dart';
 import 'package:meow_client/features/settings/settings_ui.dart';
 import 'package:meow_client/l10n/generated/app_localizations.dart';
 import 'package:meow_client/widgets/progressive_blur_scaffold.dart';
@@ -17,11 +18,14 @@ class SettingsDnsPage extends StatefulWidget {
     required this.currentProxyPreset,
     required this.currentProxyResolver,
     required this.currentPreferIpv6,
+    required this.currentRussiaDnsDirectResolver,
+    required this.currentRussiaRouteDataEnabled,
     required this.onDirectPresetChanged,
     required this.onDirectResolverChanged,
     required this.onProxyPresetChanged,
     required this.onProxyResolverChanged,
     required this.onPreferIpv6Changed,
+    required this.onRussiaDnsDirectResolverChanged,
   });
 
   final String currentDirectPreset;
@@ -29,11 +33,14 @@ class SettingsDnsPage extends StatefulWidget {
   final String currentProxyPreset;
   final String currentProxyResolver;
   final bool currentPreferIpv6;
+  final String currentRussiaDnsDirectResolver;
+  final bool currentRussiaRouteDataEnabled;
   final ValueChanged<String> onDirectPresetChanged;
   final ValueChanged<String> onDirectResolverChanged;
   final ValueChanged<String> onProxyPresetChanged;
   final ValueChanged<String> onProxyResolverChanged;
   final ValueChanged<bool> onPreferIpv6Changed;
+  final ValueChanged<String> onRussiaDnsDirectResolverChanged;
 
   @override
   State<SettingsDnsPage> createState() => _SettingsDnsPageState();
@@ -85,6 +92,7 @@ String _dnsPresetSubtitle(AppLocalizations l10n, _DnsPreset preset) {
 class _SettingsDnsPageState extends State<SettingsDnsPage> {
   late final TextEditingController _directController;
   late final TextEditingController _proxyController;
+  late final TextEditingController _russiaDirectController;
 
   static const _directPresets = <_DnsPreset>[
     _DnsPreset(
@@ -131,12 +139,16 @@ class _SettingsDnsPageState extends State<SettingsDnsPage> {
       text: widget.currentDirectResolver,
     );
     _proxyController = TextEditingController(text: widget.currentProxyResolver);
+    _russiaDirectController = TextEditingController(
+      text: widget.currentRussiaDnsDirectResolver,
+    );
   }
 
   @override
   void dispose() {
     _directController.dispose();
     _proxyController.dispose();
+    _russiaDirectController.dispose();
     super.dispose();
   }
 
@@ -186,6 +198,18 @@ class _SettingsDnsPageState extends State<SettingsDnsPage> {
     }
     if (value != widget.currentProxyResolver) {
       widget.onProxyResolverChanged(value);
+    }
+  }
+
+  void _commitRussiaDirectResolver() {
+    final value = _russiaDirectController.text.trim();
+    if (value.isEmpty) {
+      _russiaDirectController.text = defaultRussiaDnsDirectResolver;
+      widget.onRussiaDnsDirectResolverChanged(defaultRussiaDnsDirectResolver);
+      return;
+    }
+    if (value != widget.currentRussiaDnsDirectResolver) {
+      widget.onRussiaDnsDirectResolverChanged(value);
     }
   }
 
@@ -317,6 +341,50 @@ class _SettingsDnsPageState extends State<SettingsDnsPage> {
                         hintText: 'https://dns.cloudflare.com/dns-query',
                       ),
                     ),
+                ],
+              ),
+            ),
+          ),
+          const Gap(settingsSectionGap),
+          _SectionLabel(label: l10n.dnsRussiaDirectTitle),
+          const Gap(settingsSectionLabelGap),
+          Card(
+            margin: EdgeInsets.zero,
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: SettingsLeadingIcon(
+                      icon: Icons.public_rounded,
+                      color: widget.currentRussiaRouteDataEnabled
+                          ? cs.primary
+                          : cs.outline,
+                    ),
+                    title: Text(l10n.dnsRussiaDirectTitle),
+                    subtitle: Text(l10n.dnsRussiaDirectSubtitle),
+                  ),
+                  const Gap(12),
+                  TextField(
+                    controller: _russiaDirectController,
+                    onTapOutside: (_) {
+                      FocusScope.of(context).unfocus();
+                      _commitRussiaDirectResolver();
+                    },
+                    onSubmitted: (_) => _commitRussiaDirectResolver(),
+                    onEditingComplete: () {
+                      FocusScope.of(context).unfocus();
+                      _commitRussiaDirectResolver();
+                    },
+                    inputFormatters: [_kDnsSingleLineFormatter],
+                    decoration: InputDecoration(
+                      labelText: l10n.dnsResolverTitle,
+                      helperText: l10n.dnsRussiaDirectResolverSubtitle,
+                      hintText: defaultRussiaDnsDirectResolver,
+                    ),
+                  ),
                 ],
               ),
             ),

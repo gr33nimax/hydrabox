@@ -57,6 +57,7 @@ class AppProxySummary {
     required this.port,
     required this.detailText,
     required this.ip,
+    this.ipChecking = false,
     required this.latency,
     required this.latencyFresh,
     required this.latencyChecking,
@@ -81,6 +82,7 @@ class AppProxySummary {
   final int port;
   final String detailText;
   final String ip;
+  final bool ipChecking;
   final int? latency;
   final bool latencyFresh;
   final bool latencyChecking;
@@ -107,6 +109,7 @@ class AppProxySummary {
     int? port,
     String? detailText,
     String? ip,
+    bool? ipChecking,
     int? latency,
     bool clearLatency = false,
     bool? latencyFresh,
@@ -136,6 +139,7 @@ class AppProxySummary {
       port: port ?? this.port,
       detailText: detailText ?? this.detailText,
       ip: ip ?? this.ip,
+      ipChecking: ipChecking ?? this.ipChecking,
       latency: clearLatency ? null : latency ?? this.latency,
       latencyFresh: latencyFresh ?? this.latencyFresh,
       latencyChecking: latencyChecking ?? this.latencyChecking,
@@ -172,6 +176,7 @@ class AppProxySummary {
         other.port == port &&
         other.detailText == detailText &&
         other.ip == ip &&
+        other.ipChecking == ipChecking &&
         other.latency == latency &&
         other.latencyFresh == latencyFresh &&
         other.latencyChecking == latencyChecking &&
@@ -198,6 +203,7 @@ class AppProxySummary {
     port,
     detailText,
     ip,
+    ipChecking,
     latency,
     latencyFresh,
     latencyChecking,

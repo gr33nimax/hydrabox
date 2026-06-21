@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter/foundation.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:meow_client/data/local/app_settings_store.dart';
@@ -25,16 +26,19 @@ class AppUpdateAsset {
     required this.name,
     required this.downloadUrl,
     required this.sizeBytes,
+    this.digestSha256,
   });
 
   final String name;
   final String downloadUrl;
   final int sizeBytes;
+  final String? digestSha256;
 
   Map<String, Object?> toMap() => {
     'name': name,
     'downloadUrl': downloadUrl,
     'sizeBytes': sizeBytes,
+    'digestSha256': digestSha256,
   };
 
   static AppUpdateAsset? fromMap(Object? value) {
@@ -46,6 +50,9 @@ class AppUpdateAsset {
       name: name,
       downloadUrl: downloadUrl,
       sizeBytes: int.tryParse(value['sizeBytes']?.toString() ?? '') ?? 0,
+      digestSha256: AppUpdateService.normalizeSha256Digest(
+        value['digestSha256'],
+      ),
     );
   }
 }
@@ -196,6 +203,23 @@ class AppUpdateDownloadProgress {
     if (remaining <= 0) return 0;
     return (remaining / bytesPerSecond).ceil();
   }
+}
+
+class AppUpdateVerificationResult {
+  const AppUpdateVerificationResult({
+    required this.ok,
+    this.expectedSha256,
+    this.actualSha256,
+    this.error,
+  });
+
+  final bool ok;
+  final String? expectedSha256;
+  final String? actualSha256;
+  final String? error;
+
+  bool get checksumAvailable =>
+      expectedSha256 != null && expectedSha256!.isNotEmpty;
 }
 
 class AppUpdateService {
@@ -470,6 +494,15 @@ class AppUpdateService {
         await target.delete();
       }
       await temp.rename(target.path);
+      final verification = await verifyDownloadedApk(info, target.path);
+      if (!verification.ok) {
+        if (target.existsSync()) {
+          await target.delete();
+        }
+        throw FormatException(
+          verification.error ?? 'Downloaded APK checksum mismatch.',
+        );
+      }
       await _saveMetadata(
         AppUpdateMetadata(
           lastCheckAtMillis: DateTime.now().millisecondsSinceEpoch,
@@ -586,7 +619,51 @@ class AppUpdateService {
     if (info.asset.sizeBytes > 0 && length != info.asset.sizeBytes) {
       return null;
     }
+    final verification = await verifyDownloadedApk(info, file.path);
+    if (!verification.ok) {
+      return null;
+    }
     return file.path;
+  }
+
+  Future<AppUpdateVerificationResult> verifyDownloadedApk(
+    AppUpdateInfo info,
+    String path,
+  ) async {
+    final expected = info.asset.digestSha256;
+    if (expected == null || expected.isEmpty) {
+      return const AppUpdateVerificationResult(ok: true);
+    }
+    final file = File(path);
+    if (!file.existsSync()) {
+      return AppUpdateVerificationResult(
+        ok: false,
+        expectedSha256: expected,
+        error: 'Downloaded APK file is missing.',
+      );
+    }
+    try {
+      final actual = await sha256File(file);
+      final ok = actual == expected;
+      return AppUpdateVerificationResult(
+        ok: ok,
+        expectedSha256: expected,
+        actualSha256: actual,
+        error: ok ? null : 'Downloaded APK checksum mismatch.',
+      );
+    } catch (error) {
+      return AppUpdateVerificationResult(
+        ok: false,
+        expectedSha256: expected,
+        error: error.toString(),
+      );
+    }
+  }
+
+  @visibleForTesting
+  static Future<String> sha256File(File file) async {
+    final digest = await crypto.sha256.bind(file.openRead()).first;
+    return digest.toString().toLowerCase();
   }
 
   static List<AppUpdateAsset> _parseAssets(Object? value) {
@@ -604,6 +681,7 @@ class AppUpdateService {
           name: name,
           downloadUrl: url,
           sizeBytes: int.tryParse(item['size']?.toString() ?? '') ?? 0,
+          digestSha256: normalizeSha256Digest(item['digest']),
         ),
       );
     }
@@ -633,11 +711,18 @@ class AppUpdateService {
     );
   }
 
-  @visibleForTesting
   static String normalizeVersion(String value) {
     final trimmed = value.trim();
     final match = RegExp(r'v?(\d+(?:\.\d+){1,3})').firstMatch(trimmed);
     return match?.group(1) ?? '';
+  }
+
+  @visibleForTesting
+  static String? normalizeSha256Digest(Object? value) {
+    final raw = value?.toString().trim().toLowerCase();
+    if (raw == null || raw.isEmpty) return null;
+    final match = RegExp(r'(?:sha256:)?([a-f0-9]{64})').firstMatch(raw);
+    return match?.group(1);
   }
 
   @visibleForTesting

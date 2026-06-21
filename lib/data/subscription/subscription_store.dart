@@ -386,7 +386,10 @@ class SubscriptionStore {
           url: url,
         ),
         url: url,
-        selectedProxyTag: _selectedProxyTagForOutbounds(outbounds),
+        selectedProxyTag: _selectedProxyTagForOutbounds(
+          outbounds,
+          groups: payload.groups,
+        ),
         sortOrder: _nextSortOrder(),
         lastUpdated: DateTime.now().millisecondsSinceEpoch,
         autoRefreshMinutes: result.headerInfo.updateIntervalHours != null
@@ -484,7 +487,10 @@ class SubscriptionStore {
         url: localUrl,
       ),
       url: localUrl,
-      selectedProxyTag: _selectedProxyTagForOutbounds(outbounds),
+      selectedProxyTag: _selectedProxyTagForOutbounds(
+        outbounds,
+        groups: payload.groups,
+      ),
       sortOrder: _nextSortOrder(),
       lastUpdated: DateTime.now().millisecondsSinceEpoch,
       disableAutoUpdate: true,
@@ -566,6 +572,7 @@ class SubscriptionStore {
         selectedProxyTag: _selectedProxyTagForOutbounds(
           preservedOutbounds,
           preferredTag: existing.selectedProxyTag,
+          groups: payload.groups,
         ),
         sortOrder: existing.sortOrder,
         lastUpdated: DateTime.now().millisecondsSinceEpoch,
@@ -636,6 +643,7 @@ class SubscriptionStore {
         selectedProxyTag: _selectedProxyTagForOutbounds(
           preservedOutbounds,
           preferredTag: existing.selectedProxyTag,
+          groups: payload.groups,
         ),
         outbounds: preservedOutbounds,
         groups: payload.groups,
@@ -665,6 +673,7 @@ class SubscriptionStore {
   static String _selectedProxyTagForOutbounds(
     List<Outbound> outbounds, {
     String? preferredTag,
+    List<SubscriptionGroup> groups = const [],
   }) {
     if (outbounds.isEmpty) {
       return '';
@@ -679,6 +688,19 @@ class SubscriptionStore {
     if (isLowestProxyTag(normalizedPreferred) ||
         isMixedProxyTag(normalizedPreferred)) {
       return normalizedPreferred;
+    }
+    final liveOutboundTags = outbounds
+        .where(
+          (outbound) =>
+              !outbound.info.deleted && outbound.config['_group_only'] != true,
+        )
+        .map((outbound) => outbound.tag)
+        .toSet();
+    for (final group in groups) {
+      if (group.tag == normalizedPreferred &&
+          group.outboundTags.any(liveOutboundTags.contains)) {
+        return normalizedPreferred;
+      }
     }
     for (final outbound in outbounds) {
       if (outbound.tag == normalizedPreferred && !outbound.info.deleted) {
@@ -1055,6 +1077,17 @@ class SubscriptionStore {
   static List<Outbound> buildOutboundsForTest(
     List<Map<String, dynamic>> parsedConfigs,
   ) => _buildOutbounds(parsedConfigs);
+
+  @visibleForTesting
+  static String selectedProxyTagForOutboundsForTest(
+    List<Outbound> outbounds, {
+    String? preferredTag,
+    List<SubscriptionGroup> groups = const [],
+  }) => _selectedProxyTagForOutbounds(
+    outbounds,
+    preferredTag: preferredTag,
+    groups: groups,
+  );
 
   @visibleForTesting
   static ({

@@ -57,6 +57,36 @@ jobs:
           echo "RELEASE_TITLE=v${raw}" >> "$GITHUB_ENV"
           echo "Resolved release: tag=${raw}, title=v${raw}"
 
+      - name: Validate project version metadata
+        shell: bash
+        run: |
+          pubspec_full="$(awk -F': ' '/^version:/ {print $2; exit}' pubspec.yaml)"
+          pubspec_version="${pubspec_full%%+*}"
+          pubspec_code=""
+          if [[ "$pubspec_full" == *+* ]]; then
+            pubspec_code="${pubspec_full#*+}"
+          fi
+          if [ "$pubspec_version" != "$RELEASE_VERSION" ]; then
+            echo "::error title=Version mismatch::pubspec.yaml has ${pubspec_version}, release input resolved to ${RELEASE_VERSION}"
+            exit 1
+          fi
+          if [ -n "$BUILD_NUMBER" ] && [ -n "$pubspec_code" ] && [ "$BUILD_NUMBER" != "$pubspec_code" ]; then
+            echo "::error title=Build number mismatch::pubspec.yaml has +${pubspec_code}, workflow build_number is ${BUILD_NUMBER}"
+            exit 1
+          fi
+          if [ -f android/local.properties ]; then
+            local_name="$(awk -F= '/^flutter.versionName=/ {print $2; exit}' android/local.properties)"
+            local_code="$(awk -F= '/^flutter.versionCode=/ {print $2; exit}' android/local.properties)"
+            if [ -n "$local_name" ] && [ "$local_name" != "$RELEASE_VERSION" ]; then
+              echo "::error title=Android local.properties mismatch::flutter.versionName=${local_name}, release=${RELEASE_VERSION}"
+              exit 1
+            fi
+            if [ -n "$BUILD_NUMBER" ] && [ -n "$local_code" ] && [ "$local_code" != "$BUILD_NUMBER" ]; then
+              echo "::error title=Android local.properties mismatch::flutter.versionCode=${local_code}, build_number=${BUILD_NUMBER}"
+              exit 1
+            fi
+          fi
+
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:

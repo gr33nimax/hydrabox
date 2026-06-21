@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:gap/gap.dart';
+import 'package:meow_client/data/local/app_settings_store.dart';
 import 'package:meow_client/features/settings/settings_ui.dart';
 import 'package:meow_client/l10n/generated/app_localizations.dart';
 import 'package:meow_client/models/subscription.dart';
@@ -54,11 +55,11 @@ class _SettingsSubscriptionsPageState extends State<SettingsSubscriptionsPage> {
     _urlController = TextEditingController(
       text: widget.currentConfig.url ?? '',
     );
-    _intervalSeconds = widget.currentConfig.intervalSeconds ?? 180;
-    _timeoutSeconds = widget.currentConfig.timeoutSeconds ?? 15;
-    _concurrency = widget.currentConfig.concurrency ?? 30;
+    _intervalSeconds = widget.currentConfig.intervalSeconds ?? 900;
+    _timeoutSeconds = widget.currentConfig.timeoutSeconds ?? 10;
+    _concurrency = widget.currentConfig.concurrency ?? 4;
     _unavailableCheckIntervalSeconds =
-        widget.currentConfig.unavailableCheckIntervalSeconds ?? 5;
+        widget.currentConfig.unavailableCheckIntervalSeconds ?? 60;
     _locationLookupLimit = widget.currentLocationLookupLimit
         .clamp(0, 50)
         .toInt();
@@ -122,7 +123,9 @@ class _SettingsSubscriptionsPageState extends State<SettingsSubscriptionsPage> {
     final resolvedLocationLookupLimit = _locationLookupLimit == 0
         ? l10n.disabledLabel
         : _locationLookupLimit.toString();
-    final resolvedLocationLookupTimeout = '$_locationLookupTimeoutSeconds сек.';
+    final resolvedLocationLookupTimeout = l10n.settingsSecondsShort(
+      _locationLookupTimeoutSeconds,
+    );
     final resolvedLocationLookupConcurrency = _locationLookupConcurrency
         .toString();
     final happStatusColor = _happCrypt5Supported
@@ -140,7 +143,7 @@ class _SettingsSubscriptionsPageState extends State<SettingsSubscriptionsPage> {
         : l10n.happCrypt5UnsupportedDescription;
 
     return ProgressiveBlurScaffold(
-      appBar: AppBar(title: Text(l10n.subscriptionsTitle)),
+      appBar: AppBar(title: Text(l10n.settingsProfilesChecksTitle)),
       body: ListView(
         padding: EdgeInsets.fromLTRB(
           settingsScreenPadding.left,
@@ -204,7 +207,7 @@ class _SettingsSubscriptionsPageState extends State<SettingsSubscriptionsPage> {
                     ],
                     decoration: InputDecoration(
                       labelText: l10n.urlTestUrlTitle,
-                      hintText: 'https://www.gstatic.com/generate_204',
+                      hintText: defaultUrlTestUrl,
                     ),
                   ),
                   const Gap(6),
@@ -746,7 +749,7 @@ class _SettingsSubscriptionsPageState extends State<SettingsSubscriptionsPage> {
                     children: [
                       Expanded(
                         child: Text(
-                          'Таймаут запроса',
+                          l10n.locationLookupTimeoutTitle,
                           style: theme.textTheme.titleSmall?.copyWith(
                             fontWeight: FontWeight.w700,
                           ),
@@ -774,7 +777,7 @@ class _SettingsSubscriptionsPageState extends State<SettingsSubscriptionsPage> {
                   ),
                   const Gap(4),
                   Text(
-                    'Сколько ждать внешний IP и страну для одного outbound.',
+                    l10n.locationLookupTimeoutSubtitle,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: cs.onSurfaceVariant,
                     ),
@@ -818,7 +821,7 @@ class _SettingsSubscriptionsPageState extends State<SettingsSubscriptionsPage> {
                     children: [
                       Expanded(
                         child: Text(
-                          'Параллельные запросы',
+                          l10n.locationLookupConcurrencyTitle,
                           style: theme.textTheme.titleSmall?.copyWith(
                             fontWeight: FontWeight.w700,
                           ),
@@ -846,7 +849,7 @@ class _SettingsSubscriptionsPageState extends State<SettingsSubscriptionsPage> {
                   ),
                   const Gap(4),
                   Text(
-                    'Общий лимит для фоновой локации и текущего внешнего IP.',
+                    l10n.locationLookupConcurrencySubtitle,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: cs.onSurfaceVariant,
                     ),

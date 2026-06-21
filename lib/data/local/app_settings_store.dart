@@ -10,7 +10,16 @@ enum TunImplementationPreference { mixed, system, gvisor }
 
 enum SplitRoutingMode { disabled, proxySelected, bypassSelected }
 
-enum AppPerformanceMode { cool, balanced, performance }
+enum AppPerformanceMode { standard, economy, balanced, performance }
+
+enum AppUpdateInstallMode { ask, manual, auto }
+
+enum TlsFragmentationMode { disabled, record, fragment }
+
+const int maxSplitRoutingPackageCount = 128;
+const String defaultUrlTestUrl =
+    'http://connectivitycheck.gstatic.com/generate_204';
+const String defaultRussiaDnsDirectResolver = 'udp://77.88.8.8';
 
 final RegExp _androidPackageNamePattern = RegExp(
   r'^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$',
@@ -27,10 +36,16 @@ List<String> normalizeSplitRoutingPackages(Iterable<String> values) {
   final seen = <String>{};
   for (final package in values) {
     final value = package.trim();
-    if (value.isEmpty || !isAndroidPackageName(value) || !seen.add(value)) {
+    if (value.isEmpty ||
+        value == 'com.etonify.meow_client' ||
+        !isAndroidPackageName(value) ||
+        !seen.add(value)) {
       continue;
     }
     normalized.add(value);
+    if (normalized.length >= maxSplitRoutingPackageCount) {
+      break;
+    }
   }
   return normalized;
 }
@@ -38,6 +53,8 @@ List<String> normalizeSplitRoutingPackages(Iterable<String> values) {
 class AppSettingsState {
   const AppSettingsState({
     required this.onboardingCompleted,
+    this.acceptedLegalVersion = '',
+    this.acceptedLegalAtMillis,
     required this.activeProfileId,
     required this.selectedProxyTag,
     required this.localeCode,
@@ -47,7 +64,11 @@ class AppSettingsState {
     required this.hideServerIp,
     required this.progressiveBlurEnabled,
     this.progressiveBlurConfigured = false,
-    this.performanceMode = AppPerformanceMode.cool,
+    this.performanceMode = AppPerformanceMode.standard,
+    this.memoryLimitEnabled = true,
+    this.memoryLimitWarningDismissed = false,
+    this.updateInstallMode = AppUpdateInstallMode.ask,
+    this.tlsFragmentationMode = TlsFragmentationMode.disabled,
     required this.vpnInboundEnabled,
     required this.vpnMtu,
     required this.vpnStrictRoute,
@@ -61,6 +82,7 @@ class AppSettingsState {
     required this.dnsProxyPreset,
     required this.dnsProxyResolver,
     required this.dnsPreferIpv6,
+    this.russiaDnsDirectResolver = defaultRussiaDnsDirectResolver,
     required this.urlTestUrl,
     required this.urlTestIntervalSeconds,
     required this.urlTestTimeoutSeconds,
@@ -83,6 +105,8 @@ class AppSettingsState {
   });
 
   final bool onboardingCompleted;
+  final String acceptedLegalVersion;
+  final int? acceptedLegalAtMillis;
   final String activeProfileId;
   final String selectedProxyTag;
   final String localeCode;
@@ -93,6 +117,10 @@ class AppSettingsState {
   final bool progressiveBlurEnabled;
   final bool progressiveBlurConfigured;
   final AppPerformanceMode performanceMode;
+  final bool memoryLimitEnabled;
+  final bool memoryLimitWarningDismissed;
+  final AppUpdateInstallMode updateInstallMode;
+  final TlsFragmentationMode tlsFragmentationMode;
   final bool vpnInboundEnabled;
   final int vpnMtu;
   final bool vpnStrictRoute;
@@ -106,6 +134,7 @@ class AppSettingsState {
   final String dnsProxyPreset;
   final String dnsProxyResolver;
   final bool dnsPreferIpv6;
+  final String russiaDnsDirectResolver;
   final String urlTestUrl;
   final int urlTestIntervalSeconds;
   final int urlTestTimeoutSeconds;
@@ -128,6 +157,8 @@ class AppSettingsState {
 
   AppSettingsState copyWith({
     bool? onboardingCompleted,
+    String? acceptedLegalVersion,
+    int? acceptedLegalAtMillis,
     String? activeProfileId,
     String? selectedProxyTag,
     String? localeCode,
@@ -138,6 +169,10 @@ class AppSettingsState {
     bool? progressiveBlurEnabled,
     bool? progressiveBlurConfigured,
     AppPerformanceMode? performanceMode,
+    bool? memoryLimitEnabled,
+    bool? memoryLimitWarningDismissed,
+    AppUpdateInstallMode? updateInstallMode,
+    TlsFragmentationMode? tlsFragmentationMode,
     bool? vpnInboundEnabled,
     int? vpnMtu,
     bool? vpnStrictRoute,
@@ -151,6 +186,7 @@ class AppSettingsState {
     String? dnsProxyPreset,
     String? dnsProxyResolver,
     bool? dnsPreferIpv6,
+    String? russiaDnsDirectResolver,
     String? urlTestUrl,
     int? urlTestIntervalSeconds,
     int? urlTestTimeoutSeconds,
@@ -173,6 +209,9 @@ class AppSettingsState {
   }) {
     return AppSettingsState(
       onboardingCompleted: onboardingCompleted ?? this.onboardingCompleted,
+      acceptedLegalVersion: acceptedLegalVersion ?? this.acceptedLegalVersion,
+      acceptedLegalAtMillis:
+          acceptedLegalAtMillis ?? this.acceptedLegalAtMillis,
       activeProfileId: activeProfileId ?? this.activeProfileId,
       selectedProxyTag: selectedProxyTag ?? this.selectedProxyTag,
       localeCode: localeCode ?? this.localeCode,
@@ -185,6 +224,11 @@ class AppSettingsState {
       progressiveBlurConfigured:
           progressiveBlurConfigured ?? this.progressiveBlurConfigured,
       performanceMode: performanceMode ?? this.performanceMode,
+      memoryLimitEnabled: memoryLimitEnabled ?? this.memoryLimitEnabled,
+      memoryLimitWarningDismissed:
+          memoryLimitWarningDismissed ?? this.memoryLimitWarningDismissed,
+      updateInstallMode: updateInstallMode ?? this.updateInstallMode,
+      tlsFragmentationMode: tlsFragmentationMode ?? this.tlsFragmentationMode,
       vpnInboundEnabled: vpnInboundEnabled ?? this.vpnInboundEnabled,
       vpnMtu: vpnMtu ?? this.vpnMtu,
       vpnStrictRoute: vpnStrictRoute ?? this.vpnStrictRoute,
@@ -198,6 +242,8 @@ class AppSettingsState {
       dnsProxyPreset: dnsProxyPreset ?? this.dnsProxyPreset,
       dnsProxyResolver: dnsProxyResolver ?? this.dnsProxyResolver,
       dnsPreferIpv6: dnsPreferIpv6 ?? this.dnsPreferIpv6,
+      russiaDnsDirectResolver:
+          russiaDnsDirectResolver ?? this.russiaDnsDirectResolver,
       urlTestUrl: urlTestUrl ?? this.urlTestUrl,
       urlTestIntervalSeconds:
           urlTestIntervalSeconds ?? this.urlTestIntervalSeconds,
@@ -235,8 +281,12 @@ class AppSettingsState {
 
 abstract class AppSettingsStore {
   static const boxName = 'app_state';
+  static const exportFormatVersion = 1;
+  static const exportMinClientVersion = '0.2.0';
 
   static const _onboardingCompletedKey = 'onboarding_completed';
+  static const _acceptedLegalVersionKey = 'accepted_legal_version';
+  static const _acceptedLegalAtMillisKey = 'accepted_legal_at_millis';
   static const _activeProfileIdKey = 'active_profile_id';
   static const _selectedProxyTagKey = 'selected_proxy_tag';
   static const _localeCodeKey = 'locale_code';
@@ -246,6 +296,11 @@ abstract class AppSettingsStore {
   static const _hideServerIpKey = 'hide_server_ip';
   static const _progressiveBlurEnabledKey = 'progressive_blur_enabled';
   static const _performanceModeKey = 'performance_mode';
+  static const _memoryLimitEnabledKey = 'memory_limit_enabled';
+  static const _memoryLimitWarningDismissedKey =
+      'memory_limit_warning_dismissed';
+  static const _updateInstallModeKey = 'update_install_mode';
+  static const _tlsFragmentationModeKey = 'tls_fragmentation_mode';
   static const _vpnInboundEnabledKey = 'vpn_inbound_enabled';
   static const _vpnMtuKey = 'vpn_mtu';
   static const _vpnStrictRouteKey = 'vpn_strict_route';
@@ -259,6 +314,7 @@ abstract class AppSettingsStore {
   static const _dnsProxyPresetKey = 'dns_proxy_preset';
   static const _dnsProxyResolverKey = 'dns_proxy_resolver';
   static const _dnsPreferIpv6Key = 'dns_prefer_ipv6';
+  static const _russiaDnsDirectResolverKey = 'russia_dns_direct_resolver';
   static const _urlTestUrlKey = 'urltest_url';
   static const _urlTestIntervalSecondsKey = 'urltest_interval_seconds';
   static const _urlTestTimeoutSecondsKey = 'urltest_timeout_seconds';
@@ -289,6 +345,72 @@ abstract class AppSettingsStore {
 
   Future<void> close();
 
+  static const Set<String> safeExportKeys = {
+    _localeCodeKey,
+    _themePreferenceKey,
+    _accentColorHexKey,
+    _hapticEnabledKey,
+    _hideServerIpKey,
+    _performanceModeKey,
+    _memoryLimitEnabledKey,
+    _memoryLimitWarningDismissedKey,
+    _updateInstallModeKey,
+    _tlsFragmentationModeKey,
+    _vpnInboundEnabledKey,
+    _vpnMtuKey,
+    _vpnStrictRouteKey,
+    _vpnTunImplementationKey,
+    _proxyInboundEnabledKey,
+    _proxyAllowLanKey,
+    _proxyMixedListenKey,
+    _proxyMixedPortKey,
+    _dnsDirectPresetKey,
+    _dnsDirectResolverKey,
+    _dnsProxyPresetKey,
+    _dnsProxyResolverKey,
+    _dnsPreferIpv6Key,
+    _russiaDnsDirectResolverKey,
+    _urlTestUrlKey,
+    _urlTestIntervalSecondsKey,
+    _urlTestTimeoutSecondsKey,
+    _urlTestConcurrencyKey,
+    _urlTestUnavailableCheckIntervalSecondsKey,
+    _locationLookupLimitKey,
+    _locationLookupTimeoutSecondsKey,
+    _locationLookupConcurrencyKey,
+    _blockLeaksKey,
+    _adBlockEnabledKey,
+    _useRussiaRouteDataKey,
+    _bypassLocalNetworkKey,
+    _splitRoutingModeKey,
+    _splitRoutingPackagesKey,
+    _singBoxLogLevelKey,
+    _experimentalTcpFastOpenKey,
+    _experimentalTcpMultiPathKey,
+    _experimentalInterruptExistingConnectionsKey,
+    _experimentalUrlTestStrictToleranceKey,
+  };
+
+  Map<String, dynamic> stateToSafeExportMap(AppSettingsState state) {
+    final map = stateToMap(state);
+    return <String, dynamic>{
+      for (final key in safeExportKeys)
+        if (map.containsKey(key)) key: map[key],
+    };
+  }
+
+  AppSettingsState mergeSafeImportMap(
+    AppSettingsState current,
+    Map<String, dynamic> imported,
+  ) {
+    final currentMap = stateToMap(current);
+    final sanitized = <String, dynamic>{
+      for (final entry in imported.entries)
+        if (safeExportKeys.contains(entry.key)) entry.key: entry.value,
+    };
+    return mapState({...currentMap, ...sanitized});
+  }
+
   AppSettingsState mapState(Map<String, dynamic> map) {
     bool boolValue(String key, {required bool defaultValue}) {
       final raw = map[key]?.toString();
@@ -304,18 +426,39 @@ abstract class AppSettingsStore {
     }
 
     final performanceMode = switch (map[_performanceModeKey]) {
-      'cool' => AppPerformanceMode.cool,
-      'performance' => AppPerformanceMode.performance,
-      'balanced' => AppPerformanceMode.balanced,
-      _ => AppPerformanceMode.cool,
+      'cool' ||
+      'standard' ||
+      'balanced' ||
+      'performance' => AppPerformanceMode.standard,
+      'economy' => AppPerformanceMode.economy,
+      _ => AppPerformanceMode.standard,
     };
-    final cool = performanceMode == AppPerformanceMode.cool;
-    final balanced = performanceMode == AppPerformanceMode.balanced;
+    final economy = performanceMode == AppPerformanceMode.economy;
+    final urlTestInterval = int.tryParse(
+      map[_urlTestIntervalSecondsKey]?.toString() ?? '',
+    );
+    final urlTestTimeout = int.tryParse(
+      map[_urlTestTimeoutSecondsKey]?.toString() ?? '',
+    );
+    final urlTestConcurrency = int.tryParse(
+      map[_urlTestConcurrencyKey]?.toString() ?? '',
+    );
+    final unavailableCheckInterval = int.tryParse(
+      map[_urlTestUnavailableCheckIntervalSecondsKey]?.toString() ?? '',
+    );
+    final locationLookupConcurrency = int.tryParse(
+      map[_locationLookupConcurrencyKey]?.toString() ?? '',
+    );
 
     return AppSettingsState(
       onboardingCompleted: boolValue(
         _onboardingCompletedKey,
         defaultValue: false,
+      ),
+      acceptedLegalVersion:
+          map[_acceptedLegalVersionKey]?.toString().trim() ?? '',
+      acceptedLegalAtMillis: int.tryParse(
+        map[_acceptedLegalAtMillisKey]?.toString() ?? '',
       ),
       activeProfileId: map[_activeProfileIdKey] ?? '',
       selectedProxyTag: map[_selectedProxyTagKey] ?? '',
@@ -336,6 +479,23 @@ abstract class AppSettingsStore {
       ),
       progressiveBlurConfigured: map.containsKey(_progressiveBlurEnabledKey),
       performanceMode: performanceMode,
+      memoryLimitEnabled: boolValue(_memoryLimitEnabledKey, defaultValue: true),
+      memoryLimitWarningDismissed: boolValue(
+        _memoryLimitWarningDismissedKey,
+        defaultValue: false,
+      ),
+      updateInstallMode: switch (map[_updateInstallModeKey]) {
+        'manual' => AppUpdateInstallMode.manual,
+        'auto' => AppUpdateInstallMode.auto,
+        'ask' => AppUpdateInstallMode.ask,
+        _ => AppUpdateInstallMode.ask,
+      },
+      tlsFragmentationMode: switch (map[_tlsFragmentationModeKey]) {
+        'record' => TlsFragmentationMode.record,
+        'fragment' => TlsFragmentationMode.fragment,
+        'disabled' => TlsFragmentationMode.disabled,
+        _ => TlsFragmentationMode.disabled,
+      },
       vpnInboundEnabled: boolValue(_vpnInboundEnabledKey, defaultValue: true),
       vpnMtu: _vpnMtuValue(map[_vpnMtuKey]),
       vpnStrictRoute: boolValue(_vpnStrictRouteKey, defaultValue: true),
@@ -365,53 +525,58 @@ abstract class AppSettingsStore {
           map[_dnsProxyResolverKey]?.toString() ??
           'https://dns.cloudflare.com/dns-query',
       dnsPreferIpv6: map[_dnsPreferIpv6Key] == '1',
-      urlTestUrl:
-          map[_urlTestUrlKey]?.toString() ??
-          'https://www.gstatic.com/generate_204',
-      urlTestIntervalSeconds:
-          int.tryParse(map[_urlTestIntervalSecondsKey]?.toString() ?? '') ??
-          (cool
-              ? 900
-              : balanced
-              ? 300
-              : 180),
-      urlTestTimeoutSeconds:
-          int.tryParse(map[_urlTestTimeoutSecondsKey]?.toString() ?? '') ?? 15,
-      urlTestConcurrency:
-          int.tryParse(map[_urlTestConcurrencyKey]?.toString() ?? '') ??
-          (cool
-              ? 4
-              : balanced
-              ? 8
-              : 30),
-      urlTestUnavailableCheckIntervalSeconds:
-          int.tryParse(
-            map[_urlTestUnavailableCheckIntervalSecondsKey]?.toString() ?? '',
+      russiaDnsDirectResolver:
+          _resolverValue(
+            map[_russiaDnsDirectResolverKey]?.toString(),
+            defaultRussiaDnsDirectResolver,
           ) ??
-          (cool
-              ? 30
-              : balanced
-              ? 15
-              : 5),
+          defaultRussiaDnsDirectResolver,
+      urlTestUrl: _migrateUrlTestUrl(map[_urlTestUrlKey]?.toString()),
+      urlTestIntervalSeconds:
+          urlTestInterval == null ||
+              urlTestInterval == 120 ||
+              (!economy && urlTestInterval == 900) ||
+              (economy && urlTestInterval == 1800)
+          ? 300
+          : urlTestInterval,
+      urlTestTimeoutSeconds:
+          urlTestTimeout == null || urlTestTimeout == 10 || urlTestTimeout == 5
+          ? 4
+          : urlTestTimeout,
+      urlTestConcurrency:
+          urlTestConcurrency == null ||
+              (!economy && urlTestConcurrency == 4) ||
+              (!economy && urlTestConcurrency == 6) ||
+              (!economy && urlTestConcurrency == 8) ||
+              (economy && urlTestConcurrency == 2)
+          ? (economy ? 3 : 6)
+          : urlTestConcurrency,
+      urlTestUnavailableCheckIntervalSeconds:
+          unavailableCheckInterval == null ||
+              (!economy &&
+                  (unavailableCheckInterval == 60 ||
+                      unavailableCheckInterval == 120)) ||
+              (!economy &&
+                  (unavailableCheckInterval == 15 ||
+                      unavailableCheckInterval == 5)) ||
+              (economy && unavailableCheckInterval == 120)
+          ? 300
+          : unavailableCheckInterval,
       locationLookupLimit:
           int.tryParse(map[_locationLookupLimitKey]?.toString() ?? '') ??
-          (cool
-              ? 0
-              : balanced
-              ? 8
-              : 12),
+          (economy ? 0 : 2),
       locationLookupTimeoutSeconds:
           int.tryParse(
             map[_locationLookupTimeoutSecondsKey]?.toString() ?? '',
           ) ??
-          6,
+          5,
       locationLookupConcurrency:
-          int.tryParse(map[_locationLookupConcurrencyKey]?.toString() ?? '') ??
-          (cool
-              ? 2
-              : balanced
-              ? 4
-              : 16),
+          locationLookupConcurrency == null ||
+              (!economy &&
+                  (locationLookupConcurrency == 1 ||
+                      locationLookupConcurrency == 3))
+          ? (economy ? 1 : 2)
+          : locationLookupConcurrency,
       blockLeaks: boolValue(_blockLeaksKey, defaultValue: false),
       adBlockEnabled: boolValue(_adBlockEnabledKey, defaultValue: false),
       useRussiaRouteData: boolValue(
@@ -457,6 +622,8 @@ abstract class AppSettingsStore {
   Map<String, dynamic> stateToMap(AppSettingsState state) {
     return {
       _onboardingCompletedKey: state.onboardingCompleted ? '1' : '0',
+      _acceptedLegalVersionKey: state.acceptedLegalVersion,
+      _acceptedLegalAtMillisKey: state.acceptedLegalAtMillis?.toString() ?? '',
       _activeProfileIdKey: state.activeProfileId,
       _selectedProxyTagKey: state.selectedProxyTag,
       _localeCodeKey: state.localeCode,
@@ -466,6 +633,12 @@ abstract class AppSettingsStore {
       _hideServerIpKey: state.hideServerIp ? '1' : '0',
       _progressiveBlurEnabledKey: state.progressiveBlurEnabled ? '1' : '0',
       _performanceModeKey: state.performanceMode.name,
+      _memoryLimitEnabledKey: state.memoryLimitEnabled ? '1' : '0',
+      _memoryLimitWarningDismissedKey: state.memoryLimitWarningDismissed
+          ? '1'
+          : '0',
+      _updateInstallModeKey: state.updateInstallMode.name,
+      _tlsFragmentationModeKey: state.tlsFragmentationMode.name,
       _vpnInboundEnabledKey: state.vpnInboundEnabled ? '1' : '0',
       _vpnMtuKey: state.vpnMtu.toString(),
       _vpnStrictRouteKey: state.vpnStrictRoute ? '1' : '0',
@@ -479,6 +652,7 @@ abstract class AppSettingsStore {
       _dnsProxyPresetKey: state.dnsProxyPreset,
       _dnsProxyResolverKey: state.dnsProxyResolver,
       _dnsPreferIpv6Key: state.dnsPreferIpv6 ? '1' : '0',
+      _russiaDnsDirectResolverKey: state.russiaDnsDirectResolver,
       _urlTestUrlKey: state.urlTestUrl,
       _urlTestIntervalSecondsKey: state.urlTestIntervalSeconds.toString(),
       _urlTestTimeoutSecondsKey: state.urlTestTimeoutSeconds.toString(),
@@ -610,7 +784,10 @@ class MemoryAppSettingsStore extends AppSettingsStore {
             hideServerIp: false,
             progressiveBlurEnabled: false,
             progressiveBlurConfigured: false,
-            performanceMode: AppPerformanceMode.cool,
+            performanceMode: AppPerformanceMode.standard,
+            memoryLimitEnabled: true,
+            memoryLimitWarningDismissed: false,
+            updateInstallMode: AppUpdateInstallMode.ask,
             vpnInboundEnabled: true,
             vpnMtu: 1500,
             vpnStrictRoute: true,
@@ -624,13 +801,14 @@ class MemoryAppSettingsStore extends AppSettingsStore {
             dnsProxyPreset: 'cloudflare',
             dnsProxyResolver: 'https://dns.cloudflare.com/dns-query',
             dnsPreferIpv6: false,
-            urlTestUrl: 'https://www.gstatic.com/generate_204',
-            urlTestIntervalSeconds: 900,
-            urlTestTimeoutSeconds: 15,
-            urlTestConcurrency: 4,
-            urlTestUnavailableCheckIntervalSeconds: 30,
-            locationLookupLimit: 0,
-            locationLookupTimeoutSeconds: 6,
+            russiaDnsDirectResolver: defaultRussiaDnsDirectResolver,
+            urlTestUrl: defaultUrlTestUrl,
+            urlTestIntervalSeconds: 300,
+            urlTestTimeoutSeconds: 4,
+            urlTestConcurrency: 6,
+            urlTestUnavailableCheckIntervalSeconds: 300,
+            locationLookupLimit: 2,
+            locationLookupTimeoutSeconds: 5,
             locationLookupConcurrency: 2,
             blockLeaks: false,
             adBlockEnabled: false,
@@ -657,4 +835,29 @@ class MemoryAppSettingsStore extends AppSettingsStore {
 
   @override
   Future<void> close() async {}
+}
+
+String _migrateUrlTestUrl(String? value) {
+  final normalized = value?.trim() ?? '';
+  if (normalized.isEmpty ||
+      normalized == 'https://www.gstatic.com/generate_204') {
+    return defaultUrlTestUrl;
+  }
+  return normalized;
+}
+
+String? _resolverValue(String? value, String fallback) {
+  final normalized = value?.trim() ?? '';
+  if (normalized.isEmpty) {
+    return fallback;
+  }
+  final lower = normalized.toLowerCase();
+  if (lower.startsWith('udp://') ||
+      lower.startsWith('tcp://') ||
+      lower.startsWith('tls://') ||
+      lower.startsWith('https://') ||
+      lower == 'device://network') {
+    return normalized;
+  }
+  return fallback;
 }

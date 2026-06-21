@@ -6,6 +6,7 @@ import 'package:meow_client/data/local/app_settings_store.dart';
 import 'package:meow_client/models/subscription.dart';
 
 class SingboxConfigBuilder {
+  static const List<String> _russiaDirectDomainSuffixes = ['ru', 'su', 'рф'];
   static const String _snowtunProtectPath =
       '@com.etonify.meow_client.snowtun.protect';
   static const String _telegramServicesRuleSetTag = 'telegram-services';
@@ -46,6 +47,7 @@ class SingboxConfigBuilder {
     required this.dnsDirectResolver,
     required this.dnsProxyResolver,
     required this.dnsPreferIpv6,
+    this.russiaDnsDirectResolver = defaultRussiaDnsDirectResolver,
     required this.urlTestUrl,
     required this.urlTestIntervalSeconds,
     required this.urlTestTimeoutSeconds,
@@ -58,7 +60,10 @@ class SingboxConfigBuilder {
     required this.useRussiaRouteData,
     this.russiaGeositeRuBlockedPath,
     this.russiaGeositeRuAvailableOnlyInsidePath,
+    this.russiaGeositeCategoryRuPath,
     this.russiaGeoipRuBlockedPath,
+    this.russiaGeoipRuWhitelistPath,
+    this.russiaGeoipRuPath,
     this.russiaCuratedDirectServicesPath,
     this.russiaAiServicesPath,
     required this.bypassLocalNetwork,
@@ -67,6 +72,7 @@ class SingboxConfigBuilder {
     required this.logLevel,
     required this.tcpFastOpenEnabled,
     required this.tcpMultiPathEnabled,
+    required this.tlsFragmentationMode,
     required this.interruptExistingConnections,
     required this.urlTestStrictTolerance,
     required this.markAllServersRussia,
@@ -87,6 +93,7 @@ class SingboxConfigBuilder {
   final String dnsDirectResolver;
   final String dnsProxyResolver;
   final bool dnsPreferIpv6;
+  final String russiaDnsDirectResolver;
   final String urlTestUrl;
   final int urlTestIntervalSeconds;
   final int urlTestTimeoutSeconds;
@@ -99,7 +106,10 @@ class SingboxConfigBuilder {
   final bool useRussiaRouteData;
   final String? russiaGeositeRuBlockedPath;
   final String? russiaGeositeRuAvailableOnlyInsidePath;
+  final String? russiaGeositeCategoryRuPath;
   final String? russiaGeoipRuBlockedPath;
+  final String? russiaGeoipRuWhitelistPath;
+  final String? russiaGeoipRuPath;
   final String? russiaCuratedDirectServicesPath;
   final String? russiaAiServicesPath;
   final bool bypassLocalNetwork;
@@ -108,6 +118,7 @@ class SingboxConfigBuilder {
   final String logLevel;
   final bool tcpFastOpenEnabled;
   final bool tcpMultiPathEnabled;
+  final TlsFragmentationMode tlsFragmentationMode;
   final bool interruptExistingConnections;
   final bool urlTestStrictTolerance;
   final bool markAllServersRussia;
@@ -134,15 +145,17 @@ class SingboxConfigBuilder {
     final visibleGroups = _visibleGroups(outboundTags.toSet());
     final russiaRouteDataActive =
         useRussiaRouteData &&
-        (russiaGeositeRuBlockedPath?.trim().isNotEmpty ?? false) &&
-        (russiaGeositeRuAvailableOnlyInsidePath?.trim().isNotEmpty ?? false) &&
-        (russiaGeoipRuBlockedPath?.trim().isNotEmpty ?? false);
+        _validRuleSetPath(russiaGeositeRuBlockedPath) &&
+        _validRuleSetPath(russiaGeositeRuAvailableOnlyInsidePath) &&
+        _validRuleSetPath(russiaGeositeCategoryRuPath) &&
+        _validRuleSetPath(russiaGeoipRuBlockedPath) &&
+        _validRuleSetPath(russiaGeoipRuWhitelistPath) &&
+        _validRuleSetPath(russiaGeoipRuPath);
     final russiaCuratedDirectServicesActive =
         useRussiaRouteData &&
-        (russiaCuratedDirectServicesPath?.trim().isNotEmpty ?? false);
+        _validRuleSetPath(russiaCuratedDirectServicesPath);
     final russiaAiServicesActive =
-        russiaRouteDataActive &&
-        (russiaAiServicesPath?.trim().isNotEmpty ?? false);
+        russiaRouteDataActive && _validRuleSetPath(russiaAiServicesPath);
     final defaultLowestOutboundTags = _lowestOutboundTagsFor(
       lowestProxyTag,
       outbounds,
@@ -192,22 +205,22 @@ class SingboxConfigBuilder {
     ];
     final hasProxies = outboundTags.isNotEmpty;
     final normalizedSplitRoutingPackages = _normalizedSplitRoutingPackages();
-    final splitRoutingActive =
+    final tunSplitActive =
+        vpnInboundEnabled &&
         splitRoutingMode != SplitRoutingMode.disabled &&
         normalizedSplitRoutingPackages.isNotEmpty;
     final tunIncludePackages =
-        splitRoutingMode == SplitRoutingMode.proxySelected && splitRoutingActive
+        splitRoutingMode == SplitRoutingMode.proxySelected && tunSplitActive
         ? normalizedSplitRoutingPackages
         : const <String>[];
     final tunExcludePackages =
-        splitRoutingMode == SplitRoutingMode.bypassSelected &&
-            splitRoutingActive
+        splitRoutingMode == SplitRoutingMode.bypassSelected && tunSplitActive
         ? normalizedSplitRoutingPackages
         : const <String>[];
     final adBlockActive =
-        adBlockEnabled && (adBlockBlockRuleSetPath?.trim().isNotEmpty ?? false);
+        adBlockEnabled && _validRuleSetPath(adBlockBlockRuleSetPath);
     final adBlockAllowActive =
-        adBlockActive && (adBlockAllowRuleSetPath?.trim().isNotEmpty ?? false);
+        adBlockActive && _validRuleSetPath(adBlockAllowRuleSetPath);
     final selectorDefault = hasProxies
         ? (selectedProxyTag.isNotEmpty &&
                   selectableTags.contains(selectedProxyTag)
@@ -228,10 +241,7 @@ class SingboxConfigBuilder {
       proxyOutboundIndexes[proxyStartIndex + i] = outbounds[i].tag;
     }
 
-    final routeFinal = switch (splitRoutingMode) {
-      SplitRoutingMode.proxySelected when splitRoutingActive => 'direct',
-      _ => hasProxies ? 'select' : 'direct',
-    };
+    final routeFinal = hasProxies ? 'select' : 'direct';
     final dnsFinal = hasProxies ? 'dns-remote' : 'dns-direct';
     final dnsRemoteDetour = hasProxies
         ? _dnsRemoteDetourFor(selectorDefault, selectableTags.toSet())
@@ -257,29 +267,52 @@ class SingboxConfigBuilder {
               value: dnsDirectResolver,
               detour: 'direct',
             ),
+            if (russiaRouteDataActive)
+              _buildDnsServer(
+                tag: 'dns-ru-direct',
+                value: _normalizedResolver(
+                  russiaDnsDirectResolver,
+                  defaultRussiaDnsDirectResolver,
+                ),
+                detour: 'direct',
+              ),
             const <String, Object>{'type': 'local', 'tag': 'dns-local'},
           ],
           if (russiaRouteDataActive ||
               russiaCuratedDirectServicesActive ||
               adBlockActive)
             'rules': [
-              if (russiaCuratedDirectServicesActive)
-                {
-                  'rule_set': 'ru-direct-services',
-                  'action': 'route',
-                  'server': 'dns-direct',
-                },
-              if (russiaRouteDataActive)
-                {
-                  'rule_set': 'ru-geosite-ru-available-only-inside',
-                  'action': 'route',
-                  'server': 'dns-direct',
-                },
               if (russiaRouteDataActive)
                 {
                   'rule_set': 'ru-geosite-ru-blocked',
                   'action': 'route',
                   'server': dnsFinal,
+                },
+              if (russiaRouteDataActive)
+                {
+                  'domain_suffix': _russiaDirectDomainSuffixes,
+                  'action': 'route',
+                  'server': 'dns-ru-direct',
+                },
+              if (russiaCuratedDirectServicesActive)
+                {
+                  'rule_set': 'ru-direct-services',
+                  'action': 'route',
+                  'server': russiaRouteDataActive
+                      ? 'dns-ru-direct'
+                      : 'dns-direct',
+                },
+              if (russiaRouteDataActive)
+                {
+                  'rule_set': 'ru-geosite-ru-available-only-inside',
+                  'action': 'route',
+                  'server': 'dns-ru-direct',
+                },
+              if (russiaRouteDataActive)
+                {
+                  'rule_set': 'ru-geosite-category-ru',
+                  'action': 'route',
+                  'server': 'dns-ru-direct',
                 },
               if (adBlockAllowActive)
                 {
@@ -409,9 +442,27 @@ class SingboxConfigBuilder {
                 },
                 {
                   'type': 'local',
+                  'tag': 'ru-geosite-category-ru',
+                  'format': 'binary',
+                  'path': russiaGeositeCategoryRuPath,
+                },
+                {
+                  'type': 'local',
                   'tag': 'ru-geoip-ru-blocked',
                   'format': 'binary',
                   'path': russiaGeoipRuBlockedPath,
+                },
+                {
+                  'type': 'local',
+                  'tag': 'ru-geoip-ru-whitelist',
+                  'format': 'binary',
+                  'path': russiaGeoipRuWhitelistPath,
+                },
+                {
+                  'type': 'local',
+                  'tag': 'ru-geoip-ru',
+                  'format': 'binary',
+                  'path': russiaGeoipRuPath,
                 },
               ],
               if (adBlockAllowActive)
@@ -439,34 +490,36 @@ class SingboxConfigBuilder {
               'action': 'hijack-dns',
             },
             if (blockLeaks) {'protocol': 'stun', 'action': 'reject'},
-            if (splitRoutingActive)
+            if (bypassLocalNetwork)
+              {'ip_is_private': true, 'outbound': 'direct'},
+            if (adBlockAllowActive)
+              {'rule_set': 'adblock-allow', 'outbound': routeFinal},
+            if (adBlockActive)
+              {'rule_set': 'adblock-block', 'action': 'reject'},
+            if (russiaRouteDataActive)
               {
-                'package_name': normalizedSplitRoutingPackages,
-                'outbound': switch (splitRoutingMode) {
-                  SplitRoutingMode.proxySelected =>
-                    hasProxies ? 'select' : 'direct',
-                  SplitRoutingMode.bypassSelected => 'direct',
-                  SplitRoutingMode.disabled => hasProxies ? 'select' : 'direct',
-                },
+                'rule_set': ['ru-geosite-ru-blocked', 'ru-geoip-ru-blocked'],
+                'outbound': hasProxies ? 'select' : 'direct',
+              },
+            if (russiaRouteDataActive)
+              {
+                'domain_suffix': _russiaDirectDomainSuffixes,
+                'outbound': 'direct',
               },
             if (russiaRouteDataActive)
               {
                 'rule_set': 'ru-geosite-ru-available-only-inside',
                 'outbound': 'direct',
               },
+            if (russiaRouteDataActive)
+              {'rule_set': 'ru-geosite-category-ru', 'outbound': 'direct'},
             if (russiaCuratedDirectServicesActive)
               {'rule_set': 'ru-direct-services', 'outbound': 'direct'},
             if (russiaRouteDataActive)
               {
-                'rule_set': ['ru-geosite-ru-blocked', 'ru-geoip-ru-blocked'],
-                'outbound': hasProxies ? 'select' : 'direct',
+                'rule_set': ['ru-geoip-ru-whitelist', 'ru-geoip-ru'],
+                'outbound': 'direct',
               },
-            if (adBlockAllowActive)
-              {'rule_set': 'adblock-allow', 'outbound': routeFinal},
-            if (adBlockActive)
-              {'rule_set': 'adblock-block', 'action': 'reject'},
-            if (bypassLocalNetwork)
-              {'ip_is_private': true, 'outbound': 'direct'},
           ],
           'final': routeFinal,
         },
@@ -474,6 +527,19 @@ class SingboxConfigBuilder {
       proxyOutboundTagsByIndex: proxyOutboundIndexes,
       visibleProxyOutboundCount: outbounds.length,
     );
+  }
+
+  bool _validRuleSetPath(String? path) {
+    final normalized = path?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return false;
+    }
+    try {
+      final file = File(normalized);
+      return file.existsSync() && file.lengthSync() > 4;
+    } on FileSystemException {
+      return false;
+    }
   }
 
   List<String> _normalizedSplitRoutingPackages() {
@@ -602,6 +668,7 @@ class SingboxConfigBuilder {
     }
     _normalizeServerAddress(config);
     _ensureRealityUtls(config);
+    _applyTlsFragmentation(config, tlsFragmentationMode);
     config['tag'] = outbound.tag;
     config['tcp_fast_open'] = tcpFastOpenEnabled;
     config['tcp_multi_path'] = tcpMultiPathEnabled;
@@ -639,6 +706,7 @@ class SingboxConfigBuilder {
     required bool vpnInboundEnabled,
     required bool tcpFastOpenEnabled,
     required bool tcpMultiPathEnabled,
+    required TlsFragmentationMode tlsFragmentationMode,
   }) {
     final tag = chain.tag.trim();
     final detourTag = chain.detourTag.trim();
@@ -669,6 +737,7 @@ class SingboxConfigBuilder {
     }
     _normalizeServerAddress(config);
     _ensureRealityUtls(config);
+    _applyTlsFragmentation(config, tlsFragmentationMode);
     config['tcp_fast_open'] = tcpFastOpenEnabled;
     config['tcp_multi_path'] = tcpMultiPathEnabled;
     return config;
@@ -704,6 +773,7 @@ class SingboxConfigBuilder {
         vpnInboundEnabled: vpnInboundEnabled,
         tcpFastOpenEnabled: tcpFastOpenEnabled,
         tcpMultiPathEnabled: tcpMultiPathEnabled,
+        tlsFragmentationMode: tlsFragmentationMode,
       );
       if (config != null) {
         result.add(config);
@@ -920,6 +990,11 @@ class SingboxConfigBuilder {
     return _snowtunProtectPath;
   }
 
+  String _normalizedResolver(String value, String fallback) {
+    final trimmed = value.trim();
+    return trimmed.isEmpty ? fallback : trimmed;
+  }
+
   Map<String, dynamic> _buildDnsServer({
     required String tag,
     required String value,
@@ -1026,6 +1101,33 @@ class SingboxConfigBuilder {
       tlsMap['enabled'] = true;
       config['tls'] = tlsMap;
     }
+  }
+
+  static void _applyTlsFragmentation(
+    Map<String, dynamic> config,
+    TlsFragmentationMode mode,
+  ) {
+    if (mode == TlsFragmentationMode.disabled) {
+      return;
+    }
+    final tls = config['tls'];
+    if (tls is! Map || tls['enabled'] != true) {
+      return;
+    }
+    final tlsMap = Map<String, dynamic>.from(tls);
+    switch (mode) {
+      case TlsFragmentationMode.disabled:
+        break;
+      case TlsFragmentationMode.record:
+        tlsMap.remove('fragment');
+        tlsMap.remove('fragment_fallback_delay');
+        tlsMap['record_fragment'] = true;
+      case TlsFragmentationMode.fragment:
+        tlsMap.remove('record_fragment');
+        tlsMap['fragment'] = true;
+        tlsMap['fragment_fallback_delay'] = '300ms';
+    }
+    config['tls'] = tlsMap;
   }
 
   static String? _normalizeRealityShortId(dynamic value) {

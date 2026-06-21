@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:meow_client/data/local/app_settings_store.dart';
@@ -63,12 +65,17 @@ class SettingsGeneralPage extends StatelessWidget {
     required this.currentHapticEnabled,
     required this.currentHideServerIp,
     required this.currentPerformanceMode,
+    required this.currentMemoryLimitEnabled,
+    required this.currentMemoryLimitWarningDismissed,
+    required this.currentUpdateInstallMode,
     required this.onLocaleChanged,
     required this.onThemePreferenceChanged,
     required this.onAccentColorChanged,
     required this.onHapticChanged,
     required this.onHideServerIpChanged,
     required this.onPerformanceModeChanged,
+    required this.onMemoryLimitChanged,
+    required this.onUpdateInstallModeChanged,
   });
 
   final String currentLocaleCode;
@@ -78,12 +85,17 @@ class SettingsGeneralPage extends StatelessWidget {
   final bool currentHapticEnabled;
   final bool currentHideServerIp;
   final AppPerformanceMode currentPerformanceMode;
+  final bool currentMemoryLimitEnabled;
+  final bool currentMemoryLimitWarningDismissed;
+  final AppUpdateInstallMode currentUpdateInstallMode;
   final ValueChanged<String> onLocaleChanged;
   final ValueChanged<AppThemePreference> onThemePreferenceChanged;
   final ValueChanged<String> onAccentColorChanged;
   final ValueChanged<bool> onHapticChanged;
   final ValueChanged<bool> onHideServerIpChanged;
   final ValueChanged<AppPerformanceMode> onPerformanceModeChanged;
+  final void Function(bool value, {bool warningDismissed}) onMemoryLimitChanged;
+  final ValueChanged<AppUpdateInstallMode> onUpdateInstallModeChanged;
 
   String _localeName(AppLocalizations l10n, String code) => switch (code) {
     'en' => l10n.languageEnglish,
@@ -109,11 +121,82 @@ class SettingsGeneralPage extends StatelessWidget {
     if (result != null) onLocaleChanged(result);
   }
 
+  Future<void> _showUpdateInstallModePicker(BuildContext context) async {
+    final l10n = AppLocalizations.of(context);
+    final result = await showModalBottomSheet<AppUpdateInstallMode>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => _RadioSheet<AppUpdateInstallMode>(
+        title: l10n.updatesInstallModeTitle,
+        current: currentUpdateInstallMode,
+        items: [
+          _RadioItem(
+            value: AppUpdateInstallMode.ask,
+            label: l10n.updatesInstallModeAsk,
+            subtitle: l10n.updatesInstallModeAskSubtitle,
+          ),
+          _RadioItem(
+            value: AppUpdateInstallMode.manual,
+            label: l10n.updatesInstallModeManual,
+            subtitle: l10n.updatesInstallModeManualSubtitle,
+          ),
+          _RadioItem(
+            value: AppUpdateInstallMode.auto,
+            label: l10n.updatesInstallModeAuto,
+            subtitle: l10n.updatesInstallModeAutoSubtitle,
+          ),
+        ],
+      ),
+    );
+    if (result != null) onUpdateInstallModeChanged(result);
+  }
+
+  String _updateInstallModeName(
+    AppLocalizations l10n,
+    AppUpdateInstallMode mode,
+  ) => switch (mode) {
+    AppUpdateInstallMode.ask => l10n.updatesInstallModeAsk,
+    AppUpdateInstallMode.manual => l10n.updatesInstallModeManual,
+    AppUpdateInstallMode.auto => l10n.updatesInstallModeAuto,
+  };
+
+  Future<void> _setMemoryLimitEnabled(BuildContext context, bool value) async {
+    final l10n = AppLocalizations.of(context);
+    if (value || currentMemoryLimitWarningDismissed) {
+      onMemoryLimitChanged(value);
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(l10n.memoryLimitDisableWarningTitle),
+        content: Text(l10n.memoryLimitDisableWarningMessage),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(l10n.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(l10n.memoryLimitDisableConfirm),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      onMemoryLimitChanged(false, warningDismissed: true);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
     final cs = theme.colorScheme;
+    final visiblePerformanceMode =
+        currentPerformanceMode == AppPerformanceMode.economy
+        ? AppPerformanceMode.economy
+        : AppPerformanceMode.standard;
 
     return ProgressiveBlurScaffold(
       appBar: AppBar(title: Text(l10n.generalSectionTitle)),
@@ -247,6 +330,30 @@ class SettingsGeneralPage extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Card(
                 margin: EdgeInsets.zero,
+                child: SwitchListTile(
+                  secondary: SettingsLeadingIcon(
+                    icon: Icons.memory_rounded,
+                    color: cs.primary,
+                  ),
+                  title: Text(l10n.memoryLimitTitle),
+                  subtitle: Text(
+                    currentMemoryLimitEnabled
+                        ? l10n.memoryLimitEnabledSubtitle
+                        : l10n.memoryLimitDisabledSubtitle,
+                  ),
+                  value: currentMemoryLimitEnabled,
+                  onChanged: (value) =>
+                      unawaited(_setMemoryLimitEnabled(context, value)),
+                ),
+              ),
+            ),
+
+            const Gap(settingsIslandGap),
+
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Card(
+                margin: EdgeInsets.zero,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
                   child: Row(
@@ -266,13 +373,14 @@ class SettingsGeneralPage extends StatelessWidget {
                             ),
                             const Gap(4),
                             Text(
-                              switch (currentPerformanceMode) {
-                                AppPerformanceMode.cool =>
-                                  l10n.performanceModeCoolSubtitle,
-                                AppPerformanceMode.balanced =>
-                                  l10n.performanceModeBalancedSubtitle,
+                              switch (visiblePerformanceMode) {
+                                AppPerformanceMode.standard =>
+                                  l10n.performanceModeStandardSubtitle,
+                                AppPerformanceMode.economy =>
+                                  l10n.performanceModeEconomySubtitle,
+                                AppPerformanceMode.balanced ||
                                 AppPerformanceMode.performance =>
-                                  l10n.performanceModePerformanceSubtitle,
+                                  l10n.performanceModeStandardSubtitle,
                               },
                               style: theme.textTheme.bodyMedium?.copyWith(
                                 color: cs.onSurfaceVariant,
@@ -288,24 +396,21 @@ class SettingsGeneralPage extends StatelessWidget {
                             ),
                             const Gap(12),
                             SegmentedButton<AppPerformanceMode>(
+                              showSelectedIcon: false,
+                              expandedInsets: EdgeInsets.zero,
                               segments: [
                                 ButtonSegment(
-                                  value: AppPerformanceMode.cool,
-                                  icon: const Icon(Icons.ac_unit_rounded),
-                                  label: Text(l10n.performanceModeCool),
+                                  value: AppPerformanceMode.standard,
+                                  icon: const Icon(Icons.check_circle_rounded),
+                                  label: Text(l10n.performanceModeStandard),
                                 ),
                                 ButtonSegment(
-                                  value: AppPerformanceMode.balanced,
-                                  icon: const Icon(Icons.battery_saver_rounded),
-                                  label: Text(l10n.performanceModeBalanced),
-                                ),
-                                ButtonSegment(
-                                  value: AppPerformanceMode.performance,
-                                  icon: const Icon(Icons.flash_on_rounded),
-                                  label: Text(l10n.performanceModePerformance),
+                                  value: AppPerformanceMode.economy,
+                                  icon: const Icon(Icons.eco_rounded),
+                                  label: Text(l10n.performanceModeEconomy),
                                 ),
                               ],
-                              selected: {currentPerformanceMode},
+                              selected: {visiblePerformanceMode},
                               onSelectionChanged: (selection) {
                                 onPerformanceModeChanged(selection.first);
                               },
@@ -315,6 +420,27 @@ class SettingsGeneralPage extends StatelessWidget {
                       ),
                     ],
                   ),
+                ),
+              ),
+            ),
+
+            const Gap(settingsIslandGap),
+
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Card(
+                margin: EdgeInsets.zero,
+                child: ListTile(
+                  leading: SettingsLeadingIcon(
+                    icon: Icons.system_update_alt_rounded,
+                    color: cs.primary,
+                  ),
+                  title: Text(l10n.updatesInstallModeTitle),
+                  subtitle: Text(
+                    _updateInstallModeName(l10n, currentUpdateInstallMode),
+                  ),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => _showUpdateInstallModePicker(context),
                 ),
               ),
             ),
@@ -629,9 +755,10 @@ class _AccentSwatch extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _RadioItem<T> {
-  const _RadioItem({required this.value, required this.label});
+  const _RadioItem({required this.value, required this.label, this.subtitle});
   final T value;
   final String label;
+  final String? subtitle;
 }
 
 class _RadioSheet<T> extends StatelessWidget {
@@ -664,6 +791,7 @@ class _RadioSheet<T> extends StatelessWidget {
               ListTile(
                 contentPadding: const EdgeInsets.symmetric(horizontal: 24),
                 title: Text(item.label),
+                subtitle: item.subtitle == null ? null : Text(item.subtitle!),
                 leading: Radio<T>(value: item.value),
                 onTap: () => Navigator.of(context).pop(item.value),
               ),

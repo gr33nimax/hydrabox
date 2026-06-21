@@ -1,0 +1,783 @@
+import 'package:flutter/material.dart';
+import 'package:meow_client/data/local/app_settings_store.dart';
+
+const int appSettingsDefaultUrlTestTimeoutSeconds = 4;
+const int appSettingsDefaultLocationLookupTimeoutSeconds = 5;
+const int appSettingsStandardUrlTestIntervalSeconds = 300;
+const int appSettingsStandardUrlTestConcurrency = 6;
+const int appSettingsStandardUrlTestUnavailableCheckIntervalSeconds = 300;
+const int appSettingsStandardLocationLookupLimit = 2;
+const int appSettingsStandardLocationLookupConcurrency = 2;
+const int appSettingsEconomyUrlTestIntervalSeconds = 300;
+const int appSettingsEconomyUrlTestConcurrency = 3;
+const int appSettingsEconomyUrlTestUnavailableCheckIntervalSeconds = 300;
+const int appSettingsEconomyLocationLookupLimit = 0;
+const int appSettingsEconomyLocationLookupConcurrency = 1;
+
+class AppSettingsChange {
+  const AppSettingsChange({
+    required this.changed,
+    this.configReason,
+    this.restartRuntime = true,
+    this.refreshTheme = false,
+    this.publishTraffic = false,
+    this.syncRuntimePerformanceFlags = false,
+    this.scheduleLocationRefresh = false,
+    this.pumpLocationLookupWaiters = false,
+  });
+
+  const AppSettingsChange.none() : this(changed: false);
+
+  final bool changed;
+  final String? configReason;
+  final bool restartRuntime;
+  final bool refreshTheme;
+  final bool publishTraffic;
+  final bool syncRuntimePerformanceFlags;
+  final bool scheduleLocationRefresh;
+  final bool pumpLocationLookupWaiters;
+}
+
+class AppSettingsController {
+  String localeCode = 'system';
+  AppThemePreference themePreference = AppThemePreference.system;
+  String accentColorHex = 'default';
+  AppPerformanceMode performanceMode = AppPerformanceMode.standard;
+  bool memoryLimitEnabled = true;
+  bool memoryLimitWarningDismissed = false;
+  AppUpdateInstallMode updateInstallMode = AppUpdateInstallMode.ask;
+  TlsFragmentationMode tlsFragmentationMode = TlsFragmentationMode.disabled;
+  bool hapticEnabled = true;
+  bool hideServerIp = false;
+  bool progressiveBlurEnabled = false;
+  bool vpnInboundEnabled = true;
+  int vpnMtu = 1500;
+  bool vpnStrictRoute = true;
+  TunImplementationPreference vpnTunImplementation =
+      TunImplementationPreference.mixed;
+  bool proxyInboundEnabled = false;
+  bool proxyAllowLan = false;
+  String proxyMixedListen = '127.0.0.1';
+  int proxyMixedPort = 1080;
+  String dnsDirectPreset = 'cloudflare';
+  String dnsDirectResolver = 'udp://1.1.1.1';
+  String dnsProxyPreset = 'cloudflare';
+  String dnsProxyResolver = 'https://dns.cloudflare.com/dns-query';
+  bool dnsPreferIpv6 = false;
+  String russiaDnsDirectResolver = defaultRussiaDnsDirectResolver;
+  String urlTestUrl = defaultUrlTestUrl;
+  int urlTestIntervalSeconds = appSettingsStandardUrlTestIntervalSeconds;
+  int urlTestTimeoutSeconds = appSettingsDefaultUrlTestTimeoutSeconds;
+  int urlTestConcurrency = appSettingsStandardUrlTestConcurrency;
+  int urlTestUnavailableCheckIntervalSeconds =
+      appSettingsStandardUrlTestUnavailableCheckIntervalSeconds;
+  int locationLookupLimit = appSettingsStandardLocationLookupLimit;
+  int locationLookupTimeoutSeconds =
+      appSettingsDefaultLocationLookupTimeoutSeconds;
+  int locationLookupConcurrency = appSettingsStandardLocationLookupConcurrency;
+  bool blockLeaks = false;
+  bool adBlockEnabled = false;
+  bool useRussiaRouteData = false;
+  bool bypassLocalNetwork = true;
+  SplitRoutingMode splitRoutingMode = SplitRoutingMode.disabled;
+  List<String> splitRoutingPackages = const <String>[];
+  String singBoxLogLevel = 'warning';
+  bool experimentalTcpFastOpen = true;
+  bool experimentalTcpMultiPath = false;
+  bool experimentalInterruptExistingConnections = true;
+  bool experimentalUrlTestStrictTolerance = true;
+
+  ThemeMode get themeMode => switch (themePreference) {
+    AppThemePreference.dark => ThemeMode.dark,
+    AppThemePreference.amoled => ThemeMode.dark,
+    AppThemePreference.system => ThemeMode.system,
+    AppThemePreference.light => ThemeMode.light,
+  };
+
+  bool get economyMode => performanceMode == AppPerformanceMode.economy;
+
+  bool get coolMode =>
+      performanceMode == AppPerformanceMode.standard ||
+      performanceMode == AppPerformanceMode.economy;
+
+  bool get balancedMode =>
+      performanceMode == AppPerformanceMode.standard ||
+      performanceMode == AppPerformanceMode.economy ||
+      performanceMode == AppPerformanceMode.balanced;
+
+  AppSettingsState toState({
+    required bool onboardingCompleted,
+    required String acceptedLegalVersion,
+    required int? acceptedLegalAtMillis,
+    required String activeProfileId,
+    required String selectedProxyTag,
+  }) {
+    return AppSettingsState(
+      onboardingCompleted: onboardingCompleted,
+      acceptedLegalVersion: acceptedLegalVersion,
+      acceptedLegalAtMillis: acceptedLegalAtMillis,
+      activeProfileId: activeProfileId,
+      selectedProxyTag: selectedProxyTag,
+      localeCode: localeCode,
+      themePreference: themePreference,
+      accentColorHex: accentColorHex,
+      hapticEnabled: hapticEnabled,
+      hideServerIp: hideServerIp,
+      progressiveBlurEnabled: progressiveBlurEnabled,
+      progressiveBlurConfigured: true,
+      performanceMode: performanceMode,
+      memoryLimitEnabled: memoryLimitEnabled,
+      memoryLimitWarningDismissed: memoryLimitWarningDismissed,
+      updateInstallMode: updateInstallMode,
+      tlsFragmentationMode: tlsFragmentationMode,
+      vpnInboundEnabled: vpnInboundEnabled,
+      vpnMtu: vpnMtu,
+      vpnStrictRoute: vpnStrictRoute,
+      vpnTunImplementation: vpnTunImplementation,
+      proxyInboundEnabled: proxyInboundEnabled,
+      proxyAllowLan: proxyAllowLan,
+      proxyMixedListen: proxyMixedListen,
+      proxyMixedPort: proxyMixedPort,
+      dnsDirectPreset: dnsDirectPreset,
+      dnsDirectResolver: dnsDirectResolver,
+      dnsProxyPreset: dnsProxyPreset,
+      dnsProxyResolver: dnsProxyResolver,
+      dnsPreferIpv6: dnsPreferIpv6,
+      russiaDnsDirectResolver: russiaDnsDirectResolver,
+      urlTestUrl: urlTestUrl,
+      urlTestIntervalSeconds: urlTestIntervalSeconds,
+      urlTestTimeoutSeconds: urlTestTimeoutSeconds,
+      urlTestConcurrency: urlTestConcurrency,
+      urlTestUnavailableCheckIntervalSeconds:
+          urlTestUnavailableCheckIntervalSeconds,
+      locationLookupLimit: locationLookupLimit,
+      locationLookupTimeoutSeconds: locationLookupTimeoutSeconds,
+      locationLookupConcurrency: locationLookupConcurrency,
+      blockLeaks: blockLeaks,
+      adBlockEnabled: adBlockEnabled,
+      useRussiaRouteData: useRussiaRouteData,
+      bypassLocalNetwork: bypassLocalNetwork,
+      splitRoutingMode: splitRoutingMode,
+      splitRoutingPackages: splitRoutingPackages,
+      singBoxLogLevel: singBoxLogLevel,
+      experimentalTcpFastOpen: experimentalTcpFastOpen,
+      experimentalTcpMultiPath: experimentalTcpMultiPath,
+      experimentalInterruptExistingConnections:
+          experimentalInterruptExistingConnections,
+      experimentalUrlTestStrictTolerance: experimentalUrlTestStrictTolerance,
+    );
+  }
+
+  void applyState(
+    AppSettingsState state, {
+    bool progressiveBlurEnabledOverride = false,
+  }) {
+    localeCode = state.localeCode;
+    themePreference = state.themePreference;
+    accentColorHex = normalizeAccentColorHex(state.accentColorHex);
+    hapticEnabled = state.hapticEnabled;
+    hideServerIp = state.hideServerIp;
+    progressiveBlurEnabled = progressiveBlurEnabledOverride;
+    performanceMode = state.performanceMode;
+    memoryLimitEnabled = state.memoryLimitEnabled;
+    memoryLimitWarningDismissed = state.memoryLimitWarningDismissed;
+    updateInstallMode = state.updateInstallMode;
+    tlsFragmentationMode = state.tlsFragmentationMode;
+    vpnInboundEnabled = state.vpnInboundEnabled;
+    vpnMtu = state.vpnMtu;
+    vpnStrictRoute = state.vpnStrictRoute;
+    vpnTunImplementation = state.vpnTunImplementation;
+    proxyInboundEnabled = state.proxyInboundEnabled;
+    proxyAllowLan = state.proxyAllowLan;
+    proxyMixedListen = state.proxyMixedListen;
+    proxyMixedPort = state.proxyMixedPort;
+    dnsDirectPreset = state.dnsDirectPreset;
+    dnsDirectResolver = state.dnsDirectResolver;
+    dnsProxyPreset = state.dnsProxyPreset;
+    dnsProxyResolver = state.dnsProxyResolver;
+    dnsPreferIpv6 = state.dnsPreferIpv6;
+    russiaDnsDirectResolver = normalizedRussiaDnsDirectResolver(
+      state.russiaDnsDirectResolver,
+    );
+    urlTestUrl = normalizedUrlTestUrl(state.urlTestUrl);
+    urlTestIntervalSeconds = state.urlTestIntervalSeconds;
+    urlTestTimeoutSeconds = state.urlTestTimeoutSeconds;
+    urlTestConcurrency = state.urlTestConcurrency;
+    urlTestUnavailableCheckIntervalSeconds =
+        state.urlTestUnavailableCheckIntervalSeconds;
+    locationLookupLimit = state.locationLookupLimit.clamp(0, 50).toInt();
+    locationLookupTimeoutSeconds = state.locationLookupTimeoutSeconds
+        .clamp(2, 30)
+        .toInt();
+    locationLookupConcurrency = state.locationLookupConcurrency
+        .clamp(1, 60)
+        .toInt();
+    blockLeaks = state.blockLeaks;
+    adBlockEnabled = state.adBlockEnabled;
+    useRussiaRouteData = state.useRussiaRouteData;
+    bypassLocalNetwork = state.bypassLocalNetwork;
+    splitRoutingMode = state.splitRoutingMode;
+    splitRoutingPackages = List<String>.from(state.splitRoutingPackages);
+    singBoxLogLevel = state.singBoxLogLevel;
+    experimentalTcpFastOpen = state.experimentalTcpFastOpen;
+    experimentalTcpMultiPath = state.experimentalTcpMultiPath;
+    experimentalInterruptExistingConnections =
+        state.experimentalInterruptExistingConnections;
+    experimentalUrlTestStrictTolerance =
+        state.experimentalUrlTestStrictTolerance;
+    applyPerformanceModePreset(performanceMode);
+  }
+
+  AppSettingsChange setLocale(String value) {
+    final normalized = value == 'system' ? 'system' : value;
+    if (localeCode == normalized) {
+      return const AppSettingsChange.none();
+    }
+    localeCode = normalized;
+    return const AppSettingsChange(changed: true);
+  }
+
+  AppSettingsChange setThemePreference(AppThemePreference value) {
+    if (themePreference == value) {
+      return const AppSettingsChange.none();
+    }
+    themePreference = value;
+    return const AppSettingsChange(changed: true);
+  }
+
+  AppSettingsChange setHapticEnabled(bool value) {
+    if (hapticEnabled == value) {
+      return const AppSettingsChange.none();
+    }
+    hapticEnabled = value;
+    return const AppSettingsChange(changed: true);
+  }
+
+  AppSettingsChange setHideServerIp(bool value) {
+    if (hideServerIp == value) {
+      return const AppSettingsChange.none();
+    }
+    hideServerIp = value;
+    return const AppSettingsChange(changed: true, publishTraffic: true);
+  }
+
+  AppSettingsChange setAccentColor(String value) {
+    final normalized = normalizeAccentColorHex(value);
+    if (accentColorHex == normalized) {
+      return const AppSettingsChange.none();
+    }
+    accentColorHex = normalized;
+    return const AppSettingsChange(changed: true, refreshTheme: true);
+  }
+
+  AppSettingsChange setPerformanceMode(AppPerformanceMode value) {
+    if (performanceMode == value) {
+      return const AppSettingsChange.none();
+    }
+    performanceMode = value;
+    applyPerformanceModePreset(value);
+    return const AppSettingsChange(
+      changed: true,
+      configReason: 'performance mode changed',
+      scheduleLocationRefresh: true,
+      syncRuntimePerformanceFlags: true,
+    );
+  }
+
+  AppSettingsChange setMemoryLimitEnabled(
+    bool value, {
+    bool warningDismissed = false,
+  }) {
+    if (memoryLimitEnabled == value &&
+        (!warningDismissed || memoryLimitWarningDismissed)) {
+      return const AppSettingsChange.none();
+    }
+    memoryLimitEnabled = value;
+    if (warningDismissed) {
+      memoryLimitWarningDismissed = true;
+    }
+    return const AppSettingsChange(
+      changed: true,
+      syncRuntimePerformanceFlags: true,
+    );
+  }
+
+  AppSettingsChange setUpdateInstallMode(AppUpdateInstallMode value) {
+    if (updateInstallMode == value) {
+      return const AppSettingsChange.none();
+    }
+    updateInstallMode = value;
+    return const AppSettingsChange(changed: true);
+  }
+
+  AppSettingsChange setVpnInboundEnabled(bool value) {
+    if (vpnInboundEnabled == value) {
+      return const AppSettingsChange.none();
+    }
+    vpnInboundEnabled = value;
+    return const AppSettingsChange(
+      changed: true,
+      configReason: 'vpn inbound changed',
+    );
+  }
+
+  AppSettingsChange setVpnMtu(int value) {
+    if (vpnMtu == value) {
+      return const AppSettingsChange.none();
+    }
+    vpnMtu = value;
+    return const AppSettingsChange(
+      changed: true,
+      configReason: 'vpn mtu changed',
+    );
+  }
+
+  AppSettingsChange setVpnStrictRoute(bool value) {
+    if (vpnStrictRoute == value) {
+      return const AppSettingsChange.none();
+    }
+    vpnStrictRoute = value;
+    return const AppSettingsChange(
+      changed: true,
+      configReason: 'vpn strict route changed',
+    );
+  }
+
+  AppSettingsChange setVpnTunImplementation(TunImplementationPreference value) {
+    if (vpnTunImplementation == value) {
+      return const AppSettingsChange.none();
+    }
+    vpnTunImplementation = value;
+    return const AppSettingsChange(
+      changed: true,
+      configReason: 'vpn tun implementation changed',
+    );
+  }
+
+  AppSettingsChange setProxyInboundEnabled(bool value) {
+    if (proxyInboundEnabled == value) {
+      return const AppSettingsChange.none();
+    }
+    proxyInboundEnabled = value;
+    return const AppSettingsChange(
+      changed: true,
+      configReason: 'proxy inbound changed',
+    );
+  }
+
+  AppSettingsChange setProxyAllowLan(bool value) {
+    if (proxyAllowLan == value) {
+      return const AppSettingsChange.none();
+    }
+    proxyAllowLan = value;
+    proxyMixedListen = value ? '0.0.0.0' : '127.0.0.1';
+    return const AppSettingsChange(
+      changed: true,
+      configReason: 'proxy allow lan changed',
+    );
+  }
+
+  AppSettingsChange setProxyMixedPort(int value) {
+    if (proxyMixedPort == value) {
+      return const AppSettingsChange.none();
+    }
+    proxyMixedPort = value;
+    return const AppSettingsChange(
+      changed: true,
+      configReason: 'proxy port changed',
+    );
+  }
+
+  AppSettingsChange setDnsDirectPreset(String value) {
+    if (dnsDirectPreset == value) {
+      return const AppSettingsChange.none();
+    }
+    dnsDirectPreset = value;
+    syncDnsPresetValue(isDirect: true);
+    return const AppSettingsChange(
+      changed: true,
+      configReason: 'dns direct preset changed',
+    );
+  }
+
+  AppSettingsChange setDnsDirectResolver(String value) {
+    if (dnsDirectResolver == value) {
+      return const AppSettingsChange.none();
+    }
+    dnsDirectResolver = value;
+    return const AppSettingsChange(
+      changed: true,
+      configReason: 'dns direct resolver changed',
+    );
+  }
+
+  AppSettingsChange setDnsProxyPreset(String value) {
+    if (dnsProxyPreset == value) {
+      return const AppSettingsChange.none();
+    }
+    dnsProxyPreset = value;
+    syncDnsPresetValue(isDirect: false);
+    return const AppSettingsChange(
+      changed: true,
+      configReason: 'dns proxy preset changed',
+    );
+  }
+
+  AppSettingsChange setDnsProxyResolver(String value) {
+    if (dnsProxyResolver == value) {
+      return const AppSettingsChange.none();
+    }
+    dnsProxyResolver = value;
+    return const AppSettingsChange(
+      changed: true,
+      configReason: 'dns proxy resolver changed',
+    );
+  }
+
+  AppSettingsChange setDnsPreferIpv6(bool value) {
+    if (dnsPreferIpv6 == value) {
+      return const AppSettingsChange.none();
+    }
+    dnsPreferIpv6 = value;
+    return const AppSettingsChange(
+      changed: true,
+      configReason: 'dns ip preference changed',
+    );
+  }
+
+  AppSettingsChange setRussiaDnsDirectResolver(String value) {
+    final normalized = normalizedRussiaDnsDirectResolver(value);
+    if (russiaDnsDirectResolver == normalized) {
+      return const AppSettingsChange.none();
+    }
+    russiaDnsDirectResolver = normalized;
+    return const AppSettingsChange(
+      changed: true,
+      configReason: 'russia dns direct resolver changed',
+    );
+  }
+
+  AppSettingsChange setUrlTestUrl(String value) {
+    final normalized = normalizedUrlTestUrl(value);
+    if (urlTestUrl == normalized) {
+      return const AppSettingsChange.none();
+    }
+    urlTestUrl = normalized;
+    return const AppSettingsChange(
+      changed: true,
+      configReason: 'urltest url changed',
+    );
+  }
+
+  AppSettingsChange setUrlTestIntervalSeconds(int value) {
+    final normalized = value <= 0
+        ? (economyMode
+              ? appSettingsEconomyUrlTestIntervalSeconds
+              : appSettingsStandardUrlTestIntervalSeconds)
+        : value;
+    if (urlTestIntervalSeconds == normalized) {
+      return const AppSettingsChange.none();
+    }
+    urlTestIntervalSeconds = normalized;
+    return const AppSettingsChange(
+      changed: true,
+      configReason: 'urltest interval changed',
+    );
+  }
+
+  AppSettingsChange setUrlTestTimeoutSeconds(int value) {
+    final normalized = value <= 0
+        ? appSettingsDefaultUrlTestTimeoutSeconds
+        : value;
+    if (urlTestTimeoutSeconds == normalized) {
+      return const AppSettingsChange.none();
+    }
+    urlTestTimeoutSeconds = normalized;
+    return const AppSettingsChange(
+      changed: true,
+      configReason: 'urltest timeout changed',
+    );
+  }
+
+  AppSettingsChange setUrlTestConcurrency(int value) {
+    final normalized = value <= 0
+        ? (economyMode
+              ? appSettingsEconomyUrlTestConcurrency
+              : appSettingsStandardUrlTestConcurrency)
+        : value;
+    if (urlTestConcurrency == normalized) {
+      return const AppSettingsChange.none();
+    }
+    urlTestConcurrency = normalized;
+    return const AppSettingsChange(
+      changed: true,
+      configReason: 'urltest concurrency changed',
+    );
+  }
+
+  AppSettingsChange setUrlTestUnavailableCheckIntervalSeconds(int value) {
+    final normalized = value <= 0
+        ? (economyMode
+              ? appSettingsEconomyUrlTestUnavailableCheckIntervalSeconds
+              : appSettingsStandardUrlTestUnavailableCheckIntervalSeconds)
+        : value;
+    if (urlTestUnavailableCheckIntervalSeconds == normalized) {
+      return const AppSettingsChange.none();
+    }
+    urlTestUnavailableCheckIntervalSeconds = normalized;
+    return const AppSettingsChange(
+      changed: true,
+      configReason: 'urltest unavailable check interval changed',
+    );
+  }
+
+  AppSettingsChange setLocationLookupLimit(int value) {
+    final normalized = value.clamp(0, 50).toInt();
+    if (locationLookupLimit == normalized) {
+      return const AppSettingsChange.none();
+    }
+    locationLookupLimit = normalized;
+    return const AppSettingsChange(
+      changed: true,
+      scheduleLocationRefresh: true,
+    );
+  }
+
+  AppSettingsChange setLocationLookupTimeoutSeconds(int value) {
+    final normalized = value.clamp(2, 30).toInt();
+    if (locationLookupTimeoutSeconds == normalized) {
+      return const AppSettingsChange.none();
+    }
+    locationLookupTimeoutSeconds = normalized;
+    return const AppSettingsChange(
+      changed: true,
+      scheduleLocationRefresh: true,
+    );
+  }
+
+  AppSettingsChange setLocationLookupConcurrency(int value) {
+    final normalized = value.clamp(1, 60).toInt();
+    if (locationLookupConcurrency == normalized) {
+      return const AppSettingsChange.none();
+    }
+    locationLookupConcurrency = normalized;
+    return const AppSettingsChange(
+      changed: true,
+      pumpLocationLookupWaiters: true,
+      scheduleLocationRefresh: true,
+    );
+  }
+
+  AppSettingsChange setBlockLeaks(bool value) {
+    if (blockLeaks == value) {
+      return const AppSettingsChange.none();
+    }
+    blockLeaks = value;
+    return const AppSettingsChange(
+      changed: true,
+      configReason: 'block leaks changed',
+    );
+  }
+
+  AppSettingsChange setAdBlockEnabled(bool value) {
+    if (adBlockEnabled == value) {
+      return const AppSettingsChange.none();
+    }
+    adBlockEnabled = value;
+    return const AppSettingsChange(
+      changed: true,
+      configReason: 'adblock changed',
+    );
+  }
+
+  AppSettingsChange setRussiaRouteDataEnabled(bool value) {
+    if (useRussiaRouteData == value) {
+      return const AppSettingsChange.none();
+    }
+    useRussiaRouteData = value;
+    return const AppSettingsChange(
+      changed: true,
+      configReason: 'russia route data changed',
+    );
+  }
+
+  AppSettingsChange setBypassLocalNetwork(bool value) {
+    if (bypassLocalNetwork == value) {
+      return const AppSettingsChange.none();
+    }
+    bypassLocalNetwork = value;
+    return const AppSettingsChange(
+      changed: true,
+      configReason: 'bypass local network changed',
+    );
+  }
+
+  AppSettingsChange setSplitRoutingMode(SplitRoutingMode value) {
+    if (splitRoutingMode == value) {
+      return const AppSettingsChange.none();
+    }
+    splitRoutingMode = value;
+    return const AppSettingsChange(
+      changed: true,
+      configReason: 'split routing mode changed',
+    );
+  }
+
+  AppSettingsChange setSplitRoutingPackages(List<String> value) {
+    final normalized = normalizeSplitRoutingPackages(value);
+    if (splitRoutingPackages.join('\n') == normalized.join('\n')) {
+      return const AppSettingsChange.none();
+    }
+    splitRoutingPackages = normalized;
+    return const AppSettingsChange(
+      changed: true,
+      configReason: 'split routing packages changed',
+    );
+  }
+
+  AppSettingsChange setSingBoxLogLevel(String value) {
+    final normalized = value.trim().toLowerCase();
+    if (normalized.isEmpty || singBoxLogLevel == normalized) {
+      return const AppSettingsChange.none();
+    }
+    singBoxLogLevel = normalized;
+    return const AppSettingsChange(changed: true);
+  }
+
+  AppSettingsChange setExperimentalTcpFastOpen(bool value) {
+    if (experimentalTcpFastOpen == value) {
+      return const AppSettingsChange.none();
+    }
+    experimentalTcpFastOpen = value;
+    return const AppSettingsChange(
+      changed: true,
+      configReason: 'experimental tcp fast open changed',
+    );
+  }
+
+  AppSettingsChange setExperimentalTcpMultiPath(bool value) {
+    if (experimentalTcpMultiPath == value) {
+      return const AppSettingsChange.none();
+    }
+    experimentalTcpMultiPath = value;
+    return const AppSettingsChange(
+      changed: true,
+      configReason: 'experimental tcp multipath changed',
+    );
+  }
+
+  AppSettingsChange setExperimentalInterruptExistingConnections(bool value) {
+    if (experimentalInterruptExistingConnections == value) {
+      return const AppSettingsChange.none();
+    }
+    experimentalInterruptExistingConnections = value;
+    return const AppSettingsChange(
+      changed: true,
+      configReason: 'experimental interrupt existing connections changed',
+    );
+  }
+
+  AppSettingsChange setExperimentalUrlTestStrictTolerance(bool value) {
+    if (experimentalUrlTestStrictTolerance == value) {
+      return const AppSettingsChange.none();
+    }
+    experimentalUrlTestStrictTolerance = value;
+    return const AppSettingsChange(
+      changed: true,
+      configReason: 'experimental urltest strict tolerance changed',
+    );
+  }
+
+  AppSettingsChange setTlsFragmentationMode(TlsFragmentationMode value) {
+    if (tlsFragmentationMode == value) {
+      return const AppSettingsChange.none();
+    }
+    tlsFragmentationMode = value;
+    return const AppSettingsChange(
+      changed: true,
+      configReason: 'tls fragmentation mode changed',
+    );
+  }
+
+  void applyPerformanceModePreset(AppPerformanceMode mode) {
+    switch (mode) {
+      case AppPerformanceMode.standard:
+        urlTestIntervalSeconds = appSettingsStandardUrlTestIntervalSeconds;
+        urlTestTimeoutSeconds = appSettingsDefaultUrlTestTimeoutSeconds;
+        urlTestConcurrency = appSettingsStandardUrlTestConcurrency;
+        urlTestUnavailableCheckIntervalSeconds =
+            appSettingsStandardUrlTestUnavailableCheckIntervalSeconds;
+        locationLookupLimit = appSettingsStandardLocationLookupLimit;
+        locationLookupTimeoutSeconds =
+            appSettingsDefaultLocationLookupTimeoutSeconds;
+        locationLookupConcurrency =
+            appSettingsStandardLocationLookupConcurrency;
+        break;
+      case AppPerformanceMode.economy:
+        urlTestIntervalSeconds = appSettingsEconomyUrlTestIntervalSeconds;
+        urlTestTimeoutSeconds = appSettingsDefaultUrlTestTimeoutSeconds;
+        urlTestConcurrency = appSettingsEconomyUrlTestConcurrency;
+        urlTestUnavailableCheckIntervalSeconds =
+            appSettingsEconomyUrlTestUnavailableCheckIntervalSeconds;
+        locationLookupLimit = appSettingsEconomyLocationLookupLimit;
+        locationLookupTimeoutSeconds =
+            appSettingsDefaultLocationLookupTimeoutSeconds;
+        locationLookupConcurrency = appSettingsEconomyLocationLookupConcurrency;
+        break;
+      case AppPerformanceMode.balanced:
+      case AppPerformanceMode.performance:
+        urlTestIntervalSeconds = appSettingsStandardUrlTestIntervalSeconds;
+        urlTestTimeoutSeconds = appSettingsDefaultUrlTestTimeoutSeconds;
+        urlTestConcurrency = appSettingsStandardUrlTestConcurrency;
+        urlTestUnavailableCheckIntervalSeconds =
+            appSettingsStandardUrlTestUnavailableCheckIntervalSeconds;
+        locationLookupLimit = appSettingsStandardLocationLookupLimit;
+        locationLookupTimeoutSeconds =
+            appSettingsDefaultLocationLookupTimeoutSeconds;
+        locationLookupConcurrency =
+            appSettingsStandardLocationLookupConcurrency;
+        break;
+    }
+  }
+
+  void syncDnsPresetValue({required bool isDirect}) {
+    const directPresets = {
+      'device': 'device://network',
+      'cloudflare': 'udp://1.1.1.1',
+      'cloudflare_doh': 'https://dns.cloudflare.com/dns-query',
+    };
+    const proxyPresets = {
+      'device': 'device://network',
+      'cloudflare': 'udp://1.1.1.1',
+      'cloudflare_doh': 'https://dns.cloudflare.com/dns-query',
+    };
+    final preset = isDirect ? dnsDirectPreset : dnsProxyPreset;
+    if (preset == 'custom') {
+      return;
+    }
+    final value = isDirect ? directPresets[preset] : proxyPresets[preset];
+    if (value == null) {
+      return;
+    }
+    if (isDirect) {
+      dnsDirectResolver = value;
+    } else {
+      dnsProxyResolver = value;
+    }
+  }
+
+  static String normalizeAccentColorHex(String value) => switch (value) {
+    'dynamic-2' || 'dynamic-3' => 'default',
+    _ => value,
+  };
+
+  static String normalizedUrlTestUrl(String value) {
+    final normalized = value.trim();
+    return normalized.isEmpty ? defaultUrlTestUrl : normalized;
+  }
+
+  static String normalizedRussiaDnsDirectResolver(String value) {
+    final normalized = value.trim();
+    return normalized.isEmpty ? defaultRussiaDnsDirectResolver : normalized;
+  }
+}

@@ -13,6 +13,7 @@ import 'package:meow_client/l10n/generated/app_localizations.dart';
 import 'package:meow_client/models/app_view_models.dart';
 import 'package:meow_client/theme/demo_app_theme.dart';
 import 'package:meow_client/widgets/country_flag_badge.dart';
+import 'package:meow_client/widgets/ip_refresh_dots.dart';
 
 const _kActiveProxyFooterReservedHeight = 82.0;
 const _kProxyPanelCarryMinVelocity = 1200.0;
@@ -42,6 +43,7 @@ class HomePage extends StatelessWidget {
     required this.brandName,
     required this.bottomInset,
     this.onOpenTrafficDashboard,
+    this.onRefreshActiveProxyIp,
     this.onRefreshActiveSubscription,
     this.activeProfileRefreshing = false,
     this.showActiveProfileRefreshAction = false,
@@ -49,11 +51,13 @@ class HomePage extends StatelessWidget {
     this.onProxyPanelDragUpdate,
     this.onProxyPanelDragEnd,
     this.showActiveProxyFooter = true,
+    this.connectionStatusLabel = '',
   });
 
   final bool connected;
   final bool connecting;
   final bool resolvingProxy;
+  final String connectionStatusLabel;
   final AppProfileSummary? activeProfile;
   final AppProxySummary? activeProxy;
   final bool hideServerIp;
@@ -69,6 +73,7 @@ class HomePage extends StatelessWidget {
   final String brandName;
   final double bottomInset;
   final VoidCallback? onOpenTrafficDashboard;
+  final VoidCallback? onRefreshActiveProxyIp;
   final Future<void> Function()? onRefreshActiveSubscription;
   final bool activeProfileRefreshing;
   final bool showActiveProfileRefreshAction;
@@ -186,6 +191,7 @@ class HomePage extends StatelessWidget {
                                             connected: connected,
                                             connecting: connecting,
                                             resolvingProxy: resolvingProxy,
+                                            statusLabel: connectionStatusLabel,
                                             onTap: onToggleConnection,
                                           ),
                                           const Gap(8),
@@ -207,8 +213,8 @@ class HomePage extends StatelessWidget {
                                     hapticEnabled: hapticEnabled,
                                     speedBytesPerSecond: speedBytesPerSecond,
                                     trafficBytes: trafficBytes,
-                                    unknownText: '?',
-                                    onHideIpChanged: onHideServerIpChanged,
+                                    unknownText: '—',
+                                    onRefreshIp: onRefreshActiveProxyIp,
                                   ),
                               ],
                             ),
@@ -482,12 +488,14 @@ class ConnectionButton extends StatefulWidget {
     required this.connected,
     required this.connecting,
     required this.resolvingProxy,
+    required this.statusLabel,
     required this.onTap,
   });
 
   final bool connected;
   final bool connecting;
   final bool resolvingProxy;
+  final String statusLabel;
   final VoidCallback onTap;
 
   @override
@@ -504,11 +512,14 @@ class _ConnectionButtonState extends State<ConnectionButton> {
     final buttonColor = widget.connected
         ? buttonTheme.connectedColor!
         : buttonTheme.idleColor!;
-    final label = widget.resolvingProxy
-        ? '...'
-        : widget.connected
+    final busyLabel = widget.statusLabel.trim().isNotEmpty
+        ? widget.statusLabel
+        : l10n.tapToConnect;
+    final label = widget.connected
         ? l10n.connected
-        : (widget.connecting ? '...' : l10n.tapToConnect);
+        : (widget.connecting || widget.resolvingProxy)
+        ? busyLabel
+        : l10n.tapToConnect;
 
     return Column(
       children: [
@@ -884,7 +895,7 @@ class ActiveProxyDelayIndicator extends StatelessWidget {
     final latencyUnknown = !latencyUnavailable && latency == null;
     final hidden = !connected || proxy == null;
     final color = latencyUnavailable
-        ? theme.colorScheme.error
+        ? theme.colorScheme.onSurfaceVariant
         : latencyChecking || !latencyFresh || latency == null
         ? theme.colorScheme.onSurfaceVariant
         : latency < 350
@@ -895,9 +906,9 @@ class ActiveProxyDelayIndicator extends StatelessWidget {
     final valueText = latencyChecking
         ? l10n.checkingLatencyShort
         : latencyUnavailable
-        ? '?'
+        ? '—'
         : latency == null
-        ? '?'
+        ? '—'
         : '$latency';
     final icon = latencyChecking
         ? SizedBox(
@@ -974,7 +985,13 @@ class ActiveProxyDelayIndicator extends StatelessWidget {
                         transitionBuilder: (child, animation) {
                           return FadeTransition(
                             opacity: animation,
-                            child: child,
+                            child: ScaleTransition(
+                              scale: Tween<double>(
+                                begin: .96,
+                                end: 1,
+                              ).animate(animation),
+                              child: child,
+                            ),
                           );
                         },
                         child: Text.rich(
@@ -1032,7 +1049,7 @@ class ActiveProxyFooter extends StatelessWidget {
     required this.speedBytesPerSecond,
     required this.trafficBytes,
     required this.unknownText,
-    required this.onHideIpChanged,
+    this.onRefreshIp,
   });
 
   final bool connected;
@@ -1042,7 +1059,7 @@ class ActiveProxyFooter extends StatelessWidget {
   final double speedBytesPerSecond;
   final double trafficBytes;
   final String unknownText;
-  final ValueChanged<bool> onHideIpChanged;
+  final VoidCallback? onRefreshIp;
 
   String _maskIp(String ip) {
     final parts = ip.split('.');
@@ -1063,12 +1080,30 @@ class ActiveProxyFooter extends StatelessWidget {
     return ip;
   }
 
-  void _toggleIpMask() {
-    if (!connected) return;
+  void _refreshIp() {
+    if (!connected || onRefreshIp == null) return;
     if (hapticEnabled) {
       HapticFeedback.lightImpact();
     }
-    onHideIpChanged(!hideIp);
+    onRefreshIp?.call();
+  }
+
+  Widget _ipDisplay(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = theme.colorScheme.onSurfaceVariant;
+    if (connected && proxy.ipChecking) {
+      return IpRefreshDots(
+        key: const ValueKey('ip-refresh-checking'),
+        color: color,
+      );
+    }
+    return Text(
+      _displayIp,
+      key: ValueKey(_displayIp),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: theme.textTheme.bodyMedium?.copyWith(color: color),
+    );
   }
 
   @override
@@ -1143,7 +1178,8 @@ class ActiveProxyFooter extends StatelessWidget {
                         ),
                         const Gap(6),
                         GestureDetector(
-                          onTap: connected ? _toggleIpMask : null,
+                          behavior: HitTestBehavior.opaque,
+                          onTap: connected ? _refreshIp : null,
                           child: ClipRect(
                             child: AnimatedSize(
                               duration: const Duration(milliseconds: 220),
@@ -1175,15 +1211,7 @@ class ActiveProxyFooter extends StatelessWidget {
                                     ),
                                   );
                                 },
-                                child: Text(
-                                  _displayIp,
-                                  key: ValueKey(_displayIp),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    color: theme.colorScheme.onSurfaceVariant,
-                                  ),
-                                ),
+                                child: _ipDisplay(context),
                               ),
                             ),
                           ),

@@ -75,19 +75,36 @@ class _WelcomePageState extends State<WelcomePage>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Container(
-                          width: 92,
-                          height: 92,
+                          width: 124,
+                          height: 124,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: cs.primaryContainer,
+                            color: Colors.white,
+                            boxShadow: [
+                              BoxShadow(
+                                color: cs.primary.withValues(alpha: .18),
+                                blurRadius: 32,
+                                spreadRadius: 2,
+                              ),
+                            ],
                           ),
-                          child: Icon(
-                            Icons.shield_moon_rounded,
-                            size: 44,
-                            color: cs.onPrimaryContainer,
+                          child: Center(
+                            child: Container(
+                              width: 74,
+                              height: 74,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: cs.primary.withValues(alpha: .12),
+                              ),
+                              child: Icon(
+                                Icons.nightlight_round,
+                                size: 42,
+                                color: cs.primary,
+                              ),
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 28),
                         Text(
                           widget.brandName,
                           textAlign: TextAlign.center,

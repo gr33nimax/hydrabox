@@ -89,6 +89,7 @@ class MeowQuickSettingsTileService : TileService() {
                 stopService(Intent(this, MeowVpnService::class.java))
                 stopService(Intent(this, MeowProxyService::class.java))
                 MeowApplication.clearServiceState()
+                MeowApplication.clearRuntimeIntent()
                 requestRefresh(this)
             }
         }, 1_200L)
@@ -97,7 +98,17 @@ class MeowQuickSettingsTileService : TileService() {
     private fun startVpn() {
         if (SingboxController.running && SingboxController.serviceMode == "proxy") {
             startService(Intent(this, MeowProxyService::class.java).setAction(MeowBoxService.ACTION_STOP))
-            Handler(Looper.getMainLooper()).postDelayed({ startVpnService() }, 300)
+            SingboxController.awaitStopped { stopped ->
+                if (stopped) {
+                    startVpnService()
+                } else {
+                    SingboxController.log(
+                        "error",
+                        "quick tile mode switch aborted: proxy stop timed out",
+                    )
+                    requestRefresh(this)
+                }
+            }
             return
         }
         startVpnService()

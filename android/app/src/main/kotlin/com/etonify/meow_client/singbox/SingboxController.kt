@@ -16,6 +16,11 @@ import io.nekohasekai.libbox.LogIterator
 import io.nekohasekai.libbox.OutboundGroupIterator
 import io.nekohasekai.libbox.StatusMessage
 import io.nekohasekai.libbox.StringIterator
+import java.net.ConnectException
+import java.net.InetSocketAddress
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import java.nio.channels.SocketChannel
 import java.util.concurrent.Executors
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -24,18 +29,20 @@ import java.util.concurrent.atomic.AtomicLong
 
 object SingboxController {
     private const val TAG = "MeowSingbox"
-    private const val MAX_GROUP_ITEMS = 160
     private const val STATUS_EVENT_THROTTLE_MS = 1_000L
     private const val GROUPS_EVENT_THROTTLE_COOL_MS = 1_500L
     private const val GROUPS_EVENT_THROTTLE_BALANCED_MS = 750L
     private const val GROUPS_EVENT_THROTTLE_PERFORMANCE_MS = 500L
     private const val TRAFFIC_POLL_INTERVAL_MS = 1_000L
+    private const val NO_INTERFACE_REASSERT_THROTTLE_MS = 2_000L
     private val mainHandler = Handler(Looper.getMainLooper())
     private val commandExecutor = Executors.newSingleThreadExecutor()
     private val lookupExecutor = Executors.newFixedThreadPool(4)
     private val statusEventScheduled = AtomicBoolean(false)
     private val groupsEventScheduled = AtomicBoolean(false)
     private val runtimeGeneration = AtomicLong(0)
+    private val runtimeStartGeneration = AtomicLong(0)
+    private val lastNoInterfaceReassertUptimeMs = AtomicLong(0L)
     private val stopWaiterLock = Any()
     private val stopWaiters = mutableListOf<(Boolean) -> Unit>()
 
@@ -124,10 +131,19 @@ object SingboxController {
 
         override fun writeGroups(message: OutboundGroupIterator?) {
             if (message == null) return
-            if (groupsEventScheduled.get()) return
             val groups = mutableListOf<Map<String, Any?>>()
+            val selectedGroups = mutableListOf<String>()
+            var itemCount = 0
+            var availableCount = 0
+            var unavailableCount = 0
+            var maxDelay = 0L
+            var maxDelayTag = ""
             while (message.hasNext()) {
                 val group = message.next()
+                val selected = group.selected
+                if (!selected.isNullOrBlank()) {
+                    selectedGroups += "${group.tag}=$selected"
+                }
                 val items = mutableListOf<GroupItemPayload>()
                 val iterator = group.items
                 while (iterator.hasNext()) {
@@ -142,6 +158,17 @@ object SingboxController {
                         error.isNullOrBlank()
                     ) {
                         continue
+                    }
+                    itemCount++
+                    if (delay > 0L) {
+                        availableCount++
+                        if (delay > maxDelay) {
+                            maxDelay = delay.toLong()
+                            maxDelayTag = item.tag.orEmpty()
+                        }
+                    }
+                    if ((status ?: "").equals("unavailable", ignoreCase = true)) {
+                        unavailableCount++
                     }
                     items += GroupItemPayload(
                         tag = item.tag,
@@ -161,6 +188,17 @@ object SingboxController {
                     "items" to limitedGroupItems(group.tag, group.selected, items),
                 )
             }
+            if (itemCount > 0) {
+                val summary =
+                    "urltest_groups_event groups=${groups.size} items=$itemCount " +
+                        "available=$availableCount unavailable=$unavailableCount " +
+                        "maxDelayMs=$maxDelay maxDelayTag=$maxDelayTag " +
+                        "selected=${selectedGroups.take(6).joinToString(",")}"
+                MeowDiagnostics.log(TAG, summary)
+                if (maxDelay >= 1000L) {
+                    log("warning", "urltest_high_delay $summary")
+                }
+            }
             emitCoalescedGroups(mapOf("type" to "groups", "groups" to groups))
         }
 
@@ -171,11 +209,15 @@ object SingboxController {
             val logs = mutableListOf<Map<String, Any?>>()
             while (messageList.hasNext()) {
                 val entry: LogEntry = messageList.next()
+                val message = entry.message ?: ""
+                if (message.contains("no available network interface", ignoreCase = true)) {
+                    maybeReassertDefaultInterfaceFromCoreLog(message)
+                }
                 logs += mapOf(
                     "level" to entry.level,
-                    "message" to entry.message,
+                    "message" to message,
                 )
-                MeowDiagnostics.log(TAG, "libbox log level=${entry.level} message=${entry.message}")
+                MeowDiagnostics.log(TAG, "libbox log level=${entry.level} message=$message")
             }
             emit(mapOf("type" to "logs", "logs" to logs))
         }
@@ -227,15 +269,6 @@ object SingboxController {
         if (items.isEmpty()) {
             return emptyList()
         }
-        if (groupTag == "select") {
-            val selected = selectedTag?.trim().orEmpty()
-            val selectedItem = items.firstOrNull { it.tag == selected }
-            return when {
-                selectedItem != null -> listOf(selectedItem.toEventMap())
-                items.size == 1 -> items.map { it.toEventMap() }
-                else -> emptyList()
-            }
-        }
         val selected = selectedTag?.trim().orEmpty()
         val sorted = items.sortedWith(
             compareBy<GroupItemPayload> {
@@ -250,9 +283,7 @@ object SingboxController {
                 it.time
             },
         )
-        return sorted
-            .take(MAX_GROUP_ITEMS)
-            .map { it.toEventMap() }
+        return sorted.map { it.toEventMap() }
     }
 
     fun setEventSink(sink: EventChannel.EventSink?) {
@@ -303,6 +334,20 @@ object SingboxController {
         return generation
     }
 
+    fun nextStartToken(reason: String): Long {
+        val token = runtimeStartGeneration.incrementAndGet()
+        MeowDiagnostics.log(TAG, "nextStartToken token=$token reason=$reason")
+        return token
+    }
+
+    fun cancelStartTokens(reason: String): Long {
+        val token = runtimeStartGeneration.incrementAndGet()
+        MeowDiagnostics.log(TAG, "cancelStartTokens token=$token reason=$reason")
+        return token
+    }
+
+    fun isStartTokenCurrent(token: Long): Boolean = runtimeStartGeneration.get() == token
+
     fun markServiceStopped(generation: Long, reason: String) {
         val currentGeneration = activeRuntimeGeneration
         if (generation != 0L && generation != currentGeneration) {
@@ -315,6 +360,17 @@ object SingboxController {
         activeRuntimeGeneration = 0
         setRunning(false)
         MeowDiagnostics.log(TAG, "markServiceStopped generation=$generation reason=$reason")
+        notifyStopWaiters(true)
+    }
+
+    fun forceMarkServiceStopped(reason: String) {
+        val previousGeneration = activeRuntimeGeneration
+        activeRuntimeGeneration = 0
+        setRunning(false)
+        MeowDiagnostics.log(
+            TAG,
+            "forceMarkServiceStopped previousGeneration=$previousGeneration reason=$reason",
+        )
         notifyStopWaiters(true)
     }
 
@@ -363,6 +419,22 @@ object SingboxController {
         emit(mapOf("type" to "nativeLog", "level" to level, "message" to message))
     }
 
+    private fun maybeReassertDefaultInterfaceFromCoreLog(message: String) {
+        if (!running) return
+        val now = SystemClock.uptimeMillis()
+        val last = lastNoInterfaceReassertUptimeMs.get()
+        if (now - last < NO_INTERFACE_REASSERT_THROTTLE_MS) return
+        if (!lastNoInterfaceReassertUptimeMs.compareAndSet(last, now)) return
+        val state = MeowDefaultNetworkMonitor.currentInterfaceState("core_no_available_interface")
+        val shortMessage = message.take(180)
+        log(
+            "warning",
+            "core_no_available_interface_reassert interface=${state.interfaceName} " +
+                "index=${state.interfaceIndex} generation=${state.generation} message=$shortMessage",
+        )
+        MeowDefaultNetworkMonitor.reassertDefaultInterface("core_no_available_interface")
+    }
+
     fun connectClient() {
         commandExecutor.execute {
             disconnectClientOnExecutor("reconnect")
@@ -408,10 +480,19 @@ object SingboxController {
 
     private fun disconnectClientOnExecutor(reason: String) {
         val client = commandClient ?: return
-        commandClient = null
         Log.i(TAG, "disconnecting command client reason=$reason")
         MeowDiagnostics.log(TAG, "disconnecting command client reason=$reason")
         runCatching { client.disconnect() }
+            .onSuccess {
+                if (commandClient === client) {
+                    commandClient = null
+                }
+                MeowDiagnostics.log(TAG, "command client disconnected reason=$reason")
+            }
+            .onFailure {
+                Log.w(TAG, "command client disconnect failed reason=$reason", it)
+                MeowDiagnostics.log(TAG, "command client disconnect failed reason=$reason", it)
+            }
     }
 
     private fun startTrafficPolling() {
@@ -602,6 +683,73 @@ object SingboxController {
         }
     }
 
+    fun probeProxyEndpoint(
+        tag: String,
+        host: String,
+        port: Int,
+        timeoutMs: Int,
+        callback: (Result<Map<String, Any?>>) -> Unit,
+    ) {
+        val normalizedTag = tag.trim()
+        val normalizedHost = host.trim()
+        val normalizedTimeout = timeoutMs.coerceIn(500, 10_000)
+        lookupExecutor.execute {
+            val result = runCatching {
+                require(normalizedTag.isNotEmpty()) { "Probe tag is empty" }
+                require(normalizedHost.isNotEmpty()) { "Probe host is empty" }
+                require(port in 1..65535) { "Probe port is invalid" }
+                val checkedAt = System.currentTimeMillis()
+                val startedAt = SystemClock.elapsedRealtime()
+                val vpnActive = running && serviceMode == "vpn"
+                var protectedSocket = false
+                var latencyMs: Long? = null
+                var errorCode = ""
+                SocketChannel.open().use { channel ->
+                    val socket = channel.socket()
+                    if (vpnActive) {
+                        protectedSocket = runCatching {
+                            MeowVpnService.protectSocket(socket)
+                        }.getOrDefault(false)
+                    }
+                    if (vpnActive && !protectedSocket) {
+                        errorCode = "protect_failed"
+                    } else {
+                        try {
+                            socket.connect(
+                                InetSocketAddress(normalizedHost, port),
+                                normalizedTimeout,
+                            )
+                            latencyMs = (SystemClock.elapsedRealtime() - startedAt).coerceAtLeast(1L)
+                        } catch (error: Throwable) {
+                            errorCode = when (error) {
+                                is SocketTimeoutException -> "timeout"
+                                is UnknownHostException -> "unknown_host"
+                                is ConnectException -> "connect_failed"
+                                else -> error.javaClass.simpleName.ifBlank { "probe_failed" }
+                            }
+                        }
+                    }
+                }
+                val reachable = latencyMs != null
+                log(
+                    if (reachable || errorCode == "protect_failed") "debug" else "warning",
+                    "proxy_health_probe_result tag=$normalizedTag reachable=$reachable " +
+                        "latencyMs=${latencyMs ?: ""} error=$errorCode " +
+                        "protected=$protectedSocket vpnActive=$vpnActive mode=$serviceMode",
+                )
+                mapOf(
+                    "tag" to normalizedTag,
+                    "reachable" to reachable,
+                    "latencyMs" to latencyMs,
+                    "errorCode" to errorCode,
+                    "checkedAtMillis" to checkedAt,
+                    "protectedSocket" to protectedSocket,
+                )
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
     fun reloadService(callback: (Result<Unit>) -> Unit) {
         commandExecutor.execute {
             val result = runCatching {
@@ -618,6 +766,7 @@ object SingboxController {
         description: String,
         interfaceName: String?,
         interfaceIndex: Int,
+        networkGeneration: Long,
     ) {
         emit(
             mapOf(
@@ -626,6 +775,7 @@ object SingboxController {
                 "description" to description,
                 "interfaceName" to interfaceName,
                 "interfaceIndex" to interfaceIndex,
+                "networkGeneration" to networkGeneration,
                 "uptimeMs" to SystemClock.uptimeMillis(),
             ),
         )

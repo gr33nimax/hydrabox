@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:meow_client/data/local/app_settings_store.dart';
 import 'package:meow_client/l10n/generated/app_localizations.dart';
 import 'package:meow_client/models/subscription.dart';
 import 'package:meow_client/widgets/progressive_blur_scaffold.dart';
@@ -112,7 +113,7 @@ class _SettingsUrlTestPageState extends State<SettingsUrlTestPage> {
                     decoration: InputDecoration(
                       labelText: l10n.urlTestUrlTitle,
                       helperText: l10n.urlTestUrlSubtitle,
-                      hintText: 'https://www.gstatic.com/generate_204',
+                      hintText: defaultUrlTestUrl,
                     ),
                   ),
                   const SizedBox(height: 16),

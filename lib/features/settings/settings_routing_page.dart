@@ -1,3 +1,5 @@
+import 'dart:collection';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
@@ -6,7 +8,15 @@ import 'package:meow_client/data/local/app_settings_store.dart';
 import 'package:meow_client/data/routing/russia_route_data_service.dart';
 import 'package:meow_client/features/settings/settings_ui.dart';
 import 'package:meow_client/l10n/generated/app_localizations.dart';
+import 'package:meow_client/singbox/singbox_runtime.dart';
 import 'package:meow_client/widgets/progressive_blur_scaffold.dart';
+
+final _installedAppIconCache = _InstalledAppIconCache(maxEntries: 96);
+const _splitRoutingTemporarilyDisabled = true;
+
+void clearInstalledAppIconCache() {
+  _installedAppIconCache.clear();
+}
 
 class SettingsRoutingPage extends StatefulWidget {
   const SettingsRoutingPage({
@@ -17,6 +27,7 @@ class SettingsRoutingPage extends StatefulWidget {
     required this.currentRussiaRouteDataEnabled,
     required this.currentRussiaRouteDataStatus,
     required this.currentBypassLocalNetwork,
+    required this.currentVpnInboundEnabled,
     required this.currentSplitRoutingMode,
     required this.currentSplitRoutingPackages,
     required this.initialInstalledApps,
@@ -39,6 +50,7 @@ class SettingsRoutingPage extends StatefulWidget {
   final bool currentRussiaRouteDataEnabled;
   final RussiaRouteDataStatus currentRussiaRouteDataStatus;
   final bool currentBypassLocalNetwork;
+  final bool currentVpnInboundEnabled;
   final SplitRoutingMode currentSplitRoutingMode;
   final List<String> currentSplitRoutingPackages;
   final List<Map<String, dynamic>> initialInstalledApps;
@@ -91,7 +103,6 @@ class _SettingsRoutingPageState extends State<SettingsRoutingPage> {
         .map((item) => _InstalledApp.fromMap(item))
         .where((item) => item.packageName.isNotEmpty)
         .toList(growable: false);
-    _loadInstalledApps();
   }
 
   @override
@@ -101,20 +112,21 @@ class _SettingsRoutingPageState extends State<SettingsRoutingPage> {
     super.dispose();
   }
 
-  Future<void> _loadInstalledApps() async {
+  Future<bool> _loadInstalledApps() async {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
-      return;
+      return false;
     }
-    if (_installedApps.isEmpty) {
-      setState(() {
-        _loadingInstalledApps = true;
-        _installedAppsError = null;
-      });
+    if (_loadingInstalledApps) {
+      return _installedApps.isNotEmpty;
     }
+    setState(() {
+      _loadingInstalledApps = true;
+      _installedAppsError = null;
+    });
     try {
       final items = await widget.preloadInstalledApps();
       if (!mounted) {
-        return;
+        return false;
       }
       setState(() {
         _installedApps = items
@@ -124,14 +136,16 @@ class _SettingsRoutingPageState extends State<SettingsRoutingPage> {
         _loadingInstalledApps = false;
         _installedAppsError = null;
       });
+      return _installedApps.isNotEmpty;
     } catch (error) {
       if (!mounted) {
-        return;
+        return false;
       }
       setState(() {
         _loadingInstalledApps = false;
         _installedAppsError = error.toString();
       });
+      return false;
     }
   }
 
@@ -323,6 +337,12 @@ class _SettingsRoutingPageState extends State<SettingsRoutingPage> {
   Future<void> _openAppPicker() async {
     FocusScope.of(context).unfocus();
     _commitPackages();
+    if (_installedApps.isEmpty) {
+      final loaded = await _loadInstalledApps();
+      if (!loaded || !mounted) {
+        return;
+      }
+    }
     final result = await showModalBottomSheet<Set<String>>(
       context: context,
       isScrollControlled: true,
@@ -336,11 +356,19 @@ class _SettingsRoutingPageState extends State<SettingsRoutingPage> {
     if (result == null) {
       return;
     }
+    final installedAppByPackage = <String, _InstalledApp>{
+      for (final app in _installedApps) app.packageName: app,
+    };
     final packages = result.toList()..sort();
     _packagesController.text = packages.join('\n');
     _commitPackages();
     if (mounted) {
-      setState(() {});
+      setState(() {
+        _installedApps = packages
+            .map((packageName) => installedAppByPackage[packageName])
+            .nonNulls
+            .toList(growable: false);
+      });
     }
   }
 
@@ -351,6 +379,10 @@ class _SettingsRoutingPageState extends State<SettingsRoutingPage> {
     final cs = theme.colorScheme;
     final isAndroid =
         !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+    final splitAvailable =
+        !_splitRoutingTemporarilyDisabled &&
+        isAndroid &&
+        widget.currentVpnInboundEnabled;
     final selectedPackages = _selectedPackages();
     final installedAppByPackage = <String, _InstalledApp>{
       for (final app in _installedApps) app.packageName: app,
@@ -510,18 +542,12 @@ class _SettingsRoutingPageState extends State<SettingsRoutingPage> {
                       ],
                     ),
                     const Gap(12),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      secondary: SettingsLeadingIcon(
-                        icon: Icons.route_rounded,
-                        color: cs.primary,
-                      ),
-                      title: Text(l10n.russiaRoutesEnableTitle),
-                      subtitle: Text(
-                        _russiaRouteDataStatus.available
-                            ? l10n.russiaRoutesEnabledSubtitle
-                            : l10n.russiaRoutesMissingSubtitle,
-                      ),
+                    _CompactSwitchRow(
+                      icon: Icons.route_rounded,
+                      title: l10n.russiaRoutesEnableTitle,
+                      subtitle: _russiaRouteDataStatus.available
+                          ? l10n.russiaRoutesEnabledSubtitle
+                          : l10n.russiaRoutesMissingSubtitle,
                       value: _russiaRouteDataEnabled,
                       onChanged: _russiaRouteDataBusy
                           ? null
@@ -613,18 +639,12 @@ class _SettingsRoutingPageState extends State<SettingsRoutingPage> {
                       ],
                     ),
                     const Gap(12),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      secondary: SettingsLeadingIcon(
-                        icon: Icons.shield_moon_rounded,
-                        color: cs.primary,
-                      ),
-                      title: Text(l10n.adBlockEnableTitle),
-                      subtitle: Text(
-                        _adBlockStatus.available
-                            ? l10n.adBlockEnabledSubtitle
-                            : l10n.adBlockMissingSubtitle,
-                      ),
+                    _CompactSwitchRow(
+                      icon: Icons.shield_moon_rounded,
+                      title: l10n.adBlockEnableTitle,
+                      subtitle: _adBlockStatus.available
+                          ? l10n.adBlockEnabledSubtitle
+                          : l10n.adBlockMissingSubtitle,
                       value: _adBlockEnabled,
                       onChanged: _adBlockBusy ? null : _setAdBlock,
                     ),
@@ -665,189 +685,230 @@ class _SettingsRoutingPageState extends State<SettingsRoutingPage> {
                                   color: cs.onSurfaceVariant,
                                 ),
                               ),
+                              if (!_splitRoutingTemporarilyDisabled &&
+                                  !widget.currentVpnInboundEnabled) ...[
+                                const Gap(8),
+                                _InlineWarning(text: l10n.splitRoutingTunOnly),
+                              ],
                             ],
                           ),
                         ),
                       ],
                     ),
+                    const Gap(14),
+                    _DisabledFeatureNotice(
+                      title: l10n.splitRoutingUnavailableTitle,
+                      message: l10n.splitRoutingUnavailableMessage,
+                    ),
                     const Gap(18),
-                    Text(
-                      l10n.splitRoutingModeTitle,
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const Gap(10),
-                    _RoutingModeCard(
-                      icon: Icons.block_rounded,
-                      title: l10n.splitRoutingModeDisabled,
-                      subtitle: l10n.splitRoutingModeDisabledSubtitle,
-                      selected: _splitRoutingMode == SplitRoutingMode.disabled,
-                      onTap: () {
-                        setState(() {
-                          _splitRoutingMode = SplitRoutingMode.disabled;
-                        });
-                        widget.onSplitRoutingModeChanged(
-                          SplitRoutingMode.disabled,
-                        );
-                      },
-                    ),
-                    const Gap(10),
-                    _RoutingModeCard(
-                      icon: Icons.north_east_rounded,
-                      title: l10n.splitRoutingModeProxySelected,
-                      subtitle: l10n.splitRoutingModeProxySelectedSubtitle,
-                      selected:
-                          _splitRoutingMode == SplitRoutingMode.proxySelected,
-                      onTap: () {
-                        setState(() {
-                          _splitRoutingMode = SplitRoutingMode.proxySelected;
-                        });
-                        widget.onSplitRoutingModeChanged(
-                          SplitRoutingMode.proxySelected,
-                        );
-                      },
-                    ),
-                    const Gap(10),
-                    _RoutingModeCard(
-                      icon: Icons.south_east_rounded,
-                      title: l10n.splitRoutingModeBypassSelected,
-                      subtitle: l10n.splitRoutingModeBypassSelectedSubtitle,
-                      selected:
-                          _splitRoutingMode == SplitRoutingMode.bypassSelected,
-                      onTap: () {
-                        setState(() {
-                          _splitRoutingMode = SplitRoutingMode.bypassSelected;
-                        });
-                        widget.onSplitRoutingModeChanged(
-                          SplitRoutingMode.bypassSelected,
-                        );
-                      },
-                    ),
-                    if (_splitRoutingMode != SplitRoutingMode.disabled) ...[
-                      const Gap(18),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              l10n.splitRoutingAppsTitle,
+                    IgnorePointer(
+                      ignoring: _splitRoutingTemporarilyDisabled,
+                      child: Opacity(
+                        opacity: _splitRoutingTemporarilyDisabled ? .42 : 1,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              l10n.splitRoutingModeTitle,
                               style: theme.textTheme.labelLarge?.copyWith(
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 6,
+                            const Gap(10),
+                            _RoutingModeCard(
+                              icon: Icons.block_rounded,
+                              title: l10n.splitRoutingModeDisabled,
+                              subtitle: l10n.splitRoutingModeDisabledSubtitle,
+                              selected:
+                                  _splitRoutingMode ==
+                                  SplitRoutingMode.disabled,
+                              onTap: _splitRoutingTemporarilyDisabled
+                                  ? null
+                                  : () {
+                                      setState(() {
+                                        _splitRoutingMode =
+                                            SplitRoutingMode.disabled;
+                                      });
+                                      widget.onSplitRoutingModeChanged(
+                                        SplitRoutingMode.disabled,
+                                      );
+                                    },
                             ),
-                            decoration: BoxDecoration(
-                              color: cs.primary.withValues(alpha: .10),
-                              borderRadius: BorderRadius.circular(999),
+                            const Gap(10),
+                            _RoutingModeCard(
+                              icon: Icons.north_east_rounded,
+                              title: l10n.splitRoutingModeProxySelected,
+                              subtitle:
+                                  l10n.splitRoutingModeProxySelectedSubtitle,
+                              selected:
+                                  _splitRoutingMode ==
+                                  SplitRoutingMode.proxySelected,
+                              onTap: splitAvailable
+                                  ? () {
+                                      setState(() {
+                                        _splitRoutingMode =
+                                            SplitRoutingMode.proxySelected;
+                                      });
+                                      widget.onSplitRoutingModeChanged(
+                                        SplitRoutingMode.proxySelected,
+                                      );
+                                    }
+                                  : null,
                             ),
-                            child: Text(
-                              l10n.splitRoutingSelectedCount(
-                                selectedPackages.length,
-                              ),
-                              style: theme.textTheme.labelMedium?.copyWith(
-                                color: cs.primary,
-                                fontWeight: FontWeight.w700,
-                              ),
+                            const Gap(10),
+                            _RoutingModeCard(
+                              icon: Icons.south_east_rounded,
+                              title: l10n.splitRoutingModeBypassSelected,
+                              subtitle:
+                                  l10n.splitRoutingModeBypassSelectedSubtitle,
+                              selected:
+                                  _splitRoutingMode ==
+                                  SplitRoutingMode.bypassSelected,
+                              onTap: splitAvailable
+                                  ? () {
+                                      setState(() {
+                                        _splitRoutingMode =
+                                            SplitRoutingMode.bypassSelected;
+                                      });
+                                      widget.onSplitRoutingModeChanged(
+                                        SplitRoutingMode.bypassSelected,
+                                      );
+                                    }
+                                  : null,
                             ),
-                          ),
-                        ],
-                      ),
-                      const Gap(10),
-                      if (isAndroid)
-                        FilledButton.tonalIcon(
-                          onPressed:
-                              !_loadingInstalledApps &&
-                                  _installedApps.isNotEmpty
-                              ? _openAppPicker
-                              : null,
-                          icon: _loadingInstalledApps
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
+                            if (_splitRoutingMode !=
+                                SplitRoutingMode.disabled) ...[
+                              const Gap(18),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      l10n.splitRoutingAppsTitle,
+                                      style: theme.textTheme.labelLarge
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    ),
                                   ),
-                                )
-                              : const Icon(Icons.apps_rounded),
-                          label: Text(l10n.splitRoutingPickAppsAction),
-                        ),
-                      if (!isAndroid) ...[
-                        const Gap(8),
-                        Text(
-                          l10n.splitRoutingAndroidOnly,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: cs.onSurfaceVariant,
-                          ),
-                        ),
-                      ] else if (_installedAppsError != null) ...[
-                        const Gap(8),
-                        Text(
-                          l10n.splitRoutingLoadAppsFailed,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: cs.error,
-                          ),
-                        ),
-                      ],
-                      const Gap(12),
-                      _SelectedAppsPanel(
-                        apps: selectedApps,
-                        emptyTitle: l10n.splitRoutingNoAppsTitle,
-                        emptySubtitle: l10n.splitRoutingNoAppsSubtitle,
-                      ),
-                      const Gap(12),
-                      Theme(
-                        data: theme.copyWith(dividerColor: Colors.transparent),
-                        child: ExpansionTile(
-                          tilePadding: EdgeInsets.zero,
-                          childrenPadding: EdgeInsets.zero,
-                          initiallyExpanded: _manualEditorExpanded,
-                          onExpansionChanged: (expanded) {
-                            setState(() {
-                              _manualEditorExpanded = expanded;
-                            });
-                          },
-                          title: Text(
-                            l10n.splitRoutingManualEditorTitle,
-                            style: theme.textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          subtitle: Text(
-                            l10n.splitRoutingManualEditorSubtitle,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: cs.onSurfaceVariant,
-                            ),
-                          ),
-                          children: [
-                            const Gap(8),
-                            TextField(
-                              controller: _packagesController,
-                              minLines: 4,
-                              maxLines: 8,
-                              onTapOutside: (_) {
-                                FocusScope.of(context).unfocus();
-                                _commitPackages();
-                              },
-                              onEditingComplete: () {
-                                FocusScope.of(context).unfocus();
-                                _commitPackages();
-                              },
-                              decoration: InputDecoration(
-                                labelText: l10n.splitRoutingPackagesTitle,
-                                hintText: l10n.splitRoutingPackagesHint,
-                                helperText: l10n.splitRoutingPackagesHelper,
-                                alignLabelWithHint: true,
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: cs.primary.withValues(alpha: .10),
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Text(
+                                      l10n.splitRoutingSelectedCount(
+                                        selectedPackages.length,
+                                      ),
+                                      style: theme.textTheme.labelMedium
+                                          ?.copyWith(
+                                            color: cs.primary,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ),
+                              const Gap(10),
+                              if (isAndroid)
+                                FilledButton.tonalIcon(
+                                  onPressed: !_loadingInstalledApps
+                                      ? _openAppPicker
+                                      : null,
+                                  icon: _loadingInstalledApps
+                                      ? const SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : const Icon(Icons.apps_rounded),
+                                  label: Text(l10n.splitRoutingPickAppsAction),
+                                ),
+                              if (!isAndroid) ...[
+                                const Gap(8),
+                                Text(
+                                  l10n.splitRoutingAndroidOnly,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: cs.onSurfaceVariant,
+                                  ),
+                                ),
+                              ] else if (_installedAppsError != null) ...[
+                                const Gap(8),
+                                Text(
+                                  l10n.splitRoutingLoadAppsFailed,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: cs.error,
+                                  ),
+                                ),
+                              ],
+                              const Gap(12),
+                              _SelectedAppsPanel(
+                                apps: selectedApps,
+                                emptyTitle: l10n.splitRoutingNoAppsTitle,
+                                emptySubtitle: l10n.splitRoutingNoAppsSubtitle,
+                              ),
+                              const Gap(12),
+                              Theme(
+                                data: theme.copyWith(
+                                  dividerColor: Colors.transparent,
+                                ),
+                                child: ExpansionTile(
+                                  tilePadding: EdgeInsets.zero,
+                                  childrenPadding: EdgeInsets.zero,
+                                  initiallyExpanded: _manualEditorExpanded,
+                                  onExpansionChanged: (expanded) {
+                                    setState(() {
+                                      _manualEditorExpanded = expanded;
+                                    });
+                                  },
+                                  title: Text(
+                                    l10n.splitRoutingManualEditorTitle,
+                                    style: theme.textTheme.titleSmall?.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    l10n.splitRoutingManualEditorSubtitle,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: cs.onSurfaceVariant,
+                                    ),
+                                  ),
+                                  children: [
+                                    const Gap(8),
+                                    TextField(
+                                      controller: _packagesController,
+                                      minLines: 4,
+                                      maxLines: 8,
+                                      onTapOutside: (_) {
+                                        FocusScope.of(context).unfocus();
+                                        _commitPackages();
+                                      },
+                                      onEditingComplete: () {
+                                        FocusScope.of(context).unfocus();
+                                        _commitPackages();
+                                      },
+                                      decoration: InputDecoration(
+                                        labelText:
+                                            l10n.splitRoutingPackagesTitle,
+                                        hintText: l10n.splitRoutingPackagesHint,
+                                        helperText:
+                                            l10n.splitRoutingPackagesHelper,
+                                        alignLabelWithHint: true,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),
-                    ],
+                    ),
                   ],
                 ),
               ),
@@ -878,6 +939,124 @@ class _InstalledApp {
       label: map['label']?.toString() ?? '',
       system: map['system'] == true,
       launchable: map['launchable'] == true,
+    );
+  }
+}
+
+class _InstalledAppIconCache {
+  _InstalledAppIconCache({required this.maxEntries});
+
+  final int maxEntries;
+  final LinkedHashMap<String, Uint8List> _entries =
+      LinkedHashMap<String, Uint8List>();
+
+  Uint8List? get(String key) {
+    final value = _entries.remove(key);
+    if (value == null) {
+      return null;
+    }
+    _entries[key] = value;
+    return value;
+  }
+
+  void put(String key, Uint8List value) {
+    _entries.remove(key);
+    _entries[key] = value;
+    while (_entries.length > maxEntries) {
+      _entries.remove(_entries.keys.first);
+    }
+  }
+
+  void clear() => _entries.clear();
+}
+
+class _InstalledAppIcon extends StatefulWidget {
+  const _InstalledAppIcon({
+    required this.packageName,
+    required this.system,
+    this.size = 38,
+  });
+
+  final String packageName;
+  final bool system;
+  final double size;
+
+  @override
+  State<_InstalledAppIcon> createState() => _InstalledAppIconState();
+}
+
+class _InstalledAppIconState extends State<_InstalledAppIcon> {
+  Uint8List? _bytes;
+  int _generation = 0;
+
+  String get _cacheKey =>
+      '${widget.packageName}|${widget.size.round().clamp(24, 96)}';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadIcon();
+  }
+
+  @override
+  void didUpdateWidget(covariant _InstalledAppIcon oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.packageName != widget.packageName ||
+        oldWidget.size != widget.size) {
+      _loadIcon();
+    }
+  }
+
+  Future<void> _loadIcon() async {
+    final key = _cacheKey;
+    final cached = _installedAppIconCache.get(key);
+    final generation = ++_generation;
+    if (cached != null) {
+      setState(() {
+        _bytes = cached;
+      });
+      return;
+    }
+    setState(() {
+      _bytes = null;
+    });
+    final bytes = await SingboxRuntime.instance.getInstalledAppIcon(
+      widget.packageName,
+      sizePx: widget.size.round().clamp(24, 96),
+    );
+    if (!mounted || generation != _generation) {
+      return;
+    }
+    if (bytes != null && bytes.isNotEmpty) {
+      _installedAppIconCache.put(key, bytes);
+    }
+    setState(() {
+      _bytes = bytes;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bytes = _bytes;
+    if (bytes == null || bytes.isEmpty) {
+      return SettingsLeadingIcon(
+        icon: widget.system ? Icons.memory_rounded : Icons.android_rounded,
+        color: Theme.of(context).colorScheme.primary,
+        size: widget.size,
+        iconSize: 18,
+      );
+    }
+    return SizedBox.square(
+      dimension: widget.size,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: Image.memory(
+          bytes,
+          gaplessPlayback: true,
+          filterQuality: FilterQuality.low,
+          fit: BoxFit.cover,
+        ),
+      ),
     );
   }
 }
@@ -1023,12 +1202,13 @@ class _RoutingModeCard extends StatelessWidget {
   final String title;
   final String subtitle;
   final bool selected;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
+    final enabled = onTap != null;
 
     return Material(
       color: Colors.transparent,
@@ -1052,7 +1232,11 @@ class _RoutingModeCard extends StatelessWidget {
             children: [
               SettingsLeadingIcon(
                 icon: icon,
-                color: selected ? cs.primary : cs.onSurfaceVariant,
+                color: !enabled
+                    ? cs.onSurfaceVariant.withValues(alpha: .55)
+                    : selected
+                    ? cs.primary
+                    : cs.onSurfaceVariant,
               ),
               const Gap(12),
               Expanded(
@@ -1063,13 +1247,16 @@ class _RoutingModeCard extends StatelessWidget {
                       title,
                       style: theme.textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w700,
+                        color: enabled ? null : cs.onSurfaceVariant,
                       ),
                     ),
                     const Gap(4),
                     Text(
                       subtitle,
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: cs.onSurfaceVariant,
+                        color: cs.onSurfaceVariant.withValues(
+                          alpha: enabled ? 1 : .7,
+                        ),
                       ),
                     ),
                   ],
@@ -1080,11 +1267,93 @@ class _RoutingModeCard extends StatelessWidget {
                 selected
                     ? Icons.check_circle_rounded
                     : Icons.radio_button_unchecked_rounded,
-                color: selected ? cs.primary : cs.onSurfaceVariant,
+                color: !enabled
+                    ? cs.onSurfaceVariant.withValues(alpha: .55)
+                    : selected
+                    ? cs.primary
+                    : cs.onSurfaceVariant,
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _InlineWarning extends StatelessWidget {
+  const _InlineWarning({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: cs.tertiaryContainer.withValues(alpha: .42),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Text(
+        text,
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: cs.onTertiaryContainer,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+class _DisabledFeatureNotice extends StatelessWidget {
+  const _DisabledFeatureNotice({required this.title, required this.message});
+
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: cs.errorContainer.withValues(alpha: .64),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: cs.error.withValues(alpha: .24)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.construction_rounded, color: cs.onErrorContainer),
+          const Gap(10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: cs.onErrorContainer,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const Gap(3),
+                Text(
+                  message,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: cs.onErrorContainer,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1152,11 +1421,10 @@ class _SelectedAppsPanel extends StatelessWidget {
             ListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
-              leading: SettingsLeadingIcon(
-                icon: app.system ? Icons.memory_rounded : Icons.android_rounded,
-                color: cs.primary,
+              leading: _InstalledAppIcon(
+                packageName: app.packageName,
+                system: app.system,
                 size: 38,
-                iconSize: 18,
               ),
               title: Text(
                 app.label.isNotEmpty ? app.label : app.packageName,
@@ -1290,13 +1558,10 @@ class _AppPickerSheetState extends State<_AppPickerSheet> {
                 return CheckboxListTile(
                   value: selected,
                   contentPadding: EdgeInsets.zero,
-                  secondary: SettingsLeadingIcon(
-                    icon: app.system
-                        ? Icons.memory_rounded
-                        : Icons.android_rounded,
-                    color: Theme.of(context).colorScheme.primary,
+                  secondary: _InstalledAppIcon(
+                    packageName: app.packageName,
+                    system: app.system,
                     size: 38,
-                    iconSize: 18,
                   ),
                   title: Text(
                     app.label.isNotEmpty ? app.label : app.packageName,
@@ -1321,6 +1586,66 @@ class _AppPickerSheetState extends State<_AppPickerSheet> {
               },
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CompactSwitchRow extends StatelessWidget {
+  const _CompactSwitchRow({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool value;
+  final ValueChanged<bool>? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: cs.outlineVariant.withValues(alpha: .72)),
+      ),
+      child: Row(
+        children: [
+          SettingsLeadingIcon(icon: icon, color: cs.primary),
+          const Gap(10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const Gap(2),
+                Text(
+                  subtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: cs.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Gap(8),
+          Switch(value: value, onChanged: onChanged),
         ],
       ),
     );
@@ -1428,6 +1753,11 @@ class _RussiaRouteDataStatusPanel extends StatelessWidget {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final installedAt = status.installedAt;
+    final verifiedAt = status.verifiedAt;
+    final routeSource =
+        status.sourceKind == RussiaRouteDataService.sourceKindLive
+        ? l10n.russiaRoutesLiveSource
+        : l10n.russiaRoutesBundledSource;
 
     return Container(
       width: double.infinity,
@@ -1501,6 +1831,22 @@ class _RussiaRouteDataStatusPanel extends StatelessWidget {
               height: 1.3,
             ),
           ),
+          if (status.available) ...[
+            const Gap(4),
+            Text(
+              l10n.russiaRoutesSourceMeta(
+                routeSource,
+                verifiedAt == null
+                    ? '—'
+                    : _AdBlockStatusPanel._formatDateTime(verifiedAt),
+                status.verifiedFiles.length,
+              ),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: cs.onSurfaceVariant,
+                height: 1.3,
+              ),
+            ),
+          ],
           if (busy) ...[
             const Gap(12),
             const LinearProgressIndicator(minHeight: 4),

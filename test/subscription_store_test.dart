@@ -137,6 +137,66 @@ void main() {
     expect(saved.groups.single.outboundTags, ['leaf-1', 'leaf-2']);
   });
 
+  test('keeps selected proxy group when group still has live children', () {
+    const outbounds = [
+      Outbound(
+        tag: 'leaf-1',
+        name: 'Leaf 1',
+        config: {'type': 'vless', 'tag': 'leaf-1'},
+      ),
+      Outbound(
+        tag: 'leaf-2',
+        name: 'Leaf 2',
+        config: {'type': 'vless', 'tag': 'leaf-2'},
+      ),
+    ];
+    const groups = [
+      SubscriptionGroup(
+        tag: 'group-auto',
+        name: 'Auto group',
+        outboundTags: ['leaf-1', 'leaf-2'],
+      ),
+    ];
+
+    final selected = SubscriptionStore.selectedProxyTagForOutboundsForTest(
+      outbounds,
+      preferredTag: 'group-auto',
+      groups: groups,
+    );
+
+    expect(selected, 'group-auto');
+  });
+
+  test('falls back when selected proxy group has no live children', () {
+    const outbounds = [
+      Outbound(
+        tag: 'leaf-1',
+        name: 'Leaf 1',
+        config: {'type': 'vless', 'tag': 'leaf-1'},
+      ),
+      Outbound(
+        tag: 'leaf-2',
+        name: 'Leaf 2',
+        config: {'type': 'vless', 'tag': 'leaf-2'},
+      ),
+    ];
+    const groups = [
+      SubscriptionGroup(
+        tag: 'group-auto',
+        name: 'Auto group',
+        outboundTags: ['missing'],
+      ),
+    ];
+
+    final selected = SubscriptionStore.selectedProxyTagForOutboundsForTest(
+      outbounds,
+      preferredTag: 'group-auto',
+      groups: groups,
+    );
+
+    expect(selected, 'lowest');
+  });
+
   test(
     'saves outbound runtime info without clearing location fields',
     () async {

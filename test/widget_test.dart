@@ -20,6 +20,8 @@ void main() {
         store: MemoryAppSettingsStore(
           const AppSettingsState(
             onboardingCompleted: true,
+            acceptedLegalVersion: '0.2.0',
+            acceptedLegalAtMillis: 1,
             activeProfileId: '',
             selectedProxyTag: '',
             localeCode: 'system',
@@ -137,6 +139,8 @@ void main() {
         store: MemoryAppSettingsStore(
           const AppSettingsState(
             onboardingCompleted: true,
+            acceptedLegalVersion: '0.2.0',
+            acceptedLegalAtMillis: 1,
             activeProfileId: '',
             selectedProxyTag: '',
             localeCode: 'system',
@@ -663,7 +667,6 @@ void main() {
               speedBytesPerSecond: 44 * 1024,
               trafficBytes: 96.2 * 1024 * 1024,
               unknownText: '?',
-              onHideIpChanged: (_) {},
             ),
           ),
         ),
@@ -675,6 +678,75 @@ void main() {
     expect(find.text('—'), findsOneWidget);
     expect(find.text('0.00 B/s'), findsOneWidget);
     expect(find.text('0.00 B'), findsOneWidget);
+  });
+
+  testWidgets('active proxy footer tap refreshes active IP', (tester) async {
+    final proxy = _proxy(
+      'proxy-1',
+      'Poland',
+      latency: 42,
+    ).copyWith(ip: '57.128.200.35');
+    var refreshCount = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        supportedLocales: AppLocalizations.supportedLocales,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        home: Scaffold(
+          body: Center(
+            child: ActiveProxyFooter(
+              connected: true,
+              proxy: proxy,
+              hideIp: false,
+              hapticEnabled: false,
+              speedBytesPerSecond: 0,
+              trafficBytes: 0,
+              unknownText: '?',
+              onRefreshIp: () => refreshCount++,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('57.128.200.35'));
+    await tester.pump();
+
+    expect(refreshCount, 1);
+  });
+
+  testWidgets('active proxy footer shows IP refresh dots while checking', (
+    tester,
+  ) async {
+    final proxy = _proxy(
+      'proxy-1',
+      'Poland',
+      latency: 42,
+    ).copyWith(ip: '57.128.200.35', ipChecking: true);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        supportedLocales: AppLocalizations.supportedLocales,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        home: Scaffold(
+          body: Center(
+            child: ActiveProxyFooter(
+              connected: true,
+              proxy: proxy,
+              hideIp: false,
+              hapticEnabled: false,
+              speedBytesPerSecond: 0,
+              trafficBytes: 0,
+              unknownText: '?',
+              onRefreshIp: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('ip-refresh-checking')), findsOneWidget);
+    expect(find.text('57.128.200.35'), findsNothing);
   });
 
   testWidgets('active proxy delay indicator shows checking state once', (
@@ -881,10 +953,7 @@ void main() {
       MaterialApp(
         supportedLocales: AppLocalizations.supportedLocales,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
-        home: SettingsAboutPage(
-          versionLabel: '0.1.1',
-          onShowOnboarding: () {},
-        ),
+        home: SettingsAboutPage(versionLabel: '0.1.1', onShowOnboarding: () {}),
       ),
     );
     await tester.pumpAndSettle();

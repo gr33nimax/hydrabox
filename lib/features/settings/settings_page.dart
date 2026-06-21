@@ -13,6 +13,7 @@ class SettingsPage extends StatelessWidget {
     required this.onOpenSubscriptions,
     required this.onOpenInbound,
     required this.onOpenRouting,
+    required this.onOpenBackup,
     required this.onOpenExperimental,
     required this.onOpenLogs,
     required this.onOpenAbout,
@@ -25,6 +26,7 @@ class SettingsPage extends StatelessWidget {
   final VoidCallback onOpenSubscriptions;
   final VoidCallback onOpenInbound;
   final VoidCallback onOpenRouting;
+  final VoidCallback onOpenBackup;
   final VoidCallback onOpenExperimental;
   final VoidCallback onOpenLogs;
   final VoidCallback onOpenAbout;
@@ -34,7 +36,31 @@ class SettingsPage extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
 
     return ProgressiveBlurScaffold(
-      appBar: AppBar(title: Text(l10n.settingsTitle)),
+      appBar: AppBar(
+        title: Text(l10n.settingsTitle),
+        actions: [
+          PopupMenuButton<String>(
+            tooltip: l10n.backupTitle,
+            onSelected: (value) {
+              if (value == 'backup') {
+                onOpenBackup();
+              }
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'backup',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.backup_rounded),
+                  title: Text(l10n.backupTitle),
+                  subtitle: Text(l10n.backupSubtitle),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
       body: ListView(
         padding: EdgeInsets.fromLTRB(
           settingsScreenPadding.left,
@@ -81,8 +107,8 @@ class SettingsPage extends StatelessWidget {
           const SizedBox(height: settingsIslandGap),
           _SettingsEntryTile(
             icon: Icons.speed_rounded,
-            title: l10n.subscriptionsTitle,
-            subtitle: '${l10n.urlTestTitle} · ${l10n.hwidTitle}',
+            title: l10n.settingsProfilesChecksTitle,
+            subtitle: l10n.settingsProfilesChecksSubtitle,
             onTap: onOpenSubscriptions,
           ),
           const SizedBox(height: settingsIslandGap),

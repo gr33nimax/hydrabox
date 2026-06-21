@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
+import 'package:meow_client/data/local/app_settings_store.dart';
 import 'package:meow_client/data/update/app_update_service.dart';
 import 'package:meow_client/features/settings/settings_ui.dart';
 import 'package:meow_client/l10n/generated/app_localizations.dart';
@@ -10,31 +11,74 @@ import 'package:meow_client/singbox/singbox_runtime.dart';
 import 'package:meow_client/widgets/progressive_blur_scaffold.dart';
 
 class SettingsUpdatePage extends StatefulWidget {
-  const SettingsUpdatePage({super.key, required this.currentVersion});
+  const SettingsUpdatePage({
+    super.key,
+    required this.currentVersion,
+    this.installMode = AppUpdateInstallMode.ask,
+    this.onInstallModeChanged,
+  });
 
   final String currentVersion;
+  final AppUpdateInstallMode installMode;
+  final ValueChanged<AppUpdateInstallMode>? onInstallModeChanged;
 
   @override
   State<SettingsUpdatePage> createState() => _SettingsUpdatePageState();
 }
 
-class _SettingsUpdatePageState extends State<SettingsUpdatePage> {
+class _SettingsUpdatePageState extends State<SettingsUpdatePage>
+    with WidgetsBindingObserver {
   AppUpdateCheckResult? _result;
   AppUpdateDownloadProgress? _downloadProgress;
   bool _checking = false;
   bool _downloading = false;
   bool _installing = false;
   bool _clearingUpdateCache = false;
+  bool? _canInstallApks;
+  AppUpdateVerificationResult? _verification;
   String? _downloadedFilePath;
+  late String _currentVersion = widget.currentVersion;
+  late AppUpdateInstallMode _installMode = widget.installMode;
 
   @override
   void initState() {
     super.initState();
-    unawaited(_check(manual: false));
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(_bootstrap());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_refreshInstalledVersion());
+      unawaited(_refreshInstallPermissionStatus(showFeedback: true));
+    }
+  }
+
+  Future<void> _bootstrap() async {
+    await _refreshInstalledVersion();
+    await _check(manual: false);
+  }
+
+  Future<void> _refreshInstalledVersion() async {
+    final info = await SingboxRuntime.instance.getAppVersionInfo();
+    if (!mounted) return;
+    final next = info.displayVersion;
+    if (next != _currentVersion) {
+      setState(() => _currentVersion = next);
+    }
   }
 
   Future<void> _check({required bool manual}) async {
     if (_checking || _downloading || _clearingUpdateCache) return;
+    await _refreshInstalledVersion();
+    if (!mounted || _checking || _downloading || _clearingUpdateCache) return;
     setState(() {
       _checking = true;
       if (manual) {
@@ -42,7 +86,7 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage> {
       }
     });
     final result = await AppUpdateService.instance.checkForUpdates(
-      currentVersion: widget.currentVersion,
+      currentVersion: _currentVersion,
       manual: manual,
     );
     if (!mounted) return;
@@ -51,12 +95,131 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage> {
       _checking = false;
       _downloadedFilePath = result.downloadedFilePath;
     });
+    await _refreshDownloadedVerification();
   }
 
-  Future<void> _download(AppUpdateInfo info) async {
+  Future<void> _startUpdateFlow(AppUpdateInfo info) async {
+    if (_downloading || _checking || _clearingUpdateCache) return;
+    var mode = _installMode;
+    if (mode == AppUpdateInstallMode.ask) {
+      final decision = await _showInstallModeSheet();
+      if (decision == null || !mounted) return;
+      mode = decision.mode;
+      if (decision.remember) {
+        setState(() => _installMode = mode);
+        widget.onInstallModeChanged?.call(mode);
+      }
+    }
+
+    if (mode == AppUpdateInstallMode.auto) {
+      final canInstall = await _ensureInstallPermission();
+      if (!canInstall || !mounted) return;
+    }
+    await _download(
+      info,
+      installAfterDownload: mode == AppUpdateInstallMode.auto,
+    );
+  }
+
+  Future<_InstallModeDecision?> _showInstallModeSheet() {
+    final l10n = AppLocalizations.of(context);
+    var selected = AppUpdateInstallMode.manual;
+    var remember = false;
+    return showModalBottomSheet<_InstallModeDecision>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        final theme = Theme.of(context);
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            Widget option({
+              required AppUpdateInstallMode value,
+              required IconData icon,
+              required String title,
+              required String subtitle,
+            }) {
+              return RadioListTile<AppUpdateInstallMode>(
+                value: value,
+                secondary: Icon(icon),
+                title: Text(title),
+                subtitle: Text(subtitle),
+              );
+            }
+
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      l10n.updatesInstallMethodTitle,
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const Gap(8),
+                    RadioGroup<AppUpdateInstallMode>(
+                      groupValue: selected,
+                      onChanged: (next) {
+                        if (next == null) return;
+                        setSheetState(() => selected = next);
+                      },
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          option(
+                            value: AppUpdateInstallMode.manual,
+                            icon: Icons.download_done_rounded,
+                            title: l10n.updatesInstallMethodManualTitle,
+                            subtitle: l10n.updatesInstallMethodManualSubtitle,
+                          ),
+                          option(
+                            value: AppUpdateInstallMode.auto,
+                            icon: Icons.install_mobile_rounded,
+                            title: l10n.updatesInstallMethodAutoTitle,
+                            subtitle: l10n.updatesInstallMethodAutoSubtitle,
+                          ),
+                        ],
+                      ),
+                    ),
+                    CheckboxListTile(
+                      value: remember,
+                      onChanged: (value) {
+                        setSheetState(() => remember = value ?? false);
+                      },
+                      controlAffinity: ListTileControlAffinity.leading,
+                      title: Text(l10n.updatesInstallMethodRemember),
+                    ),
+                    const Gap(8),
+                    FilledButton(
+                      onPressed: () => Navigator.of(context).pop(
+                        _InstallModeDecision(
+                          mode: selected,
+                          remember: remember,
+                        ),
+                      ),
+                      child: Text(l10n.continueAction),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _download(
+    AppUpdateInfo info, {
+    bool installAfterDownload = false,
+  }) async {
     if (_downloading || _checking || _clearingUpdateCache) return;
     setState(() {
       _downloading = true;
+      _verification = null;
       _downloadProgress = const AppUpdateDownloadProgress(
         downloadedBytes: 0,
         totalBytes: 0,
@@ -74,9 +237,14 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage> {
       );
       if (!mounted) return;
       final filePath = _downloadProgress?.filePath;
+      final verification = filePath == null
+          ? null
+          : await AppUpdateService.instance.verifyDownloadedApk(info, filePath);
+      if (!mounted) return;
       setState(() {
         _downloading = false;
         _downloadedFilePath = filePath;
+        _verification = verification;
         _result = AppUpdateCheckResult(
           status: AppUpdateStatus.downloaded,
           checkedAt: DateTime.now(),
@@ -84,6 +252,9 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage> {
           downloadedFilePath: filePath,
         );
       });
+      if (installAfterDownload) {
+        await _installDownloaded();
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -114,20 +285,25 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage> {
       });
       return;
     }
+    await _refreshDownloadedVerification();
+    if (!mounted) return;
+    if (_verification?.ok == false) {
+      setState(() {
+        _result = AppUpdateCheckResult(
+          status: AppUpdateStatus.error,
+          checkedAt: DateTime.now(),
+          info: _result?.info,
+          error: _verification?.error,
+          downloadedFilePath: path,
+        );
+      });
+      return;
+    }
     setState(() => _installing = true);
     try {
-      final canInstall = await SingboxRuntime.instance.canInstallApks();
+      final canInstall = await _ensureInstallPermission();
       if (!canInstall) {
-        await SingboxRuntime.instance.openApkInstallSettings();
-        if (!mounted) return;
         setState(() => _installing = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              AppLocalizations.of(context).updatesInstallPermissionHint,
-            ),
-          ),
-        );
         return;
       }
       await SingboxRuntime.instance.installDownloadedApk(path);
@@ -149,6 +325,67 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage> {
     }
   }
 
+  Future<void> _refreshDownloadedVerification() async {
+    final info = _result?.info;
+    final path = _cachedInstallerPath;
+    if (info == null || path == null) {
+      if (mounted) setState(() => _verification = null);
+      return;
+    }
+    final verification = await AppUpdateService.instance.verifyDownloadedApk(
+      info,
+      path,
+    );
+    if (!mounted) return;
+    setState(() => _verification = verification);
+  }
+
+  Future<bool> _refreshInstallPermissionStatus({
+    bool showFeedback = false,
+  }) async {
+    final canInstall = await SingboxRuntime.instance.canInstallApks();
+    if (!mounted) return canInstall;
+    final previous = _canInstallApks;
+    setState(() => _canInstallApks = canInstall);
+    if (showFeedback && previous == false && canInstall) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            AppLocalizations.of(context).updatesInstallPermissionGranted,
+          ),
+        ),
+      );
+    }
+    return canInstall;
+  }
+
+  Future<bool> _ensureInstallPermission() async {
+    final canInstall = await _refreshInstallPermissionStatus();
+    if (canInstall || !mounted) return canInstall;
+    final l10n = AppLocalizations.of(context);
+    final openSettings = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(l10n.updatesInstallPermissionTitle),
+        content: Text(l10n.updatesInstallPermissionMessage),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(l10n.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(l10n.updatesInstallPermissionOpen),
+          ),
+        ],
+      ),
+    );
+    if (openSettings == true) {
+      await SingboxRuntime.instance.openApkInstallSettings();
+    }
+    return false;
+  }
+
   String? get _cachedInstallerPath {
     final savedPath = _downloadedFilePath?.trim();
     if (savedPath != null && savedPath.isNotEmpty) return savedPath;
@@ -164,7 +401,7 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage> {
     final l10n = AppLocalizations.of(context);
     final version = _result?.info?.version.trim().isNotEmpty == true
         ? 'v${_result!.info!.version}'
-        : widget.currentVersion;
+        : _currentVersion;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -187,7 +424,7 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage> {
 
     setState(() => _clearingUpdateCache = true);
     final deleted = await AppUpdateService.instance.deleteCachedInstallers(
-      currentVersion: widget.currentVersion,
+      currentVersion: _currentVersion,
     );
     final metadata = await AppUpdateService.instance.loadMetadata();
     if (!mounted) return;
@@ -195,6 +432,7 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage> {
       _clearingUpdateCache = false;
       _downloadedFilePath = null;
       _downloadProgress = null;
+      _verification = null;
       _result = AppUpdateCheckResult(
         status: metadata.lastStatus,
         checkedAt: metadata.lastCheckAt ?? DateTime.now(),
@@ -243,7 +481,7 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage> {
           ),
           const Gap(18),
           _UpdateInfoCard(
-            currentVersion: widget.currentVersion,
+            currentVersion: _currentVersion,
             info: info,
             checkedAt: result?.checkedAt,
             action: _UpdateActionButton(
@@ -252,11 +490,12 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage> {
               downloading: _downloading,
               installing: _installing,
               onCheck: () => _check(manual: true),
-              onDownload: info == null ? null : () => _download(info),
+              onDownload: info == null ? null : () => _startUpdateFlow(info),
               onInstall: cachedInstallerPath == null
                   ? null
                   : _installDownloaded,
             ),
+            verification: _verification,
             cacheAction: cachedInstallerPath == null
                 ? null
                 : _CachedInstallerButton(
@@ -317,7 +556,7 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage> {
     return switch (result?.status) {
       AppUpdateStatus.updateAvailable when info != null =>
         l10n.updatesAvailableSubtitle(
-          'v${info.version}',
+          _displayVersion(info.version),
           _formatBytes(info.asset.sizeBytes, l10n),
         ),
       AppUpdateStatus.downloaded => l10n.updatesDownloadedSubtitle(
@@ -327,13 +566,18 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage> {
                 (_downloadedFilePath ?? _downloadProgress!.filePath)!,
               ).uri.pathSegments.last,
       ),
-      AppUpdateStatus.upToDate => l10n.updatesUpToDateSubtitle(
-        widget.currentVersion,
-      ),
+      AppUpdateStatus.upToDate => l10n.updatesUpToDateSubtitle(_currentVersion),
       AppUpdateStatus.error => l10n.updatesErrorSubtitle,
       _ => l10n.updatesSubtitle,
     };
   }
+}
+
+class _InstallModeDecision {
+  const _InstallModeDecision({required this.mode, required this.remember});
+
+  final AppUpdateInstallMode mode;
+  final bool remember;
 }
 
 class _UpdateActionButton extends StatelessWidget {
@@ -517,6 +761,7 @@ class _UpdateInfoCard extends StatelessWidget {
     required this.info,
     required this.checkedAt,
     required this.action,
+    required this.verification,
     required this.cacheAction,
   });
 
@@ -524,6 +769,7 @@ class _UpdateInfoCard extends StatelessWidget {
   final AppUpdateInfo? info;
   final DateTime? checkedAt;
   final Widget action;
+  final AppUpdateVerificationResult? verification;
   final Widget? cacheAction;
 
   @override
@@ -540,11 +786,23 @@ class _UpdateInfoCard extends StatelessWidget {
             const Gap(8),
             _InfoRow(
               label: l10n.updatesLatestVersion,
-              value: info == null ? '—' : 'v${info!.version}',
+              value: info == null ? '—' : _displayVersion(info!.version),
             ),
             const Gap(14),
             action,
             if (cacheAction != null) ...[const Gap(8), cacheAction!],
+            if (verification != null) ...[
+              const Gap(10),
+              _InfoRow(
+                label: l10n.updatesApkVerificationTitle,
+                value: verification!.checksumAvailable
+                    ? verification!.ok
+                          ? l10n.updatesApkVerificationVerified
+                          : l10n.updatesApkVerificationFailed
+                    : l10n.updatesApkVerificationUnavailable,
+                valueMaxLines: 2,
+              ),
+            ],
             const Gap(8),
             _InfoRow(
               label: l10n.updatesAsset,
@@ -832,6 +1090,11 @@ String _formatEta(BuildContext context, int? seconds) {
   if (seconds == null || seconds < 0) return '—';
   if (seconds < 60) return l10n.updatesEtaSeconds(seconds);
   return l10n.updatesEtaMinutes(seconds ~/ 60, seconds % 60);
+}
+
+String _displayVersion(String version) {
+  final normalized = AppUpdateService.normalizeVersion(version);
+  return normalized.isEmpty ? version.trim() : normalized;
 }
 
 String _formatTime(DateTime time) {

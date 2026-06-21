@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:developer' as developer;
+import 'dart:math';
 import 'dart:ui';
 
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
@@ -15,6 +16,7 @@ import 'package:meow_client/l10n/generated/app_localizations.dart';
 import 'package:meow_client/models/app_view_models.dart';
 import 'package:meow_client/models/subscription.dart';
 import 'package:meow_client/widgets/country_flag_badge.dart';
+import 'package:meow_client/widgets/ip_refresh_dots.dart';
 import 'package:meow_client/widgets/progressive_blur_scaffold.dart';
 
 import 'proxy_panel_shell.dart';
@@ -22,9 +24,9 @@ import 'proxy_panel_shell.dart';
 const _kProxyListPreviewLimit = 50;
 const _kProxySheetHeaderHeight = 108.0;
 const _kProxySheetCompactHeaderHeight = 72.0;
-const _kProxySheetListTopReserve = 188.0;
-const _kProxyGroupSheetListTopReserve = 172.0;
-const _kProxySheetRowExtent = 66.0;
+const _kProxySheetListTopReserve = 148.0;
+const _kProxyGroupSheetListTopReserve = 144.0;
+const _kProxySheetRowExtent = 72.0;
 const _kProxySheetHeaderCollapseDistance = 48.0;
 const _kProxySheetCarryMinVelocity = 1200.0;
 const _kProxySheetCarryMinDistance = 32.0;
@@ -34,6 +36,70 @@ const _kProxySheetMaxSpringTransferVelocity = 5000.0;
 const _kProxySheetHeaderBlurStart = 0.0;
 
 enum _ProxyChainAction { edit, rename, remove }
+
+String _proxySortLabel(AppLocalizations l10n, ProxySort sort) => switch (sort) {
+  ProxySort.source => l10n.sortByDefault,
+  ProxySort.latency => l10n.sortByLatency,
+  ProxySort.name => l10n.sortByName,
+  ProxySort.country => l10n.sortByCountry,
+};
+
+IconData _proxySortIcon(ProxySort sort) => switch (sort) {
+  ProxySort.source => FluentIcons.list_24_regular,
+  ProxySort.latency => FluentIcons.timer_24_regular,
+  ProxySort.name => FluentIcons.text_sort_ascending_24_regular,
+  ProxySort.country => FluentIcons.globe_24_regular,
+};
+
+Future<void> _showProxySortPicker(
+  BuildContext context, {
+  required AppLocalizations l10n,
+  required ProxySort current,
+  required ValueChanged<ProxySort> onSelected,
+}) async {
+  final result = await showModalBottomSheet<ProxySort>(
+    context: context,
+    showDragHandle: true,
+    builder: (context) {
+      final theme = Theme.of(context);
+      return SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+                child: Text(l10n.sort, style: theme.textTheme.titleLarge),
+              ),
+              RadioGroup<ProxySort>(
+                groupValue: current,
+                onChanged: (value) => Navigator.of(context).pop(value),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final sort in ProxySort.values)
+                      RadioListTile<ProxySort>(
+                        value: sort,
+                        secondary: Icon(_proxySortIcon(sort)),
+                        title: Text(_proxySortLabel(l10n, sort)),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+  if (result != null && result != current) {
+    onSelected(result);
+  }
+}
 
 @immutable
 class ProxyRuntimeVisualState {
@@ -118,6 +184,142 @@ class ProxyRuntimeVisualStore {
   }
 }
 
+class _ProxyLatencyLabel extends StatelessWidget {
+  const _ProxyLatencyLabel({
+    required this.text,
+    required this.color,
+    required this.checking,
+    required this.emphasized,
+    this.tooltip,
+  });
+
+  final String text;
+  final Color color;
+  final bool checking;
+  final bool emphasized;
+  final String? tooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = Theme.of(context).textTheme.labelMedium?.copyWith(
+      color: color,
+      fontWeight: emphasized ? FontWeight.w700 : FontWeight.w600,
+    );
+    if (checking) {
+      return Center(child: _LatencyDots(color: color));
+    }
+    final child = AnimatedSwitcher(
+      duration: const Duration(milliseconds: 160),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeOutCubic,
+      transitionBuilder: (child, animation) {
+        return FadeTransition(opacity: animation, child: child);
+      },
+      child: Text(
+        text,
+        key: ValueKey(text),
+        textAlign: TextAlign.end,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: style,
+      ),
+    );
+    final message = tooltip?.trim();
+    if (message == null || message.isEmpty) {
+      return child;
+    }
+    return Tooltip(message: message, child: child);
+  }
+}
+
+String _latencyErrorLabel(String? error) {
+  final text = error?.trim();
+  if (text == null || text.isEmpty) {
+    return '-';
+  }
+  final normalized = text.toLowerCase();
+  if (normalized.contains('tls') || normalized.contains('handshake')) {
+    return 'TLS';
+  }
+  if (normalized.contains('timeout') || normalized.contains('deadline')) {
+    return 'timeout';
+  }
+  if (normalized.contains('refused')) {
+    return 'refused';
+  }
+  if (normalized.contains('eof')) {
+    return 'EOF';
+  }
+  if (normalized.contains('dns') ||
+      normalized.contains('lookup') ||
+      normalized.contains('resolve')) {
+    return 'DNS';
+  }
+  if (normalized.contains('network is unreachable') ||
+      normalized.contains('no route')) {
+    return 'network';
+  }
+  return 'error';
+}
+
+String? _latencyErrorTooltip(String? error) {
+  final text = error?.trim();
+  if (text == null || text.isEmpty) {
+    return null;
+  }
+  return text.length <= 180 ? text : '${text.substring(0, 177)}...';
+}
+
+class _LatencyDots extends StatefulWidget {
+  const _LatencyDots({required this.color});
+
+  final Color color;
+
+  @override
+  State<_LatencyDots> createState() => _LatencyDotsState();
+}
+
+class _LatencyDotsState extends State<_LatencyDots>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final style = Theme.of(context).textTheme.labelMedium?.copyWith(
+      color: widget.color,
+      fontWeight: FontWeight.w700,
+    );
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        final count = (_controller.value * 3).floor() + 1;
+        final visibleCount = count > 3 ? 3 : count;
+        return Text(
+          '.' * visibleCount,
+          key: ValueKey(visibleCount),
+          textAlign: TextAlign.center,
+          style: style,
+        );
+      },
+    );
+  }
+}
+
 class ProxiesPage extends StatefulWidget {
   const ProxiesPage({
     super.key,
@@ -133,7 +335,6 @@ class ProxiesPage extends StatefulWidget {
     required this.progressiveBlurEnabled,
     required this.onSelected,
     required this.onUrlTest,
-    this.onRefreshAllSubscriptions,
     this.outboundForTag,
     this.loadProxyChainTargetSources,
     this.loadProxyChainTargetsForSource,
@@ -143,6 +344,7 @@ class ProxiesPage extends StatefulWidget {
     this.onRemoveProxyChain,
     this.isProxyChainTag,
     this.onActiveProxyHideIpChanged,
+    this.onActiveProxyIpRefresh,
     this.embedded = false,
     this.sheetMetricsListenable,
     this.scrollController,
@@ -173,7 +375,6 @@ class ProxiesPage extends StatefulWidget {
   final bool progressiveBlurEnabled;
   final ValueChanged<String> onSelected;
   final Future<void> Function() onUrlTest;
-  final Future<void> Function()? onRefreshAllSubscriptions;
   final Outbound? Function(String tag)? outboundForTag;
   final Future<List<AppProfileSummary>> Function()? loadProxyChainTargetSources;
   final Future<List<AppProxySummary>> Function(String subscriptionId)?
@@ -186,6 +387,7 @@ class ProxiesPage extends StatefulWidget {
   final Future<void> Function(String chainTag)? onRemoveProxyChain;
   final bool Function(String tag)? isProxyChainTag;
   final ValueChanged<bool>? onActiveProxyHideIpChanged;
+  final VoidCallback? onActiveProxyIpRefresh;
   final bool embedded;
   final ValueListenable<ProxyPanelMetrics>? sheetMetricsListenable;
   final ScrollController? scrollController;
@@ -218,7 +420,6 @@ class _ProxiesPageState extends State<ProxiesPage> {
   double _proxySheetPointerDeltaY = 0;
   double _proxySheetHeaderScrollCollapse = 0;
   bool _groupSheetOpen = false;
-  bool _refreshingAllSubscriptions = false;
   bool _showExtraLowests = false;
   List<_ProxyListEntry>? _visibleEntriesCache;
   List<AppProxySummary>? _visibleEntriesItemsCache;
@@ -267,28 +468,6 @@ class _ProxiesPageState extends State<ProxiesPage> {
       _sort = value;
       _rebuildVisibleItems();
     });
-  }
-
-  Future<void> _refreshAllSubscriptions() async {
-    final callback = widget.onRefreshAllSubscriptions;
-    if (callback == null || _refreshingAllSubscriptions) {
-      return;
-    }
-    if (widget.hapticEnabled) {
-      HapticFeedback.lightImpact();
-    }
-    setState(() {
-      _refreshingAllSubscriptions = true;
-    });
-    try {
-      await callback();
-    } finally {
-      if (mounted) {
-        setState(() {
-          _refreshingAllSubscriptions = false;
-        });
-      }
-    }
   }
 
   void _rebuildVisibleItems() {
@@ -653,28 +832,15 @@ class _ProxiesPageState extends State<ProxiesPage> {
         surfaceTintColor: Colors.transparent,
         shadowColor: Colors.transparent,
         actions: [
-          PopupMenuButton<ProxySort>(
-            initialValue: _sort,
+          IconButton(
+            tooltip: l10n.sort,
+            onPressed: () => _showProxySortPicker(
+              context,
+              l10n: l10n,
+              current: _sort,
+              onSelected: _setSort,
+            ),
             icon: const Icon(FluentIcons.arrow_sort_24_regular),
-            onSelected: _setSort,
-            itemBuilder: (context) => [
-              PopupMenuItem(
-                value: ProxySort.source,
-                child: Text(l10n.sortByDefault),
-              ),
-              PopupMenuItem(
-                value: ProxySort.latency,
-                child: Text(l10n.sortByLatency),
-              ),
-              PopupMenuItem(
-                value: ProxySort.name,
-                child: Text(l10n.sortByName),
-              ),
-              PopupMenuItem(
-                value: ProxySort.country,
-                child: Text(l10n.sortByCountry),
-              ),
-            ],
           ),
         ],
       ),
@@ -746,7 +912,12 @@ class _ProxiesPageState extends State<ProxiesPage> {
     final headerHeight = _proxySheetHeaderHeightForCollapse(
       headerScrollCollapse,
     );
-    const listTopPadding = _kProxySheetListTopReserve;
+    final compactListTopPadding = max(headerHeight + 6, 84).toDouble();
+    final listTopPadding = lerpDouble(
+      _kProxySheetListTopReserve,
+      compactListTopPadding,
+      ((headerProgress - .52) / .36).clamp(0.0, 1.0).toDouble(),
+    )!;
     final listMounted =
         effectiveSheetAtMaxExtent || headerProgress > .22 || listProgress > 0;
     final listScrollEnabled = effectiveSheetAtMaxExtent || headerProgress > .94;
@@ -810,11 +981,7 @@ class _ProxiesPageState extends State<ProxiesPage> {
       trafficBytes: widget.trafficBytes,
       onSortSelected: _setSort,
       onUrlTest: widget.onUrlTest,
-      onRefreshAllSubscriptions: widget.onRefreshAllSubscriptions == null
-          ? null
-          : _refreshAllSubscriptions,
-      refreshingAllSubscriptions: _refreshingAllSubscriptions,
-      onHideIpChanged: widget.onActiveProxyHideIpChanged,
+      onRefreshIp: widget.onActiveProxyIpRefresh,
       onTap: widget.onHeaderTap,
       onInteractionStart: widget.onInteractionStart,
       onVerticalDragUpdate: widget.onHeaderDragUpdate,
@@ -1751,9 +1918,7 @@ class _ProxySheetHeader extends StatelessWidget {
     required this.trafficBytes,
     required this.onSortSelected,
     required this.onUrlTest,
-    required this.onRefreshAllSubscriptions,
-    required this.refreshingAllSubscriptions,
-    required this.onHideIpChanged,
+    required this.onRefreshIp,
     required this.onTap,
     required this.onInteractionStart,
     required this.onVerticalDragUpdate,
@@ -1774,9 +1939,7 @@ class _ProxySheetHeader extends StatelessWidget {
   final double trafficBytes;
   final ValueChanged<ProxySort> onSortSelected;
   final Future<void> Function() onUrlTest;
-  final Future<void> Function()? onRefreshAllSubscriptions;
-  final bool refreshingAllSubscriptions;
-  final ValueChanged<bool>? onHideIpChanged;
+  final VoidCallback? onRefreshIp;
   final VoidCallback? onTap;
   final VoidCallback? onInteractionStart;
   final ValueChanged<DragUpdateDetails>? onVerticalDragUpdate;
@@ -1848,8 +2011,8 @@ class _ProxySheetHeader extends StatelessWidget {
                       hapticEnabled: hapticEnabled,
                       speedBytesPerSecond: speedBytesPerSecond,
                       trafficBytes: trafficBytes,
-                      unknownText: '?',
-                      onHideIpChanged: onHideIpChanged,
+                      unknownText: '—',
+                      onRefreshIp: onRefreshIp,
                     ),
                   ),
                 ),
@@ -1904,50 +2067,21 @@ class _ProxySheetHeader extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (onRefreshAllSubscriptions != null)
-                          IconButton(
-                            onPressed: refreshingAllSubscriptions
-                                ? null
-                                : () => onRefreshAllSubscriptions!(),
-                            tooltip: l10n.refreshAll,
-                            icon: refreshingAllSubscriptions
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2.2,
-                                    ),
-                                  )
-                                : const Icon(FluentIcons.arrow_sync_24_regular),
-                          ),
                         if (connected)
                           IconButton(
                             onPressed: () => onUrlTest(),
                             tooltip: l10n.urlTestTitle,
                             icon: const Icon(FluentIcons.flash_24_filled),
                           ),
-                        PopupMenuButton<ProxySort>(
-                          initialValue: sort,
+                        IconButton(
+                          tooltip: l10n.sort,
+                          onPressed: () => _showProxySortPicker(
+                            context,
+                            l10n: l10n,
+                            current: sort,
+                            onSelected: onSortSelected,
+                          ),
                           icon: const Icon(FluentIcons.arrow_sort_24_regular),
-                          onSelected: onSortSelected,
-                          itemBuilder: (context) => [
-                            PopupMenuItem(
-                              value: ProxySort.source,
-                              child: Text(l10n.sortByDefault),
-                            ),
-                            PopupMenuItem(
-                              value: ProxySort.latency,
-                              child: Text(l10n.sortByLatency),
-                            ),
-                            PopupMenuItem(
-                              value: ProxySort.name,
-                              child: Text(l10n.sortByName),
-                            ),
-                            PopupMenuItem(
-                              value: ProxySort.country,
-                              child: Text(l10n.sortByCountry),
-                            ),
-                          ],
                         ),
                       ],
                     ),
@@ -1971,7 +2105,7 @@ class _ActiveProxyLabel extends StatelessWidget {
     required this.speedBytesPerSecond,
     required this.trafficBytes,
     required this.unknownText,
-    required this.onHideIpChanged,
+    required this.onRefreshIp,
   });
 
   final bool connected;
@@ -1981,7 +2115,7 @@ class _ActiveProxyLabel extends StatelessWidget {
   final double speedBytesPerSecond;
   final double trafficBytes;
   final String unknownText;
-  final ValueChanged<bool>? onHideIpChanged;
+  final VoidCallback? onRefreshIp;
 
   String _maskIp(String ip) {
     final parts = ip.split('.');
@@ -2002,12 +2136,30 @@ class _ActiveProxyLabel extends StatelessWidget {
     return ip;
   }
 
-  void _toggleIpMask() {
-    if (!connected) return;
+  void _refreshIp() {
+    if (!connected || onRefreshIp == null) return;
     if (hapticEnabled) {
       HapticFeedback.lightImpact();
     }
-    onHideIpChanged?.call(!hideIp);
+    onRefreshIp?.call();
+  }
+
+  Widget _ipDisplay(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = theme.colorScheme.onSurfaceVariant;
+    if (connected && proxy.ipChecking) {
+      return IpRefreshDots(
+        key: const ValueKey('ip-refresh-checking'),
+        color: color,
+      );
+    }
+    return Text(
+      _displayIp,
+      key: ValueKey(_displayIp),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: theme.textTheme.bodyMedium?.copyWith(color: color),
+    );
   }
 
   @override
@@ -2071,7 +2223,8 @@ class _ActiveProxyLabel extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
                   GestureDetector(
-                    onTap: connected ? _toggleIpMask : null,
+                    behavior: HitTestBehavior.opaque,
+                    onTap: connected ? _refreshIp : null,
                     child: ClipRect(
                       child: AnimatedSize(
                         duration: const Duration(milliseconds: 220),
@@ -2099,15 +2252,7 @@ class _ActiveProxyLabel extends StatelessWidget {
                               ),
                             );
                           },
-                          child: Text(
-                            _displayIp,
-                            key: ValueKey(_displayIp),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
+                          child: _ipDisplay(context),
                         ),
                       ),
                     ),
@@ -3363,28 +3508,15 @@ class _GroupOutboundsSheetHeader extends StatelessWidget {
               bottom: 0,
               child: Align(
                 alignment: Alignment.centerRight,
-                child: PopupMenuButton<ProxySort>(
-                  initialValue: sort,
+                child: IconButton(
+                  tooltip: l10n.sort,
+                  onPressed: () => _showProxySortPicker(
+                    context,
+                    l10n: l10n,
+                    current: sort,
+                    onSelected: onSortSelected,
+                  ),
                   icon: const Icon(FluentIcons.arrow_sort_24_regular),
-                  onSelected: onSortSelected,
-                  itemBuilder: (context) => [
-                    PopupMenuItem(
-                      value: ProxySort.source,
-                      child: Text(l10n.sortByDefault),
-                    ),
-                    PopupMenuItem(
-                      value: ProxySort.latency,
-                      child: Text(l10n.sortByLatency),
-                    ),
-                    PopupMenuItem(
-                      value: ProxySort.name,
-                      child: Text(l10n.sortByName),
-                    ),
-                    PopupMenuItem(
-                      value: ProxySort.country,
-                      child: Text(l10n.sortByCountry),
-                    ),
-                  ],
                 ),
               ),
             ),
@@ -4006,9 +4138,9 @@ class _ProxyShareSummary extends StatelessWidget {
     final latencyText = proxy.latencyChecking
         ? '... ms'
         : proxy.latencyUnavailable
-        ? '? ms'
+        ? '—'
         : proxy.latency == null
-        ? '? ms'
+        ? '—'
         : '${proxy.latency} ms';
 
     return Material(
@@ -4130,6 +4262,7 @@ class ProxyTile extends StatelessWidget {
     final latencyChecking = state?.latencyChecking ?? proxy.latencyChecking;
     final latencyUnavailable =
         state?.latencyUnavailable ?? proxy.latencyUnavailable;
+    final latencyError = state?.latencyError ?? proxy.latencyError;
     final highlighted = state?.highlighted ?? this.highlighted;
     final selecting = state?.selecting ?? false;
     final latencyText = selecting
@@ -4137,13 +4270,13 @@ class ProxyTile extends StatelessWidget {
         : latencyChecking
         ? '... ms'
         : latencyUnavailable
-        ? '? ms'
+        ? _latencyErrorLabel(latencyError)
         : latency == null
-        ? '? ms'
+        ? '—'
         : '$latency ms';
     final delayColor = selecting
         ? theme.colorScheme.primary
-        : latencyUnavailable
+        : latencyUnavailable && latencyError != null && latencyError.isNotEmpty
         ? theme.colorScheme.error
         : !latencyFresh || latency == null
         ? theme.colorScheme.onSurfaceVariant
@@ -4156,6 +4289,13 @@ class ProxyTile extends StatelessWidget {
               ? Colors.orange
               : Colors.deepOrangeAccent)
         : Colors.red;
+    final latencyLabel = _ProxyLatencyLabel(
+      text: latencyText,
+      color: delayColor,
+      checking: latencyChecking && !selecting,
+      emphasized: selecting || latencyFresh || latencyUnavailable,
+      tooltip: latencyUnavailable ? _latencyErrorTooltip(latencyError) : null,
+    );
 
     final horizontalInset = !forceBaseInset && proxy.isGroupChild ? 24.0 : 6.0;
     final emphasized = selected || highlighted;
@@ -4232,19 +4372,7 @@ class ProxyTile extends StatelessWidget {
           SizedBox(
             width: selecting ? 104 : 72,
             child: !groupHandleVisible
-                ? Text(
-                    latencyText,
-                    textAlign: TextAlign.end,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: delayColor,
-                      fontWeight:
-                          selecting || latencyFresh || latencyUnavailable
-                          ? FontWeight.w700
-                          : FontWeight.w600,
-                    ),
-                  )
+                ? latencyLabel
                 : GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: onOpenGroup == null
@@ -4261,19 +4389,7 @@ class ProxyTile extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        Text(
-                          latencyText,
-                          textAlign: TextAlign.end,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.labelMedium?.copyWith(
-                            color: delayColor,
-                            fontWeight:
-                                selecting || latencyFresh || latencyUnavailable
-                                ? FontWeight.w700
-                                : FontWeight.w600,
-                          ),
-                        ),
+                        latencyLabel,
                         SizedBox(
                           height: 10,
                           child: Align(

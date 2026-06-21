@@ -73,7 +73,6 @@ Desktop.ini
 .DS_Store
 
 # Local reference/source dumps, not required by this app
-hiddify-app-main/
 assets/happ_crypto/
 happ_crypto_assets.zip
 .github/private/*.zip

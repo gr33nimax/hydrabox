@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
+import 'package:meow_client/data/local/app_settings_store.dart';
 import 'package:meow_client/features/settings/settings_ui.dart';
 import 'package:meow_client/l10n/generated/app_localizations.dart';
 import 'package:meow_client/widgets/progressive_blur_scaffold.dart';
@@ -11,20 +12,82 @@ class SettingsExperimentalPage extends StatelessWidget {
     required this.currentTcpMultiPath,
     required this.currentInterruptExistingConnections,
     required this.currentUrlTestStrictTolerance,
+    required this.currentTlsFragmentationMode,
     required this.onTcpFastOpenChanged,
     required this.onTcpMultiPathChanged,
     required this.onInterruptExistingConnectionsChanged,
     required this.onUrlTestStrictToleranceChanged,
+    required this.onTlsFragmentationModeChanged,
   });
 
   final bool currentTcpFastOpen;
   final bool currentTcpMultiPath;
   final bool currentInterruptExistingConnections;
   final bool currentUrlTestStrictTolerance;
+  final TlsFragmentationMode currentTlsFragmentationMode;
   final ValueChanged<bool> onTcpFastOpenChanged;
   final ValueChanged<bool> onTcpMultiPathChanged;
   final ValueChanged<bool> onInterruptExistingConnectionsChanged;
   final ValueChanged<bool> onUrlTestStrictToleranceChanged;
+  final ValueChanged<TlsFragmentationMode> onTlsFragmentationModeChanged;
+
+  String _tlsFragmentationModeLabel(
+    AppLocalizations l10n,
+    TlsFragmentationMode mode,
+  ) => switch (mode) {
+    TlsFragmentationMode.disabled => l10n.tlsFragmentationModeDisabled,
+    TlsFragmentationMode.record => l10n.tlsFragmentationModeRecord,
+    TlsFragmentationMode.fragment => l10n.tlsFragmentationModeFragment,
+  };
+
+  String _tlsFragmentationModeSubtitle(
+    AppLocalizations l10n,
+    TlsFragmentationMode mode,
+  ) => switch (mode) {
+    TlsFragmentationMode.disabled => l10n.tlsFragmentationModeDisabledSubtitle,
+    TlsFragmentationMode.record => l10n.tlsFragmentationModeRecordSubtitle,
+    TlsFragmentationMode.fragment => l10n.tlsFragmentationModeFragmentSubtitle,
+  };
+
+  Future<void> _showTlsFragmentationPicker(BuildContext context) async {
+    final l10n = AppLocalizations.of(context);
+    final result = await showModalBottomSheet<TlsFragmentationMode>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    l10n.tlsFragmentationTitle,
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ),
+              ),
+              for (final mode in TlsFragmentationMode.values)
+                ListTile(
+                  selected: mode == currentTlsFragmentationMode,
+                  title: Text(_tlsFragmentationModeLabel(l10n, mode)),
+                  subtitle: Text(_tlsFragmentationModeSubtitle(l10n, mode)),
+                  trailing: mode == currentTlsFragmentationMode
+                      ? const Icon(Icons.check_rounded)
+                      : null,
+                  onTap: () => Navigator.of(context).pop(mode),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+    if (result != null) {
+      onTlsFragmentationModeChanged(result);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -48,6 +111,18 @@ class SettingsExperimentalPage extends StatelessWidget {
               margin: EdgeInsets.zero,
               child: Column(
                 children: [
+                  ListTile(
+                    leading: SettingsLeadingIcon(
+                      icon: Icons.content_cut_rounded,
+                      color: cs.primary,
+                    ),
+                    title: Text(l10n.tlsFragmentationTitle),
+                    subtitle: Text(
+                      '${_tlsFragmentationModeLabel(l10n, currentTlsFragmentationMode)} · ${l10n.tlsFragmentationSubtitle}',
+                    ),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () => _showTlsFragmentationPicker(context),
+                  ),
                   SwitchListTile(
                     secondary: SettingsLeadingIcon(
                       icon: Icons.bolt_rounded,

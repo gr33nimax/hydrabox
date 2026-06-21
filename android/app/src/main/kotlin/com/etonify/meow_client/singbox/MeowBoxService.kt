@@ -24,6 +24,9 @@ import com.etonify.meow_client.R
 import org.json.JSONObject
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 
 class MeowBoxService(
     private val service: Service,
@@ -39,6 +42,10 @@ class MeowBoxService(
         private const val NOTIFICATION_CHANNEL_ID = "meow_singbox"
         private const val NOTIFICATION_ID = 42
         private const val CLEANUP_STEP_TIMEOUT_MS = 1_200L
+        private const val NETWORK_WAIT_TIMEOUT_MS = 2_500L
+        private const val NETWORK_WAIT_RETRY_DELAY_MS = 1_500L
+        private const val NETWORK_WAIT_MAX_RETRIES = 5
+        private const val POST_START_INTERFACE_REASSERT_DELAY_MS = 500L
         private val activeServices = CopyOnWriteArraySet<MeowBoxService>()
 
         fun requestStopAll(source: String) {
@@ -46,9 +53,33 @@ class MeowBoxService(
                 boxService.requestStop(source)
             }
         }
+
+        fun requestStopForMode(mode: String, source: String): Boolean {
+            var requested = false
+            for (boxService in activeServices) {
+                if (boxService.currentMode() == mode) {
+                    requested = true
+                    boxService.requestStop(source)
+                }
+            }
+            MeowDiagnostics.log(
+                TAG,
+                "requestStopForMode mode=$mode source=$source requested=$requested active=${activeServices.size}",
+            )
+            return requested
+        }
+
+        fun hasActiveRuntimeOwner(mode: String? = null): Boolean {
+            return activeServices.any { service ->
+                service.ownsActiveRuntime(mode)
+            }
+        }
     }
 
     private val executor = Executors.newSingleThreadExecutor()
+    private val retryExecutor = Executors.newSingleThreadScheduledExecutor { runnable ->
+        Thread(runnable, "MeowBoxStartRetry").apply { isDaemon = true }
+    }
 
     @Volatile
     private var commandServer: CommandServer? = null
@@ -59,11 +90,19 @@ class MeowBoxService(
     @Volatile
     private var serviceGeneration = 0L
 
+    private val startRequestGeneration = AtomicLong(0L)
+
+    @Volatile
+    private var pendingStartRetry: ScheduledFuture<*>? = null
+
     @Volatile
     private var runningConfigHash: Int? = null
 
     @Volatile
     private var tunFd: Int = -1
+
+    @Volatile
+    private var tunFdOwnedByCore: Boolean = false
 
     init {
         activeServices += this
@@ -85,20 +124,50 @@ class MeowBoxService(
         val action = intent?.action
         MeowDiagnostics.log(TAG, "onStartCommand action=$action startId=$startId")
         if (action == null) {
-            Log.w(TAG, "ignoring sticky restart without action")
-            MeowDiagnostics.log(TAG, "ignoring sticky restart without action")
+            val mode = currentMode()
+            if (shouldRestoreStickyStart(mode)) {
+                Log.w(TAG, "restoring sticky restart mode=$mode")
+                SingboxController.log(
+                    "warning",
+                    "sticky_restart_restore mode=$mode startId=$startId " +
+                        "intent=${MeowApplication.describeRuntimeIntent()} " +
+                        "serviceState=${MeowApplication.describeRecordedServiceState()}",
+                )
+                val token = nextStartToken("sticky_restart")
+                executor.execute { startInternal("sticky_restart", token) }
+                return Service.START_STICKY
+            }
+            Log.w(TAG, "ignoring sticky restart without fresh runtime intent")
+            MeowDiagnostics.log(
+                TAG,
+                "ignoring sticky restart without fresh runtime intent mode=$mode " +
+                    "intent=${MeowApplication.describeRuntimeIntent()}",
+            )
             executor.execute { stopInternal("sticky_null_intent", startId = startId) }
             return Service.START_NOT_STICKY
         }
+        var sticky = false
         when (action) {
-            ACTION_START -> executor.execute { startInternal("action_start") }
+            ACTION_START -> {
+                sticky = true
+                val token = nextStartToken("action_start")
+                executor.execute { startInternal("action_start", token) }
+            }
             ACTION_STOP -> {
                 val reason = intent.getStringExtra(EXTRA_STOP_REASON)?.takeIf { it.isNotBlank() }
                     ?: "unspecified"
                 executor.execute { stopInternal("action_stop:$reason", startId = startId) }
             }
-            ACTION_RESTART_CORE -> executor.execute { restartCoreInternal("action_restart_core") }
-            ACTION_RELOAD -> executor.execute { startOrReloadInternal() }
+            ACTION_RESTART_CORE -> {
+                sticky = true
+                val token = nextStartToken("action_restart_core")
+                executor.execute { restartCoreInternal("action_restart_core", token) }
+            }
+            ACTION_RELOAD -> {
+                sticky = true
+                val token = nextStartToken("action_reload")
+                executor.execute { startOrReloadInternal(token) }
+            }
             else -> {
                 Log.w(TAG, "ignoring unknown action=$action")
                 MeowDiagnostics.log(TAG, "ignoring unknown action=$action")
@@ -106,13 +175,15 @@ class MeowBoxService(
                 return Service.START_NOT_STICKY
             }
         }
-        return Service.START_NOT_STICKY
+        return if (sticky) Service.START_STICKY else Service.START_NOT_STICKY
     }
 
     fun onDestroy() {
         MeowDiagnostics.log(TAG, "onDestroy")
         activeServices -= this
-        executor.execute { stopInternal("service_onDestroy", stopSelf = false) }
+        executor.execute {
+            stopInternal("service_onDestroy", stopSelf = false, cancelStarts = false)
+        }
     }
 
     fun requestStop(source: String) {
@@ -121,6 +192,7 @@ class MeowBoxService(
 
     fun onTunOpened(fd: Int) {
         tunFd = fd
+        tunFdOwnedByCore = false
         Log.i(TAG, "onTunOpened fd=$fd detached=true")
         MeowDiagnostics.log(TAG, "onTunOpened fd=$fd detached=true")
     }
@@ -132,7 +204,8 @@ class MeowBoxService(
         }
 
     override fun serviceReload() {
-        executor.execute { startOrReloadInternal() }
+        val token = nextStartToken("handler_serviceReload")
+        executor.execute { startOrReloadInternal(token) }
     }
 
     override fun serviceStop() {
@@ -155,11 +228,54 @@ class MeowBoxService(
 
     private fun currentMode(): String = if (service is MeowVpnService) "vpn" else "proxy"
 
+    private fun ownsActiveRuntime(mode: String? = null): Boolean {
+        if (mode != null && mode.isNotBlank() && currentMode() != mode) {
+            return false
+        }
+        val generation = serviceGeneration
+        return generation != 0L &&
+            generation == SingboxController.activeRuntimeGeneration &&
+            commandServer != null
+    }
+
     private fun currentConfigHash(): Int? =
         runCatching { MeowApplication.configFile.readText().hashCode() }.getOrNull()
 
-    private fun startInternal(source: String) {
+    private fun shouldRestoreStickyStart(mode: String): Boolean =
+        MeowApplication.isRuntimeIntentFresh(mode) &&
+            MeowApplication.configFile.exists() &&
+            MeowApplication.configFile.length() > 0L
+
+    private fun nextStartToken(reason: String): Long {
+        val token = SingboxController.nextStartToken("${service.javaClass.simpleName}:$reason")
+        startRequestGeneration.set(token)
+        return token
+    }
+
+    private fun cancelStartRequests(reason: String): Long {
+        val token = SingboxController.cancelStartTokens("${service.javaClass.simpleName}:$reason")
+        startRequestGeneration.set(token)
+        cancelPendingStartRetry(reason)
+        return token
+    }
+
+    private fun startTokenCurrent(token: Long): Boolean =
+        startRequestGeneration.get() == token && SingboxController.isStartTokenCurrent(token)
+
+    private fun cancelPendingStartRetry(reason: String) {
+        val pending = pendingStartRetry ?: return
+        pendingStartRetry = null
+        if (pending.cancel(false)) {
+            SingboxController.log(
+                "info",
+                "service_start_retry_cancelled reason=$reason service=${service.javaClass.simpleName}",
+            )
+        }
+    }
+
+    private fun startInternal(source: String, token: Long) {
         val mode = currentMode()
+        MeowApplication.writeRuntimeIntent(mode, source)
         val alreadyRunning =
             SingboxController.running && SingboxController.serviceMode == mode && commandServer != null
         if (alreadyRunning) {
@@ -173,7 +289,7 @@ class MeowBoxService(
                     TAG,
                     "startInternal reload requested source=$source mode=$mode configHash=$configHash runningConfigHash=$runningConfigHash",
                 )
-                startOrReloadInternal()
+                startOrReloadInternal(token)
                 return
             }
             Log.i(TAG, "startInternal ignored source=$source already running mode=$mode")
@@ -187,25 +303,82 @@ class MeowBoxService(
             MeowQuickSettingsTileService.requestRefresh(service)
             return
         }
-        startOrReloadInternal()
+        startOrReloadInternal(token)
     }
 
-    private fun startOrReloadInternal() {
+    private fun startOrReloadInternal(
+        token: Long = nextStartToken("startOrReloadInternal"),
+        networkWaitAttempt: Int = 0,
+    ) {
+        if (!startTokenCurrent(token)) {
+            Log.i(TAG, "startOrReloadInternal ignored stale token=$token")
+            MeowDiagnostics.log(TAG, "startOrReloadInternal ignored stale token=$token")
+            return
+        }
         Log.i(TAG, "startOrReloadInternal begin service=${service.javaClass.simpleName}")
+        val mode = currentMode()
+        MeowApplication.writeRuntimeIntent(mode, "start_or_reload")
         SingboxController.log(
             "info",
-            "VPN service start/reload requested service=${service.javaClass.simpleName}",
+            "native_start_marker phase=begin service=${service.javaClass.simpleName} " +
+                "mode=$mode token=$token attempt=$networkWaitAttempt pid=${android.os.Process.myPid()} " +
+                "intent=${MeowApplication.describeRuntimeIntent()} " +
+                "serviceState=${MeowApplication.describeRecordedServiceState()}",
         )
         MeowDiagnostics.log(
             TAG,
             "startOrReloadInternal begin service=${service.javaClass.simpleName} " +
                 "current=${MeowDefaultNetworkMonitor.describeCurrentState()}",
         )
-        MeowApplication.ensureLibboxSetup()
-        showForeground("Starting")
+        try {
+            SingboxController.log(
+                "info",
+                "native_start_marker phase=before_libbox_setup memoryLimit=${MeowApplication.memoryLimitEnabled}",
+            )
+            MeowApplication.ensureLibboxSetup()
+            SingboxController.log("info", "native_start_marker phase=after_libbox_setup")
+            showForeground("Starting")
+            SingboxController.log("info", "native_start_marker phase=foreground_starting")
+        } catch (error: Throwable) {
+            Log.e(TAG, "startOrReloadInternal setup failed", error)
+            MeowDiagnostics.log(TAG, "startOrReloadInternal setup failed", error)
+            fail("Native service setup failed: ${error.message ?: error}")
+            return
+        }
         registerRuntimeReceiver()
         MeowDefaultNetworkMonitor.start()
-        MeowDefaultNetworkMonitor.awaitUsableDefaultInterface()
+        if (!MeowDefaultNetworkMonitor.awaitUsableDefaultInterface(NETWORK_WAIT_TIMEOUT_MS)) {
+            SingboxController.log(
+                "warning",
+                "network_interface_wait_timeout attempt=$networkWaitAttempt token=$token " +
+                    "current=${MeowDefaultNetworkMonitor.describeCurrentState()}",
+            )
+            if (networkWaitAttempt < NETWORK_WAIT_MAX_RETRIES) {
+                showForeground("Waiting for network")
+                cancelPendingStartRetry("replace_network_wait_retry")
+                pendingStartRetry = retryExecutor.schedule(
+                    {
+                        if (startTokenCurrent(token)) {
+                            executor.execute { startOrReloadInternal(token, networkWaitAttempt + 1) }
+                        }
+                    },
+                    NETWORK_WAIT_RETRY_DELAY_MS,
+                    TimeUnit.MILLISECONDS,
+                )
+                SingboxController.log(
+                    "info",
+                    "service_start_retry_scheduled attempt=${networkWaitAttempt + 1} " +
+                        "token=$token service=${service.javaClass.simpleName}",
+                )
+                return
+            }
+            fail("No usable network interface")
+            return
+        }
+        SingboxController.log(
+            "info",
+            "network_interface_ready token=$token current=${MeowDefaultNetworkMonitor.describeCurrentState()}",
+        )
         val config = runCatching { MeowApplication.configFile.readText() }.getOrElse {
             Log.e(TAG, "failed to read config", it)
             fail("Failed to read config: ${it.message}")
@@ -217,17 +390,49 @@ class MeowBoxService(
             return
         }
         val configHash = config.hashCode()
-        val preparedConfig = prepareConfig(config)
+        val preparedRuntimeConfig = prepareRuntimeConfig(config)
         try {
+            SingboxController.log(
+                "info",
+                "native_start_marker phase=before_command_server configChars=${preparedRuntimeConfig.config.length} " +
+                    "configHash=$configHash splitMode=$mode",
+            )
             val server = commandServer ?: createCommandServer()
             Log.i(TAG, "starting/reloading libbox service")
+            SingboxController.log(
+                "info",
+                "native_start_marker phase=before_start_or_reload_service hasCommandServer=${commandServer != null}",
+            )
             MeowDiagnostics.log(
                 TAG,
                 "starting/reloading libbox service current=${MeowDefaultNetworkMonitor.describeCurrentState()}",
             )
-            server.startOrReloadService(preparedConfig, OverrideOptions())
+            val startedAt = System.currentTimeMillis()
+            server.startOrReloadService(
+                preparedRuntimeConfig.config,
+                preparedRuntimeConfig.overrideOptions,
+            )
+            val elapsedMs = System.currentTimeMillis() - startedAt
+            tunFdOwnedByCore = tunFd >= 0
+            SingboxController.log(
+                "info",
+                "native_start_marker phase=after_start_or_reload_service " +
+                    "tun_fd_ownership owner=libbox fd=$tunFd service=${service.javaClass.simpleName} " +
+                    "startElapsedMs=$elapsedMs",
+            )
+            MeowDefaultNetworkMonitor.reassertDefaultInterface("after_start_or_reload_service")
+            retryExecutor.schedule(
+                {
+                    if (startTokenCurrent(token) && commandServer != null) {
+                        MeowDefaultNetworkMonitor.reassertDefaultInterface(
+                            "after_start_or_reload_service_delayed",
+                        )
+                    }
+                },
+                POST_START_INTERFACE_REASSERT_DELAY_MS,
+                TimeUnit.MILLISECONDS,
+            )
             showForeground("Connected")
-            val mode = currentMode()
             MeowApplication.writeServiceState(mode)
             Log.i(TAG, "libbox service started mode=$mode")
             MeowDiagnostics.log(
@@ -240,6 +445,7 @@ class MeowBoxService(
                 "info",
                 "VPN service running mode=$mode generation=$serviceGeneration hasCommandServer=${commandServer != null}",
             )
+            cancelPendingStartRetry("start_success")
             MeowQuickSettingsTileService.requestRefresh(service)
         } catch (error: Throwable) {
             Log.e(TAG, "startOrReloadInternal failed", error)
@@ -252,42 +458,104 @@ class MeowBoxService(
         source: String,
         stopSelf: Boolean = true,
         startId: Int? = null,
+        cancelStarts: Boolean = true,
     ) {
         val generation = serviceGeneration
+        val activeGeneration = SingboxController.activeRuntimeGeneration
+        val server = commandServer
+        val staleRuntimeStop = generation != 0L && generation != activeGeneration
+        val ownsRuntime = generation != 0L && !staleRuntimeStop
+        val hasLocalRuntime = generation != 0L || server != null
+        val shouldCancelStartRequests = cancelStarts && ownsRuntime
+        val shouldStopRuntimeState = ownsRuntime || (cancelStarts && !SingboxController.running)
+        if (shouldCancelStartRequests) {
+            cancelStartRequests("stop:$source")
+        } else {
+            cancelPendingStartRetry("stop:$source")
+        }
         Log.i(TAG, "stopInternal source=$source service=${service.javaClass.simpleName}")
         SingboxController.log(
             "warning",
             "VPN service stop requested source=$source service=${service.javaClass.simpleName} " +
                 "running=${SingboxController.running} mode=${SingboxController.serviceMode} " +
-                "generation=$generation hasCommandServer=${commandServer != null}",
+                "generation=$generation activeGeneration=$activeGeneration " +
+                "hasCommandServer=${server != null} ownsRuntime=$ownsRuntime",
         )
         MeowDiagnostics.log(
             TAG,
             "stopInternal source=$source service=${service.javaClass.simpleName} " +
                 "running=${SingboxController.running} mode=${SingboxController.serviceMode} " +
-                "generation=$generation hasCommandServer=${commandServer != null}",
+                "generation=$generation activeGeneration=$activeGeneration " +
+                "hasCommandServer=${server != null} ownsRuntime=$ownsRuntime",
         )
-        val server = commandServer
+        if (!hasLocalRuntime && SingboxController.running) {
+            MeowDiagnostics.log(
+                TAG,
+                "stale empty stop ignored source=$source active=$activeGeneration",
+            )
+            if (stopSelf) {
+                if (startId != null) {
+                    service.stopSelfResult(startId)
+                } else {
+                    service.stopSelf()
+                }
+            }
+            return
+        }
         commandServer = null
         unregisterRuntimeReceiver()
-        MeowDefaultNetworkMonitor.stop()
-        forceCloseTunFd(source)
-        runCleanupStep("disconnect command client source=$source") {
-            SingboxController.disconnectClientBlocking()
+        if (shouldStopRuntimeState) {
+            MeowDefaultNetworkMonitor.stop()
+        } else {
+            MeowDiagnostics.log(
+                TAG,
+                "network monitor stop skipped source=$source generation=$generation active=$activeGeneration",
+            )
         }
         if (server != null) {
             runCleanupStep("closeService source=$source") {
                 server.closeService()
             }
+            forceCloseTunFd(source, afterCoreClosed = true)
+            if (shouldStopRuntimeState) {
+                runCleanupStep("disconnect command client source=$source") {
+                    SingboxController.disconnectClientBlocking()
+                }
+            } else {
+                MeowDiagnostics.log(
+                    TAG,
+                    "command client disconnect skipped source=$source generation=$generation active=$activeGeneration",
+                )
+            }
             runCleanupStep("close command server source=$source") {
                 server.close()
+            }
+        } else {
+            forceCloseTunFd(source, afterCoreClosed = false)
+            if (shouldStopRuntimeState) {
+                runCleanupStep("disconnect command client source=$source") {
+                    SingboxController.disconnectClientBlocking()
+                }
+            } else {
+                MeowDiagnostics.log(
+                    TAG,
+                    "command client disconnect skipped source=$source generation=$generation active=$activeGeneration",
+                )
             }
         }
         runningConfigHash = null
         serviceGeneration = 0L
-        SingboxController.markServiceStopped(generation, source)
-        MeowApplication.clearServiceState()
-        MeowQuickSettingsTileService.requestRefresh(service)
+        if (shouldStopRuntimeState) {
+            SingboxController.markServiceStopped(generation, source)
+            MeowApplication.clearServiceState()
+            MeowApplication.clearRuntimeIntent()
+            MeowQuickSettingsTileService.requestRefresh(service)
+        } else {
+            MeowDiagnostics.log(
+                TAG,
+                "runtime state stop skipped source=$source generation=$generation active=$activeGeneration",
+            )
+        }
         SingboxController.log(
             "warning",
             "VPN service stopped source=$source service=${service.javaClass.simpleName}",
@@ -311,10 +579,18 @@ class MeowBoxService(
         }
     }
 
-    private fun forceCloseTunFd(source: String) {
+    private fun forceCloseTunFd(source: String, afterCoreClosed: Boolean) {
         val fd = tunFd
         if (fd < 0) return
+        if (tunFdOwnedByCore && !afterCoreClosed) {
+            MeowDiagnostics.log(
+                TAG,
+                "tun_fd_ownership skip_manual_close fd=$fd source=$source owner=libbox",
+            )
+            return
+        }
         tunFd = -1
+        tunFdOwnedByCore = false
         runCatching {
             ParcelFileDescriptor.adoptFd(fd).close()
             MeowDiagnostics.log(TAG, "force closed detached TUN fd=$fd source=$source")
@@ -323,7 +599,7 @@ class MeowBoxService(
         }
     }
 
-    private fun restartCoreInternal(source: String) {
+    private fun restartCoreInternal(source: String, token: Long = nextStartToken("restartCoreInternal:$source")) {
         Log.i(TAG, "restartCoreInternal source=$source service=${service.javaClass.simpleName}")
         MeowDiagnostics.log(
             TAG,
@@ -334,8 +610,9 @@ class MeowBoxService(
         runCatching { commandServer?.closeService() }.onFailure {
             MeowDiagnostics.log(TAG, "restartCoreInternal closeService failed source=$source", it)
         }
+        forceCloseTunFd("restart_core:$source", afterCoreClosed = true)
         runningConfigHash = null
-        startOrReloadInternal()
+        startOrReloadInternal(token)
     }
 
     private fun createCommandServer(): CommandServer {
@@ -421,11 +698,49 @@ class MeowBoxService(
         service.startForeground(NOTIFICATION_ID, notification)
     }
 
-    private fun prepareConfig(config: String): String {
+    private data class PreparedRuntimeConfig(
+        val config: String,
+        val overrideOptions: OverrideOptions,
+    )
+
+    private class ListStringIterator(
+        values: List<String>,
+    ) : io.nekohasekai.libbox.StringIterator {
+        private val items = values.toList()
+        private var index = 0
+
+        override fun hasNext(): Boolean = index < items.size
+
+        override fun len(): Int = items.size
+
+        override fun next(): String = items[index++]
+    }
+
+    private fun prepareRuntimeConfig(config: String): PreparedRuntimeConfig {
+        val overrideOptions = OverrideOptions()
         return runCatching {
             val root = JSONObject(config)
+            val splitIncludePackages = mutableListOf<String>()
+            val splitExcludePackages = mutableListOf<String>()
+            val inbounds = root.optJSONArray("inbounds")
             val outbounds = root.optJSONArray("outbounds")
             var changed = false
+            for (index in 0 until (inbounds?.length() ?: 0)) {
+                val inbound = inbounds?.optJSONObject(index) ?: continue
+                if (inbound.optString("type") != "tun") {
+                    continue
+                }
+                splitIncludePackages += readPackageList(inbound.optJSONArray("include_package"))
+                splitExcludePackages += readPackageList(inbound.optJSONArray("exclude_package"))
+                if (inbound.has("include_package")) {
+                    inbound.remove("include_package")
+                    changed = true
+                }
+                if (inbound.has("exclude_package")) {
+                    inbound.remove("exclude_package")
+                    changed = true
+                }
+            }
             for (index in 0 until (outbounds?.length() ?: 0)) {
                 val outbound = outbounds?.optJSONObject(index) ?: continue
                 if (outbound.optString("type") == "vless" && outbound.has("packet_encoding")) {
@@ -446,16 +761,73 @@ class MeowBoxService(
                     }
                 }
             }
-            if (changed) {
+            val includePackages = normalizePackageList(splitIncludePackages)
+            val excludePackages = if (includePackages.isEmpty()) {
+                normalizePackageList(splitExcludePackages)
+            } else {
+                emptyList()
+            }
+            if (includePackages.isNotEmpty()) {
+                overrideOptions.includePackage = ListStringIterator(includePackages)
+            }
+            if (excludePackages.isNotEmpty()) {
+                overrideOptions.excludePackage = ListStringIterator(excludePackages)
+            }
+            if (splitIncludePackages.isNotEmpty() || splitExcludePackages.isNotEmpty()) {
+                MeowDiagnostics.log(
+                    TAG,
+                    "split packages moved to OverrideOptions include=${includePackages.size} " +
+                        "exclude=${excludePackages.size} rawInclude=${splitIncludePackages.size} " +
+                        "rawExclude=${splitExcludePackages.size}",
+                )
+            }
+            val preparedConfig = if (changed) {
                 root.toString()
             } else {
                 config
             }
+            PreparedRuntimeConfig(preparedConfig, overrideOptions)
         }.getOrElse { error ->
             MeowDiagnostics.log(TAG, "prepareConfig parse failed", error)
-            config
+            PreparedRuntimeConfig(config, overrideOptions)
         }
     }
+
+    private fun readPackageList(array: org.json.JSONArray?): List<String> {
+        if (array == null) {
+            return emptyList()
+        }
+        val result = mutableListOf<String>()
+        for (index in 0 until array.length()) {
+            val value = array.optString(index, "").trim()
+            if (value.isNotEmpty()) {
+                result += value
+            }
+        }
+        return result
+    }
+
+    private fun normalizePackageList(values: List<String>): List<String> {
+        val seen = linkedSetOf<String>()
+        for (value in values) {
+            val packageName = value.trim()
+            if (
+                packageName.isNotEmpty() &&
+                packageName != service.packageName &&
+                isAndroidPackageName(packageName)
+            ) {
+                seen += packageName
+            }
+            if (seen.size >= 128) {
+                break
+            }
+        }
+        return seen.toList()
+    }
+
+    private fun isAndroidPackageName(value: String): Boolean =
+        value.length <= 255 &&
+            Regex("^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+$").matches(value)
 
     private fun registerRuntimeReceiver() {
         if (receiverRegistered) {
@@ -507,8 +879,9 @@ class MeowBoxService(
         MeowDiagnostics.log(TAG, "device idle mode changed idle=$idle")
         val server = commandServer
         if (server == null) {
+            val level = if (SingboxController.running) "warning" else "debug"
             SingboxController.log(
-                "warning",
+                level,
                 "device idle update skipped idle=$idle: command server is missing " +
                     "running=${SingboxController.running} mode=${SingboxController.serviceMode}",
             )

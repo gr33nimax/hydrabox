@@ -73,6 +73,7 @@ class SingboxConfigBuildInput {
     required this.dnsDirectResolver,
     required this.dnsProxyResolver,
     required this.dnsPreferIpv6,
+    this.russiaDnsDirectResolver = defaultRussiaDnsDirectResolver,
     required this.urlTestUrl,
     required this.urlTestIntervalSeconds,
     required this.urlTestTimeoutSeconds,
@@ -85,7 +86,10 @@ class SingboxConfigBuildInput {
     required this.useRussiaRouteData,
     required this.russiaGeositeRuBlockedPath,
     required this.russiaGeositeRuAvailableOnlyInsidePath,
+    required this.russiaGeositeCategoryRuPath,
     required this.russiaGeoipRuBlockedPath,
+    required this.russiaGeoipRuWhitelistPath,
+    required this.russiaGeoipRuPath,
     required this.russiaCuratedDirectServicesPath,
     required this.russiaAiServicesPath,
     required this.bypassLocalNetwork,
@@ -94,6 +98,7 @@ class SingboxConfigBuildInput {
     required this.logLevel,
     required this.tcpFastOpenEnabled,
     required this.tcpMultiPathEnabled,
+    required this.tlsFragmentationMode,
     required this.interruptExistingConnections,
     required this.urlTestStrictTolerance,
     required this.markAllServersRussia,
@@ -116,6 +121,7 @@ class SingboxConfigBuildInput {
   final String dnsDirectResolver;
   final String dnsProxyResolver;
   final bool dnsPreferIpv6;
+  final String russiaDnsDirectResolver;
   final String urlTestUrl;
   final int urlTestIntervalSeconds;
   final int urlTestTimeoutSeconds;
@@ -128,7 +134,10 @@ class SingboxConfigBuildInput {
   final bool useRussiaRouteData;
   final String? russiaGeositeRuBlockedPath;
   final String? russiaGeositeRuAvailableOnlyInsidePath;
+  final String? russiaGeositeCategoryRuPath;
   final String? russiaGeoipRuBlockedPath;
+  final String? russiaGeoipRuWhitelistPath;
+  final String? russiaGeoipRuPath;
   final String? russiaCuratedDirectServicesPath;
   final String? russiaAiServicesPath;
   final bool bypassLocalNetwork;
@@ -137,6 +146,7 @@ class SingboxConfigBuildInput {
   final String logLevel;
   final bool tcpFastOpenEnabled;
   final bool tcpMultiPathEnabled;
+  final TlsFragmentationMode tlsFragmentationMode;
   final bool interruptExistingConnections;
   final bool urlTestStrictTolerance;
   final bool markAllServersRussia;
@@ -444,6 +454,7 @@ SingboxConfigBuildResult buildSingboxConfig(SingboxConfigBuildInput input) {
     dnsDirectResolver: input.dnsDirectResolver,
     dnsProxyResolver: input.dnsProxyResolver,
     dnsPreferIpv6: input.dnsPreferIpv6,
+    russiaDnsDirectResolver: input.russiaDnsDirectResolver,
     urlTestUrl: input.urlTestUrl,
     urlTestIntervalSeconds: input.urlTestIntervalSeconds,
     urlTestTimeoutSeconds: input.urlTestTimeoutSeconds,
@@ -458,7 +469,10 @@ SingboxConfigBuildResult buildSingboxConfig(SingboxConfigBuildInput input) {
     russiaGeositeRuBlockedPath: input.russiaGeositeRuBlockedPath,
     russiaGeositeRuAvailableOnlyInsidePath:
         input.russiaGeositeRuAvailableOnlyInsidePath,
+    russiaGeositeCategoryRuPath: input.russiaGeositeCategoryRuPath,
     russiaGeoipRuBlockedPath: input.russiaGeoipRuBlockedPath,
+    russiaGeoipRuWhitelistPath: input.russiaGeoipRuWhitelistPath,
+    russiaGeoipRuPath: input.russiaGeoipRuPath,
     russiaCuratedDirectServicesPath: input.russiaCuratedDirectServicesPath,
     russiaAiServicesPath: input.russiaAiServicesPath,
     bypassLocalNetwork: input.bypassLocalNetwork,
@@ -467,6 +481,7 @@ SingboxConfigBuildResult buildSingboxConfig(SingboxConfigBuildInput input) {
     logLevel: input.logLevel,
     tcpFastOpenEnabled: input.tcpFastOpenEnabled,
     tcpMultiPathEnabled: input.tcpMultiPathEnabled,
+    tlsFragmentationMode: input.tlsFragmentationMode,
     interruptExistingConnections: input.interruptExistingConnections,
     urlTestStrictTolerance: input.urlTestStrictTolerance,
     markAllServersRussia: input.markAllServersRussia,

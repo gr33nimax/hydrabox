@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:jni/jni.dart';
 import 'package:jni_flutter/jni_flutter.dart';
@@ -12,9 +13,18 @@ class RussiaRouteDataStatus {
     required this.available,
     required this.sourceName,
     required this.versionTag,
+    this.sourceKind = RussiaRouteDataService.sourceKindBundled,
+    this.releaseTag,
+    this.packageSha256,
+    this.assetSizeBytes,
+    this.verifiedAtMillis,
+    this.verifiedFiles = const <String>[],
     this.geositeRuBlockedPath,
     this.geositeRuAvailableOnlyInsidePath,
+    this.geositeCategoryRuPath,
     this.geoipRuBlockedPath,
+    this.geoipRuWhitelistPath,
+    this.geoipRuPath,
     this.curatedDirectServicesPath,
     this.aiServicesPath,
     this.installedAtMillis,
@@ -30,9 +40,18 @@ class RussiaRouteDataStatus {
     : available = false,
       sourceName = RussiaRouteDataService.sourceName,
       versionTag = RussiaRouteDataService.bundledTag,
+      sourceKind = RussiaRouteDataService.sourceKindBundled,
+      releaseTag = null,
+      packageSha256 = null,
+      assetSizeBytes = null,
+      verifiedAtMillis = null,
+      verifiedFiles = const <String>[],
       geositeRuBlockedPath = null,
       geositeRuAvailableOnlyInsidePath = null,
+      geositeCategoryRuPath = null,
       geoipRuBlockedPath = null,
+      geoipRuWhitelistPath = null,
+      geoipRuPath = null,
       curatedDirectServicesPath = null,
       aiServicesPath = null,
       installedAtMillis = null,
@@ -46,9 +65,18 @@ class RussiaRouteDataStatus {
   final bool available;
   final String sourceName;
   final String versionTag;
+  final String sourceKind;
+  final String? releaseTag;
+  final String? packageSha256;
+  final int? assetSizeBytes;
+  final int? verifiedAtMillis;
+  final List<String> verifiedFiles;
   final String? geositeRuBlockedPath;
   final String? geositeRuAvailableOnlyInsidePath;
+  final String? geositeCategoryRuPath;
   final String? geoipRuBlockedPath;
+  final String? geoipRuWhitelistPath;
+  final String? geoipRuPath;
   final String? curatedDirectServicesPath;
   final String? aiServicesPath;
   final int? installedAtMillis;
@@ -61,6 +89,10 @@ class RussiaRouteDataStatus {
   DateTime? get installedAt => installedAtMillis == null
       ? null
       : DateTime.fromMillisecondsSinceEpoch(installedAtMillis!);
+
+  DateTime? get verifiedAt => verifiedAtMillis == null
+      ? null
+      : DateTime.fromMillisecondsSinceEpoch(verifiedAtMillis!);
 
   DateTime? get domainListCommunityUpdatedAt =>
       domainListCommunityUpdatedAtMillis == null
@@ -118,7 +150,13 @@ class RussiaRouteDataService {
   static final RussiaRouteDataService instance = RussiaRouteDataService._();
 
   static const sourceName = 'runetfreedom + domain-list-community';
+  static const sourceKindLive = 'live';
+  static const sourceKindBundled = 'bundled';
   static const bundledTag = 'bundled-20260327';
+  static const livePackageName = 'runetfreedom sing-box.zip';
+  static const _latestReleaseUrl =
+      'https://api.github.com/repos/runetfreedom/russia-v2ray-rules-dat/releases/latest';
+  static const _maxSingboxZipBytes = 80 * 1024 * 1024;
   static const domainListCommunitySourceName = 'v2fly/domain-list-community';
   static const _domainListCommunityRawBaseUrl =
       'https://raw.githubusercontent.com/v2fly/domain-list-community/master/data';
@@ -128,8 +166,22 @@ class RussiaRouteDataService {
       'assets/route_data/russia/geosite-ru-blocked.srs';
   static const _assetGeositeRuAvailableOnlyInside =
       'assets/route_data/russia/geosite-ru-available-only-inside.srs';
+  static const _assetGeositeCategoryRu =
+      'assets/route_data/russia/geosite-category-ru.srs';
   static const _assetGeoipRuBlocked =
       'assets/route_data/russia/geoip-ru-blocked.srs';
+  static const _assetGeoipRuWhitelist =
+      'assets/route_data/russia/geoip-ru-whitelist.srs';
+  static const _assetGeoipRu = 'assets/route_data/russia/geoip-ru.srs';
+  static const _releaseZipEntries = <String, String>{
+    'rule-set-geosite/geosite-ru-blocked.srs': 'geositeRuBlocked',
+    'rule-set-geosite/geosite-ru-available-only-inside.srs':
+        'geositeRuAvailableOnlyInside',
+    'rule-set-geosite/geosite-category-ru.srs': 'geositeCategoryRu',
+    'rule-set-geoip/geoip-ru-blocked.srs': 'geoipRuBlocked',
+    'rule-set-geoip/geoip-ru-whitelist.srs': 'geoipRuWhitelist',
+    'rule-set-geoip/geoip-ru.srs': 'geoipRu',
+  };
   static const _curatedDirectServicesCategories = <String>[
     'category-gov-ru',
     'vk',
@@ -154,15 +206,21 @@ class RussiaRouteDataService {
     final geositeAvailableOnlyInsideFile = File(
       paths.geositeRuAvailableOnlyInsidePath,
     );
+    final geositeCategoryRuFile = File(paths.geositeCategoryRuPath);
     final geoipBlockedFile = File(paths.geoipRuBlockedPath);
+    final geoipWhitelistFile = File(paths.geoipRuWhitelistPath);
+    final geoipRuFile = File(paths.geoipRuPath);
     final curatedDirectServicesFile = File(paths.curatedDirectServicesPath);
     final aiServicesFile = File(paths.aiServicesPath);
     if (!metadataFile.existsSync() ||
-        !geositeBlockedFile.existsSync() ||
-        !geositeAvailableOnlyInsideFile.existsSync() ||
-        !geoipBlockedFile.existsSync() ||
-        !curatedDirectServicesFile.existsSync() ||
-        !aiServicesFile.existsSync()) {
+        !_hasUsableRuleSet(geositeBlockedFile) ||
+        !_hasUsableRuleSet(geositeAvailableOnlyInsideFile) ||
+        !_hasUsableRuleSet(geositeCategoryRuFile) ||
+        !_hasUsableRuleSet(geoipBlockedFile) ||
+        !_hasUsableRuleSet(geoipWhitelistFile) ||
+        !_hasUsableRuleSet(geoipRuFile) ||
+        !_hasUsableRuleSet(curatedDirectServicesFile) ||
+        !_hasUsableRuleSet(aiServicesFile)) {
       return const RussiaRouteDataStatus.unavailable();
     }
     try {
@@ -172,9 +230,22 @@ class RussiaRouteDataService {
         available: true,
         sourceName: metadata['sourceName']?.toString() ?? sourceName,
         versionTag: metadata['versionTag']?.toString() ?? bundledTag,
+        sourceKind: metadata['sourceKind']?.toString() ?? sourceKindBundled,
+        releaseTag: metadata['releaseTag']?.toString(),
+        packageSha256: metadata['packageSha256']?.toString(),
+        assetSizeBytes: int.tryParse(
+          metadata['assetSizeBytes']?.toString() ?? '',
+        ),
+        verifiedAtMillis: int.tryParse(
+          metadata['verifiedAtMillis']?.toString() ?? '',
+        ),
+        verifiedFiles: _stringListFromJson(metadata['verifiedFiles']),
         geositeRuBlockedPath: geositeBlockedFile.path,
         geositeRuAvailableOnlyInsidePath: geositeAvailableOnlyInsideFile.path,
+        geositeCategoryRuPath: geositeCategoryRuFile.path,
         geoipRuBlockedPath: geoipBlockedFile.path,
+        geoipRuWhitelistPath: geoipWhitelistFile.path,
+        geoipRuPath: geoipRuFile.path,
         curatedDirectServicesPath: curatedDirectServicesFile.path,
         aiServicesPath: aiServicesFile.path,
         installedAtMillis: int.tryParse(
@@ -202,6 +273,14 @@ class RussiaRouteDataService {
       );
     } catch (_) {
       return const RussiaRouteDataStatus.unavailable();
+    }
+  }
+
+  bool _hasUsableRuleSet(File file) {
+    try {
+      return file.existsSync() && file.lengthSync() > 4;
+    } on FileSystemException {
+      return false;
     }
   }
 
@@ -236,10 +315,7 @@ class RussiaRouteDataService {
 
   Future<RussiaRouteDataStatus> _ensureUpdated({required bool force}) async {
     final current = await loadStatus();
-    if (!force &&
-        current.available &&
-        current.versionTag == bundledTag &&
-        !current.needsDailyUpdate) {
+    if (!force && current.available && !current.needsDailyUpdate) {
       return current;
     }
     final paths = await _storagePaths();
@@ -248,26 +324,22 @@ class RussiaRouteDataService {
       paths.domainListCommunitySourceDirectoryPath,
     ).create(recursive: true);
     final nowMillis = DateTime.now().millisecondsSinceEpoch;
+    var packageInfo = _InstalledRoutePackageInfo.fromStatus(current);
     try {
-      final bundledChanged =
-          !current.available || current.versionTag != bundledTag;
-      if (bundledChanged ||
-          !File(paths.geositeRuBlockedPath).existsSync() ||
-          !File(paths.geositeRuAvailableOnlyInsidePath).existsSync() ||
-          !File(paths.geoipRuBlockedPath).existsSync()) {
-        await _copyBundledAsset(
-          asset: _assetGeositeRuBlocked,
-          outputPath: paths.geositeRuBlockedPath,
-        );
-        await _copyBundledAsset(
-          asset: _assetGeositeRuAvailableOnlyInside,
-          outputPath: paths.geositeRuAvailableOnlyInsidePath,
-        );
-        await _copyBundledAsset(
-          asset: _assetGeoipRuBlocked,
-          outputPath: paths.geoipRuBlockedPath,
+      packageInfo = await _installLiveRoutePackage(paths);
+    } catch (_) {
+      if (current.available) {
+        packageInfo = _InstalledRoutePackageInfo.fromStatus(
+          current,
+        ).copyWith(lastUpdateCheckAtMillis: nowMillis);
+      } else {
+        packageInfo = await _installBundledRoutePackage(
+          paths,
+          checkedAtMillis: nowMillis,
         );
       }
+    }
+    try {
       final downloaded = await _downloadDomainListCommunityCategories(
         sourceDirectoryPath: paths.domainListCommunitySourceDirectoryPath,
         previousMetadata: current.domainListCommunityMetadata,
@@ -308,6 +380,10 @@ class RussiaRouteDataService {
       final installedAtMillis = current.installedAtMillis ?? nowMillis;
       await _writeMetadata(
         paths,
+        packageInfo: packageInfo.copyWith(
+          installedAtMillis: installedAtMillis,
+          lastUpdateCheckAtMillis: nowMillis,
+        ),
         installedAtMillis: installedAtMillis,
         lastUpdateCheckAtMillis: nowMillis,
         domainListCommunityUpdatedAtMillis:
@@ -319,11 +395,20 @@ class RussiaRouteDataService {
       return RussiaRouteDataStatus(
         available: true,
         sourceName: sourceName,
-        versionTag: bundledTag,
+        versionTag: packageInfo.versionTag,
+        sourceKind: packageInfo.sourceKind,
+        releaseTag: packageInfo.releaseTag,
+        packageSha256: packageInfo.packageSha256,
+        assetSizeBytes: packageInfo.assetSizeBytes,
+        verifiedAtMillis: packageInfo.verifiedAtMillis,
+        verifiedFiles: packageInfo.verifiedFiles,
         geositeRuBlockedPath: paths.geositeRuBlockedPath,
         geositeRuAvailableOnlyInsidePath:
             paths.geositeRuAvailableOnlyInsidePath,
+        geositeCategoryRuPath: paths.geositeCategoryRuPath,
         geoipRuBlockedPath: paths.geoipRuBlockedPath,
+        geoipRuWhitelistPath: paths.geoipRuWhitelistPath,
+        geoipRuPath: paths.geoipRuPath,
         curatedDirectServicesPath: paths.curatedDirectServicesPath,
         aiServicesPath: paths.aiServicesPath,
         installedAtMillis: installedAtMillis,
@@ -338,6 +423,9 @@ class RussiaRouteDataService {
       if (!force && current.available) {
         await _writeMetadata(
           paths,
+          packageInfo: _InstalledRoutePackageInfo.fromStatus(
+            current,
+          ).copyWith(lastUpdateCheckAtMillis: nowMillis),
           installedAtMillis: current.installedAtMillis ?? nowMillis,
           lastUpdateCheckAtMillis: nowMillis,
           domainListCommunityUpdatedAtMillis:
@@ -356,6 +444,7 @@ class RussiaRouteDataService {
 
   Future<void> _writeMetadata(
     _RussiaRouteStoragePaths paths, {
+    required _InstalledRoutePackageInfo packageInfo,
     required int installedAtMillis,
     required int lastUpdateCheckAtMillis,
     required int domainListCommunityUpdatedAtMillis,
@@ -369,7 +458,17 @@ class RussiaRouteDataService {
       utf8.encode(
         jsonEncode({
           'sourceName': sourceName,
-          'versionTag': bundledTag,
+          'versionTag': packageInfo.versionTag,
+          'sourceKind': packageInfo.sourceKind,
+          if (packageInfo.releaseTag != null)
+            'releaseTag': packageInfo.releaseTag,
+          if (packageInfo.packageSha256 != null)
+            'packageSha256': packageInfo.packageSha256,
+          if (packageInfo.assetSizeBytes != null)
+            'assetSizeBytes': packageInfo.assetSizeBytes,
+          if (packageInfo.verifiedAtMillis != null)
+            'verifiedAtMillis': packageInfo.verifiedAtMillis,
+          'verifiedFiles': packageInfo.verifiedFiles,
           'installedAtMillis': installedAtMillis,
           'lastUpdateCheckAtMillis': lastUpdateCheckAtMillis,
           'domainListCommunityUpdatedAtMillis':
@@ -383,6 +482,283 @@ class RussiaRouteDataService {
         }),
       ),
     );
+  }
+
+  Future<_InstalledRoutePackageInfo> _installLiveRoutePackage(
+    _RussiaRouteStoragePaths paths,
+  ) async {
+    final release = await _fetchLatestRunetFreedomRelease();
+    final bytes = await _downloadBytes(
+      release.assetUrl,
+      maxBytes: _maxSingboxZipBytes,
+    );
+    final extracted = _extractRequiredRuleSetsFromZip(bytes);
+    await _writeRoutePackage(paths, extracted);
+    final nowMillis = DateTime.now().millisecondsSinceEpoch;
+    return _InstalledRoutePackageInfo(
+      sourceKind: sourceKindLive,
+      versionTag: release.tagName,
+      releaseTag: release.tagName,
+      packageSha256: crypto.sha256.convert(bytes).toString(),
+      assetSizeBytes: release.assetSizeBytes ?? bytes.length,
+      verifiedAtMillis: nowMillis,
+      lastUpdateCheckAtMillis: nowMillis,
+      verifiedFiles: extracted.keys.toList()..sort(),
+    );
+  }
+
+  Future<_InstalledRoutePackageInfo> _installBundledRoutePackage(
+    _RussiaRouteStoragePaths paths, {
+    required int checkedAtMillis,
+  }) async {
+    final files = <String, Uint8List>{
+      'geositeRuBlocked': await _loadBundledAsset(_assetGeositeRuBlocked),
+      'geositeRuAvailableOnlyInside': await _loadBundledAsset(
+        _assetGeositeRuAvailableOnlyInside,
+      ),
+      'geositeCategoryRu': await _loadBundledAsset(_assetGeositeCategoryRu),
+      'geoipRuBlocked': await _loadBundledAsset(_assetGeoipRuBlocked),
+      'geoipRuWhitelist': await _loadBundledAsset(_assetGeoipRuWhitelist),
+      'geoipRu': await _loadBundledAsset(_assetGeoipRu),
+    };
+    await _writeRoutePackage(paths, files);
+    return _InstalledRoutePackageInfo(
+      sourceKind: sourceKindBundled,
+      versionTag: bundledTag,
+      releaseTag: bundledTag,
+      verifiedAtMillis: checkedAtMillis,
+      lastUpdateCheckAtMillis: checkedAtMillis,
+      verifiedFiles: files.keys.toList()..sort(),
+    );
+  }
+
+  Future<_RunetFreedomReleaseAsset> _fetchLatestRunetFreedomRelease() async {
+    final bytes = await _downloadBytes(
+      Uri.parse(_latestReleaseUrl),
+      maxBytes: 1024 * 1024,
+      accept: 'application/vnd.github+json',
+    );
+    final decoded = jsonDecode(utf8.decode(bytes));
+    if (decoded is! Map) {
+      throw const FormatException('Invalid runetfreedom release response');
+    }
+    final tagName = decoded['tag_name']?.toString().trim() ?? '';
+    if (tagName.isEmpty) {
+      throw const FormatException('runetfreedom release tag is empty');
+    }
+    final assets = decoded['assets'];
+    if (assets is! List) {
+      throw const FormatException('runetfreedom release assets are missing');
+    }
+    for (final asset in assets) {
+      if (asset is! Map) {
+        continue;
+      }
+      final name = asset['name']?.toString().trim() ?? '';
+      if (name != 'sing-box.zip') {
+        continue;
+      }
+      final url = Uri.tryParse(
+        asset['browser_download_url']?.toString().trim() ?? '',
+      );
+      if (url == null || !url.hasScheme) {
+        throw const FormatException('runetfreedom sing-box.zip URL is invalid');
+      }
+      return _RunetFreedomReleaseAsset(
+        tagName: tagName,
+        assetUrl: url,
+        assetSizeBytes: int.tryParse(asset['size']?.toString() ?? ''),
+      );
+    }
+    throw const FormatException('runetfreedom sing-box.zip asset not found');
+  }
+
+  Future<Uint8List> _downloadBytes(
+    Uri uri, {
+    required int maxBytes,
+    String accept = 'application/octet-stream,*/*',
+  }) async {
+    final client = HttpClient();
+    try {
+      final request = await client.getUrl(uri);
+      request.headers.set(HttpHeaders.userAgentHeader, 'EtonifyRouteData/1');
+      request.headers.set(HttpHeaders.acceptHeader, accept);
+      final response = await request.close();
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw HttpException(
+          'Failed to download route data: HTTP ${response.statusCode}',
+          uri: uri,
+        );
+      }
+      final builder = BytesBuilder(copy: false);
+      var length = 0;
+      await for (final chunk in response) {
+        length += chunk.length;
+        if (length > maxBytes) {
+          throw HttpException('Route data download is too large', uri: uri);
+        }
+        builder.add(chunk);
+      }
+      return builder.takeBytes();
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  Map<String, Uint8List> _extractRequiredRuleSetsFromZip(Uint8List zipBytes) {
+    final extracted = <String, Uint8List>{};
+    final view = ByteData.sublistView(zipBytes);
+    final eocdOffset = _findZipEndOfCentralDirectory(zipBytes);
+    if (eocdOffset < 0) {
+      throw const FormatException('Invalid runetfreedom zip: EOCD not found');
+    }
+    final entryCount = view.getUint16(eocdOffset + 10, Endian.little);
+    var offset = view.getUint32(eocdOffset + 16, Endian.little);
+    for (var i = 0; i < entryCount; i++) {
+      if (offset + 46 > zipBytes.length ||
+          view.getUint32(offset, Endian.little) != 0x02014b50) {
+        throw const FormatException('Invalid runetfreedom zip central header');
+      }
+      final flags = view.getUint16(offset + 8, Endian.little);
+      final method = view.getUint16(offset + 10, Endian.little);
+      final compressedSize = view.getUint32(offset + 20, Endian.little);
+      final uncompressedSize = view.getUint32(offset + 24, Endian.little);
+      final nameLength = view.getUint16(offset + 28, Endian.little);
+      final extraLength = view.getUint16(offset + 30, Endian.little);
+      final commentLength = view.getUint16(offset + 32, Endian.little);
+      final localHeaderOffset = view.getUint32(offset + 42, Endian.little);
+      final nameStart = offset + 46;
+      final nameEnd = nameStart + nameLength;
+      if (nameEnd > zipBytes.length) {
+        throw const FormatException('Invalid runetfreedom zip entry name');
+      }
+      final entryName = utf8
+          .decode(zipBytes.sublist(nameStart, nameEnd), allowMalformed: false)
+          .replaceAll('\\', '/');
+      final targetKey = _releaseZipEntries[entryName];
+      if (targetKey != null) {
+        extracted[targetKey] = _readZipEntry(
+          zipBytes,
+          view,
+          localHeaderOffset: localHeaderOffset,
+          flags: flags,
+          method: method,
+          compressedSize: compressedSize,
+          uncompressedSize: uncompressedSize,
+        );
+      }
+      offset = nameEnd + extraLength + commentLength;
+    }
+    final missing = _releaseZipEntries.values
+        .where((key) => !extracted.containsKey(key))
+        .toList(growable: false);
+    if (missing.isNotEmpty) {
+      throw FormatException(
+        'runetfreedom sing-box.zip missing files: ${missing.join(", ")}',
+      );
+    }
+    _validateRoutePackageFiles(extracted);
+    return extracted;
+  }
+
+  int _findZipEndOfCentralDirectory(Uint8List bytes) {
+    final view = ByteData.sublistView(bytes);
+    final minOffset = bytes.length > 0xFFFF + 22
+        ? bytes.length - 0xFFFF - 22
+        : 0;
+    for (var offset = bytes.length - 22; offset >= minOffset; offset--) {
+      if (view.getUint32(offset, Endian.little) == 0x06054b50) {
+        return offset;
+      }
+    }
+    return -1;
+  }
+
+  Uint8List _readZipEntry(
+    Uint8List zipBytes,
+    ByteData view, {
+    required int localHeaderOffset,
+    required int flags,
+    required int method,
+    required int compressedSize,
+    required int uncompressedSize,
+  }) {
+    if ((flags & 0x1) != 0) {
+      throw const FormatException('Encrypted route data zip is unsupported');
+    }
+    if (localHeaderOffset + 30 > zipBytes.length ||
+        view.getUint32(localHeaderOffset, Endian.little) != 0x04034b50) {
+      throw const FormatException('Invalid runetfreedom zip local header');
+    }
+    final localNameLength = view.getUint16(
+      localHeaderOffset + 26,
+      Endian.little,
+    );
+    final localExtraLength = view.getUint16(
+      localHeaderOffset + 28,
+      Endian.little,
+    );
+    final dataStart =
+        localHeaderOffset + 30 + localNameLength + localExtraLength;
+    final dataEnd = dataStart + compressedSize;
+    if (dataStart < 0 || dataEnd > zipBytes.length) {
+      throw const FormatException('Invalid runetfreedom zip entry data');
+    }
+    final compressed = zipBytes.sublist(dataStart, dataEnd);
+    final decoded = switch (method) {
+      0 => compressed,
+      8 => Uint8List.fromList(ZLibDecoder(raw: true).convert(compressed)),
+      _ => throw FormatException('Unsupported route data zip method: $method'),
+    };
+    if (decoded.length != uncompressedSize) {
+      throw const FormatException('Invalid runetfreedom zip entry size');
+    }
+    return decoded;
+  }
+
+  Future<Uint8List> _loadBundledAsset(String asset) async {
+    final data = await rootBundle.load(asset);
+    return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+  }
+
+  Future<void> _writeRoutePackage(
+    _RussiaRouteStoragePaths paths,
+    Map<String, Uint8List> files,
+  ) async {
+    _validateRoutePackageFiles(files);
+    await _writeAtomically(
+      paths.geositeRuBlockedPath,
+      files['geositeRuBlocked']!,
+    );
+    await _writeAtomically(
+      paths.geositeRuAvailableOnlyInsidePath,
+      files['geositeRuAvailableOnlyInside']!,
+    );
+    await _writeAtomically(
+      paths.geositeCategoryRuPath,
+      files['geositeCategoryRu']!,
+    );
+    await _writeAtomically(paths.geoipRuBlockedPath, files['geoipRuBlocked']!);
+    await _writeAtomically(
+      paths.geoipRuWhitelistPath,
+      files['geoipRuWhitelist']!,
+    );
+    await _writeAtomically(paths.geoipRuPath, files['geoipRu']!);
+  }
+
+  void _validateRoutePackageFiles(Map<String, Uint8List> files) {
+    for (final key in _releaseZipEntries.values) {
+      final bytes = files[key];
+      if (bytes == null || bytes.length <= 4) {
+        throw FormatException('Route rule-set is missing or empty: $key');
+      }
+      if (bytes.length < 4 ||
+          bytes[0] != _srsMagicBytes[0] ||
+          bytes[1] != _srsMagicBytes[1] ||
+          bytes[2] != _srsMagicBytes[2]) {
+        throw FormatException('Route rule-set is not SRS: $key');
+      }
+    }
   }
 
   Future<_DownloadedDomainListCommunity>
@@ -517,14 +893,6 @@ class RussiaRouteDataService {
     return includes;
   }
 
-  Future<void> _copyBundledAsset({
-    required String asset,
-    required String outputPath,
-  }) async {
-    final data = await rootBundle.load(asset);
-    await _writeAtomically(outputPath, data.buffer.asUint8List());
-  }
-
   Future<void> _writeAtomically(String path, List<int> bytes) async {
     final target = File(path);
     await target.parent.create(recursive: true);
@@ -566,7 +934,12 @@ class RussiaRouteDataService {
           '${base.path}/rule-set-geosite/geosite-ru-blocked.srs',
       geositeRuAvailableOnlyInsidePath:
           '${base.path}/rule-set-geosite/geosite-ru-available-only-inside.srs',
+      geositeCategoryRuPath:
+          '${base.path}/rule-set-geosite/geosite-category-ru.srs',
       geoipRuBlockedPath: '${base.path}/rule-set-geoip/geoip-ru-blocked.srs',
+      geoipRuWhitelistPath:
+          '${base.path}/rule-set-geoip/geoip-ru-whitelist.srs',
+      geoipRuPath: '${base.path}/rule-set-geoip/geoip-ru.srs',
       curatedDirectServicesPath:
           '${base.path}/rule-set-geosite/ru-direct-services.srs',
       aiServicesPath: '${base.path}/rule-set-geosite/ai-services.srs',
@@ -607,7 +980,10 @@ class _RussiaRouteStoragePaths {
     required this.baseDirectoryPath,
     required this.geositeRuBlockedPath,
     required this.geositeRuAvailableOnlyInsidePath,
+    required this.geositeCategoryRuPath,
     required this.geoipRuBlockedPath,
+    required this.geoipRuWhitelistPath,
+    required this.geoipRuPath,
     required this.curatedDirectServicesPath,
     required this.aiServicesPath,
     required this.domainListCommunitySourceDirectoryPath,
@@ -617,11 +993,89 @@ class _RussiaRouteStoragePaths {
   final String baseDirectoryPath;
   final String geositeRuBlockedPath;
   final String geositeRuAvailableOnlyInsidePath;
+  final String geositeCategoryRuPath;
   final String geoipRuBlockedPath;
+  final String geoipRuWhitelistPath;
+  final String geoipRuPath;
   final String curatedDirectServicesPath;
   final String aiServicesPath;
   final String domainListCommunitySourceDirectoryPath;
   final String metadataPath;
+}
+
+class _RunetFreedomReleaseAsset {
+  const _RunetFreedomReleaseAsset({
+    required this.tagName,
+    required this.assetUrl,
+    required this.assetSizeBytes,
+  });
+
+  final String tagName;
+  final Uri assetUrl;
+  final int? assetSizeBytes;
+}
+
+class _InstalledRoutePackageInfo {
+  const _InstalledRoutePackageInfo({
+    required this.sourceKind,
+    required this.versionTag,
+    this.releaseTag,
+    this.packageSha256,
+    this.assetSizeBytes,
+    this.verifiedAtMillis,
+    this.installedAtMillis,
+    this.lastUpdateCheckAtMillis,
+    this.verifiedFiles = const <String>[],
+  });
+
+  final String sourceKind;
+  final String versionTag;
+  final String? releaseTag;
+  final String? packageSha256;
+  final int? assetSizeBytes;
+  final int? verifiedAtMillis;
+  final int? installedAtMillis;
+  final int? lastUpdateCheckAtMillis;
+  final List<String> verifiedFiles;
+
+  static _InstalledRoutePackageInfo fromStatus(RussiaRouteDataStatus status) {
+    return _InstalledRoutePackageInfo(
+      sourceKind: status.sourceKind,
+      versionTag: status.versionTag,
+      releaseTag: status.releaseTag,
+      packageSha256: status.packageSha256,
+      assetSizeBytes: status.assetSizeBytes,
+      verifiedAtMillis: status.verifiedAtMillis,
+      installedAtMillis: status.installedAtMillis,
+      lastUpdateCheckAtMillis: status.lastUpdateCheckAtMillis,
+      verifiedFiles: status.verifiedFiles,
+    );
+  }
+
+  _InstalledRoutePackageInfo copyWith({
+    String? sourceKind,
+    String? versionTag,
+    String? releaseTag,
+    String? packageSha256,
+    int? assetSizeBytes,
+    int? verifiedAtMillis,
+    int? installedAtMillis,
+    int? lastUpdateCheckAtMillis,
+    List<String>? verifiedFiles,
+  }) {
+    return _InstalledRoutePackageInfo(
+      sourceKind: sourceKind ?? this.sourceKind,
+      versionTag: versionTag ?? this.versionTag,
+      releaseTag: releaseTag ?? this.releaseTag,
+      packageSha256: packageSha256 ?? this.packageSha256,
+      assetSizeBytes: assetSizeBytes ?? this.assetSizeBytes,
+      verifiedAtMillis: verifiedAtMillis ?? this.verifiedAtMillis,
+      installedAtMillis: installedAtMillis ?? this.installedAtMillis,
+      lastUpdateCheckAtMillis:
+          lastUpdateCheckAtMillis ?? this.lastUpdateCheckAtMillis,
+      verifiedFiles: verifiedFiles ?? this.verifiedFiles,
+    );
+  }
 }
 
 class _DownloadedDomainListCommunity {
@@ -658,6 +1112,16 @@ Map<String, RussiaRouteCategoryMetadata> _categoryMetadataFromJson(
     for (final entry in value.entries)
       entry.key.toString(): RussiaRouteCategoryMetadata.fromJson(entry.value),
   };
+}
+
+List<String> _stringListFromJson(Object? value) {
+  if (value is! List) {
+    return const <String>[];
+  }
+  return value
+      .map((entry) => entry.toString().trim())
+      .where((entry) => entry.isNotEmpty)
+      .toList(growable: false);
 }
 
 _CompiledRuleSetArtifact _compileCuratedDirectServicesArtifact(

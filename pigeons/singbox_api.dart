@@ -15,12 +15,64 @@ class RuntimeFlagsMessage {
     this.networkHeartbeatEnabled,
     this.networkHeartbeatIntervalSeconds,
     this.performanceMode,
+    this.memoryLimitEnabled,
   });
 
   bool? wakeLockEnabled;
   bool? networkHeartbeatEnabled;
   int? networkHeartbeatIntervalSeconds;
   String? performanceMode;
+  bool? memoryLimitEnabled;
+}
+
+class NetworkInterfaceStateMessage {
+  NetworkInterfaceStateMessage({
+    required this.available,
+    this.interfaceName,
+    required this.interfaceIndex,
+    required this.generation,
+    this.reason,
+    required this.updatedAtMillis,
+  });
+
+  bool available;
+  String? interfaceName;
+  int interfaceIndex;
+  int generation;
+  String? reason;
+  int updatedAtMillis;
+}
+
+class EndpointProbeRequestMessage {
+  EndpointProbeRequestMessage({
+    required this.tag,
+    required this.host,
+    required this.port,
+    required this.timeoutMs,
+  });
+
+  String tag;
+  String host;
+  int port;
+  int timeoutMs;
+}
+
+class EndpointProbeResultMessage {
+  EndpointProbeResultMessage({
+    required this.tag,
+    required this.reachable,
+    this.latencyMs,
+    this.errorCode,
+    required this.checkedAtMillis,
+    required this.protectedSocket,
+  });
+
+  String tag;
+  bool reachable;
+  int? latencyMs;
+  String? errorCode;
+  int checkedAtMillis;
+  bool protectedSocket;
 }
 
 @HostApi()
@@ -80,6 +132,14 @@ abstract class SingboxHostApi {
   Map<String?, Object?> lookupOutboundExternalInfo(String outboundTag);
 
   @async
+  NetworkInterfaceStateMessage getNetworkInterfaceState();
+
+  @async
+  EndpointProbeResultMessage probeProxyEndpoint(
+    EndpointProbeRequestMessage request,
+  );
+
+  @async
   String? exportLogs(String content, String suggestedName);
 
   @async
@@ -90,6 +150,9 @@ abstract class SingboxHostApi {
 
   @async
   Map<String?, Object?> getPlatformDeviceInfo();
+
+  @async
+  Map<String?, Object?> getAppVersionInfo();
 
   @async
   String getCoreVersion();

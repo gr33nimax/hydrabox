@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:gap/gap.dart';
+import 'package:meow_client/features/legal/legal_consent_page.dart';
 import 'package:meow_client/features/settings/settings_update_page.dart';
 import 'package:meow_client/features/settings/settings_ui.dart';
 import 'package:meow_client/l10n/generated/app_localizations.dart';
@@ -20,6 +21,7 @@ class SettingsAboutPage extends StatefulWidget {
   static final Uri _coreSourceUri = Uri.parse(
     'https://github.com/dudosxdev/sing-box',
   );
+  static final Uri _telegramUri = Uri.parse('https://t.me/etonify');
 
   final String versionLabel;
   final VoidCallback onShowOnboarding;
@@ -77,6 +79,18 @@ class _SettingsAboutPageState extends State<SettingsAboutPage> {
     );
   }
 
+  void _openLegalDocument({required bool privacy}) {
+    final l10n = AppLocalizations.of(context);
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (context) => LegalDocumentPage(
+          title: privacy ? l10n.legalPrivacyTitle : l10n.legalTermsTitle,
+          body: privacy ? l10n.legalPrivacyBody : l10n.legalTermsBody,
+        ),
+      ),
+    );
+  }
+
   Future<void> _refreshPerformanceSnapshot() async {
     if (_performanceBusy) return;
     setState(() => _performanceBusy = true);
@@ -105,8 +119,6 @@ class _SettingsAboutPageState extends State<SettingsAboutPage> {
           appBottomSafePadding(context, 24),
         ),
         children: [
-          _AboutHero(onDoubleTap: _toggleDebugVisible),
-          const Gap(settingsIslandGap),
           Padding(
             padding: settingsScreenPadding,
             child: Column(
@@ -117,6 +129,10 @@ class _SettingsAboutPageState extends State<SettingsAboutPage> {
                   coreVersion: _coreVersion,
                   onOpenCoreSource: () =>
                       _openUri(SettingsAboutPage._coreSourceUri),
+                  onOpenTelegram: () =>
+                      _openUri(SettingsAboutPage._telegramUri),
+                  onOpenTerms: () => _openLegalDocument(privacy: false),
+                  onOpenPrivacy: () => _openLegalDocument(privacy: true),
                   onOpenTeam: _openTeamPage,
                 ),
                 const Gap(12),
@@ -124,6 +140,7 @@ class _SettingsAboutPageState extends State<SettingsAboutPage> {
                   snapshot: _performanceSnapshot,
                   busy: _performanceBusy,
                   onRefresh: _refreshPerformanceSnapshot,
+                  onDebugToggle: _toggleDebugVisible,
                 ),
                 const Gap(12),
                 _AboutUpdatesCard(onOpenUpdates: _openUpdatePage),
@@ -152,92 +169,23 @@ class _SettingsAboutPageState extends State<SettingsAboutPage> {
   }
 }
 
-class _AboutHero extends StatelessWidget {
-  const _AboutHero({required this.onDoubleTap});
-
-  final VoidCallback onDoubleTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
-    final l10n = AppLocalizations.of(context);
-
-    return Padding(
-      padding: settingsScreenPadding,
-      child: Material(
-        color: cs.surfaceContainerHighest.withValues(alpha: .54),
-        borderRadius: BorderRadius.circular(24),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: () {
-            if (AppVisualEffects.of(context).hapticEnabled) {
-              HapticFeedback.selectionClick();
-            }
-          },
-          onDoubleTap: onDoubleTap,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: cs.outlineVariant.withValues(alpha: .38),
-              ),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(22, 24, 22, 22),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: cs.primaryContainer.withValues(alpha: .72),
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 10,
-                      ),
-                      child: Text(
-                        'Etonify',
-                        style: theme.textTheme.headlineMedium?.copyWith(
-                          color: cs.onPrimaryContainer,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0,
-                          height: .95,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const Gap(12),
-                  Text(
-                    l10n.aboutHeroSubtitle,
-                    style: theme.textTheme.bodyLarge?.copyWith(
-                      color: cs.onSurfaceVariant,
-                      height: 1.35,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _AboutInfoCard extends StatelessWidget {
   const _AboutInfoCard({
     required this.versionLabel,
     required this.coreVersion,
     required this.onOpenCoreSource,
+    required this.onOpenTelegram,
+    required this.onOpenTerms,
+    required this.onOpenPrivacy,
     required this.onOpenTeam,
   });
 
   final String versionLabel;
   final String? coreVersion;
   final VoidCallback onOpenCoreSource;
+  final VoidCallback onOpenTelegram;
+  final VoidCallback onOpenTerms;
+  final VoidCallback onOpenPrivacy;
   final VoidCallback onOpenTeam;
 
   @override
@@ -289,6 +237,21 @@ class _AboutInfoCard extends StatelessWidget {
                   icon: Icons.code_rounded,
                   label: 'dudosxdev/sing-box',
                   onTap: onOpenCoreSource,
+                ),
+                _AboutActionChip(
+                  icon: Icons.send_rounded,
+                  label: l10n.telegramChannelLabel,
+                  onTap: onOpenTelegram,
+                ),
+                _AboutActionChip(
+                  icon: Icons.description_rounded,
+                  label: l10n.legalTermsTitle,
+                  onTap: onOpenTerms,
+                ),
+                _AboutActionChip(
+                  icon: Icons.privacy_tip_rounded,
+                  label: l10n.legalPrivacyTitle,
+                  onTap: onOpenPrivacy,
                 ),
               ],
             ),
@@ -347,11 +310,13 @@ class _AboutResourcesCard extends StatelessWidget {
     required this.snapshot,
     required this.busy,
     required this.onRefresh,
+    required this.onDebugToggle,
   });
 
   final Map<String, dynamic>? snapshot;
   final bool busy;
   final VoidCallback onRefresh;
+  final VoidCallback onDebugToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -377,16 +342,19 @@ class _AboutResourcesCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                IconButton(
-                  tooltip: l10n.refresh,
-                  onPressed: busy ? null : onRefresh,
-                  icon: busy
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.refresh_rounded),
+                GestureDetector(
+                  onDoubleTap: onDebugToggle,
+                  child: IconButton(
+                    tooltip: l10n.refresh,
+                    onPressed: busy ? null : onRefresh,
+                    icon: busy
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.refresh_rounded),
+                  ),
                 ),
               ],
             ),
@@ -539,6 +507,7 @@ class _MeowTeamPage extends StatelessWidget {
 
   static final Uri _ddosxdUri = Uri.parse('https://t.me/dddosxd');
   static final Uri _yamixdevUri = Uri.parse('https://t.me/Ilushadev');
+  static final Uri _telegramUri = Uri.parse('https://t.me/etonify');
   static final Uri _coreUri = Uri.parse(
     'https://github.com/dudosxdev/sing-box',
   );
@@ -617,6 +586,13 @@ class _MeowTeamPage extends StatelessWidget {
             role: l10n.teamDeveloperYamixdevRole,
             avatarAsset: 'assets/images/team/yamixdev.jpg',
             onTap: () => _open(context, _yamixdevUri),
+          ),
+          const Gap(10),
+          _DeveloperCard(
+            name: l10n.telegramChannelLabel,
+            role: l10n.teamTelegramRole,
+            avatarAsset: 'assets/images/team/telegram.png',
+            onTap: () => _open(context, _telegramUri),
           ),
           const Gap(28),
           Center(

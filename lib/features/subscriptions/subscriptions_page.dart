@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:gap/gap.dart';
 import 'package:meow_client/core/demo_utils.dart';
 import 'package:meow_client/data/subscription/happ_crypto_link.dart';
+import 'package:meow_client/data/subscription/subscription_fetcher.dart';
 import 'package:meow_client/data/subscription/subscription_store.dart';
 import 'package:meow_client/features/settings/settings_ui.dart';
 import 'package:meow_client/l10n/generated/app_localizations.dart';
@@ -20,9 +21,19 @@ import 'package:url_launcher/url_launcher.dart';
 const _kSubscriptionProxyPreviewLimit = 50;
 const _kSubscriptionOperationSoftWarningDelay = Duration(seconds: 15);
 const _kSubscriptionOperationTimeout = Duration(seconds: 30);
+const _kAutoRefreshOptions = <int>[0, 60, 180, 360, 720, 1440];
 final _kSingleLineFormatter = FilteringTextInputFormatter.deny(
   RegExp(r'[\r\n]'),
 );
+
+int _visibleProxyCount(Iterable<Outbound> outbounds) {
+  return outbounds
+      .where((outbound) => !outbound.info.deleted)
+      .where((outbound) => outbound.config['_group_only'] != true)
+      .length;
+}
+
+enum _HappImportDecision { sendHwid, withoutHwid }
 
 class _LocalizedSubscriptionPageError implements Exception {
   const _LocalizedSubscriptionPageError(this.message);
@@ -52,6 +63,10 @@ class SubscriptionsPage extends StatefulWidget {
 class _SubscriptionsPageState extends State<SubscriptionsPage> {
   List<Subscription> _subscriptions = [];
   final Set<String> _selectedIds = <String>{};
+  final Set<String> _refreshingIds = <String>{};
+  final Map<String, int> _subscriptionServerCounts = <String, int>{};
+  final Set<String> _subscriptionsWithRawPayload = <String>{};
+  int _countHydrationGeneration = 0;
   bool _loading = false;
   String? _error;
 
@@ -77,11 +92,51 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
   }
 
   void _reload() {
+    final generation = ++_countHydrationGeneration;
     setState(() {
       _subscriptions = SubscriptionStore.getAllMetadata();
+      final ids = _subscriptions.map((subscription) => subscription.id).toSet();
+      _subscriptionServerCounts.removeWhere((id, _) => !ids.contains(id));
+      _subscriptionsWithRawPayload.removeWhere((id) => !ids.contains(id));
       _selectedIds.removeWhere(
         (id) => !_subscriptions.any((subscription) => subscription.id == id),
       );
+      _refreshingIds.removeWhere(
+        (id) => !_subscriptions.any((subscription) => subscription.id == id),
+      );
+    });
+    unawaited(_hydrateSubscriptionCounts(generation));
+  }
+
+  Future<void> _hydrateSubscriptionCounts(int generation) async {
+    final snapshot = List<Subscription>.from(_subscriptions);
+    final counts = <String, int>{};
+    final rawPayloadIds = <String>{};
+    for (final subscription in snapshot) {
+      if (generation != _countHydrationGeneration) {
+        return;
+      }
+      var hydrated = subscription;
+      if (subscription.outbounds.isEmpty) {
+        hydrated = await SubscriptionStore.withPayloadInBackground(
+          subscription,
+        );
+      }
+      counts[subscription.id] = _visibleProxyCount(hydrated.outbounds);
+      if (hydrated.rawContent.trim().length > 16) {
+        rawPayloadIds.add(subscription.id);
+      }
+    }
+    if (!mounted || generation != _countHydrationGeneration) {
+      return;
+    }
+    setState(() {
+      _subscriptionServerCounts
+        ..clear()
+        ..addAll(counts);
+      _subscriptionsWithRawPayload
+        ..clear()
+        ..addAll(rawPayloadIds);
     });
   }
 
@@ -168,22 +223,24 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
   }
 
   Future<void> _addSubscription() async {
-    final l10n = AppLocalizations.of(context);
-    final result = await Navigator.of(context).push<_AddResult>(
-      MaterialPageRoute(builder: (_) => const _AddSubscriptionPage()),
+    final changed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _AddSubscriptionSheet(onAdd: _importAddResult),
     );
-    if (result == null || !mounted) return;
+    if (changed == true && mounted) {
+      _reload();
+    }
+  }
 
+  Future<bool> _importAddResult(_AddResult result) async {
     try {
       final prepared = await _prepareSubscriptionImport(result);
-      if (prepared == null || !mounted) {
-        return;
+      if (prepared == null) {
+        return false;
       }
-
-      setState(() {
-        _loading = true;
-        _error = null;
-      });
 
       final createdResult = await _runSubscriptionOperationWithWarning(
         prepared.fileContent != null
@@ -202,6 +259,7 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
       );
       final created = createdResult.subscription;
       if (mounted) {
+        final l10n = AppLocalizations.of(context);
         if (createdResult.hasWarning) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(l10n.subscriptionSavedWithFetchWarning)),
@@ -212,13 +270,19 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
         }
       }
       await _maybeHandleMovedSubscription(created);
-      _reload();
-    } catch (e) {
-      setState(() => _error = _userFacingSubscriptionError(e));
-    } finally {
       if (mounted) {
-        setState(() => _loading = false);
+        setState(() {
+          _subscriptionServerCounts[created.id] = _visibleProxyCount(
+            created.outbounds,
+          );
+          if (created.rawContent.trim().length > 16) {
+            _subscriptionsWithRawPayload.add(created.id);
+          }
+        });
       }
+      return true;
+    } catch (e) {
+      throw _LocalizedSubscriptionPageError(_userFacingSubscriptionError(e));
     }
   }
 
@@ -234,37 +298,86 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
 
     final rawUrl = result.url.trim();
     if (!HappCryptoLinkDecoder.isSupportedLink(rawUrl)) {
-      return _PreparedSubscriptionImport(url: rawUrl);
+      return _PreparedSubscriptionImport(
+        url: rawUrl,
+        requestInfo: result.requestInfo,
+      );
     }
 
-    final confirmed = await _showHappImportDialog();
-    if (confirmed != true) {
+    final decision = await _showHappImportDialog();
+    if (decision == null) {
       return null;
     }
 
     final prepared = await HappCryptoLinkDecoder.prepare(rawUrl);
+    final requestInfo = switch (decision) {
+      _HappImportDecision.sendHwid => prepared.requestInfo,
+      _HappImportDecision.withoutHwid => prepared.requestInfo?.copyWith(
+        requireHwid: false,
+      ),
+    };
     return _PreparedSubscriptionImport(
       url: prepared.resolvedUrl,
-      requestInfo: prepared.requestInfo,
+      requestInfo: _mergeSubscriptionRequestInfo(
+        requestInfo,
+        result.requestInfo,
+      ),
     );
   }
 
-  Future<bool?> _showHappImportDialog() {
+  SubscriptionInfo? _mergeSubscriptionRequestInfo(
+    SubscriptionInfo? base,
+    SubscriptionInfo? override,
+  ) {
+    if (base == null) {
+      return override;
+    }
+    if (override == null) {
+      return base;
+    }
+    return SubscriptionInfo(
+      title: base.title,
+      upload: base.upload,
+      download: base.download,
+      total: base.total,
+      expire: base.expire,
+      happCryptoLink: base.happCryptoLink,
+      supportUrl: base.supportUrl,
+      webPageUrl: base.webPageUrl,
+      newUrl: base.newUrl,
+      ignoreSubscriptionMoved: base.ignoreSubscriptionMoved,
+      updateIntervalHours: base.updateIntervalHours,
+      perAppProxyMode: base.perAppProxyMode,
+      perAppProxyList: base.perAppProxyList,
+      customUserAgent: override.customUserAgent ?? base.customUserAgent,
+      customRequestHeader:
+          override.customRequestHeader ?? base.customRequestHeader,
+      requireHwid: base.requireHwid || override.requireHwid,
+      customHwid: override.customHwid ?? base.customHwid,
+    );
+  }
+
+  Future<_HappImportDecision?> _showHappImportDialog() {
     final l10n = AppLocalizations.of(context);
-    return showDialog<bool>(
+    return showDialog<_HappImportDecision>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: Text(l10n.happImportTitle),
         content: Text(l10n.happImportMessage),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(
-              AppLocalizations.of(dialogContext).deepLinkImportHappCancelAction,
-            ),
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: Text(AppLocalizations.of(dialogContext).cancel),
+          ),
+          FilledButton.tonal(
+            onPressed: () => Navigator.of(
+              dialogContext,
+            ).pop(_HappImportDecision.withoutHwid),
+            child: Text(l10n.deepLinkImportHappWithoutHwidAction),
           ),
           FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(_HappImportDecision.sendHwid),
             child: Text(
               AppLocalizations.of(
                 dialogContext,
@@ -277,6 +390,9 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
   }
 
   Future<void> _refreshSubscription(String id) async {
+    if (_refreshingIds.contains(id)) {
+      return;
+    }
     final subscription = SubscriptionStore.get(id);
     if (subscription != null &&
         SubscriptionStore.isLocalFileImportUrl(subscription.url)) {
@@ -289,7 +405,7 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
     }
     _haptic();
     setState(() {
-      _loading = true;
+      _refreshingIds.add(id);
       _error = null;
     });
     try {
@@ -310,7 +426,9 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
       setState(() => _error = _userFacingSubscriptionError(e));
     } finally {
       if (mounted) {
-        setState(() => _loading = false);
+        setState(() {
+          _refreshingIds.remove(id);
+        });
       }
     }
   }
@@ -617,12 +735,23 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
                     itemCount: _subscriptions.length,
                     itemBuilder: (context, index) {
                       final sub = _subscriptions[index];
+                      final hydratedServerCount =
+                          _subscriptionServerCounts[sub.id];
+                      final serverCount =
+                          hydratedServerCount ??
+                          _visibleProxyCount(sub.outbounds);
+                      final rawLooksNonEmpty =
+                          _subscriptionsWithRawPayload.contains(sub.id) ||
+                          (sub.rawContent.trim().isNotEmpty &&
+                              sub.rawContent.trim().length > 16);
                       return _SubscriptionCard(
                         subscription: sub,
+                        serverCount: serverCount,
+                        rawLooksNonEmpty: rawLooksNonEmpty,
                         active: sub.id == widget.activeSubscriptionId,
                         multiSelected: _selectedIds.contains(sub.id),
                         selectionMode: _selectionMode,
-                        loading: _loading,
+                        loading: _loading || _refreshingIds.contains(sub.id),
                         onSelect: () {
                           if (_selectionMode) {
                             _toggleSelection(sub.id);
@@ -668,6 +797,8 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
 class _SubscriptionCard extends StatelessWidget {
   const _SubscriptionCard({
     required this.subscription,
+    required this.serverCount,
+    required this.rawLooksNonEmpty,
     required this.active,
     required this.multiSelected,
     required this.selectionMode,
@@ -680,6 +811,8 @@ class _SubscriptionCard extends StatelessWidget {
   });
 
   final Subscription subscription;
+  final int serverCount;
+  final bool rawLooksNonEmpty;
   final bool active;
   final bool multiSelected;
   final bool selectionMode;
@@ -733,9 +866,6 @@ class _SubscriptionCard extends StatelessWidget {
             ),
           )
         : l10n.notAvailableShort;
-    final proxyCount = subscription.outbounds
-        .where((outbound) => !outbound.info.deleted)
-        .length;
     final highlighted = active || multiSelected;
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
@@ -849,18 +979,21 @@ class _SubscriptionCard extends StatelessWidget {
                                         _SubscriptionBadge(
                                           icon: Icons.hub_outlined,
                                           label: l10n.subscriptionServersCount(
-                                            proxyCount,
+                                            serverCount,
                                           ),
-                                        ),
-                                        _SubscriptionBadge(
-                                          icon: Icons.route_rounded,
-                                          label:
-                                              l10n.subscriptionProxyTypeLabel,
                                         ),
                                         _SubscriptionBadge(
                                           icon: Icons.update_rounded,
                                           label: lastUpdatedText,
                                         ),
+                                        if (serverCount == 0 &&
+                                            rawLooksNonEmpty)
+                                          _SubscriptionBadge(
+                                            icon: Icons.warning_amber_rounded,
+                                            label: l10n
+                                                .subscriptionReparseRecommended,
+                                            warning: true,
+                                          ),
                                         if (!refreshable)
                                           _SubscriptionBadge(
                                             icon: Icons.lock_outline_rounded,
@@ -1142,6 +1275,33 @@ class _SubscriptionDetailsPageState extends State<_SubscriptionDetailsPage> {
     try {
       await SubscriptionStore.save(
         subscription.copyWith(disableAutoUpdate: disabled),
+      );
+      _reloadCurrentSubscription();
+    } finally {
+      if (mounted) {
+        setState(() => _busy = false);
+      }
+    }
+  }
+
+  Future<void> _saveAutoRefreshInterval(
+    Subscription subscription,
+    int minutes,
+  ) async {
+    final disabled = minutes <= 0;
+    if (subscription.disableAutoUpdate == disabled &&
+        (disabled || subscription.autoRefreshMinutes == minutes)) {
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      await SubscriptionStore.save(
+        subscription.copyWith(
+          disableAutoUpdate: disabled,
+          autoRefreshMinutes: disabled
+              ? subscription.autoRefreshMinutes
+              : minutes,
+        ),
       );
       _reloadCurrentSubscription();
     } finally {
@@ -1811,6 +1971,38 @@ class _SubscriptionDetailsPageState extends State<_SubscriptionDetailsPage> {
                                 color: theme.colorScheme.onSurfaceVariant,
                               ),
                             ),
+                            const Gap(10),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                for (final minutes in _kAutoRefreshOptions)
+                                  ChoiceChip(
+                                    label: Text(
+                                      minutes <= 0
+                                          ? l10n.disabledLabel
+                                          : _formatRefreshInterval(
+                                              context,
+                                              minutes,
+                                            ),
+                                    ),
+                                    selected: minutes <= 0
+                                        ? subscription.disableAutoUpdate
+                                        : !subscription.disableAutoUpdate &&
+                                              subscription.autoRefreshMinutes ==
+                                                  minutes,
+                                    onSelected: _busy
+                                        ? null
+                                        : (_) async {
+                                            _haptic();
+                                            await _saveAutoRefreshInterval(
+                                              subscription,
+                                              minutes,
+                                            );
+                                          },
+                                  ),
+                              ],
+                            ),
                           ],
                         ),
                       ),
@@ -1910,7 +2102,7 @@ class _SubscriptionDetailsPageState extends State<_SubscriptionDetailsPage> {
                               decoration: InputDecoration(
                                 labelText: l10n.customUserAgentTitle,
                                 helperText: l10n.customUserAgentSubtitle,
-                                hintText: 'Etonify/0.1.1',
+                                hintText: SubscriptionFetcher.defaultUserAgent,
                               ),
                             ),
                             const Gap(12),
@@ -2321,7 +2513,7 @@ String? _sniLabel(Outbound outbound) {
 }
 
 class _AddResult {
-  const _AddResult.url(this.url, this.name)
+  const _AddResult.url(this.url, this.name, {this.requestInfo})
     : fileContent = null,
       sourceName = null;
 
@@ -2329,38 +2521,125 @@ class _AddResult {
     required this.name,
     required this.fileContent,
     required this.sourceName,
-  }) : url = '';
+  }) : url = '',
+       requestInfo = null;
 
   final String url;
   final String name;
+  final SubscriptionInfo? requestInfo;
   final String? fileContent;
   final String? sourceName;
 }
 
 // ---------------------------------------------------------------------------
-// Add-subscription page
+// Add-subscription sheet
 // ---------------------------------------------------------------------------
 
-class _AddSubscriptionPage extends StatefulWidget {
-  const _AddSubscriptionPage();
+class _AddSubscriptionSheet extends StatefulWidget {
+  const _AddSubscriptionSheet({required this.onAdd});
+
+  final Future<bool> Function(_AddResult result) onAdd;
 
   @override
-  State<_AddSubscriptionPage> createState() => _AddSubscriptionPageState();
+  State<_AddSubscriptionSheet> createState() => _AddSubscriptionSheetState();
 }
 
-class _AddSubscriptionPageState extends State<_AddSubscriptionPage> {
+enum _AddSubscriptionSheetMode { quick, manual }
+
+class _AddSubscriptionSheetState extends State<_AddSubscriptionSheet> {
   final _urlController = TextEditingController();
   final _nameController = TextEditingController();
+  final _customUserAgentController = TextEditingController();
+  final _customHwidController = TextEditingController();
   String? _urlError;
+  _AddSubscriptionSheetMode _mode = _AddSubscriptionSheetMode.quick;
+  bool _busy = false;
+  bool _useCustomUserAgent = false;
+  bool _sendHwid = false;
+  bool _useCustomHwid = false;
+  String? _stage;
 
   @override
   void dispose() {
     _urlController.dispose();
     _nameController.dispose();
+    _customUserAgentController.dispose();
+    _customHwidController.dispose();
     super.dispose();
   }
 
-  // ---- form actions ----
+  SubscriptionInfo? _manualRequestInfo() {
+    final customUserAgent = _useCustomUserAgent
+        ? _customUserAgentController.text.trim()
+        : '';
+    final customHwid = _sendHwid && _useCustomHwid
+        ? _customHwidController.text.trim()
+        : '';
+    if (customUserAgent.isEmpty && !_sendHwid && customHwid.isEmpty) {
+      return null;
+    }
+    return SubscriptionInfo(
+      customUserAgent: customUserAgent.isEmpty ? null : customUserAgent,
+      requireHwid: _sendHwid,
+      customHwid: customHwid.isEmpty ? null : customHwid,
+    );
+  }
+
+  void _setError(String message) {
+    setState(() {
+      _urlError = message;
+      _busy = false;
+      _stage = null;
+    });
+  }
+
+  Future<void> _submitResult(
+    _AddResult result, {
+    bool keepCurrentStage = false,
+  }) async {
+    if (_busy && !keepCurrentStage) {
+      return;
+    }
+    final l10n = AppLocalizations.of(context);
+    if (!keepCurrentStage) {
+      setState(() {
+        _busy = true;
+        _urlError = null;
+        _stage = l10n.addSubscriptionImporting;
+      });
+    } else {
+      setState(() {
+        _urlError = null;
+        _stage = l10n.addSubscriptionImporting;
+      });
+    }
+    try {
+      final added = await widget.onAdd(result);
+      if (!mounted) {
+        return;
+      }
+      if (!added) {
+        setState(() {
+          _busy = false;
+          _stage = null;
+        });
+        return;
+      }
+      setState(() => _stage = l10n.addSubscriptionDone);
+      await Future<void>.delayed(const Duration(milliseconds: 260));
+      if (mounted) {
+        Navigator.of(context).pop(true);
+      }
+    } on _LocalizedSubscriptionPageError catch (e) {
+      if (mounted) {
+        _setError(e.message);
+      }
+    } catch (e) {
+      if (mounted) {
+        _setError(e.toString());
+      }
+    }
+  }
 
   void _submit() {
     final input = _urlController.text.trim();
@@ -2370,15 +2649,20 @@ class _AddSubscriptionPageState extends State<_AddSubscriptionPage> {
     }
     final name = _nameController.text.trim();
     if (HappCryptoLinkDecoder.isSupportedSubscriptionUrl(input)) {
-      Navigator.pop(context, _AddResult.url(input, name));
+      unawaited(
+        _submitResult(
+          _AddResult.url(input, name, requestInfo: _manualRequestInfo()),
+        ),
+      );
       return;
     }
-    Navigator.pop(
-      context,
-      _AddResult.file(
-        name: name,
-        fileContent: input,
-        sourceName: 'manual import',
+    unawaited(
+      _submitResult(
+        _AddResult.file(
+          name: name,
+          fileContent: input,
+          sourceName: 'manual import',
+        ),
       ),
     );
   }
@@ -2392,7 +2676,40 @@ class _AddSubscriptionPageState extends State<_AddSubscriptionPage> {
     if (_urlError != null) setState(() => _urlError = null);
   }
 
+  Future<void> _importFromClipboard() async {
+    if (_busy) {
+      return;
+    }
+    final l10n = AppLocalizations.of(context);
+    setState(() {
+      _busy = true;
+      _urlError = null;
+      _stage = l10n.addSubscriptionReadingClipboard;
+    });
+    final data = await Clipboard.getData('text/plain');
+    if (!mounted) {
+      return;
+    }
+    final text = data?.text?.trim() ?? '';
+    if (text.isEmpty) {
+      _setError(l10n.clipboardEmpty);
+      return;
+    }
+    final name = _nameController.text.trim();
+    if (HappCryptoLinkDecoder.isSupportedSubscriptionUrl(text)) {
+      await _submitResult(_AddResult.url(text, name), keepCurrentStage: true);
+      return;
+    }
+    await _submitResult(
+      _AddResult.file(name: name, fileContent: text, sourceName: 'clipboard'),
+      keepCurrentStage: true,
+    );
+  }
+
   Future<void> _scanQr() async {
+    if (_busy) {
+      return;
+    }
     FocusScope.of(context).unfocus();
     final scannedUrl = await Navigator.of(context).push<String>(
       MaterialPageRoute(builder: (_) => const _SubscriptionQrScannerPage()),
@@ -2404,105 +2721,215 @@ class _AddSubscriptionPageState extends State<_AddSubscriptionPage> {
       );
       return;
     }
-    Navigator.pop(
-      context,
+    await _submitResult(
       _AddResult.url(scannedUrl, _nameController.text.trim()),
     );
   }
 
   Future<void> _pickFile() async {
+    if (_busy) {
+      return;
+    }
     FocusScope.of(context).unfocus();
     final result = await FilePicker.pickFiles(withData: true);
     if (!mounted || result == null || result.files.isEmpty) return;
+    final l10n = AppLocalizations.of(context);
+    setState(() {
+      _busy = true;
+      _urlError = null;
+      _stage = l10n.addSubscriptionReadingFile;
+    });
     final file = result.files.single;
     final bytes =
         file.bytes ??
         (file.path != null ? await File(file.path!).readAsBytes() : null);
     if (!mounted) return;
     if (bytes == null || bytes.isEmpty) {
-      setState(
-        () => _urlError = AppLocalizations.of(context).invalidSubscriptionFile,
-      );
+      _setError(AppLocalizations.of(context).invalidSubscriptionFile);
       return;
     }
     final content = utf8.decode(bytes, allowMalformed: true).trim();
     if (content.isEmpty) {
-      setState(
-        () => _urlError = AppLocalizations.of(context).invalidSubscriptionFile,
-      );
+      _setError(AppLocalizations.of(context).invalidSubscriptionFile);
       return;
     }
-    Navigator.pop(
-      context,
+    await _submitResult(
       _AddResult.file(
         name: _nameController.text.trim(),
         fileContent: content,
         sourceName: file.name,
       ),
+      keepCurrentStage: true,
     );
   }
 
-  // ---- build ----
+  void _showManual() {
+    if (_busy) {
+      return;
+    }
+    setState(() {
+      _mode = _AddSubscriptionSheetMode.manual;
+      _urlError = null;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final bottomPadding = MediaQuery.paddingOf(context).bottom;
 
-    return ProgressiveBlurScaffold(
-      appBar: AppBar(
-        title: Text(l10n.addSubscription),
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        shadowColor: Colors.transparent,
-        surfaceTintColor: Colors.transparent,
-      ),
-      body: Theme(
-        data: settingsTileTheme(context),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 560),
-            child: ListView(
-              padding: EdgeInsets.fromLTRB(
-                settingsScreenPadding.left,
-                progressiveHeaderTopPadding(context, settingsScreenPadding.top),
-                settingsScreenPadding.right,
-                appBottomSafePadding(context, settingsScreenPadding.bottom),
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: _mode == _AddSubscriptionSheetMode.quick ? .48 : .68,
+      minChildSize: .34,
+      maxChildSize: .92,
+      builder: (context, scrollController) {
+        return Theme(
+          data: settingsTileTheme(context),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: cs.surface,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(28),
               ),
+              border: Border(top: BorderSide(color: cs.outlineVariant)),
+            ),
+            child: ListView(
+              controller: scrollController,
+              padding: EdgeInsets.fromLTRB(18, 10, 18, 18 + bottomPadding),
               children: [
-                _AddSubscriptionImportMethods(
-                  scanLabel: l10n.scanQrCode,
-                  fileLabel: l10n.importFromFile,
-                  onScanQr: _scanQr,
-                  onPickFile: _pickFile,
+                Center(
+                  child: Container(
+                    width: 54,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: cs.onSurfaceVariant.withValues(alpha: .38),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                  ),
+                ),
+                const Gap(18),
+                Row(
+                  children: [
+                    if (_mode == _AddSubscriptionSheetMode.manual)
+                      IconButton(
+                        tooltip: MaterialLocalizations.of(
+                          context,
+                        ).backButtonTooltip,
+                        onPressed: _busy
+                            ? null
+                            : () => setState(
+                                () => _mode = _AddSubscriptionSheetMode.quick,
+                              ),
+                        icon: const Icon(Icons.arrow_back_rounded),
+                      ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _mode == _AddSubscriptionSheetMode.quick
+                                ? l10n.addSubscriptionQuickTitle
+                                : l10n.addSubscriptionManual,
+                            style: theme.textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0,
+                            ),
+                          ),
+                          const Gap(4),
+                          Text(
+                            _mode == _AddSubscriptionSheetMode.quick
+                                ? l10n.addSubscriptionQuickSubtitle
+                                : l10n.subscriptionUrlOrContentHint,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: cs.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: l10n.close,
+                      onPressed: _busy ? null : () => Navigator.pop(context),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ],
+                ),
+                const Gap(16),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 180),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeOutCubic,
+                  child: _busy
+                      ? _AddSubscriptionLoadingCard(
+                          key: const ValueKey('loading'),
+                          stage: _stage ?? l10n.addSubscriptionImporting,
+                        )
+                      : _mode == _AddSubscriptionSheetMode.quick
+                      ? _AddSubscriptionQuickOptions(
+                          key: const ValueKey('quick'),
+                          onScanQr: _scanQr,
+                          onClipboard: _importFromClipboard,
+                          onPickFile: _pickFile,
+                          onManual: _showManual,
+                        )
+                      : _AddSubscriptionManualCard(
+                          key: const ValueKey('manual'),
+                          urlController: _urlController,
+                          nameController: _nameController,
+                          customUserAgentController: _customUserAgentController,
+                          customHwidController: _customHwidController,
+                          contentLabel: _manualImportLabel(l10n),
+                          contentHint: _manualImportHint(l10n),
+                          nameLabel: l10n.subscriptionName,
+                          customUserAgentLabel: l10n.customUserAgentTitle,
+                          customUserAgentSubtitle: l10n.customUserAgentSubtitle,
+                          userAgentHint: SubscriptionFetcher.defaultUserAgent,
+                          sendHwidLabel: l10n.sendHwidTitle,
+                          sendHwidSubtitle: l10n.sendHwidSubtitle,
+                          customHwidLabel: l10n.customHwidTitle,
+                          customHwidSubtitle: l10n.customHwidSubtitle,
+                          customHwidSwitchLabel: l10n.useCustomHwidTitle,
+                          customHwidSwitchSubtitle: l10n.useCustomHwidSubtitle,
+                          pasteTooltip: l10n.pasteAction,
+                          addLabel: l10n.add,
+                          useCustomUserAgent: _useCustomUserAgent,
+                          sendHwid: _sendHwid,
+                          useCustomHwid: _useCustomHwid,
+                          onPasteUrl: _pasteUrl,
+                          onSubmit: _submit,
+                          onUseCustomUserAgentChanged: (value) {
+                            setState(() => _useCustomUserAgent = value);
+                          },
+                          onSendHwidChanged: (value) {
+                            setState(() {
+                              _sendHwid = value;
+                              if (!value) {
+                                _useCustomHwid = false;
+                              }
+                            });
+                          },
+                          onUseCustomHwidChanged: (value) {
+                            setState(() => _useCustomHwid = value);
+                          },
+                          onUrlChanged: () {
+                            if (_urlError != null) {
+                              setState(() => _urlError = null);
+                            }
+                          },
+                        ),
                 ),
                 if (_urlError case final error?) ...[
-                  const Gap(settingsIslandGap),
+                  const Gap(12),
                   _AddSubscriptionErrorTile(message: error),
                 ],
-                const Gap(settingsSectionGap),
-                _AddSubscriptionSectionLabel(label: l10n.orManually),
-                const Gap(settingsSectionLabelGap),
-                _AddSubscriptionManualCard(
-                  urlController: _urlController,
-                  nameController: _nameController,
-                  contentLabel: _manualImportLabel(l10n),
-                  contentHint: _manualImportHint(l10n),
-                  nameLabel: l10n.subscriptionName,
-                  pasteTooltip: l10n.pasteAction,
-                  addLabel: l10n.add,
-                  onPasteUrl: _pasteUrl,
-                  onSubmit: _submit,
-                  onUrlChanged: () {
-                    if (_urlError != null) {
-                      setState(() => _urlError = null);
-                    }
-                  },
-                ),
               ],
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -2513,52 +2940,63 @@ class _AddSubscriptionPageState extends State<_AddSubscriptionPage> {
       l10n.subscriptionUrlOrContentHint;
 }
 
-class _AddSubscriptionImportMethods extends StatelessWidget {
-  const _AddSubscriptionImportMethods({
-    required this.scanLabel,
-    required this.fileLabel,
+class _AddSubscriptionQuickOptions extends StatelessWidget {
+  const _AddSubscriptionQuickOptions({
+    super.key,
     required this.onScanQr,
+    required this.onClipboard,
     required this.onPickFile,
+    required this.onManual,
   });
 
-  final String scanLabel;
-  final String fileLabel;
   final VoidCallback onScanQr;
+  final VoidCallback onClipboard;
   final VoidCallback onPickFile;
+  final VoidCallback onManual;
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final cs = Theme.of(context).colorScheme;
-    return Card(
-      margin: EdgeInsets.zero,
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        children: [
-          _AddSubscriptionMethodTile(
-            icon: Icons.qr_code_scanner_rounded,
-            color: cs.primary,
-            title: scanLabel,
-            onTap: onScanQr,
-          ),
-          Divider(
-            height: 1,
-            indent: 72,
-            color: cs.outlineVariant.withValues(alpha: .36),
-          ),
-          _AddSubscriptionMethodTile(
-            icon: Icons.file_open_rounded,
-            color: cs.tertiary,
-            title: fileLabel,
-            onTap: onPickFile,
-          ),
-        ],
-      ),
+    return GridView.count(
+      crossAxisCount: 2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      mainAxisSpacing: 10,
+      crossAxisSpacing: 10,
+      childAspectRatio: 1.45,
+      children: [
+        _AddSubscriptionQuickCard(
+          icon: Icons.qr_code_scanner_rounded,
+          color: cs.primary,
+          title: l10n.scanQrCode,
+          onTap: onScanQr,
+        ),
+        _AddSubscriptionQuickCard(
+          icon: Icons.content_paste_rounded,
+          color: cs.secondary,
+          title: l10n.addSubscriptionFromClipboard,
+          onTap: onClipboard,
+        ),
+        _AddSubscriptionQuickCard(
+          icon: Icons.file_open_rounded,
+          color: cs.tertiary,
+          title: l10n.importFromFile,
+          onTap: onPickFile,
+        ),
+        _AddSubscriptionQuickCard(
+          icon: Icons.edit_note_rounded,
+          color: cs.primary,
+          title: l10n.addSubscriptionManual,
+          onTap: onManual,
+        ),
+      ],
     );
   }
 }
 
-class _AddSubscriptionMethodTile extends StatelessWidget {
-  const _AddSubscriptionMethodTile({
+class _AddSubscriptionQuickCard extends StatelessWidget {
+  const _AddSubscriptionQuickCard({
     required this.icon,
     required this.color,
     required this.title,
@@ -2572,32 +3010,78 @@ class _AddSubscriptionMethodTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      onTap: onTap,
-      minVerticalPadding: 12,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      leading: SettingsLeadingIcon(icon: icon, color: color),
-      title: Text(title),
-      trailing: const Icon(Icons.chevron_right_rounded),
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    return Card(
+      margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SettingsLeadingIcon(icon: icon, color: color),
+              const Spacer(),
+              Text(
+                title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: cs.onSurface,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
 
-class _AddSubscriptionSectionLabel extends StatelessWidget {
-  const _AddSubscriptionSectionLabel({required this.label});
+class _AddSubscriptionLoadingCard extends StatelessWidget {
+  const _AddSubscriptionLoadingCard({super.key, required this.stage});
 
-  final String label;
+  final String stage;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: Text(
-        label,
-        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0,
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 3,
+                    color: cs.primary,
+                  ),
+                ),
+                const Gap(12),
+                Expanded(
+                  child: Text(
+                    stage,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const Gap(16),
+            const LinearProgressIndicator(),
+          ],
         ),
       ),
     );
@@ -2606,27 +3090,62 @@ class _AddSubscriptionSectionLabel extends StatelessWidget {
 
 class _AddSubscriptionManualCard extends StatelessWidget {
   const _AddSubscriptionManualCard({
+    super.key,
     required this.urlController,
     required this.nameController,
+    required this.customUserAgentController,
+    required this.customHwidController,
     required this.contentLabel,
     required this.contentHint,
     required this.nameLabel,
+    required this.customUserAgentLabel,
+    required this.customUserAgentSubtitle,
+    required this.userAgentHint,
+    required this.sendHwidLabel,
+    required this.sendHwidSubtitle,
+    required this.customHwidLabel,
+    required this.customHwidSubtitle,
+    required this.customHwidSwitchLabel,
+    required this.customHwidSwitchSubtitle,
     required this.pasteTooltip,
     required this.addLabel,
+    required this.useCustomUserAgent,
+    required this.sendHwid,
+    required this.useCustomHwid,
     required this.onPasteUrl,
     required this.onSubmit,
+    required this.onUseCustomUserAgentChanged,
+    required this.onSendHwidChanged,
+    required this.onUseCustomHwidChanged,
     required this.onUrlChanged,
   });
 
   final TextEditingController urlController;
   final TextEditingController nameController;
+  final TextEditingController customUserAgentController;
+  final TextEditingController customHwidController;
   final String contentLabel;
   final String contentHint;
   final String nameLabel;
+  final String customUserAgentLabel;
+  final String customUserAgentSubtitle;
+  final String userAgentHint;
+  final String sendHwidLabel;
+  final String sendHwidSubtitle;
+  final String customHwidLabel;
+  final String customHwidSubtitle;
+  final String customHwidSwitchLabel;
+  final String customHwidSwitchSubtitle;
   final String pasteTooltip;
   final String addLabel;
+  final bool useCustomUserAgent;
+  final bool sendHwid;
+  final bool useCustomHwid;
   final VoidCallback onPasteUrl;
   final VoidCallback onSubmit;
+  final ValueChanged<bool> onUseCustomUserAgentChanged;
+  final ValueChanged<bool> onSendHwidChanged;
+  final ValueChanged<bool> onUseCustomHwidChanged;
   final VoidCallback onUrlChanged;
 
   @override
@@ -2691,6 +3210,68 @@ class _AddSubscriptionManualCard extends StatelessWidget {
               ),
               onSubmitted: (_) => onSubmit(),
             ),
+            const Gap(8),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(customUserAgentLabel),
+              subtitle: Text(customUserAgentSubtitle),
+              value: useCustomUserAgent,
+              onChanged: onUseCustomUserAgentChanged,
+            ),
+            if (useCustomUserAgent) ...[
+              TextField(
+                controller: customUserAgentController,
+                textInputAction: TextInputAction.done,
+                inputFormatters: [_kSingleLineFormatter],
+                decoration: InputDecoration(
+                  isDense: true,
+                  labelText: customUserAgentLabel,
+                  hintText: userAgentHint,
+                  prefixIcon: const Icon(Icons.badge_outlined),
+                  filled: true,
+                  fillColor: cs.surfaceContainerLowest,
+                  border: fieldBorder,
+                  enabledBorder: fieldBorder,
+                  focusedBorder: focusedFieldBorder,
+                ),
+                onSubmitted: (_) => onSubmit(),
+              ),
+              const Gap(8),
+            ],
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(sendHwidLabel),
+              subtitle: Text(sendHwidSubtitle),
+              value: sendHwid,
+              onChanged: onSendHwidChanged,
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(customHwidSwitchLabel),
+              subtitle: Text(customHwidSwitchSubtitle),
+              value: sendHwid && useCustomHwid,
+              onChanged: sendHwid ? onUseCustomHwidChanged : null,
+            ),
+            if (sendHwid && useCustomHwid) ...[
+              TextField(
+                controller: customHwidController,
+                textInputAction: TextInputAction.done,
+                inputFormatters: [_kSingleLineFormatter],
+                decoration: InputDecoration(
+                  isDense: true,
+                  labelText: customHwidLabel,
+                  helperText: customHwidSubtitle,
+                  prefixIcon: const Icon(Icons.fingerprint_rounded),
+                  filled: true,
+                  fillColor: cs.surfaceContainerLowest,
+                  border: fieldBorder,
+                  enabledBorder: fieldBorder,
+                  focusedBorder: focusedFieldBorder,
+                ),
+                onSubmitted: (_) => onSubmit(),
+              ),
+              const Gap(8),
+            ],
             const Gap(14),
             FilledButton.icon(
               onPressed: onSubmit,

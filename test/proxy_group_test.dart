@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:meow_client/app/app_background_tasks.dart';
@@ -338,6 +339,7 @@ void main() {
       logLevel: 'warning',
       tcpFastOpenEnabled: true,
       tcpMultiPathEnabled: false,
+      tlsFragmentationMode: TlsFragmentationMode.disabled,
       interruptExistingConnections: true,
       urlTestStrictTolerance: true,
       markAllServersRussia: false,
@@ -605,6 +607,97 @@ void main() {
       isFalse,
     );
     expect(outbounds.any((entry) => entry['tag'] == mixedProxyTag), isFalse);
+  });
+
+  test('applies TLS record fragmentation only to TLS proxy outbounds', () {
+    const subscription = Subscription(
+      id: 'sub',
+      name: 'Sub',
+      url: 'file:///sub.json',
+      selectedProxyTag: 'tls-node',
+      outbounds: [
+        Outbound(
+          tag: 'tls-node',
+          name: 'TLS Node',
+          config: {
+            'type': 'vless',
+            'tag': 'tls-node',
+            'server': 'tls.example.com',
+            'server_port': 443,
+            'uuid': 'tls-uuid',
+            'tls': {'enabled': true, 'server_name': 'tls.example.com'},
+          },
+        ),
+        Outbound(
+          tag: 'plain-node',
+          name: 'Plain Node',
+          config: {
+            'type': 'vless',
+            'tag': 'plain-node',
+            'server': 'plain.example.com',
+            'server_port': 80,
+            'uuid': 'plain-uuid',
+          },
+        ),
+      ],
+    );
+
+    final config = _defaultBuilder(
+      subscription,
+      selectedProxyTag: 'tls-node',
+      tlsFragmentationMode: TlsFragmentationMode.record,
+    ).build();
+    final outbounds = (config['outbounds'] as List)
+        .cast<Map<String, dynamic>>();
+    final tlsNode = outbounds.firstWhere((entry) => entry['tag'] == 'tls-node');
+    final plainNode = outbounds.firstWhere(
+      (entry) => entry['tag'] == 'plain-node',
+    );
+    final direct = outbounds.firstWhere((entry) => entry['tag'] == 'direct');
+    final tls = (tlsNode['tls'] as Map).cast<String, dynamic>();
+
+    expect(tls['record_fragment'], isTrue);
+    expect(tls.containsKey('fragment'), isFalse);
+    expect(plainNode.containsKey('tls'), isFalse);
+    expect(direct.containsKey('tls_fragment'), isFalse);
+    expect(direct.containsKey('tls'), isFalse);
+  });
+
+  test('TLS fragment mode replaces record fragmentation', () {
+    const subscription = Subscription(
+      id: 'sub',
+      name: 'Sub',
+      url: 'file:///sub.json',
+      selectedProxyTag: 'tls-node',
+      outbounds: [
+        Outbound(
+          tag: 'tls-node',
+          name: 'TLS Node',
+          config: {
+            'type': 'vless',
+            'tag': 'tls-node',
+            'server': 'tls.example.com',
+            'server_port': 443,
+            'uuid': 'tls-uuid',
+            'tls': {'enabled': true, 'record_fragment': true},
+          },
+        ),
+      ],
+    );
+
+    final config = _defaultBuilder(
+      subscription,
+      selectedProxyTag: 'tls-node',
+      tlsFragmentationMode: TlsFragmentationMode.fragment,
+    ).build();
+    final outbounds = (config['outbounds'] as List)
+        .cast<Map<String, dynamic>>();
+    final tlsNode = outbounds.firstWhere((entry) => entry['tag'] == 'tls-node');
+    final tls = (tlsNode['tls'] as Map).cast<String, dynamic>();
+
+    expect(tls['fragment'], isTrue);
+    expect(tls['fragment_fallback_delay'], '300ms');
+    expect(tls.containsKey('record_fragment'), isFalse);
   });
 
   test('hides group-only chain hop from proxy list and lowest', () {
@@ -1561,12 +1654,155 @@ void main() {
     expect(chain.countryCode, 'FI');
   });
 
+  test('split proxy-selected uses only Android TUN include packages', () {
+    const subscription = Subscription(
+      id: 'split-sub',
+      name: 'Split',
+      url: 'https://example.com/sub',
+      outbounds: [
+        Outbound(
+          tag: 'node',
+          name: 'Node',
+          config: {
+            'type': 'vless',
+            'tag': 'node',
+            'server': 'node.example.com',
+            'server_port': 443,
+            'uuid': 'node-uuid',
+          },
+        ),
+      ],
+    );
+    final config = _defaultBuilder(
+      subscription,
+      vpnInboundEnabled: true,
+      splitRoutingMode: SplitRoutingMode.proxySelected,
+      splitRoutingPackages: const [
+        'Telegram',
+        'com.example.app',
+        'bad package',
+        'com.example.app',
+        '',
+      ],
+    ).build();
+
+    final tunInbound = (config['inbounds'] as List).cast<Map>().firstWhere(
+      (inbound) => inbound['type'] == 'tun',
+    );
+    expect(tunInbound['include_package'], ['com.example.app']);
+    expect(tunInbound.containsKey('exclude_package'), isFalse);
+
+    final route = (config['route'] as Map).cast<String, dynamic>();
+    final routeRules = (route['rules'] as List).cast<Map>();
+    expect(route['final'], 'select');
+    expect(routeRules.any((rule) => rule.containsKey('package_name')), isFalse);
+  });
+
+  test('split, local, adblock and Russia route rules keep stable priority', () {
+    const subscription = Subscription(
+      id: 'route-priority',
+      name: 'Route priority',
+      url: 'https://example.com/sub',
+      outbounds: [
+        Outbound(
+          tag: 'node',
+          name: 'Node',
+          config: {
+            'type': 'vless',
+            'tag': 'node',
+            'server': 'node.example.com',
+            'server_port': 443,
+            'uuid': 'node-uuid',
+          },
+        ),
+      ],
+    );
+    final config = _defaultBuilder(
+      subscription,
+      vpnInboundEnabled: true,
+      splitRoutingMode: SplitRoutingMode.proxySelected,
+      splitRoutingPackages: const ['com.example.proxy'],
+      useRussiaRouteData: true,
+      adBlockEnabled: true,
+      adBlockBlockRuleSetPath: _russiaRuleSetPath('geosite-ru-blocked.srs'),
+      adBlockAllowRuleSetPath: _russiaRuleSetPath(
+        'geosite-ru-available-only-inside.srs',
+      ),
+    ).build();
+
+    final routeRules = ((config['route'] as Map)['rules'] as List).cast<Map>();
+    final privateIndex = routeRules.indexWhere(
+      (rule) => rule.containsKey('ip_is_private'),
+    );
+    final adBlockIndex = routeRules.indexWhere(
+      (rule) => rule['rule_set'] == 'adblock-block',
+    );
+    final russiaSuffixIndex = routeRules.indexWhere(
+      (rule) => rule.containsKey('domain_suffix'),
+    );
+    final russiaDirectIndex = routeRules.indexWhere(
+      (rule) => rule['rule_set'] == 'ru-geosite-ru-available-only-inside',
+    );
+    final russiaBlockedIndex = routeRules.indexWhere(
+      (rule) =>
+          rule['rule_set'] is List &&
+          (rule['rule_set'] as List).contains('ru-geosite-ru-blocked'),
+    );
+    final russiaGeoipDirectIndex = routeRules.indexWhere(
+      (rule) =>
+          rule['rule_set'] is List &&
+          (rule['rule_set'] as List).contains('ru-geoip-ru'),
+    );
+
+    expect(routeRules.any((rule) => rule.containsKey('package_name')), isFalse);
+    expect(privateIndex, greaterThanOrEqualTo(0));
+    expect(adBlockIndex, greaterThan(privateIndex));
+    expect(russiaSuffixIndex, greaterThan(adBlockIndex));
+    expect(russiaBlockedIndex, greaterThan(adBlockIndex));
+    expect(russiaBlockedIndex, lessThan(russiaSuffixIndex));
+    expect(russiaDirectIndex, greaterThan(adBlockIndex));
+    expect(russiaGeoipDirectIndex, greaterThan(russiaBlockedIndex));
+
+    final dns = (config['dns'] as Map).cast<String, dynamic>();
+    final dnsServers = (dns['servers'] as List).cast<Map>();
+    expect(
+      dnsServers.any((server) => server['tag'] == 'dns-ru-direct'),
+      isTrue,
+    );
+    final dnsRules = (dns['rules'] as List).cast<Map>();
+    expect(
+      dnsRules.first,
+      allOf([
+        containsPair('rule_set', 'ru-geosite-ru-blocked'),
+        containsPair('server', 'dns-remote'),
+      ]),
+    );
+    expect(
+      dnsRules,
+      contains(
+        allOf([
+          containsPair('domain_suffix', ['ru', 'su', 'рф']),
+          containsPair('server', 'dns-ru-direct'),
+        ]),
+      ),
+    );
+    expect(
+      dnsRules,
+      contains(
+        allOf([
+          containsPair('rule_set', 'ru-geosite-category-ru'),
+          containsPair('server', 'dns-ru-direct'),
+        ]),
+      ),
+    );
+  });
+
   test(
-    'split routing writes Android TUN include packages and route fallback',
+    'split routing is ignored without VPN TUN so proxy-only stays proxied',
     () {
       const subscription = Subscription(
-        id: 'split-sub',
-        name: 'Split',
+        id: 'split-proxy-only',
+        name: 'Split proxy only',
         url: 'https://example.com/sub',
         outbounds: [
           Outbound(
@@ -1584,29 +1820,25 @@ void main() {
       );
       final config = _defaultBuilder(
         subscription,
-        vpnInboundEnabled: true,
+        vpnInboundEnabled: false,
+        proxyInboundEnabled: true,
         splitRoutingMode: SplitRoutingMode.proxySelected,
-        splitRoutingPackages: const [
-          'Telegram',
-          'com.example.app',
-          'bad package',
-          'com.example.app',
-          '',
-        ],
+        splitRoutingPackages: const ['com.example.app'],
       ).build();
 
-      final tunInbound = (config['inbounds'] as List).cast<Map>().firstWhere(
-        (inbound) => inbound['type'] == 'tun',
+      final route = (config['route'] as Map).cast<String, dynamic>();
+      final routeRules = (route['rules'] as List).cast<Map>();
+      expect(route['final'], 'select');
+      expect(
+        routeRules.any((rule) => rule.containsKey('package_name')),
+        isFalse,
       );
-      expect(tunInbound['include_package'], ['com.example.app']);
-      expect(tunInbound.containsKey('exclude_package'), isFalse);
-
-      final routeRules = (config['route'] as Map)['rules'] as List;
-      final packageRule = routeRules.cast<Map>().firstWhere(
-        (rule) => rule.containsKey('package_name'),
+      expect(
+        (config['inbounds'] as List).cast<Map>().any(
+          (inbound) => inbound['tag'] == 'mixed-in',
+        ),
+        isTrue,
       );
-      expect(packageRule['package_name'], ['com.example.app']);
-      expect(packageRule['outbound'], 'select');
     },
   );
 
@@ -1641,6 +1873,112 @@ void main() {
     );
     expect(tunInbound['exclude_package'], ['com.example.bypass']);
     expect(tunInbound.containsKey('include_package'), isFalse);
+
+    final routeRules = ((config['route'] as Map)['rules'] as List).cast<Map>();
+    expect(routeRules.any((rule) => rule.containsKey('package_name')), isFalse);
+  });
+
+  test('default VPN config does not expose permanent speedtest inbound', () {
+    const subscription = Subscription(
+      id: 'speedtest-inbound',
+      name: 'Speedtest inbound',
+      url: 'https://example.com/sub',
+      outbounds: [
+        Outbound(
+          tag: 'node',
+          name: 'Node',
+          config: {
+            'type': 'vless',
+            'tag': 'node',
+            'server': 'node.example.com',
+            'server_port': 443,
+            'uuid': 'node-uuid',
+          },
+        ),
+      ],
+    );
+    final config = _defaultBuilder(
+      subscription,
+      vpnInboundEnabled: true,
+    ).build();
+
+    final inbounds = (config['inbounds'] as List).cast<Map>();
+    expect(
+      inbounds.any((inbound) => inbound['tag'] == 'speedtest-in'),
+      isFalse,
+    );
+  });
+
+  test('invalid Russia route paths do not activate route rule sets', () {
+    const subscription = Subscription(
+      id: 'invalid-russia',
+      name: 'Invalid Russia',
+      url: 'https://example.com/sub',
+      outbounds: [
+        Outbound(
+          tag: 'node',
+          name: 'Node',
+          config: {
+            'type': 'vless',
+            'tag': 'node',
+            'server': 'node.example.com',
+            'server_port': 443,
+            'uuid': 'node-uuid',
+          },
+        ),
+      ],
+    );
+    final config = SingboxConfigBuilder(
+      activeSubscription: subscription,
+      selectedProxyTag: '',
+      vpnInboundEnabled: true,
+      vpnMtu: 1500,
+      vpnStrictRoute: true,
+      vpnTunImplementation: TunImplementationPreference.mixed,
+      proxyInboundEnabled: false,
+      proxyMixedListen: '127.0.0.1',
+      proxyMixedPort: 1080,
+      dnsDirectResolver: 'udp://1.1.1.1',
+      dnsProxyResolver: 'https://dns.cloudflare.com/dns-query',
+      dnsPreferIpv6: false,
+      urlTestUrl: 'https://www.gstatic.com/generate_204',
+      urlTestIntervalSeconds: 900,
+      urlTestTimeoutSeconds: 15,
+      urlTestConcurrency: 4,
+      urlTestUnavailableCheckIntervalSeconds: 30,
+      blockLeaks: false,
+      adBlockEnabled: false,
+      useRussiaRouteData: true,
+      russiaGeositeRuBlockedPath: '/definitely/missing/geosite.srs',
+      russiaGeositeRuAvailableOnlyInsidePath: '/definitely/missing/inside.srs',
+      russiaGeositeCategoryRuPath: '/definitely/missing/category-ru.srs',
+      russiaGeoipRuBlockedPath: '/definitely/missing/geoip.srs',
+      russiaGeoipRuWhitelistPath: '/definitely/missing/whitelist.srs',
+      russiaGeoipRuPath: '/definitely/missing/ru.srs',
+      russiaCuratedDirectServicesPath: '/definitely/missing/direct.srs',
+      bypassLocalNetwork: true,
+      splitRoutingMode: SplitRoutingMode.disabled,
+      splitRoutingPackages: const <String>[],
+      logLevel: 'warning',
+      tcpFastOpenEnabled: true,
+      tcpMultiPathEnabled: false,
+      tlsFragmentationMode: TlsFragmentationMode.disabled,
+      interruptExistingConnections: true,
+      urlTestStrictTolerance: true,
+      markAllServersRussia: false,
+    ).build();
+
+    final route = (config['route'] as Map).cast<String, dynamic>();
+    final routeRules = (route['rules'] as List).cast<Map>();
+    expect(route.containsKey('rule_set'), isFalse);
+    expect(
+      routeRules.any((rule) => rule['rule_set'] == 'ru-direct-services'),
+      isFalse,
+    );
+    expect(
+      routeRules.any((rule) => rule['rule_set'] == 'ru-geosite-ru-blocked'),
+      isFalse,
+    );
   });
 
   test('DNS builder supports udp tcp tls https and device resolvers', () {
@@ -1698,6 +2036,41 @@ void main() {
       throwsFormatException,
     );
   });
+
+  test('Russia routes use configured direct RU DNS resolver', () {
+    const subscription = Subscription(
+      id: 'ru-dns-sub',
+      name: 'RU DNS',
+      url: 'https://example.com/sub',
+      outbounds: [
+        Outbound(
+          tag: 'node',
+          name: 'Node',
+          config: {
+            'type': 'vless',
+            'tag': 'node',
+            'server': 'node.example.com',
+            'server_port': 443,
+            'uuid': 'node-uuid',
+          },
+        ),
+      ],
+    );
+
+    final config = _defaultBuilder(
+      subscription,
+      useRussiaRouteData: true,
+      russiaDnsDirectResolver: 'udp://77.88.8.1',
+    ).build();
+
+    final servers = ((config['dns'] as Map)['servers'] as List)
+        .cast<Map<String, dynamic>>();
+    final ruDirect = servers.firstWhere(
+      (server) => server['tag'] == 'dns-ru-direct',
+    );
+    expect(ruDirect['type'], 'udp');
+    expect(ruDirect['server'], '77.88.8.1');
+  });
 }
 
 SingboxConfigBuilder _defaultBuilder(
@@ -1711,11 +2084,17 @@ SingboxConfigBuilder _defaultBuilder(
   int urlTestConcurrency = 30,
   int urlTestUnavailableCheckIntervalSeconds = 5,
   bool urlTestStrictTolerance = true,
+  TlsFragmentationMode tlsFragmentationMode = TlsFragmentationMode.disabled,
   bool vpnInboundEnabled = false,
+  bool proxyInboundEnabled = false,
   SplitRoutingMode splitRoutingMode = SplitRoutingMode.disabled,
   List<String> splitRoutingPackages = const <String>[],
+  bool adBlockEnabled = false,
+  String? adBlockBlockRuleSetPath,
+  String? adBlockAllowRuleSetPath,
   String dnsDirectResolver = 'udp://1.1.1.1',
   String dnsProxyResolver = 'https://dns.cloudflare.com/dns-query',
+  String russiaDnsDirectResolver = defaultRussiaDnsDirectResolver,
 }) {
   return SingboxConfigBuilder(
     activeSubscription: subscription,
@@ -1724,12 +2103,13 @@ SingboxConfigBuilder _defaultBuilder(
     vpnMtu: 3400,
     vpnStrictRoute: true,
     vpnTunImplementation: TunImplementationPreference.mixed,
-    proxyInboundEnabled: false,
+    proxyInboundEnabled: proxyInboundEnabled,
     proxyMixedListen: '127.0.0.1',
     proxyMixedPort: 1080,
     dnsDirectResolver: dnsDirectResolver,
     dnsProxyResolver: dnsProxyResolver,
     dnsPreferIpv6: false,
+    russiaDnsDirectResolver: russiaDnsDirectResolver,
     urlTestUrl: urlTestUrl,
     urlTestIntervalSeconds: urlTestIntervalSeconds,
     urlTestTimeoutSeconds: urlTestTimeoutSeconds,
@@ -1737,31 +2117,49 @@ SingboxConfigBuilder _defaultBuilder(
     urlTestUnavailableCheckIntervalSeconds:
         urlTestUnavailableCheckIntervalSeconds,
     blockLeaks: false,
-    adBlockEnabled: false,
+    adBlockEnabled: adBlockEnabled,
+    adBlockBlockRuleSetPath: adBlockBlockRuleSetPath,
+    adBlockAllowRuleSetPath: adBlockAllowRuleSetPath,
     useRussiaRouteData: useRussiaRouteData,
     russiaGeositeRuBlockedPath: useRussiaRouteData
-        ? '/tmp/geosite-ru-blocked.srs'
+        ? _russiaRuleSetPath('geosite-ru-blocked.srs')
         : null,
     russiaGeositeRuAvailableOnlyInsidePath: useRussiaRouteData
-        ? '/tmp/geosite-ru-available-only-inside.srs'
+        ? _russiaRuleSetPath('geosite-ru-available-only-inside.srs')
+        : null,
+    russiaGeositeCategoryRuPath: useRussiaRouteData
+        ? _russiaRuleSetPath('geosite-category-ru.srs')
         : null,
     russiaGeoipRuBlockedPath: useRussiaRouteData
-        ? '/tmp/geoip-ru-blocked.srs'
+        ? _russiaRuleSetPath('geoip-ru-blocked.srs')
+        : null,
+    russiaGeoipRuWhitelistPath: useRussiaRouteData
+        ? _russiaRuleSetPath('geoip-ru-whitelist.srs')
+        : null,
+    russiaGeoipRuPath: useRussiaRouteData
+        ? _russiaRuleSetPath('geoip-ru.srs')
         : null,
     russiaCuratedDirectServicesPath: useRussiaRouteData
-        ? '/tmp/ru-direct-services.srs'
+        ? _russiaRuleSetPath('geosite-ru-available-only-inside.srs')
         : null,
-    russiaAiServicesPath: useRussiaRouteData ? '/tmp/ai-services.srs' : null,
+    russiaAiServicesPath: useRussiaRouteData
+        ? _russiaRuleSetPath('geosite-ru-blocked.srs')
+        : null,
     bypassLocalNetwork: true,
     splitRoutingMode: splitRoutingMode,
     splitRoutingPackages: splitRoutingPackages,
     logLevel: 'warning',
     tcpFastOpenEnabled: true,
     tcpMultiPathEnabled: false,
+    tlsFragmentationMode: tlsFragmentationMode,
     interruptExistingConnections: true,
     urlTestStrictTolerance: urlTestStrictTolerance,
     markAllServersRussia: markAllServersRussia,
   );
+}
+
+String _russiaRuleSetPath(String fileName) {
+  return '${Directory.current.path}/assets/route_data/russia/$fileName';
 }
 
 Map<String, dynamic> _xrayVlessOutbound(String tag, String server) {

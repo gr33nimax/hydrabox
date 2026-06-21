@@ -5,6 +5,7 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.net.Network
 import android.net.VpnService
 import android.os.Build
 import android.os.IBinder
@@ -12,11 +13,40 @@ import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
 import com.etonify.meow_client.MeowApplication
+import java.net.Socket
 
 class MeowVpnService : VpnService() {
     companion object {
         private const val TAG = "MeowVpnService"
         private const val WAKE_LOCK_TAG = "meow:vpn"
+        @Volatile
+        private var currentService: MeowVpnService? = null
+
+        fun protectSocket(socket: Socket): Boolean {
+            return currentService?.protect(socket) == true
+        }
+
+        fun setUnderlyingNetwork(network: Network?, reason: String) {
+            val service = currentService
+            if (service == null) {
+                MeowDiagnostics.log(TAG, "underlying_network_skipped reason=$reason service=null")
+                return
+            }
+            runCatching {
+                service.setUnderlyingNetworks(network?.let { arrayOf(it) })
+                MeowDiagnostics.log(
+                    TAG,
+                    if (network == null) {
+                        "underlying_network_lost reason=$reason"
+                    } else {
+                        "underlying_network_set reason=$reason network=$network"
+                    },
+                )
+            }.onFailure {
+                Log.w(TAG, "setUnderlyingNetworks failed reason=$reason", it)
+                MeowDiagnostics.log(TAG, "underlying_network_failed reason=$reason error=${it.message}")
+            }
+        }
     }
 
     private lateinit var boxService: MeowBoxService
@@ -26,6 +56,7 @@ class MeowVpnService : VpnService() {
         super.onCreate()
         Log.i(TAG, "onCreate")
         MeowDiagnostics.log(TAG, "onCreate")
+        currentService = this
         acquireWakeLock()
         boxService = MeowBoxService(
             this,
@@ -46,8 +77,14 @@ class MeowVpnService : VpnService() {
     override fun onDestroy() {
         Log.i(TAG, "onDestroy")
         MeowDiagnostics.log(TAG, "onDestroy")
+        if (currentService === this) {
+            setUnderlyingNetwork(null, "service_onDestroy")
+        }
         boxService.onDestroy()
         releaseWakeLock()
+        if (currentService === this) {
+            currentService = null
+        }
         super.onDestroy()
     }
 

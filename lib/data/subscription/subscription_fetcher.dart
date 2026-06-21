@@ -39,7 +39,7 @@ class FetchResult {
 class SubscriptionFetcher {
   SubscriptionFetcher._();
 
-  static const _userAgent = 'Etonify/0.1.1';
+  static const defaultUserAgent = 'Etonify/0.2.0';
   static const _maxSubscriptionResponseBytes = 16 * 1024 * 1024;
 
   /// Fetches and parses a subscription from [url].
@@ -66,7 +66,7 @@ class SubscriptionFetcher {
       final effectiveUserAgent =
           requestInfo?.customUserAgent?.trim().isNotEmpty == true
           ? requestInfo!.customUserAgent!.trim()
-          : _userAgent;
+          : defaultUserAgent;
       request.headers.set('User-Agent', effectiveUserAgent);
       // Accept common subscription MIME types
       request.headers.set('Accept', '*/*');
@@ -441,7 +441,7 @@ class SubscriptionFetcher {
           '';
       return {
         if (locale.isNotEmpty) 'X-Device-Locale': locale,
-        if (resolvedHwid.isNotEmpty) 'X-Hwid': resolvedHwid,
+        if (resolvedHwid.isNotEmpty) 'X-HWID': resolvedHwid,
         'X-Device-Os': os,
         if (osVersion.isNotEmpty) 'X-Ver-Os': osVersion,
         if (model.isNotEmpty) 'X-Device-Model': model,
@@ -449,7 +449,7 @@ class SubscriptionFetcher {
     } catch (_) {
       return {
         if (requestInfo?.customHwid?.trim().isNotEmpty == true)
-          'X-Hwid': requestInfo!.customHwid!.trim(),
+          'X-HWID': requestInfo!.customHwid!.trim(),
         'X-Device-Os': 'Android',
       };
     }
