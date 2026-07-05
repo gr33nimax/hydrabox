@@ -51,76 +51,129 @@ class SubscriptionFetcher {
     Duration? operationTimeout,
   }) async {
     final uri = parseRequestUri(url);
-    final client = HttpClient();
-    client.connectionTimeout = const Duration(seconds: 15);
-    Timer? operationTimeoutTimer;
-    if (operationTimeout != null && operationTimeout > Duration.zero) {
-      operationTimeoutTimer = Timer(operationTimeout, () {
-        client.close(force: true);
-      });
-    }
     _logFetchStart(uri, requestInfo);
 
     try {
-      final request = await client.getUrl(uri);
-      final effectiveUserAgent =
-          requestInfo?.customUserAgent?.trim().isNotEmpty == true
-          ? requestInfo!.customUserAgent!.trim()
-          : defaultUserAgent;
-      request.headers.set('User-Agent', effectiveUserAgent);
-      // Accept common subscription MIME types
-      request.headers.set('Accept', '*/*');
-      final customHeaders = _parseCustomHeaders(
-        requestInfo?.customRequestHeader,
-      );
-      for (final entry in customHeaders.entries) {
-        request.headers.set(entry.key, entry.value);
-      }
-      if (requestInfo?.requireHwid == true) {
-        final hwidHeaders = await _resolveHwidHeaders(requestInfo);
-        for (final entry in hwidHeaders.entries) {
-          if (!_hasHeader(customHeaders, entry.key)) {
-            request.headers.set(entry.key, entry.value);
+      final headers = await _requestHeaders(requestInfo);
+      if (Platform.isAndroid) {
+        try {
+          final native = await SingboxRuntime.instance
+              .fetchUrlOnUnderlyingNetwork(
+                uri: uri,
+                headers: headers,
+                maxBytes: _maxSubscriptionResponseBytes,
+                timeout: operationTimeout ?? const Duration(seconds: 20),
+              );
+          final statusCode =
+              int.tryParse(native['statusCode']?.toString() ?? '') ?? 0;
+          if (statusCode != HttpStatus.ok) {
+            throw HttpException(
+              'Subscription server returned $statusCode',
+              uri: uri,
+            );
           }
+          final rawContent = native['body']?.toString() ?? '';
+          final responseHeaders = <String, String>{
+            for (final entry in (native['headers'] as Map? ?? const {}).entries)
+              entry.key.toString().toLowerCase(): entry.value.toString(),
+          };
+          AppLogStore.info(
+            'subscription',
+            'fetch complete path=underlying_network bytes=${utf8.encode(rawContent).length}',
+          );
+          return _buildResult(
+            url: url,
+            rawContent: rawContent,
+            headerValue: (name) => responseHeaders[name.toLowerCase()],
+          );
+        } on HttpException {
+          rethrow;
+        } catch (error) {
+          AppLogStore.warning(
+            'subscription',
+            'underlying-network fetch unavailable, falling back to app route: $error',
+          );
         }
       }
 
-      final response = await request.close();
-
-      if (response.statusCode != 200) {
-        throw HttpException(
-          'Subscription server returned ${response.statusCode}',
-          uri: uri,
-        );
+      final client = HttpClient();
+      client.connectionTimeout = const Duration(seconds: 15);
+      Timer? operationTimeoutTimer;
+      if (operationTimeout != null && operationTimeout > Duration.zero) {
+        operationTimeoutTimer = Timer(operationTimeout, () {
+          client.close(force: true);
+        });
       }
+      try {
+        final request = await client.getUrl(uri);
+        for (final entry in headers.entries) {
+          request.headers.set(entry.key, entry.value);
+        }
 
-      // Read body
-      final rawContent = await _readUtf8Body(response, uri);
+        final response = await request.close();
 
-      // Parse HTTP response headers for subscription metadata
-      final headerInfo = _parseHeaders(response.headers);
+        if (response.statusCode != 200) {
+          throw HttpException(
+            'Subscription server returned ${response.statusCode}',
+            uri: uri,
+          );
+        }
 
-      // Parse body
-      final parseResult = await SubscriptionParser.parseInBackground(
-        rawContent,
-      );
-
-      // Merge body metadata into header info (headers take priority)
-      final mergedInfo = _mergeBodyMeta(headerInfo, parseResult.bodyMeta);
-
-      return FetchResult(
-        rawContent: rawContent,
-        headerInfo: mergedInfo,
-        parseResult: parseResult,
-        url: url,
-      );
+        // Read body
+        final rawContent = await _readUtf8Body(response, uri);
+        return _buildResult(
+          url: url,
+          rawContent: rawContent,
+          headerValue: (name) {
+            final values = response.headers[name];
+            return values == null || values.isEmpty ? null : values.first;
+          },
+        );
+      } finally {
+        operationTimeoutTimer?.cancel();
+        client.close(force: true);
+      }
     } catch (error, stackTrace) {
       await _logFetchFailure(uri: uri, error: error, stackTrace: stackTrace);
       rethrow;
-    } finally {
-      operationTimeoutTimer?.cancel();
-      client.close();
     }
+  }
+
+  static Future<Map<String, String>> _requestHeaders(
+    SubscriptionInfo? requestInfo,
+  ) async {
+    final customHeaders = _parseCustomHeaders(requestInfo?.customRequestHeader);
+    final headers = <String, String>{
+      'User-Agent': requestInfo?.customUserAgent?.trim().isNotEmpty == true
+          ? requestInfo!.customUserAgent!.trim()
+          : defaultUserAgent,
+      'Accept': '*/*',
+      ...customHeaders,
+    };
+    if (requestInfo?.requireHwid == true) {
+      final hwidHeaders = await _resolveHwidHeaders(requestInfo);
+      for (final entry in hwidHeaders.entries) {
+        if (!_hasHeader(customHeaders, entry.key)) {
+          headers[entry.key] = entry.value;
+        }
+      }
+    }
+    return headers;
+  }
+
+  static Future<FetchResult> _buildResult({
+    required String url,
+    required String rawContent,
+    required String? Function(String name) headerValue,
+  }) async {
+    final headerInfo = _parseHeaderValues(headerValue);
+    final parseResult = await SubscriptionParser.parseInBackground(rawContent);
+    return FetchResult(
+      rawContent: rawContent,
+      headerInfo: _mergeBodyMeta(headerInfo, parseResult.bodyMeta),
+      parseResult: parseResult,
+      url: url,
+    );
   }
 
   static Uri parseRequestUri(String url) {
@@ -456,7 +509,9 @@ class SubscriptionFetcher {
   }
 
   /// Extracts subscription metadata from HTTP response headers.
-  static SubscriptionInfo _parseHeaders(HttpHeaders headers) {
+  static SubscriptionInfo _parseHeaderValues(
+    String? Function(String name) headerValue,
+  ) {
     String? title;
     int? upload;
     int? download;
@@ -471,21 +526,21 @@ class SubscriptionFetcher {
     List<String>? perAppProxyList;
 
     // profile-title (can be plain text or base64)
-    final rawTitle = _headerValue(headers, 'profile-title');
+    final rawTitle = headerValue('profile-title');
     if (rawTitle != null) {
       title = _normalizeTitle(_tryBase64DecodeOrPlain(rawTitle));
     }
 
     // content-disposition filename as fallback title
     if (title == null) {
-      final cd = _headerValue(headers, 'content-disposition');
+      final cd = headerValue('content-disposition');
       if (cd != null) {
         title = _titleFromContentDisposition(cd);
       }
     }
 
     // subscription-userinfo
-    final userInfo = _headerValue(headers, 'subscription-userinfo');
+    final userInfo = headerValue('subscription-userinfo');
     if (userInfo != null) {
       final parts = _parseKeyValuePairs(userInfo);
       upload = int.tryParse(parts['upload'] ?? '');
@@ -495,26 +550,26 @@ class SubscriptionFetcher {
     }
 
     // support-url
-    happCryptoLink = _headerValue(headers, 'happ-crypto-link');
+    happCryptoLink = headerValue('happ-crypto-link');
 
     // support-url
-    supportUrl = _headerValue(headers, 'support-url');
+    supportUrl = headerValue('support-url');
 
     // profile-web-page-url
-    webPageUrl = _headerValue(headers, 'profile-web-page-url');
+    webPageUrl = headerValue('profile-web-page-url');
 
     // new-url
-    newUrl = _headerValue(headers, 'new-url');
+    newUrl = headerValue('new-url');
 
     // profile-update-interval
-    final updateStr = _headerValue(headers, 'profile-update-interval');
+    final updateStr = headerValue('profile-update-interval');
     if (updateStr != null) {
       updateIntervalHours = int.tryParse(updateStr);
     }
 
     // per-app-proxy-mode / per-app-proxy-list
-    perAppProxyMode = _headerValue(headers, 'per-app-proxy-mode');
-    final proxyListStr = _headerValue(headers, 'per-app-proxy-list');
+    perAppProxyMode = headerValue('per-app-proxy-mode');
+    final proxyListStr = headerValue('per-app-proxy-list');
     if (proxyListStr != null && proxyListStr.isNotEmpty) {
       perAppProxyList = proxyListStr.split(',').map((s) => s.trim()).toList();
     }
@@ -608,12 +663,6 @@ class SubscriptionFetcher {
   // ─────────────────── Utility ───────────────────
 
   /// Gets the first value for a header (case-insensitive).
-  static String? _headerValue(HttpHeaders headers, String name) {
-    final values = headers[name];
-    if (values == null || values.isEmpty) return null;
-    return values.first;
-  }
-
   static String? _titleFromContentDisposition(String value) {
     final encodedMatch = RegExp(
       r'''filename\*\s*=\s*UTF-8''([^;]+)''',

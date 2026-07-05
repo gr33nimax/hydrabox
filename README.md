@@ -15,7 +15,7 @@
 
 </div>
 
-Etonify is an Android-focused VPN client for people who need a transparent, maintainable, and community-driven alternative to legacy VPN clients. The project started as a fork lineage inspired by Hiddify, but the Android runtime, subscription handling, UI, diagnostics, and maintenance flow are being rebuilt around Etonify and the modified **MeowSingBox** core.
+Etonify is an Android-focused VPN client for people who need a transparent, maintainable, and community-driven alternative to legacy VPN clients. The project started as a fork lineage inspired by Hiddify, but the Android runtime, subscription handling, UI, diagnostics, and maintenance flow are being rebuilt around Etonify and the modified [**MeowSingBox**](https://github.com/dudosxdev/sing-box) core.
 
 The app does not provide VPN servers. It is a client for subscriptions and configurations that you own or are allowed to use.
 
@@ -35,7 +35,7 @@ Etonify is in early public development. Android is the only production target ri
 - Proxy list with country flags, latency, source-order sorting, latency/name/country sorting, URL-test, and quick server switching.
 - Split tunneling using Android VPN app allow/disallow rules plus sing-box routing fallback.
 - DNS presets and custom DNS resolver support, including UDP, TCP, DoT, DoH, and device DNS modes.
-- Russia routing helpers and local AdGuard-style rule support.
+- Smart Routing rule sets and a locally compiled AdGuard DNS filter.
 - Traffic dashboard with live speed, session totals, active profile, active proxy, and a lightweight graph.
 - GitHub release update center with ABI-aware APK selection and download progress.
 - Runtime logs, diagnostics, memory cleanup hooks, and redaction for known sensitive values.
@@ -44,6 +44,8 @@ Etonify is in early public development. Android is the only production target ri
 ## Community
 
 - Telegram channel: [@etonify](https://t.me/etonify)
+- Direct contact with the developers: [Etonify Direct](https://t.me/etonify?direct)
+- MeowTeam: YamixDEV works on the client; [dudosxdev](https://github.com/dudosxdev) maintains the modified [sing-box core](https://github.com/dudosxdev/sing-box).
 - Issues and pull requests are welcome.
 - Security reports are welcome. Please avoid publishing exploitable details publicly before the team has time to investigate.
 

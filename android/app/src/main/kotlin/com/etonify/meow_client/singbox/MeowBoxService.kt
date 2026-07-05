@@ -9,7 +9,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
-import android.os.ParcelFileDescriptor
 import android.os.PowerManager
 import android.util.Log
 import io.nekohasekai.libbox.CommandServer
@@ -98,12 +97,6 @@ class MeowBoxService(
     @Volatile
     private var runningConfigHash: Int? = null
 
-    @Volatile
-    private var tunFd: Int = -1
-
-    @Volatile
-    private var tunFdOwnedByCore: Boolean = false
-
     init {
         activeServices += this
     }
@@ -156,6 +149,7 @@ class MeowBoxService(
             ACTION_STOP -> {
                 val reason = intent.getStringExtra(EXTRA_STOP_REASON)?.takeIf { it.isNotBlank() }
                     ?: "unspecified"
+                MeowApplication.clearRuntimeIntent()
                 executor.execute { stopInternal("action_stop:$reason", startId = startId) }
             }
             ACTION_RESTART_CORE -> {
@@ -188,13 +182,6 @@ class MeowBoxService(
 
     fun requestStop(source: String) {
         executor.execute { stopInternal(source) }
-    }
-
-    fun onTunOpened(fd: Int) {
-        tunFd = fd
-        tunFdOwnedByCore = false
-        Log.i(TAG, "onTunOpened fd=$fd detached=true")
-        MeowDiagnostics.log(TAG, "onTunOpened fd=$fd detached=true")
     }
 
     override fun getSystemProxyStatus(): SystemProxyStatus =
@@ -413,11 +400,10 @@ class MeowBoxService(
                 preparedRuntimeConfig.overrideOptions,
             )
             val elapsedMs = System.currentTimeMillis() - startedAt
-            tunFdOwnedByCore = tunFd >= 0
             SingboxController.log(
                 "info",
                 "native_start_marker phase=after_start_or_reload_service " +
-                    "tun_fd_ownership owner=libbox fd=$tunFd service=${service.javaClass.simpleName} " +
+                    "tun_fd_ownership owner=libbox service=${service.javaClass.simpleName} " +
                     "startElapsedMs=$elapsedMs",
             )
             MeowDefaultNetworkMonitor.reassertDefaultInterface("after_start_or_reload_service")
@@ -516,7 +502,6 @@ class MeowBoxService(
             runCleanupStep("closeService source=$source") {
                 server.closeService()
             }
-            forceCloseTunFd(source, afterCoreClosed = true)
             if (shouldStopRuntimeState) {
                 runCleanupStep("disconnect command client source=$source") {
                     SingboxController.disconnectClientBlocking()
@@ -531,7 +516,6 @@ class MeowBoxService(
                 server.close()
             }
         } else {
-            forceCloseTunFd(source, afterCoreClosed = false)
             if (shouldStopRuntimeState) {
                 runCleanupStep("disconnect command client source=$source") {
                     SingboxController.disconnectClientBlocking()
@@ -579,26 +563,6 @@ class MeowBoxService(
         }
     }
 
-    private fun forceCloseTunFd(source: String, afterCoreClosed: Boolean) {
-        val fd = tunFd
-        if (fd < 0) return
-        if (tunFdOwnedByCore && !afterCoreClosed) {
-            MeowDiagnostics.log(
-                TAG,
-                "tun_fd_ownership skip_manual_close fd=$fd source=$source owner=libbox",
-            )
-            return
-        }
-        tunFd = -1
-        tunFdOwnedByCore = false
-        runCatching {
-            ParcelFileDescriptor.adoptFd(fd).close()
-            MeowDiagnostics.log(TAG, "force closed detached TUN fd=$fd source=$source")
-        }.onFailure {
-            MeowDiagnostics.log(TAG, "force close detached TUN fd=$fd failed source=$source", it)
-        }
-    }
-
     private fun restartCoreInternal(source: String, token: Long = nextStartToken("restartCoreInternal:$source")) {
         Log.i(TAG, "restartCoreInternal source=$source service=${service.javaClass.simpleName}")
         MeowDiagnostics.log(
@@ -610,7 +574,6 @@ class MeowBoxService(
         runCatching { commandServer?.closeService() }.onFailure {
             MeowDiagnostics.log(TAG, "restartCoreInternal closeService failed source=$source", it)
         }
-        forceCloseTunFd("restart_core:$source", afterCoreClosed = true)
         runningConfigHash = null
         startOrReloadInternal(token)
     }
@@ -762,11 +725,8 @@ class MeowBoxService(
                 }
             }
             val includePackages = normalizePackageList(splitIncludePackages)
-            val excludePackages = if (includePackages.isEmpty()) {
-                normalizePackageList(splitExcludePackages)
-            } else {
-                emptyList()
-            }
+            val excludePackages = normalizePackageList(splitExcludePackages)
+            requireExclusiveSplitTunnelPackages(includePackages, excludePackages)
             if (includePackages.isNotEmpty()) {
                 overrideOptions.includePackage = ListStringIterator(includePackages)
             }
@@ -788,6 +748,9 @@ class MeowBoxService(
             }
             PreparedRuntimeConfig(preparedConfig, overrideOptions)
         }.getOrElse { error ->
+            if (error is SplitTunnelConfigurationException) {
+                throw error
+            }
             MeowDiagnostics.log(TAG, "prepareConfig parse failed", error)
             PreparedRuntimeConfig(config, overrideOptions)
         }
@@ -818,7 +781,7 @@ class MeowBoxService(
             ) {
                 seen += packageName
             }
-            if (seen.size >= 128) {
+            if (seen.size >= MAX_SPLIT_TUNNEL_PACKAGE_COUNT) {
                 break
             }
         }

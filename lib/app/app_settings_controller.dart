@@ -1,16 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:meow_client/data/local/app_settings_store.dart';
 
-const int appSettingsDefaultUrlTestTimeoutSeconds = 4;
-const int appSettingsDefaultLocationLookupTimeoutSeconds = 5;
-const int appSettingsStandardUrlTestIntervalSeconds = 300;
-const int appSettingsStandardUrlTestConcurrency = 6;
-const int appSettingsStandardUrlTestUnavailableCheckIntervalSeconds = 300;
-const int appSettingsStandardLocationLookupLimit = 2;
-const int appSettingsStandardLocationLookupConcurrency = 2;
-const int appSettingsEconomyUrlTestIntervalSeconds = 300;
-const int appSettingsEconomyUrlTestConcurrency = 3;
-const int appSettingsEconomyUrlTestUnavailableCheckIntervalSeconds = 300;
+const int appSettingsDefaultUrlTestTimeoutSeconds = 15;
+const int appSettingsDefaultLocationLookupTimeoutSeconds = 3;
+const int appSettingsStandardUrlTestIntervalSeconds = 1800;
+const int appSettingsStandardUrlTestConcurrency = 16;
+const int appSettingsStandardUrlTestUnavailableCheckIntervalSeconds = 10;
+const int appSettingsStandardLocationLookupLimit = 1;
+const int appSettingsStandardLocationLookupConcurrency = 1;
+const int appSettingsEconomyUrlTestIntervalSeconds = 3600;
+const int appSettingsEconomyUrlTestConcurrency = 8;
+const int appSettingsEconomyUrlTestUnavailableCheckIntervalSeconds = 15;
 const int appSettingsEconomyLocationLookupLimit = 0;
 const int appSettingsEconomyLocationLookupConcurrency = 1;
 
@@ -19,6 +19,7 @@ class AppSettingsChange {
     required this.changed,
     this.configReason,
     this.restartRuntime = true,
+    this.forceFullServiceRestart = false,
     this.refreshTheme = false,
     this.publishTraffic = false,
     this.syncRuntimePerformanceFlags = false,
@@ -31,6 +32,7 @@ class AppSettingsChange {
   final bool changed;
   final String? configReason;
   final bool restartRuntime;
+  final bool forceFullServiceRestart;
   final bool refreshTheme;
   final bool publishTraffic;
   final bool syncRuntimePerformanceFlags;
@@ -59,6 +61,7 @@ class AppSettingsController {
   bool proxyAllowLan = false;
   String proxyMixedListen = '127.0.0.1';
   int proxyMixedPort = 1080;
+  String proxyPassword = '';
   String dnsDirectPreset = 'cloudflare';
   String dnsDirectResolver = 'udp://1.1.1.1';
   String dnsProxyPreset = 'cloudflare';
@@ -105,6 +108,10 @@ class AppSettingsController {
       performanceMode == AppPerformanceMode.economy ||
       performanceMode == AppPerformanceMode.balanced;
 
+  InboundConnectionMode get inboundConnectionMode => vpnInboundEnabled
+      ? InboundConnectionMode.vpn
+      : InboundConnectionMode.proxy;
+
   AppSettingsState toState({
     required bool onboardingCompleted,
     required String acceptedLegalVersion,
@@ -138,6 +145,7 @@ class AppSettingsController {
       proxyAllowLan: proxyAllowLan,
       proxyMixedListen: proxyMixedListen,
       proxyMixedPort: proxyMixedPort,
+      proxyPassword: proxyPassword,
       dnsDirectPreset: dnsDirectPreset,
       dnsDirectResolver: dnsDirectResolver,
       dnsProxyPreset: dnsProxyPreset,
@@ -188,9 +196,16 @@ class AppSettingsController {
     vpnStrictRoute = state.vpnStrictRoute;
     vpnTunImplementation = state.vpnTunImplementation;
     proxyInboundEnabled = state.proxyInboundEnabled;
+    if (!vpnInboundEnabled && !proxyInboundEnabled) {
+      vpnInboundEnabled = true;
+    }
     proxyAllowLan = state.proxyAllowLan;
-    proxyMixedListen = state.proxyMixedListen;
+    proxyMixedListen = proxyAllowLan ? '0.0.0.0' : '127.0.0.1';
     proxyMixedPort = state.proxyMixedPort;
+    proxyPassword = state.proxyPassword.trim();
+    if (proxyAllowLan && !isValidProxyPassword(proxyPassword)) {
+      proxyPassword = generateProxyPassword();
+    }
     dnsDirectPreset = state.dnsDirectPreset;
     dnsDirectResolver = state.dnsDirectResolver;
     dnsProxyPreset = state.dnsProxyPreset;
@@ -315,6 +330,9 @@ class AppSettingsController {
       return const AppSettingsChange.none();
     }
     vpnInboundEnabled = value;
+    if (!vpnInboundEnabled && !proxyInboundEnabled) {
+      proxyInboundEnabled = true;
+    }
     return const AppSettingsChange(
       changed: true,
       configReason: 'vpn inbound changed',
@@ -359,6 +377,9 @@ class AppSettingsController {
       return const AppSettingsChange.none();
     }
     proxyInboundEnabled = value;
+    if (!proxyInboundEnabled && !vpnInboundEnabled) {
+      vpnInboundEnabled = true;
+    }
     return const AppSettingsChange(
       changed: true,
       configReason: 'proxy inbound changed',
@@ -371,6 +392,9 @@ class AppSettingsController {
     }
     proxyAllowLan = value;
     proxyMixedListen = value ? '0.0.0.0' : '127.0.0.1';
+    if (value && !isValidProxyPassword(proxyPassword)) {
+      proxyPassword = generateProxyPassword();
+    }
     return const AppSettingsChange(
       changed: true,
       configReason: 'proxy allow lan changed',
@@ -388,6 +412,42 @@ class AppSettingsController {
     );
   }
 
+  AppSettingsChange setInboundConnectionMode(InboundConnectionMode value) {
+    final nextVpnEnabled = value == InboundConnectionMode.vpn;
+    final nextProxyEnabled = value == InboundConnectionMode.proxy;
+    if (vpnInboundEnabled == nextVpnEnabled &&
+        proxyInboundEnabled == nextProxyEnabled) {
+      return const AppSettingsChange.none();
+    }
+    vpnInboundEnabled = nextVpnEnabled;
+    proxyInboundEnabled = nextProxyEnabled;
+    return const AppSettingsChange(
+      changed: true,
+      configReason: 'inbound connection mode changed',
+      forceFullServiceRestart: true,
+    );
+  }
+
+  AppSettingsChange regenerateProxyPassword() {
+    proxyPassword = generateProxyPassword();
+    return AppSettingsChange(
+      changed: true,
+      configReason: proxyAllowLan ? 'proxy credentials changed' : null,
+    );
+  }
+
+  AppSettingsChange setProxyPassword(String value) {
+    final normalized = value.trim();
+    if (!isValidProxyPassword(normalized) || proxyPassword == normalized) {
+      return const AppSettingsChange.none();
+    }
+    proxyPassword = normalized;
+    return AppSettingsChange(
+      changed: true,
+      configReason: proxyAllowLan ? 'proxy credentials changed' : null,
+    );
+  }
+
   AppSettingsChange setDnsDirectPreset(String value) {
     if (dnsDirectPreset == value) {
       return const AppSettingsChange.none();
@@ -401,10 +461,11 @@ class AppSettingsController {
   }
 
   AppSettingsChange setDnsDirectResolver(String value) {
-    if (dnsDirectResolver == value) {
+    final normalized = normalizeDnsResolverInput(value);
+    if (dnsDirectResolver == normalized) {
       return const AppSettingsChange.none();
     }
-    dnsDirectResolver = value;
+    dnsDirectResolver = normalized;
     return const AppSettingsChange(
       changed: true,
       configReason: 'dns direct resolver changed',
@@ -424,10 +485,11 @@ class AppSettingsController {
   }
 
   AppSettingsChange setDnsProxyResolver(String value) {
-    if (dnsProxyResolver == value) {
+    final normalized = normalizeDnsResolverInput(value);
+    if (dnsProxyResolver == normalized) {
       return const AppSettingsChange.none();
     }
-    dnsProxyResolver = value;
+    dnsProxyResolver = normalized;
     return const AppSettingsChange(
       changed: true,
       configReason: 'dns proxy resolver changed',
@@ -620,6 +682,7 @@ class AppSettingsController {
     return const AppSettingsChange(
       changed: true,
       configReason: 'split routing mode changed',
+      forceFullServiceRestart: true,
     );
   }
 
@@ -632,6 +695,7 @@ class AppSettingsController {
     return const AppSettingsChange(
       changed: true,
       configReason: 'split routing packages changed',
+      forceFullServiceRestart: true,
     );
   }
 
@@ -777,7 +841,7 @@ class AppSettingsController {
   }
 
   static String normalizedRussiaDnsDirectResolver(String value) {
-    final normalized = value.trim();
+    final normalized = normalizeDnsResolverInput(value);
     return normalized.isEmpty ? defaultRussiaDnsDirectResolver : normalized;
   }
 }

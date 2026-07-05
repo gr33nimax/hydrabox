@@ -3,8 +3,49 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:jni/jni.dart';
 import 'package:jni_flutter/jni_flutter.dart';
+
+enum AdBlockUpdateStage {
+  connecting,
+  downloading,
+  compiling,
+  activating,
+  complete,
+}
+
+class AdBlockUpdateProgress {
+  const AdBlockUpdateProgress({
+    required this.stage,
+    this.completedBytes = 0,
+    this.totalBytes = 0,
+    this.elapsedMilliseconds = 0,
+  });
+
+  final AdBlockUpdateStage stage;
+  final int completedBytes;
+  final int totalBytes;
+  final int elapsedMilliseconds;
+
+  double? get fraction => totalBytes > 0
+      ? (completedBytes / totalBytes).clamp(0, 1).toDouble()
+      : null;
+
+  int? get estimatedSecondsRemaining {
+    if (totalBytes <= 0 ||
+        completedBytes <= 0 ||
+        completedBytes >= totalBytes ||
+        elapsedMilliseconds <= 0) {
+      return null;
+    }
+    final bytesPerMillisecond = completedBytes / elapsedMilliseconds;
+    if (!bytesPerMillisecond.isFinite || bytesPerMillisecond <= 0) {
+      return null;
+    }
+    return ((totalBytes - completedBytes) / bytesPerMillisecond / 1000).ceil();
+  }
+}
 
 class AdBlockRuleSetStatus {
   const AdBlockRuleSetStatus({
@@ -58,6 +99,25 @@ class AdBlockRuleSetService {
       'https://adguardteam.github.io/HostlistsRegistry/assets/filter_1.txt';
   static const _maxSourceBytes = 16 * 1024 * 1024;
 
+  Future<AdBlockRuleSetStatus>? _downloadInFlight;
+  final ValueNotifier<AdBlockUpdateProgress?> progress = ValueNotifier(null);
+
+  bool get isUpdating => _downloadInFlight != null;
+
+  void _emitProgress(
+    AdBlockUpdateStage stage, {
+    int completedBytes = 0,
+    int totalBytes = 0,
+    int elapsedMilliseconds = 0,
+  }) {
+    progress.value = AdBlockUpdateProgress(
+      stage: stage,
+      completedBytes: completedBytes,
+      totalBytes: totalBytes,
+      elapsedMilliseconds: elapsedMilliseconds,
+    );
+  }
+
   Future<AdBlockRuleSetStatus> loadStatus() async {
     final paths = await _storagePaths();
     final metadataFile = File(paths.metadataPath);
@@ -93,10 +153,35 @@ class AdBlockRuleSetService {
   }
 
   Future<AdBlockRuleSetStatus> downloadLatest() async {
+    final inFlight = _downloadInFlight;
+    if (inFlight != null) {
+      return inFlight;
+    }
+    final future = _downloadLatest();
+    _downloadInFlight = future;
+    try {
+      return await future;
+    } finally {
+      if (identical(_downloadInFlight, future)) {
+        _downloadInFlight = null;
+        progress.value = null;
+      }
+    }
+  }
+
+  Future<AdBlockRuleSetStatus> _downloadLatest() async {
     final paths = await _storagePaths();
     await Directory(paths.directoryPath).create(recursive: true);
 
-    final sourceBytes = await _downloadSourceBytes();
+    final stopwatch = Stopwatch()..start();
+    _emitProgress(AdBlockUpdateStage.connecting);
+    final sourceBytes = await _downloadSourceBytes(stopwatch);
+    _emitProgress(
+      AdBlockUpdateStage.compiling,
+      completedBytes: sourceBytes.length,
+      totalBytes: sourceBytes.length,
+      elapsedMilliseconds: stopwatch.elapsedMilliseconds,
+    );
     final compiled = await Isolate.run(
       () => _compileAdBlockArtifacts(Uint8List.fromList(sourceBytes)),
     );
@@ -106,6 +191,12 @@ class AdBlockRuleSetService {
     final allowedDomainCount = compiled['allowedDomainCount']! as int;
     final downloadedAtMillis = DateTime.now().millisecondsSinceEpoch;
 
+    _emitProgress(
+      AdBlockUpdateStage.activating,
+      completedBytes: sourceBytes.length,
+      totalBytes: sourceBytes.length,
+      elapsedMilliseconds: stopwatch.elapsedMilliseconds,
+    );
     await _writeAtomically(paths.blockRuleSetPath, blockBytes);
     if (allowBytes != null) {
       await _writeAtomically(paths.allowRuleSetPath, allowBytes);
@@ -128,6 +219,13 @@ class AdBlockRuleSetService {
           'ruleSetBytes': blockBytes.length + (allowBytes?.length ?? 0),
         }),
       ),
+    );
+
+    _emitProgress(
+      AdBlockUpdateStage.complete,
+      completedBytes: sourceBytes.length,
+      totalBytes: sourceBytes.length,
+      elapsedMilliseconds: stopwatch.elapsedMilliseconds,
     );
 
     return AdBlockRuleSetStatus(
@@ -159,7 +257,7 @@ class AdBlockRuleSetService {
     return const AdBlockRuleSetStatus.unavailable();
   }
 
-  Future<List<int>> _downloadSourceBytes() async {
+  Future<List<int>> _downloadSourceBytes(Stopwatch stopwatch) async {
     final client = HttpClient();
     try {
       final request = await client.getUrl(Uri.parse(sourceUrl));
@@ -180,6 +278,12 @@ class AdBlockRuleSetService {
       }
       final builder = BytesBuilder(copy: false);
       var totalBytes = 0;
+      var lastProgressAt = -1;
+      _emitProgress(
+        AdBlockUpdateStage.downloading,
+        totalBytes: declaredLength > 0 ? declaredLength : 0,
+        elapsedMilliseconds: stopwatch.elapsedMilliseconds,
+      );
       await for (final chunk in response) {
         totalBytes += chunk.length;
         if (totalBytes > _maxSourceBytes) {
@@ -189,7 +293,24 @@ class AdBlockRuleSetService {
           );
         }
         builder.add(chunk);
+        final elapsed = stopwatch.elapsedMilliseconds;
+        if (elapsed - lastProgressAt >= 250 ||
+            (declaredLength > 0 && totalBytes >= declaredLength)) {
+          lastProgressAt = elapsed;
+          _emitProgress(
+            AdBlockUpdateStage.downloading,
+            completedBytes: totalBytes,
+            totalBytes: declaredLength > 0 ? declaredLength : 0,
+            elapsedMilliseconds: elapsed,
+          );
+        }
       }
+      _emitProgress(
+        AdBlockUpdateStage.downloading,
+        completedBytes: totalBytes,
+        totalBytes: declaredLength > 0 ? declaredLength : totalBytes,
+        elapsedMilliseconds: stopwatch.elapsedMilliseconds,
+      );
       return builder.takeBytes();
     } finally {
       client.close(force: true);

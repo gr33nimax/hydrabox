@@ -19,6 +19,7 @@ class MeowVpnService : VpnService() {
     companion object {
         private const val TAG = "MeowVpnService"
         private const val WAKE_LOCK_TAG = "meow:vpn"
+        private const val RESTART_REQUEST_CODE = 1
         @Volatile
         private var currentService: MeowVpnService? = null
 
@@ -56,12 +57,12 @@ class MeowVpnService : VpnService() {
         super.onCreate()
         Log.i(TAG, "onCreate")
         MeowDiagnostics.log(TAG, "onCreate")
-        currentService = this
-        acquireWakeLock()
         boxService = MeowBoxService(
             this,
-            MeowVpnPlatformInterface(this) { fd -> boxService.onTunOpened(fd) },
+            MeowVpnPlatformInterface(this),
         )
+        currentService = this
+        acquireWakeLock()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -77,22 +78,37 @@ class MeowVpnService : VpnService() {
     override fun onDestroy() {
         Log.i(TAG, "onDestroy")
         MeowDiagnostics.log(TAG, "onDestroy")
-        if (currentService === this) {
-            setUnderlyingNetwork(null, "service_onDestroy")
+        try {
+            if (currentService === this) {
+                setUnderlyingNetwork(null, "service_onDestroy")
+            }
+            if (::boxService.isInitialized) {
+                boxService.onDestroy()
+            }
+        } finally {
+            if (!SingboxController.running) {
+                cancelScheduledRestart("service_destroyed_runtime_stopped")
+            }
+            releaseWakeLock()
+            if (currentService === this) {
+                currentService = null
+            }
+            super.onDestroy()
         }
-        boxService.onDestroy()
-        releaseWakeLock()
-        if (currentService === this) {
-            currentService = null
-        }
-        super.onDestroy()
     }
 
     override fun onRevoke() {
         Log.w(TAG, "onRevoke")
         MeowDiagnostics.log(TAG, "onRevoke")
-        boxService.serviceStop()
-        super.onRevoke()
+        MeowApplication.clearRuntimeIntent()
+        cancelScheduledRestart("vpn_permission_revoked")
+        try {
+            if (::boxService.isInitialized) {
+                boxService.serviceStop()
+            }
+        } finally {
+            super.onRevoke()
+        }
     }
 
     @SuppressLint("WakelockTimeout")
@@ -136,9 +152,10 @@ class MeowVpnService : VpnService() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
-        if (!SingboxController.running) {
+        if (!SingboxController.running || !MeowBoxService.hasActiveRuntimeOwner("vpn")) {
             Log.i(TAG, "onTaskRemoved – runtime is stopped; stopping lingering VPN service")
             MeowDiagnostics.log(TAG, "onTaskRemoved – runtime is stopped; stopping lingering VPN service")
+            cancelScheduledRestart("task_removed_without_vpn_runtime")
             boxService.requestStop("task_removed_runtime_stopped")
             stopSelf()
             return
@@ -149,16 +166,41 @@ class MeowVpnService : VpnService() {
         val restartIntent = Intent(this, MeowVpnService::class.java)
             .setAction(MeowBoxService.ACTION_START)
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
+            PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_ONE_SHOT or
+                PendingIntent.FLAG_IMMUTABLE
         } else {
-            PendingIntent.FLAG_ONE_SHOT
+            PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_ONE_SHOT
         }
-        val pending = PendingIntent.getService(this, 0, restartIntent, flags)
+        val pending = PendingIntent.getService(this, RESTART_REQUEST_CODE, restartIntent, flags)
         val alarm = getSystemService(Context.ALARM_SERVICE) as AlarmManager
         alarm.set(
             AlarmManager.ELAPSED_REALTIME_WAKEUP,
             SystemClock.elapsedRealtime() + 1_000,
             pending,
         )
+    }
+
+    private fun cancelScheduledRestart(reason: String) {
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+        } else {
+            PendingIntent.FLAG_NO_CREATE
+        }
+        val restartIntent = Intent(this, MeowVpnService::class.java)
+            .setAction(MeowBoxService.ACTION_START)
+        val pending = PendingIntent.getService(
+            this,
+            RESTART_REQUEST_CODE,
+            restartIntent,
+            flags,
+        ) ?: return
+        runCatching {
+            val alarm = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            alarm.cancel(pending)
+            pending.cancel()
+            MeowDiagnostics.log(TAG, "scheduled_restart_cancelled reason=$reason")
+        }.onFailure {
+            Log.w(TAG, "cancelScheduledRestart failed reason=$reason", it)
+        }
     }
 }

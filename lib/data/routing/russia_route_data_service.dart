@@ -4,6 +4,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' as crypto;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:jni/jni.dart';
 import 'package:jni_flutter/jni_flutter.dart';
@@ -144,6 +145,55 @@ class RussiaRouteCategoryMetadata {
   }
 }
 
+class RussiaRouteUpdateCheck {
+  const RussiaRouteUpdateCheck({
+    required this.status,
+    required this.latestTag,
+    required this.updateAvailable,
+  });
+
+  final RussiaRouteDataStatus status;
+  final String latestTag;
+  final bool updateAvailable;
+}
+
+enum RussiaRouteUpdateStage {
+  checking,
+  downloadingPackage,
+  verifyingPackage,
+  extractingPackage,
+  downloadingCategories,
+  compiling,
+  activating,
+  complete,
+}
+
+class RussiaRouteUpdateProgress {
+  const RussiaRouteUpdateProgress({
+    required this.stage,
+    this.completedBytes = 0,
+    this.totalBytes = 0,
+    this.completedItems = 0,
+    this.totalItems = 0,
+  });
+
+  final RussiaRouteUpdateStage stage;
+  final int completedBytes;
+  final int totalBytes;
+  final int completedItems;
+  final int totalItems;
+
+  double? get fraction {
+    if (totalBytes > 0) {
+      return (completedBytes / totalBytes).clamp(0, 1).toDouble();
+    }
+    if (totalItems > 0) {
+      return (completedItems / totalItems).clamp(0, 1).toDouble();
+    }
+    return null;
+  }
+}
+
 class RussiaRouteDataService {
   RussiaRouteDataService._();
 
@@ -157,6 +207,8 @@ class RussiaRouteDataService {
   static const _latestReleaseUrl =
       'https://api.github.com/repos/runetfreedom/russia-v2ray-rules-dat/releases/latest';
   static const _maxSingboxZipBytes = 80 * 1024 * 1024;
+  static const _connectTimeout = Duration(seconds: 10);
+  static const _responseTimeout = Duration(seconds: 20);
   static const domainListCommunitySourceName = 'v2fly/domain-list-community';
   static const _domainListCommunityRawBaseUrl =
       'https://raw.githubusercontent.com/v2fly/domain-list-community/master/data';
@@ -198,6 +250,27 @@ class RussiaRouteDataService {
   static const _aiServicesCategories = <String>['category-ai-!cn'];
 
   Future<RussiaRouteDataStatus>? _updateInFlight;
+  final ValueNotifier<RussiaRouteUpdateProgress?> progress = ValueNotifier(
+    null,
+  );
+
+  bool get isUpdating => _updateInFlight != null;
+
+  void _emitProgress(
+    RussiaRouteUpdateStage stage, {
+    int completedBytes = 0,
+    int totalBytes = 0,
+    int completedItems = 0,
+    int totalItems = 0,
+  }) {
+    progress.value = RussiaRouteUpdateProgress(
+      stage: stage,
+      completedBytes: completedBytes,
+      totalBytes: totalBytes,
+      completedItems: completedItems,
+      totalItems: totalItems,
+    );
+  }
 
   Future<RussiaRouteDataStatus> loadStatus() async {
     final paths = await _storagePaths();
@@ -218,9 +291,7 @@ class RussiaRouteDataService {
         !_hasUsableRuleSet(geositeCategoryRuFile) ||
         !_hasUsableRuleSet(geoipBlockedFile) ||
         !_hasUsableRuleSet(geoipWhitelistFile) ||
-        !_hasUsableRuleSet(geoipRuFile) ||
-        !_hasUsableRuleSet(curatedDirectServicesFile) ||
-        !_hasUsableRuleSet(aiServicesFile)) {
+        !_hasUsableRuleSet(geoipRuFile)) {
       return const RussiaRouteDataStatus.unavailable();
     }
     try {
@@ -246,8 +317,12 @@ class RussiaRouteDataService {
         geoipRuBlockedPath: geoipBlockedFile.path,
         geoipRuWhitelistPath: geoipWhitelistFile.path,
         geoipRuPath: geoipRuFile.path,
-        curatedDirectServicesPath: curatedDirectServicesFile.path,
-        aiServicesPath: aiServicesFile.path,
+        curatedDirectServicesPath: _hasUsableRuleSet(curatedDirectServicesFile)
+            ? curatedDirectServicesFile.path
+            : null,
+        aiServicesPath: _hasUsableRuleSet(aiServicesFile)
+            ? aiServicesFile.path
+            : null,
         installedAtMillis: int.tryParse(
           metadata['installedAtMillis']?.toString() ?? '',
         ),
@@ -277,15 +352,74 @@ class RussiaRouteDataService {
   }
 
   bool _hasUsableRuleSet(File file) {
+    RandomAccessFile? reader;
     try {
-      return file.existsSync() && file.lengthSync() > 4;
+      if (!file.existsSync() || file.lengthSync() <= 4) {
+        return false;
+      }
+      reader = file.openSync();
+      final magic = reader.readSync(_srsMagicBytes.length);
+      return magic.length == _srsMagicBytes.length &&
+          magic[0] == _srsMagicBytes[0] &&
+          magic[1] == _srsMagicBytes[1] &&
+          magic[2] == _srsMagicBytes[2];
     } on FileSystemException {
       return false;
+    } finally {
+      reader?.closeSync();
     }
   }
 
   Future<RussiaRouteDataStatus> ensureBundledInstalled() async {
-    return ensureUpdated(force: true);
+    final inFlight = _updateInFlight;
+    if (inFlight != null) {
+      return inFlight;
+    }
+    final future = _ensureBundledInstalled();
+    _updateInFlight = future;
+    try {
+      return await future;
+    } finally {
+      if (identical(_updateInFlight, future)) {
+        _updateInFlight = null;
+        progress.value = null;
+      }
+    }
+  }
+
+  Future<RussiaRouteDataStatus> _ensureBundledInstalled() async {
+    _emitProgress(RussiaRouteUpdateStage.checking);
+    final current = await loadStatus();
+    if (current.available) {
+      _emitProgress(RussiaRouteUpdateStage.complete);
+      return current;
+    }
+    final paths = await _storagePaths();
+    await Directory(paths.baseDirectoryPath).create(recursive: true);
+    final nowMillis = DateTime.now().millisecondsSinceEpoch;
+    final packageInfo = await _installBundledRoutePackage(
+      paths,
+      checkedAtMillis: nowMillis,
+    );
+    _emitProgress(RussiaRouteUpdateStage.activating);
+    await _writeMetadata(
+      paths,
+      packageInfo: packageInfo.copyWith(
+        installedAtMillis: nowMillis,
+        // The bundled package is immediately usable, but a live refresh is
+        // still due as soon as the app has network access.
+        lastUpdateCheckAtMillis: 0,
+      ),
+      installedAtMillis: nowMillis,
+      lastUpdateCheckAtMillis: 0,
+      domainListCommunityUpdatedAtMillis: nowMillis,
+      domainListCommunityCategoryCount: 0,
+      domainListCommunityDomainCount: 0,
+      domainListCommunityMetadata: const {},
+    );
+    final status = await loadStatus();
+    _emitProgress(RussiaRouteUpdateStage.complete);
+    return status;
   }
 
   Future<RussiaRouteDataStatus> deleteInstalled() async {
@@ -295,6 +429,46 @@ class RussiaRouteDataService {
       await base.delete(recursive: true);
     }
     return const RussiaRouteDataStatus.unavailable();
+  }
+
+  Future<RussiaRouteUpdateCheck> checkForUpdate() async {
+    final current = await loadStatus();
+    final latest = await _fetchLatestRunetFreedomRelease();
+    final updateAvailable =
+        !current.available ||
+        current.sourceKind != sourceKindLive ||
+        current.releaseTag != latest.tagName;
+    if (updateAvailable || !current.available) {
+      return RussiaRouteUpdateCheck(
+        status: current,
+        latestTag: latest.tagName,
+        updateAvailable: true,
+      );
+    }
+
+    final paths = await _storagePaths();
+    final checkedAtMillis = DateTime.now().millisecondsSinceEpoch;
+    final installedAtMillis = current.installedAtMillis ?? checkedAtMillis;
+    await _writeMetadata(
+      paths,
+      packageInfo: _InstalledRoutePackageInfo.fromStatus(current).copyWith(
+        installedAtMillis: installedAtMillis,
+        lastUpdateCheckAtMillis: checkedAtMillis,
+      ),
+      installedAtMillis: installedAtMillis,
+      lastUpdateCheckAtMillis: checkedAtMillis,
+      domainListCommunityUpdatedAtMillis:
+          current.domainListCommunityUpdatedAtMillis ?? checkedAtMillis,
+      domainListCommunityCategoryCount:
+          current.domainListCommunityCategoryCount,
+      domainListCommunityDomainCount: current.domainListCommunityDomainCount,
+      domainListCommunityMetadata: current.domainListCommunityMetadata,
+    );
+    return RussiaRouteUpdateCheck(
+      status: await loadStatus(),
+      latestTag: latest.tagName,
+      updateAvailable: false,
+    );
   }
 
   Future<RussiaRouteDataStatus> ensureUpdated({bool force = false}) async {
@@ -309,11 +483,13 @@ class RussiaRouteDataService {
     } finally {
       if (identical(_updateInFlight, future)) {
         _updateInFlight = null;
+        progress.value = null;
       }
     }
   }
 
   Future<RussiaRouteDataStatus> _ensureUpdated({required bool force}) async {
+    _emitProgress(RussiaRouteUpdateStage.checking);
     final current = await loadStatus();
     if (!force && current.available && !current.needsDailyUpdate) {
       return current;
@@ -325,13 +501,16 @@ class RussiaRouteDataService {
     ).create(recursive: true);
     final nowMillis = DateTime.now().millisecondsSinceEpoch;
     var packageInfo = _InstalledRoutePackageInfo.fromStatus(current);
+    var livePackageCheckSucceeded = false;
     try {
-      packageInfo = await _installLiveRoutePackage(paths);
+      packageInfo = await _installLiveRoutePackage(paths, current: current);
+      livePackageCheckSucceeded = true;
     } catch (_) {
+      if (force && current.available) {
+        rethrow;
+      }
       if (current.available) {
-        packageInfo = _InstalledRoutePackageInfo.fromStatus(
-          current,
-        ).copyWith(lastUpdateCheckAtMillis: nowMillis);
+        packageInfo = _InstalledRoutePackageInfo.fromStatus(current);
       } else {
         packageInfo = await _installBundledRoutePackage(
           paths,
@@ -339,6 +518,9 @@ class RussiaRouteDataService {
         );
       }
     }
+    final successfulCheckAtMillis = livePackageCheckSucceeded
+        ? nowMillis
+        : current.lastUpdateCheckAtMillis ?? 0;
     try {
       final downloaded = await _downloadDomainListCommunityCategories(
         sourceDirectoryPath: paths.domainListCommunitySourceDirectoryPath,
@@ -356,6 +538,7 @@ class RussiaRouteDataService {
       var domainListCommunityUpdatedAtMillis =
           current.domainListCommunityUpdatedAtMillis;
       if (shouldRebuildDomainLists) {
+        _emitProgress(RussiaRouteUpdateStage.compiling);
         final categoryFiles = downloaded.categoryFiles;
         final compiledCuratedDirectServices = await Isolate.run(
           () => _compileCuratedDirectServicesArtifact(categoryFiles),
@@ -378,21 +561,22 @@ class RussiaRouteDataService {
         domainListCommunityUpdatedAtMillis = nowMillis;
       }
       final installedAtMillis = current.installedAtMillis ?? nowMillis;
+      _emitProgress(RussiaRouteUpdateStage.activating);
       await _writeMetadata(
         paths,
         packageInfo: packageInfo.copyWith(
           installedAtMillis: installedAtMillis,
-          lastUpdateCheckAtMillis: nowMillis,
+          lastUpdateCheckAtMillis: successfulCheckAtMillis,
         ),
         installedAtMillis: installedAtMillis,
-        lastUpdateCheckAtMillis: nowMillis,
+        lastUpdateCheckAtMillis: successfulCheckAtMillis,
         domainListCommunityUpdatedAtMillis:
             domainListCommunityUpdatedAtMillis ?? nowMillis,
         domainListCommunityCategoryCount: downloadedCategoryCount,
         domainListCommunityDomainCount: compiledDomainCount,
         domainListCommunityMetadata: downloaded.metadata,
       );
-      return RussiaRouteDataStatus(
+      final status = RussiaRouteDataStatus(
         available: true,
         sourceName: sourceName,
         versionTag: packageInfo.versionTag,
@@ -412,33 +596,36 @@ class RussiaRouteDataService {
         curatedDirectServicesPath: paths.curatedDirectServicesPath,
         aiServicesPath: paths.aiServicesPath,
         installedAtMillis: installedAtMillis,
-        lastUpdateCheckAtMillis: nowMillis,
+        lastUpdateCheckAtMillis: successfulCheckAtMillis,
         domainListCommunityUpdatedAtMillis:
             domainListCommunityUpdatedAtMillis ?? nowMillis,
         domainListCommunityCategoryCount: downloadedCategoryCount,
         domainListCommunityDomainCount: compiledDomainCount,
         domainListCommunityMetadata: downloaded.metadata,
       );
+      _emitProgress(RussiaRouteUpdateStage.complete);
+      return status;
     } catch (_) {
-      if (!force && current.available) {
-        await _writeMetadata(
-          paths,
-          packageInfo: _InstalledRoutePackageInfo.fromStatus(
-            current,
-          ).copyWith(lastUpdateCheckAtMillis: nowMillis),
-          installedAtMillis: current.installedAtMillis ?? nowMillis,
-          lastUpdateCheckAtMillis: nowMillis,
-          domainListCommunityUpdatedAtMillis:
-              current.domainListCommunityUpdatedAtMillis ?? nowMillis,
-          domainListCommunityCategoryCount:
-              current.domainListCommunityCategoryCount,
-          domainListCommunityDomainCount:
-              current.domainListCommunityDomainCount,
-          domainListCommunityMetadata: current.domainListCommunityMetadata,
-        );
-        return loadStatus();
-      }
-      rethrow;
+      // The domain-list enrichment is optional. The six verified runetfreedom
+      // rule sets already provide the complete smart-routing fallback, so a
+      // raw GitHub outage must not make a fresh/offline installation unusable.
+      final installedAtMillis = current.installedAtMillis ?? nowMillis;
+      await _writeMetadata(
+        paths,
+        packageInfo: packageInfo.copyWith(
+          installedAtMillis: installedAtMillis,
+          lastUpdateCheckAtMillis: successfulCheckAtMillis,
+        ),
+        installedAtMillis: installedAtMillis,
+        lastUpdateCheckAtMillis: successfulCheckAtMillis,
+        domainListCommunityUpdatedAtMillis:
+            current.domainListCommunityUpdatedAtMillis ?? nowMillis,
+        domainListCommunityCategoryCount:
+            current.domainListCommunityCategoryCount,
+        domainListCommunityDomainCount: current.domainListCommunityDomainCount,
+        domainListCommunityMetadata: current.domainListCommunityMetadata,
+      );
+      return loadStatus();
     }
   }
 
@@ -485,13 +672,31 @@ class RussiaRouteDataService {
   }
 
   Future<_InstalledRoutePackageInfo> _installLiveRoutePackage(
-    _RussiaRouteStoragePaths paths,
-  ) async {
+    _RussiaRouteStoragePaths paths, {
+    required RussiaRouteDataStatus current,
+  }) async {
+    _emitProgress(RussiaRouteUpdateStage.checking);
     final release = await _fetchLatestRunetFreedomRelease();
+    if (current.available &&
+        current.sourceKind == sourceKindLive &&
+        current.releaseTag == release.tagName) {
+      return _InstalledRoutePackageInfo.fromStatus(current).copyWith(
+        lastUpdateCheckAtMillis: DateTime.now().millisecondsSinceEpoch,
+      );
+    }
     final bytes = await _downloadBytes(
       release.assetUrl,
       maxBytes: _maxSingboxZipBytes,
+      expectedBytes: release.assetSizeBytes,
+      onProgress: (completed, total) => _emitProgress(
+        RussiaRouteUpdateStage.downloadingPackage,
+        completedBytes: completed,
+        totalBytes: total,
+      ),
     );
+    _emitProgress(RussiaRouteUpdateStage.verifyingPackage);
+    crypto.sha256.convert(bytes);
+    _emitProgress(RussiaRouteUpdateStage.extractingPackage);
     final extracted = _extractRequiredRuleSetsFromZip(bytes);
     await _writeRoutePackage(paths, extracted);
     final nowMillis = DateTime.now().millisecondsSinceEpoch;
@@ -577,13 +782,17 @@ class RussiaRouteDataService {
     Uri uri, {
     required int maxBytes,
     String accept = 'application/octet-stream,*/*',
+    int? expectedBytes,
+    void Function(int completed, int total)? onProgress,
   }) async {
     final client = HttpClient();
+    client.connectionTimeout = _connectTimeout;
+    client.idleTimeout = _responseTimeout;
     try {
-      final request = await client.getUrl(uri);
+      final request = await client.getUrl(uri).timeout(_connectTimeout);
       request.headers.set(HttpHeaders.userAgentHeader, 'EtonifyRouteData/1');
       request.headers.set(HttpHeaders.acceptHeader, accept);
-      final response = await request.close();
+      final response = await request.close().timeout(_responseTimeout);
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw HttpException(
           'Failed to download route data: HTTP ${response.statusCode}',
@@ -592,12 +801,16 @@ class RussiaRouteDataService {
       }
       final builder = BytesBuilder(copy: false);
       var length = 0;
-      await for (final chunk in response) {
+      final total = response.contentLength > 0
+          ? response.contentLength
+          : expectedBytes ?? 0;
+      await for (final chunk in response.timeout(_responseTimeout)) {
         length += chunk.length;
         if (length > maxBytes) {
           throw HttpException('Route data download is too large', uri: uri);
         }
         builder.add(chunk);
+        onProgress?.call(length, total);
       }
       return builder.takeBytes();
     } finally {
@@ -768,6 +981,8 @@ class RussiaRouteDataService {
     required bool force,
   }) async {
     final client = HttpClient();
+    client.connectionTimeout = _connectTimeout;
+    client.idleTimeout = _responseTimeout;
     final categoryFiles = <String, String>{};
     final metadata = <String, RussiaRouteCategoryMetadata>{};
     final pending = <String>[
@@ -775,7 +990,13 @@ class RussiaRouteDataService {
       ..._aiServicesCategories,
     ];
     var changed = false;
+    var completed = 0;
     try {
+      _emitProgress(
+        RussiaRouteUpdateStage.downloadingCategories,
+        completedItems: 0,
+        totalItems: pending.length,
+      );
       while (pending.isNotEmpty) {
         final category = pending.removeLast();
         if (categoryFiles.containsKey(category)) {
@@ -792,11 +1013,17 @@ class RussiaRouteDataService {
         categoryFiles[category] = content;
         metadata[category] = downloaded.metadata;
         changed = changed || downloaded.changed;
+        completed++;
         for (final include in _extractIncludedCategories(content)) {
           if (!categoryFiles.containsKey(include)) {
             pending.add(include);
           }
         }
+        _emitProgress(
+          RussiaRouteUpdateStage.downloadingCategories,
+          completedItems: completed,
+          totalItems: completed + pending.length,
+        );
       }
       return _DownloadedDomainListCommunity(
         categoryFiles: categoryFiles,
@@ -819,7 +1046,7 @@ class RussiaRouteDataService {
     final cacheFile = File(
       '$sourceDirectoryPath/${Uri.encodeComponent(category)}.txt',
     );
-    final request = await client.getUrl(uri);
+    final request = await client.getUrl(uri).timeout(_connectTimeout);
     request.headers.set(HttpHeaders.acceptHeader, 'text/plain,*/*');
     if (!force && cacheFile.existsSync()) {
       final etag = previousMetadata?.etag;
@@ -831,7 +1058,7 @@ class RussiaRouteDataService {
         request.headers.set(HttpHeaders.ifModifiedSinceHeader, lastModified);
       }
     }
-    final response = await request.close();
+    final response = await request.close().timeout(_responseTimeout);
     if (response.statusCode == HttpStatus.notModified &&
         cacheFile.existsSync()) {
       return _DownloadedCategory(
@@ -848,7 +1075,7 @@ class RussiaRouteDataService {
     }
     final builder = BytesBuilder(copy: false);
     var length = 0;
-    await for (final chunk in response) {
+    await for (final chunk in response.timeout(_responseTimeout)) {
       length += chunk.length;
       if (length > _maxDomainListCategoryBytes) {
         throw HttpException('Route category is too large', uri: uri);
@@ -861,8 +1088,7 @@ class RussiaRouteDataService {
         ? await cacheFile.readAsString()
         : null;
     final changed = previousContent != content;
-    await cacheFile.parent.create(recursive: true);
-    await cacheFile.writeAsString(content, flush: true);
+    await _writeAtomically(cacheFile.path, utf8.encode(content));
     final nowMillis = DateTime.now().millisecondsSinceEpoch;
     return _DownloadedCategory(
       content: content,

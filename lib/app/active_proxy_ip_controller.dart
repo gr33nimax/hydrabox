@@ -49,6 +49,7 @@ class ActiveProxyIpTarget {
   final bool hasCachedLocation;
 
   String get key => '$subscriptionId\n$outboundTag';
+  bool get hasCachedIp => cachedIp?.trim().isNotEmpty ?? false;
 }
 
 class ActiveProxyIpResolveResult {
@@ -113,7 +114,7 @@ class ActiveProxyIpController {
   }
 
   void schedule({
-    Duration delay = const Duration(milliseconds: 900),
+    Duration delay = const Duration(milliseconds: 120),
     bool forceRefresh = false,
     required bool Function() isConnected,
     required bool Function() isForegroundActive,
@@ -151,18 +152,23 @@ class ActiveProxyIpController {
       _suppressedUntil.remove(target.key);
     }
     final suppressedUntil = _suppressedUntil[target.key];
+    final showCachedImmediately = !forceRefresh && target.hasCachedIp;
     if (!forceRefresh &&
         suppressedUntil != null &&
         now.isBefore(suppressedUntil)) {
-      _setSnapshot(
-        ActiveProxyIpSnapshot(
-          state: ActiveProxyIpState.failed,
-          outboundTag: target.outboundTag,
-          errorCode: 'lookup_backoff',
-          updatedAt: now,
-        ),
-        onSnapshot,
-      );
+      if (showCachedImmediately) {
+        _setSnapshot(_cachedSnapshot(target, now), onSnapshot);
+      } else {
+        _setSnapshot(
+          ActiveProxyIpSnapshot(
+            state: ActiveProxyIpState.failed,
+            outboundTag: target.outboundTag,
+            errorCode: 'lookup_backoff',
+            updatedAt: now,
+          ),
+          onSnapshot,
+        );
+      }
       AppLogStore.warning(
         'proxy',
         'active_ip_lookup_result tag=${target.outboundTag} '
@@ -171,14 +177,18 @@ class ActiveProxyIpController {
       return;
     }
 
-    _setSnapshot(
-      ActiveProxyIpSnapshot(
-        state: ActiveProxyIpState.checking,
-        outboundTag: target.outboundTag,
-        updatedAt: now,
-      ),
-      onSnapshot,
-    );
+    if (showCachedImmediately) {
+      _setSnapshot(_cachedSnapshot(target, now), onSnapshot);
+    } else {
+      _setSnapshot(
+        ActiveProxyIpSnapshot(
+          state: ActiveProxyIpState.checking,
+          outboundTag: target.outboundTag,
+          updatedAt: now,
+        ),
+        onSnapshot,
+      );
+    }
     _timer = Timer(delay, () {
       unawaited(
         _runLookup(
@@ -186,6 +196,7 @@ class ActiveProxyIpController {
           target: target,
           allowRetry: true,
           forceRefresh: forceRefresh,
+          keepStaleOnFailure: showCachedImmediately,
           isConnected: isConnected,
           isForegroundActive: isForegroundActive,
           currentTarget: currentTarget,
@@ -203,6 +214,7 @@ class ActiveProxyIpController {
     required ActiveProxyIpTarget target,
     required bool allowRetry,
     required bool forceRefresh,
+    required bool keepStaleOnFailure,
     required bool Function() isConnected,
     required bool Function() isForegroundActive,
     required ActiveProxyIpTarget? Function() currentTarget,
@@ -227,12 +239,13 @@ class ActiveProxyIpController {
     }
     if (!await networkUsable('active_ip_lookup')) {
       if (_isCurrent(
-        token,
-        target,
-        isConnected,
-        isForegroundActive,
-        currentTarget,
-      )) {
+            token,
+            target,
+            isConnected,
+            isForegroundActive,
+            currentTarget,
+          ) &&
+          !keepStaleOnFailure) {
         _setSnapshot(
           ActiveProxyIpSnapshot(
             state: ActiveProxyIpState.failed,
@@ -284,6 +297,7 @@ class ActiveProxyIpController {
         token: token,
         target: target,
         allowRetry: allowRetry,
+        keepStaleOnFailure: keepStaleOnFailure,
         isConnected: isConnected,
         isForegroundActive: isForegroundActive,
         currentTarget: currentTarget,
@@ -327,6 +341,7 @@ class ActiveProxyIpController {
     required int token,
     required ActiveProxyIpTarget target,
     required bool allowRetry,
+    required bool keepStaleOnFailure,
     required bool Function() isConnected,
     required bool Function() isForegroundActive,
     required ActiveProxyIpTarget? Function() currentTarget,
@@ -346,13 +361,14 @@ class ActiveProxyIpController {
     if (suppressLookups) {
       _suppressedUntil[target.key] = DateTime.now().add(failureBackoff);
     }
-    if (_isCurrent(
-      token,
-      target,
-      isConnected,
-      isForegroundActive,
-      currentTarget,
-    )) {
+    if (!keepStaleOnFailure &&
+        _isCurrent(
+          token,
+          target,
+          isConnected,
+          isForegroundActive,
+          currentTarget,
+        )) {
       _setSnapshot(
         ActiveProxyIpSnapshot(
           state: ActiveProxyIpState.failed,
@@ -387,6 +403,7 @@ class ActiveProxyIpController {
           target: target,
           allowRetry: false,
           forceRefresh: false,
+          keepStaleOnFailure: keepStaleOnFailure,
           isConnected: isConnected,
           isForegroundActive: isForegroundActive,
           currentTarget: currentTarget,
@@ -427,5 +444,18 @@ class ActiveProxyIpController {
     }
     snapshot = next;
     onSnapshot(next);
+  }
+
+  ActiveProxyIpSnapshot _cachedSnapshot(
+    ActiveProxyIpTarget target,
+    DateTime updatedAt,
+  ) {
+    return ActiveProxyIpSnapshot(
+      state: ActiveProxyIpState.known,
+      outboundTag: target.outboundTag,
+      ip: target.cachedIp?.trim(),
+      countryCode: target.cachedCountryCode,
+      updatedAt: updatedAt,
+    );
   }
 }

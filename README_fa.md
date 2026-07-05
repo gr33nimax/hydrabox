@@ -15,7 +15,7 @@
 
 </div>
 
-Etonify یک کلاینت VPN با تمرکز روی Android است؛ برای کاربرانی که به جای کلاینت‌های قدیمی یا بسته، به یک گزینه‌ی شفاف، قابل نگهداری و جامعه‌محور نیاز دارند. این پروژه در مسیر ایده‌های مرتبط با Hiddify شروع شد، اما runtime اندروید، مدیریت subscription، رابط کاربری، تشخیص خطا و روند نگهداری اکنون حول Etonify و هسته‌ی تغییر یافته‌ی **MeowSingBox** بازسازی می‌شود.
+Etonify یک کلاینت VPN با تمرکز روی Android است؛ برای کاربرانی که به جای کلاینت‌های قدیمی یا بسته، به یک گزینه‌ی شفاف، قابل نگهداری و جامعه‌محور نیاز دارند. این پروژه در مسیر ایده‌های مرتبط با Hiddify شروع شد، اما runtime اندروید، مدیریت subscription، رابط کاربری، تشخیص خطا و روند نگهداری اکنون حول Etonify و هسته‌ی تغییر یافته‌ی [**MeowSingBox**](https://github.com/dudosxdev/sing-box) بازسازی می‌شود.
 
 این برنامه سرور VPN ارائه نمی‌کند. Etonify یک کلاینت برای subscriptionها و configurationهایی است که مالک آن‌ها هستید یا اجازه‌ی استفاده از آن‌ها را دارید.
 
@@ -35,7 +35,7 @@ Etonify در مرحله‌ی اولیه‌ی توسعه‌ی عمومی است. 
 - لیست proxy با پرچم کشورها، latency، ترتیب اصلی subscription، sort بر اساس latency/name/country، URL-test و تغییر سریع سرور.
 - Split tunneling با قوانین allow/disallow اپلیکیشن در Android VPN و fallback routing در sing-box.
 - DNS preset و DNS resolver سفارشی، شامل UDP، TCP، DoT، DoH و DNS دستگاه.
-- Russia routing helpers و ruleهای محلی شبیه AdGuard.
+- Smart Routing و فیلتر DNS محلی AdGuard که داخل برنامه ساخته می‌شود.
 - داشبورد ترافیک با سرعت زنده، آمار session، profile فعال، proxy فعال و نمودار سبک.
 - مرکز به‌روزرسانی GitHub Releases با انتخاب APK بر اساس معماری دستگاه و نمایش پیشرفت دانلود.
 - runtime logs، diagnostics، hooks پاک‌سازی حافظه و redaction برای مقادیر حساس شناخته‌شده.
@@ -44,6 +44,8 @@ Etonify در مرحله‌ی اولیه‌ی توسعه‌ی عمومی است. 
 ## جامعه
 
 - کانال Telegram: [@etonify](https://t.me/etonify)
+- ارتباط مستقیم با توسعه‌دهندگان: [Etonify Direct](https://t.me/etonify?direct)
+- MeowTeam: بخش کلاینت توسط YamixDEV توسعه داده می‌شود و [dudosxdev](https://github.com/dudosxdev) نگهداری [هسته‌ی تغییر یافته‌ی sing-box](https://github.com/dudosxdev/sing-box) را بر عهده دارد.
 - Issue و Pull Request پذیرفته می‌شود.
 - گزارش امنیتی هم پذیرفته می‌شود. لطفاً قبل از بررسی تیم، جزئیات قابل سوءاستفاده را عمومی منتشر نکنید.
 

@@ -1,14 +1,18 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
-    <!-- Needed for per-app routing UI to enumerate installed applications. -->
-    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/>
+    <!-- Split tunneling needs the installed-app list. It stays on the device. -->
+    <uses-permission
+        android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission"/>
     <!-- Default performance mode keeps wake lock off; this backs the explicit performance path. -->
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
 
@@ -89,11 +93,14 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
+        <!-- Configured VPN apps are eligible for the systemExempted FGS type.
+             Android lint cannot infer that eligibility from BIND_VPN_SERVICE. -->
         <service
             android:name=".singbox.MeowVpnService"
             android:exported="false"
             android:foregroundServiceType="systemExempted"
-            android:permission="android.permission.BIND_VPN_SERVICE">
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            tools:ignore="ForegroundServicePermission">
             <intent-filter>
                 <action android:name="android.net.VpnService"/>
             </intent-filter>

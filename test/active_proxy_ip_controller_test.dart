@@ -89,6 +89,38 @@ void main() {
     expect(snapshots.last.countryCode, 'FR');
   });
 
+  test('cached IP is shown immediately and kept when refresh fails', () async {
+    final controller = ActiveProxyIpController();
+    addTearDown(controller.dispose);
+
+    final snapshots = <ActiveProxyIpSnapshot>[];
+    var resolveCalls = 0;
+
+    controller.schedule(
+      delay: Duration.zero,
+      isConnected: () => true,
+      isForegroundActive: () => true,
+      currentTarget: () => _target(cachedIp: '203.0.113.10'),
+      networkUsable: (_) async => true,
+      resolveExternalIp: (_) async {
+        resolveCalls++;
+        return null;
+      },
+      persistResult: (_, _) async => fail('failed refresh must not persist'),
+      onSnapshot: snapshots.add,
+    );
+
+    expect(snapshots.single.state, ActiveProxyIpState.known);
+    expect(snapshots.single.ip, '203.0.113.10');
+
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(resolveCalls, 1);
+    expect(controller.snapshot.state, ActiveProxyIpState.known);
+    expect(controller.snapshot.ip, '203.0.113.10');
+  });
+
   test('force refresh bypasses recent cached location', () async {
     final controller = ActiveProxyIpController();
     addTearDown(controller.dispose);

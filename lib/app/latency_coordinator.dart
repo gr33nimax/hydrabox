@@ -1,0 +1,284 @@
+import 'dart:async';
+
+import 'package:meow_client/logging/app_log_store.dart';
+
+enum LatencySessionKind { active, full, startup }
+
+class LatencyTestRequest {
+  const LatencyTestRequest({
+    this.groupTag = 'select',
+    this.targetOutboundTag = '',
+    this.priorityOutboundTag = '',
+    this.excludeOutboundTag = '',
+    required this.url,
+    this.timeoutMillis = 3000,
+    this.concurrency = 0,
+    this.deadlineMillis = 10000,
+    this.force = true,
+  });
+
+  final String groupTag;
+  final String targetOutboundTag;
+  final String priorityOutboundTag;
+  final String excludeOutboundTag;
+  final String url;
+  final int timeoutMillis;
+  final int concurrency;
+  final int deadlineMillis;
+  final bool force;
+
+  LatencyTestRequest copyWith({int? timeoutMillis, int? deadlineMillis}) {
+    return LatencyTestRequest(
+      groupTag: groupTag,
+      targetOutboundTag: targetOutboundTag,
+      priorityOutboundTag: priorityOutboundTag,
+      excludeOutboundTag: excludeOutboundTag,
+      url: url,
+      timeoutMillis: timeoutMillis ?? this.timeoutMillis,
+      concurrency: concurrency,
+      deadlineMillis: deadlineMillis ?? this.deadlineMillis,
+      force: force,
+    );
+  }
+}
+
+typedef LatencyTestRunner = Future<void> Function(LatencyTestRequest request);
+typedef LatencyBoolReader = bool Function();
+typedef LatencyStringReader = String Function();
+typedef LatencyIntReader = int Function();
+typedef LatencySessionChanged =
+    void Function(bool running, LatencySessionKind? kind, String targetTag);
+
+class LatencyCoordinator {
+  LatencyCoordinator({
+    required LatencyTestRunner runTest,
+    required LatencyBoolReader isConnected,
+    required LatencyBoolReader isForeground,
+    required LatencyStringReader activeOutboundTag,
+    required LatencyStringReader testUrl,
+    required LatencyIntReader outboundCount,
+    required LatencySessionChanged onSessionChanged,
+  }) : _runTest = runTest,
+       _isConnected = isConnected,
+       _isForeground = isForeground,
+       _activeOutboundTag = activeOutboundTag,
+       _testUrl = testUrl,
+       _outboundCount = outboundCount,
+       _onSessionChanged = onSessionChanged;
+
+  // A VLESS/Reality/WebSocket probe can legitimately need several seconds on
+  // a freshly changed mobile network. Three seconds produced false timeouts
+  // for an actively carrying outbound on real devices. Keep the probe under
+  // the ten-second UI budget, but leave enough room for DNS, TCP and TLS.
+  static const perOutboundTimeoutMillis = 15000;
+  static const activeDeadlineMillis = 15000;
+  static const fullDeadlineMillis = 15000;
+  static const rpcDeadlineGrace = Duration(seconds: 2);
+  static const activeDedupWindow = Duration(seconds: 5);
+
+  final LatencyTestRunner _runTest;
+  final LatencyBoolReader _isConnected;
+  final LatencyBoolReader _isForeground;
+  final LatencyStringReader _activeOutboundTag;
+  final LatencyStringReader _testUrl;
+  final LatencyIntReader _outboundCount;
+  final LatencySessionChanged _onSessionChanged;
+
+  Timer? _autoTimer;
+  bool _running = false;
+  bool _disposed = false;
+  int _generation = 0;
+  LatencySessionKind? _kind;
+  String _targetTag = '';
+  String _lastActiveTag = '';
+  DateTime? _lastActiveFinishedAt;
+
+  bool get isRunning => _running;
+  LatencySessionKind? get kind => _kind;
+
+  bool isChecking(String tag) {
+    if (!_running) return false;
+    return _targetTag.isEmpty || _targetTag == tag;
+  }
+
+  void configureAuto(Duration? interval) {
+    _autoTimer?.cancel();
+    _autoTimer = null;
+    if (_disposed || interval == null || interval <= Duration.zero) {
+      return;
+    }
+    _autoTimer = Timer.periodic(interval, (_) {
+      if (!_isConnected() || !_isForeground()) return;
+      unawaited(runFull(reason: 'auto_interval'));
+    });
+  }
+
+  Future<bool> runStartup({required String reason}) async {
+    final activeTag = _activeOutboundTag().trim();
+    return _runSession(
+      kind: LatencySessionKind.startup,
+      reason: reason,
+      targetTag: '',
+      requests: [_fullRequest(priorityTag: activeTag)],
+    );
+  }
+
+  Future<bool> runActive({required String reason}) {
+    final activeTag = _activeOutboundTag().trim();
+    if (activeTag.isEmpty) {
+      AppLogStore.debug('latency', 'active test skipped: no active outbound');
+      return Future<bool>.value(false);
+    }
+    final lastFinishedAt = _lastActiveFinishedAt;
+    if (_lastActiveTag == activeTag &&
+        lastFinishedAt != null &&
+        DateTime.now().difference(lastFinishedAt) < activeDedupWindow) {
+      AppLogStore.debug(
+        'latency',
+        'active test skipped: deduplicated tag=$activeTag reason=$reason',
+      );
+      return Future<bool>.value(false);
+    }
+    return _runSession(
+      kind: LatencySessionKind.active,
+      reason: reason,
+      targetTag: activeTag,
+      // The known-good libbox API tests the selector as one HTTP URLTest
+      // session and puts the selected leaf first. It deliberately has no
+      // TCP-only or ICMP shortcut for a single outbound.
+      requests: [_fullRequest(priorityTag: activeTag)],
+    );
+  }
+
+  Future<bool> runFull({required String reason}) {
+    final activeTag = _activeOutboundTag().trim();
+    return _runSession(
+      kind: LatencySessionKind.full,
+      reason: reason,
+      targetTag: '',
+      requests: [_fullRequest(priorityTag: activeTag)],
+    );
+  }
+
+  void cancel() {
+    _generation++;
+    if (_running) {
+      _running = false;
+      _kind = null;
+      _targetTag = '';
+      _onSessionChanged(false, null, '');
+    }
+  }
+
+  void dispose() {
+    _disposed = true;
+    _autoTimer?.cancel();
+    _autoTimer = null;
+    cancel();
+  }
+
+  LatencyTestRequest _fullRequest({
+    required String priorityTag,
+    String excludeTag = '',
+  }) => LatencyTestRequest(
+    priorityOutboundTag: priorityTag,
+    excludeOutboundTag: excludeTag,
+    url: _testUrl(),
+    timeoutMillis: perOutboundTimeoutMillis,
+    concurrency: 0,
+    deadlineMillis: fullDeadlineMillis,
+  );
+
+  Future<bool> _runSession({
+    required LatencySessionKind kind,
+    required String reason,
+    required String targetTag,
+    required List<LatencyTestRequest> requests,
+  }) async {
+    if (_disposed || !_isConnected() || !_isForeground()) {
+      return false;
+    }
+    if (_running) {
+      AppLogStore.info(
+        'latency',
+        'session skipped reason=$reason running=${_kind?.name ?? 'unknown'}',
+      );
+      return false;
+    }
+    final generation = ++_generation;
+    final startedAt = DateTime.now();
+    _running = true;
+    _kind = kind;
+    _targetTag = targetTag;
+    _onSessionChanged(true, kind, targetTag);
+    AppLogStore.info(
+      'latency',
+      'session start kind=${kind.name} reason=$reason '
+          'outbounds=${_outboundCount()} target=$targetTag requests=${requests.length}',
+    );
+    var completed = false;
+    var completedRequests = 0;
+    try {
+      for (final request in requests) {
+        if (_disposed || generation != _generation || !_isConnected()) {
+          break;
+        }
+        final sessionDeadlineMillis = switch (kind) {
+          LatencySessionKind.active => activeDeadlineMillis,
+          LatencySessionKind.full ||
+          LatencySessionKind.startup => fullDeadlineMillis,
+        };
+        final elapsedMillis = DateTime.now()
+            .difference(startedAt)
+            .inMilliseconds;
+        final remainingMillis = sessionDeadlineMillis - elapsedMillis;
+        if (remainingMillis <= 0) {
+          throw TimeoutException(
+            'latency ${kind.name} session exceeded ${sessionDeadlineMillis}ms',
+          );
+        }
+        final requestDeadline = request.deadlineMillis
+            .clamp(1, remainingMillis)
+            .toInt();
+        final requestTimeout = request.timeoutMillis
+            .clamp(1, requestDeadline)
+            .toInt();
+        final boundedRequest = request.copyWith(
+          timeoutMillis: requestTimeout,
+          deadlineMillis: requestDeadline,
+        );
+        await _runTest(
+          boundedRequest,
+        ).timeout(Duration(milliseconds: requestDeadline) + rpcDeadlineGrace);
+        completedRequests++;
+      }
+      completed =
+          !_disposed &&
+          generation == _generation &&
+          completedRequests == requests.length;
+      return completed;
+    } catch (error, stackTrace) {
+      AppLogStore.warning(
+        'latency',
+        'session failed kind=${kind.name} reason=$reason error=$error\n$stackTrace',
+      );
+      return false;
+    } finally {
+      if (generation == _generation) {
+        if (kind == LatencySessionKind.active && targetTag.isNotEmpty) {
+          _lastActiveTag = targetTag;
+          _lastActiveFinishedAt = DateTime.now();
+        }
+        _running = false;
+        _kind = null;
+        _targetTag = '';
+        _onSessionChanged(false, kind, targetTag);
+      }
+      AppLogStore.info(
+        'latency',
+        'session finish kind=${kind.name} reason=$reason completed=$completed '
+            'elapsedMs=${DateTime.now().difference(startedAt).inMilliseconds}',
+      );
+    }
+  }
+}

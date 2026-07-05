@@ -240,6 +240,18 @@ class RuntimeLifecycleController {
     required void Function(String reason) trimMemory,
     required RuntimeTimeoutHook onWatchdogTimeout,
   }) async {
+    var preparedBuildPromoted = false;
+
+    Future<void> promotePreparedConfigOnce(
+      SingboxConfigBuildResult candidate,
+    ) async {
+      if (preparedBuildPromoted && candidate.hasPreparedConfig) {
+        return;
+      }
+      await promotePreparedConfig(candidate);
+      preparedBuildPromoted = candidate.hasPreparedConfig;
+    }
+
     AppLogStore.info(
       'runtime',
       'config apply policy=${policy.name} useVpn=$useVpn '
@@ -256,7 +268,7 @@ class RuntimeLifecycleController {
         build: build,
         useVpn: useVpn,
         reason: 'config_changed',
-        promotePreparedConfig: promotePreparedConfig,
+        promotePreparedConfig: promotePreparedConfigOnce,
         cacheStartedBuild: cacheStartedBuild,
         logCall: logCall,
         trimMemory: trimMemory,
@@ -269,7 +281,7 @@ class RuntimeLifecycleController {
         build: build,
         useVpn: useVpn,
         restartCore: true,
-        promotePreparedConfig: promotePreparedConfig,
+        promotePreparedConfig: promotePreparedConfigOnce,
         cacheStartedBuild: cacheStartedBuild,
         logCall: logCall,
       );
@@ -287,7 +299,7 @@ class RuntimeLifecycleController {
         build: build,
         useVpn: useVpn,
         reason: 'runtime_interface_recovery',
-        promotePreparedConfig: promotePreparedConfig,
+        promotePreparedConfig: promotePreparedConfigOnce,
         cacheStartedBuild: cacheStartedBuild,
         logCall: logCall,
         trimMemory: trimMemory,
@@ -306,6 +318,31 @@ class RuntimeLifecycleController {
         'Failed to apply runtime config policy=${policy.name}: '
             '$error\n$stackTrace',
       );
+      if (policy == RuntimeApplyPolicy.safeCoreRestart) {
+        final runtimeStillHealthy = await _waitForHealthyRuntime();
+        if (!runtimeStillHealthy) {
+          AppLogStore.warning(
+            'runtime',
+            'runtime_interface_recovery reason=safe_core_restart_exception',
+          );
+          final recovered = await fullServiceRestart(
+            build: build,
+            useVpn: useVpn,
+            reason: 'safe_core_restart_exception',
+            promotePreparedConfig: promotePreparedConfigOnce,
+            cacheStartedBuild: cacheStartedBuild,
+            logCall: logCall,
+            trimMemory: trimMemory,
+            onWatchdogTimeout: onWatchdogTimeout,
+          );
+          if (recovered.success) {
+            return const RuntimeLifecycleResult.success(
+              policy: RuntimeApplyPolicy.safeCoreRestart,
+              recovered: true,
+            );
+          }
+        }
+      }
       return RuntimeLifecycleResult.failure(
         policy: policy,
         error: error.toString(),

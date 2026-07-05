@@ -1,0 +1,226 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:meow_client/data/adblock/ad_block_rule_set_service.dart';
+import 'package:meow_client/data/local/app_settings_store.dart';
+import 'package:meow_client/data/routing/russia_route_data_service.dart';
+import 'package:meow_client/features/settings/settings_routing_page.dart';
+import 'package:meow_client/l10n/generated/app_localizations.dart';
+
+void main() {
+  testWidgets('smart routing always offers an explicit update check', (
+    tester,
+  ) async {
+    await _pumpPage(
+      tester,
+      RussiaRouteDataStatus(
+        available: true,
+        sourceName: RussiaRouteDataService.sourceName,
+        sourceKind: RussiaRouteDataService.sourceKindLive,
+        versionTag: '202607011219',
+        releaseTag: '202607011219',
+        verifiedAtMillis: DateTime.now().millisecondsSinceEpoch,
+        verifiedFiles: const ['one', 'two'],
+        lastUpdateCheckAtMillis: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+
+    expect(find.text('Умная маршрутизация'), findsOneWidget);
+    expect(find.text('Проверить'), findsOneWidget);
+  });
+
+  testWidgets('smart routing shows check action for stale data', (
+    tester,
+  ) async {
+    await _pumpPage(
+      tester,
+      RussiaRouteDataStatus(
+        available: true,
+        sourceName: RussiaRouteDataService.sourceName,
+        sourceKind: RussiaRouteDataService.sourceKindLive,
+        versionTag: '202607011219',
+        releaseTag: '202607011219',
+        verifiedAtMillis: DateTime.now().millisecondsSinceEpoch,
+        verifiedFiles: const ['one', 'two'],
+        lastUpdateCheckAtMillis: DateTime.now()
+            .subtract(const Duration(hours: 25))
+            .millisecondsSinceEpoch,
+      ),
+    );
+
+    expect(find.text('Проверить'), findsOneWidget);
+  });
+
+  testWidgets('smart routing offers bundled installation when missing', (
+    tester,
+  ) async {
+    await _pumpPage(tester, const RussiaRouteDataStatus.unavailable());
+
+    expect(find.text('Скачать правила'), findsOneWidget);
+  });
+
+  testWidgets('smart routing check changes action when update is available', (
+    tester,
+  ) async {
+    final status = RussiaRouteDataStatus(
+      available: true,
+      sourceName: RussiaRouteDataService.sourceName,
+      sourceKind: RussiaRouteDataService.sourceKindLive,
+      versionTag: '202607011219',
+      releaseTag: '202607011219',
+      verifiedAtMillis: DateTime.now().millisecondsSinceEpoch,
+      verifiedFiles: const ['one', 'two'],
+      lastUpdateCheckAtMillis: DateTime.now().millisecondsSinceEpoch,
+    );
+    await _pumpPage(
+      tester,
+      status,
+      onCheckUpdate: () async => RussiaRouteUpdateCheck(
+        status: status,
+        latestTag: '202607031200',
+        updateAvailable: true,
+      ),
+    );
+
+    await tester.tap(find.text('Проверить'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Обновить'), findsOneWidget);
+    expect(
+      find.text('Доступна новая версия правил: 202607031200'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('selected split app keeps name and package on separate rows', (
+    tester,
+  ) async {
+    await _pumpPage(
+      tester,
+      const RussiaRouteDataStatus.unavailable(),
+      splitRoutingMode: SplitRoutingMode.bypassSelected,
+      splitRoutingPackages: const ['org.telegram.messenger'],
+      installedApps: const [
+        {
+          'packageName': 'org.telegram.messenger',
+          'label': 'Telegram',
+          'system': false,
+          'launchable': true,
+        },
+      ],
+      scrollTo: 'Telegram',
+    );
+
+    expect(find.text('Telegram'), findsOneWidget);
+    expect(find.text('org.telegram.messenger'), findsOneWidget);
+  });
+
+  testWidgets('missing selected app does not repeat package as its name', (
+    tester,
+  ) async {
+    await _pumpPage(
+      tester,
+      const RussiaRouteDataStatus.unavailable(),
+      splitRoutingMode: SplitRoutingMode.bypassSelected,
+      splitRoutingPackages: const ['com.example.removed'],
+      scrollTo: 'Приложение не найдено',
+    );
+
+    expect(find.text('Приложение не найдено'), findsOneWidget);
+    expect(find.text('com.example.removed'), findsOneWidget);
+  });
+
+  testWidgets('selected split app can be removed without reopening picker', (
+    tester,
+  ) async {
+    List<String>? changedPackages;
+    await _pumpPage(
+      tester,
+      const RussiaRouteDataStatus.unavailable(),
+      splitRoutingMode: SplitRoutingMode.bypassSelected,
+      splitRoutingPackages: const ['org.telegram.messenger'],
+      installedApps: const [
+        {
+          'packageName': 'org.telegram.messenger',
+          'label': 'Telegram',
+          'system': false,
+          'launchable': true,
+        },
+      ],
+      scrollTo: 'Telegram',
+      onSplitRoutingPackagesChanged: (value) => changedPackages = value,
+    );
+
+    await tester.tap(find.byIcon(Icons.close_rounded));
+    await tester.pumpAndSettle();
+
+    expect(changedPackages, isEmpty);
+    expect(find.text('Telegram'), findsNothing);
+  });
+}
+
+Future<void> _pumpPage(
+  WidgetTester tester,
+  RussiaRouteDataStatus routeStatus, {
+  SplitRoutingMode splitRoutingMode = SplitRoutingMode.disabled,
+  List<String> splitRoutingPackages = const [],
+  List<Map<String, dynamic>> installedApps = const [],
+  String scrollTo = 'Умная маршрутизация',
+  Future<RussiaRouteUpdateCheck> Function()? onCheckUpdate,
+  ValueChanged<List<String>>? onSplitRoutingPackagesChanged,
+}) async {
+  await tester.binding.setSurfaceSize(const Size(420, 860));
+  addTearDown(() => tester.binding.setSurfaceSize(null));
+  await tester.pumpWidget(
+    MaterialApp(
+      locale: const Locale('ru'),
+      supportedLocales: AppLocalizations.supportedLocales,
+      localizationsDelegates: const [
+        AppLocalizations.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      home: SettingsRoutingPage(
+        currentBlockLeaks: true,
+        currentAdBlockEnabled: false,
+        currentAdBlockStatus: const AdBlockRuleSetStatus.unavailable(),
+        currentRussiaRouteDataEnabled: false,
+        currentRussiaRouteDataStatus: routeStatus,
+        currentBypassLocalNetwork: true,
+        currentVpnInboundEnabled: true,
+        currentSplitRoutingMode: splitRoutingMode,
+        currentSplitRoutingPackages: splitRoutingPackages,
+        initialInstalledApps: installedApps,
+        preloadInstalledApps: () async => installedApps,
+        onBlockLeaksChanged: (_) {},
+        onAdBlockEnabledChanged: (_) {},
+        onDownloadAdBlockRuleSet: () async =>
+            const AdBlockRuleSetStatus.unavailable(),
+        onDeleteAdBlockRuleSet: () async =>
+            const AdBlockRuleSetStatus.unavailable(),
+        onRussiaRouteDataEnabledChanged: (_) {},
+        onCheckRussiaRouteDataUpdate:
+            onCheckUpdate ??
+            () async => RussiaRouteUpdateCheck(
+              status: routeStatus,
+              latestTag: routeStatus.releaseTag ?? routeStatus.versionTag,
+              updateAvailable: false,
+            ),
+        onInstallRussiaRouteData: () async => routeStatus,
+        onDeleteRussiaRouteData: () async =>
+            const RussiaRouteDataStatus.unavailable(),
+        onBypassLocalNetworkChanged: (_) {},
+        onSplitRoutingModeChanged: (_) {},
+        onSplitRoutingPackagesChanged: onSplitRoutingPackagesChanged ?? (_) {},
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+  await tester.scrollUntilVisible(
+    find.text(scrollTo),
+    300,
+    scrollable: find.byType(Scrollable).first,
+  );
+  await tester.pumpAndSettle();
+}

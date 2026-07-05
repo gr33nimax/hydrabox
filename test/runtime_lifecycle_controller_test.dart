@@ -41,11 +41,12 @@ void main() {
       );
       addTearDown(controller.dispose);
 
+      var promoteCalls = 0;
       final result = await controller.applyRuntimeBuild(
         build: _build(),
         useVpn: true,
         policy: RuntimeApplyPolicy.safeCoreRestart,
-        promotePreparedConfig: (_) {},
+        promotePreparedConfig: (_) => promoteCalls++,
         cacheStartedBuild: (_) {},
         logCall: (_, _) {},
         trimMemory: (_) {},
@@ -58,6 +59,37 @@ void main() {
       expect(runtime.stopCalls, 1);
       expect(runtime.prepareVpnCalls, 1);
       expect(runtime.startPreparedCalls, 1);
+      expect(promoteCalls, 1);
+    },
+  );
+
+  test(
+    'safe restart exception recovers when the runtime also stopped',
+    () async {
+      final runtime = _FakeRuntime(failApplyAndStopRuntime: true);
+      final controller = RuntimeLifecycleController(
+        runtime: runtime,
+        healthCheckTimeout: const Duration(milliseconds: 20),
+      );
+      addTearDown(controller.dispose);
+      var promoteCalls = 0;
+
+      final result = await controller.applyRuntimeBuild(
+        build: _build(),
+        useVpn: true,
+        policy: RuntimeApplyPolicy.safeCoreRestart,
+        promotePreparedConfig: (_) => promoteCalls++,
+        cacheStartedBuild: (_) {},
+        logCall: (_, _) {},
+        trimMemory: (_) {},
+        onWatchdogTimeout: (_) {},
+      );
+
+      expect(result.success, isTrue);
+      expect(result.recovered, isTrue);
+      expect(runtime.stopCalls, 1);
+      expect(runtime.startPreparedCalls, 1);
+      expect(promoteCalls, 1);
     },
   );
 
@@ -113,12 +145,14 @@ class _FakeRuntime implements RuntimeLifecycleRuntime {
     this.running = true,
     this.interfaceUsable = true,
     this.startCompletes = true,
+    this.failApplyAndStopRuntime = false,
   });
 
   bool running;
   String mode = 'vpn';
   bool interfaceUsable;
   bool startCompletes;
+  bool failApplyAndStopRuntime;
   int applyPreparedConfigCalls = 0;
   int applyConfigCalls = 0;
   int stopCalls = 0;
@@ -145,6 +179,11 @@ class _FakeRuntime implements RuntimeLifecycleRuntime {
   }) async {
     applyPreparedConfigCalls++;
     lastRestartCore = restartCore;
+    if (failApplyAndStopRuntime) {
+      failApplyAndStopRuntime = false;
+      running = false;
+      throw StateError('runtime stopped during safe restart');
+    }
     running = true;
     mode = useVpn ? 'vpn' : 'proxy';
   }

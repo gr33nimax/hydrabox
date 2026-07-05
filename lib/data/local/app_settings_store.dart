@@ -1,12 +1,15 @@
-import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart';
+import 'dart:io' show InternetAddress, InternetAddressType, Platform;
+import 'dart:math';
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:jni/jni.dart';
 import 'package:jni_flutter/jni_flutter.dart';
+import 'package:meow_client/logging/app_log_store.dart';
 
 enum AppThemePreference { system, light, dark, amoled }
 
 enum TunImplementationPreference { mixed, system, gvisor }
+
+enum InboundConnectionMode { vpn, proxy }
 
 enum SplitRoutingMode { disabled, proxySelected, bypassSelected }
 
@@ -17,9 +20,67 @@ enum AppUpdateInstallMode { ask, manual, auto }
 enum TlsFragmentationMode { disabled, record, fragment }
 
 const int maxSplitRoutingPackageCount = 128;
-const String defaultUrlTestUrl =
-    'http://connectivitycheck.gstatic.com/generate_204';
+const String defaultUrlTestUrl = 'https://www.gstatic.com/generate_204';
 const String defaultRussiaDnsDirectResolver = 'udp://77.88.8.8';
+const String defaultProxyUsername = 'etonify';
+const int proxyPasswordLength = 24;
+
+bool isValidProxyPassword(String value) {
+  final normalized = value.trim();
+  return normalized.length >= 16 &&
+      normalized.length <= 128 &&
+      !RegExp(r'\s').hasMatch(normalized);
+}
+
+String generateProxyPassword([Random? random]) {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  final source = random ?? Random.secure();
+  return List<String>.generate(
+    proxyPasswordLength,
+    (_) => alphabet[source.nextInt(alphabet.length)],
+    growable: false,
+  ).join();
+}
+
+String normalizeDnsResolverInput(String value) {
+  final normalized = value.trim();
+  if (normalized.isEmpty) {
+    return normalized;
+  }
+  final lower = normalized.toLowerCase();
+  if (lower.startsWith('udp://') ||
+      lower.startsWith('tcp://') ||
+      lower.startsWith('tls://') ||
+      lower.startsWith('https://') ||
+      lower == 'device://network') {
+    return normalized;
+  }
+  if (RegExp(r'\s').hasMatch(normalized) ||
+      normalized.contains('/') ||
+      normalized.contains('?') ||
+      normalized.contains('#') ||
+      normalized.contains('@')) {
+    return normalized;
+  }
+
+  final address = InternetAddress.tryParse(normalized);
+  if (address?.type == InternetAddressType.IPv6) {
+    return 'udp://[$normalized]';
+  }
+
+  final uri = Uri.tryParse('udp://$normalized');
+  if (uri == null || uri.host.isEmpty || uri.path.isNotEmpty) {
+    return normalized;
+  }
+  try {
+    if (uri.hasPort) {
+      uri.port;
+    }
+  } on FormatException {
+    return normalized;
+  }
+  return 'udp://$normalized';
+}
 
 final RegExp _androidPackageNamePattern = RegExp(
   r'^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$',
@@ -77,6 +138,7 @@ class AppSettingsState {
     required this.proxyAllowLan,
     required this.proxyMixedListen,
     required this.proxyMixedPort,
+    this.proxyPassword = '',
     required this.dnsDirectPreset,
     required this.dnsDirectResolver,
     required this.dnsProxyPreset,
@@ -129,6 +191,7 @@ class AppSettingsState {
   final bool proxyAllowLan;
   final String proxyMixedListen;
   final int proxyMixedPort;
+  final String proxyPassword;
   final String dnsDirectPreset;
   final String dnsDirectResolver;
   final String dnsProxyPreset;
@@ -181,6 +244,7 @@ class AppSettingsState {
     bool? proxyAllowLan,
     String? proxyMixedListen,
     int? proxyMixedPort,
+    String? proxyPassword,
     String? dnsDirectPreset,
     String? dnsDirectResolver,
     String? dnsProxyPreset,
@@ -237,6 +301,7 @@ class AppSettingsState {
       proxyAllowLan: proxyAllowLan ?? this.proxyAllowLan,
       proxyMixedListen: proxyMixedListen ?? this.proxyMixedListen,
       proxyMixedPort: proxyMixedPort ?? this.proxyMixedPort,
+      proxyPassword: proxyPassword ?? this.proxyPassword,
       dnsDirectPreset: dnsDirectPreset ?? this.dnsDirectPreset,
       dnsDirectResolver: dnsDirectResolver ?? this.dnsDirectResolver,
       dnsProxyPreset: dnsProxyPreset ?? this.dnsProxyPreset,
@@ -309,6 +374,7 @@ abstract class AppSettingsStore {
   static const _proxyAllowLanKey = 'proxy_allow_lan';
   static const _proxyMixedListenKey = 'proxy_mixed_listen';
   static const _proxyMixedPortKey = 'proxy_mixed_port';
+  static const _proxyPasswordKey = 'proxy_password';
   static const _dnsDirectPresetKey = 'dns_direct_preset';
   static const _dnsDirectResolverKey = 'dns_direct_resolver';
   static const _dnsProxyPresetKey = 'dns_proxy_preset';
@@ -449,6 +515,9 @@ abstract class AppSettingsStore {
     final locationLookupConcurrency = int.tryParse(
       map[_locationLookupConcurrencyKey]?.toString() ?? '',
     );
+    final locationLookupTimeout = int.tryParse(
+      map[_locationLookupTimeoutSecondsKey]?.toString() ?? '',
+    );
 
     return AppSettingsState(
       onboardingCompleted: boolValue(
@@ -517,12 +586,20 @@ abstract class AppSettingsStore {
               : '127.0.0.1'),
       proxyMixedPort:
           int.tryParse(map[_proxyMixedPortKey]?.toString() ?? '') ?? 1080,
+      proxyPassword: map[_proxyPasswordKey]?.toString() ?? '',
       dnsDirectPreset: map[_dnsDirectPresetKey]?.toString() ?? 'cloudflare',
       dnsDirectResolver:
-          map[_dnsDirectResolverKey]?.toString() ?? 'udp://1.1.1.1',
+          _resolverValue(
+            map[_dnsDirectResolverKey]?.toString(),
+            'udp://1.1.1.1',
+          ) ??
+          'udp://1.1.1.1',
       dnsProxyPreset: map[_dnsProxyPresetKey]?.toString() ?? 'cloudflare',
       dnsProxyResolver:
-          map[_dnsProxyResolverKey]?.toString() ??
+          _resolverValue(
+            map[_dnsProxyResolverKey]?.toString(),
+            'https://dns.cloudflare.com/dns-query',
+          ) ??
           'https://dns.cloudflare.com/dns-query',
       dnsPreferIpv6: map[_dnsPreferIpv6Key] == '1',
       russiaDnsDirectResolver:
@@ -534,48 +611,47 @@ abstract class AppSettingsStore {
       urlTestUrl: _migrateUrlTestUrl(map[_urlTestUrlKey]?.toString()),
       urlTestIntervalSeconds:
           urlTestInterval == null ||
-              urlTestInterval == 120 ||
-              (!economy && urlTestInterval == 900) ||
+              const <int>{120, 180, 300, 900}.contains(urlTestInterval) ||
               (economy && urlTestInterval == 1800)
-          ? 300
+          ? (economy ? 3600 : 1800)
           : urlTestInterval,
       urlTestTimeoutSeconds:
-          urlTestTimeout == null || urlTestTimeout == 10 || urlTestTimeout == 5
-          ? 4
+          urlTestTimeout == null ||
+              const <int>{4, 5, 10, 15}.contains(urlTestTimeout)
+          ? 15
           : urlTestTimeout,
-      urlTestConcurrency:
-          urlTestConcurrency == null ||
-              (!economy && urlTestConcurrency == 4) ||
-              (!economy && urlTestConcurrency == 6) ||
-              (!economy && urlTestConcurrency == 8) ||
-              (economy && urlTestConcurrency == 2)
-          ? (economy ? 3 : 6)
+      urlTestConcurrency: urlTestConcurrency == null || urlTestConcurrency == 30
+          ? (economy ? 8 : 16)
           : urlTestConcurrency,
       urlTestUnavailableCheckIntervalSeconds:
           unavailableCheckInterval == null ||
-              (!economy &&
-                  (unavailableCheckInterval == 60 ||
-                      unavailableCheckInterval == 120)) ||
-              (!economy &&
-                  (unavailableCheckInterval == 15 ||
-                      unavailableCheckInterval == 5)) ||
-              (economy && unavailableCheckInterval == 120)
-          ? 300
+              (economy && unavailableCheckInterval == 10) ||
+              const <int>{
+                5,
+                15,
+                60,
+                120,
+                300,
+              }.contains(unavailableCheckInterval)
+          ? (economy ? 15 : 10)
           : unavailableCheckInterval,
-      locationLookupLimit:
-          int.tryParse(map[_locationLookupLimitKey]?.toString() ?? '') ??
-          (economy ? 0 : 2),
+      locationLookupLimit: switch (int.tryParse(
+        map[_locationLookupLimitKey]?.toString() ?? '',
+      )) {
+        null => economy ? 0 : 1,
+        2 when !economy => 1,
+        final value => value,
+      },
       locationLookupTimeoutSeconds:
-          int.tryParse(
-            map[_locationLookupTimeoutSecondsKey]?.toString() ?? '',
-          ) ??
-          5,
+          locationLookupTimeout == null || locationLookupTimeout == 5
+          ? 3
+          : locationLookupTimeout,
       locationLookupConcurrency:
           locationLookupConcurrency == null ||
               (!economy &&
-                  (locationLookupConcurrency == 1 ||
+                  (locationLookupConcurrency == 2 ||
                       locationLookupConcurrency == 3))
-          ? (economy ? 1 : 2)
+          ? 1
           : locationLookupConcurrency,
       blockLeaks: boolValue(_blockLeaksKey, defaultValue: false),
       adBlockEnabled: boolValue(_adBlockEnabledKey, defaultValue: false),
@@ -647,6 +723,7 @@ abstract class AppSettingsStore {
       _proxyAllowLanKey: state.proxyAllowLan ? '1' : '0',
       _proxyMixedListenKey: state.proxyMixedListen,
       _proxyMixedPortKey: state.proxyMixedPort.toString(),
+      _proxyPasswordKey: state.proxyPassword,
       _dnsDirectPresetKey: state.dnsDirectPreset,
       _dnsDirectResolverKey: state.dnsDirectResolver,
       _dnsProxyPresetKey: state.dnsProxyPreset,
@@ -744,8 +821,10 @@ class HiveAppSettingsStore extends AppSettingsStore {
       final box = await Hive.openBox<dynamic>(AppSettingsStore.boxName);
       return HiveAppSettingsStore._(box);
     } catch (error, stackTrace) {
-      debugPrint('[HiveAppSettingsStore] Failed to open box: $error');
-      debugPrintStack(stackTrace: stackTrace);
+      AppLogStore.error(
+        'settings storage',
+        'Failed to open Hive settings box: $error\n$stackTrace',
+      );
       rethrow;
     }
   }
@@ -803,12 +882,12 @@ class MemoryAppSettingsStore extends AppSettingsStore {
             dnsPreferIpv6: false,
             russiaDnsDirectResolver: defaultRussiaDnsDirectResolver,
             urlTestUrl: defaultUrlTestUrl,
-            urlTestIntervalSeconds: 300,
-            urlTestTimeoutSeconds: 4,
-            urlTestConcurrency: 6,
-            urlTestUnavailableCheckIntervalSeconds: 300,
+            urlTestIntervalSeconds: 1800,
+            urlTestTimeoutSeconds: 15,
+            urlTestConcurrency: 30,
+            urlTestUnavailableCheckIntervalSeconds: 10,
             locationLookupLimit: 2,
-            locationLookupTimeoutSeconds: 5,
+            locationLookupTimeoutSeconds: 3,
             locationLookupConcurrency: 2,
             blockLeaks: false,
             adBlockEnabled: false,
@@ -840,14 +919,14 @@ class MemoryAppSettingsStore extends AppSettingsStore {
 String _migrateUrlTestUrl(String? value) {
   final normalized = value?.trim() ?? '';
   if (normalized.isEmpty ||
-      normalized == 'https://www.gstatic.com/generate_204') {
+      normalized == 'http://connectivitycheck.gstatic.com/generate_204') {
     return defaultUrlTestUrl;
   }
   return normalized;
 }
 
 String? _resolverValue(String? value, String fallback) {
-  final normalized = value?.trim() ?? '';
+  final normalized = normalizeDnsResolverInput(value ?? '');
   if (normalized.isEmpty) {
     return fallback;
   }

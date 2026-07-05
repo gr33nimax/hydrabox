@@ -40,7 +40,9 @@ class HomePage extends StatelessWidget {
     required this.onOpenSubscriptions,
     required this.onAddSubscription,
     required this.onOpenSettings,
+    required this.onOpenChangelog,
     required this.brandName,
+    required this.versionLabel,
     required this.bottomInset,
     this.onOpenTrafficDashboard,
     this.onRefreshActiveProxyIp,
@@ -70,7 +72,9 @@ class HomePage extends StatelessWidget {
   final VoidCallback onOpenSubscriptions;
   final VoidCallback onAddSubscription;
   final VoidCallback onOpenSettings;
+  final VoidCallback onOpenChangelog;
   final String brandName;
+  final String versionLabel;
   final double bottomInset;
   final VoidCallback? onOpenTrafficDashboard;
   final VoidCallback? onRefreshActiveProxyIp;
@@ -95,35 +99,33 @@ class HomePage extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        centerTitle: true,
-        leadingWidth: 72,
-        leading: Align(
-          alignment: Alignment.centerLeft,
-          child: Padding(
-            padding: const EdgeInsets.only(left: 24),
-            child: SvgPicture.asset(
-              'assets/images/logo.svg',
-              height: 24,
-              colorFilter: ColorFilter.mode(titleColor, BlendMode.srcIn),
-            ),
-          ),
+        automaticallyImplyLeading: false,
+        centerTitle: false,
+        titleSpacing: 18,
+        title: _HomeBrandTitle(
+          brandName: brandName,
+          versionLabel: versionLabel,
+          titleColor: titleColor,
+          onOpenChangelog: onOpenChangelog,
         ),
-        title: Text(brandName),
         actions: [
-          SizedBox(
-            width: 72,
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: IconButton(
-                  style: IconButton.styleFrom(
-                    backgroundColor: theme.colorScheme.surfaceContainerHigh,
-                  ),
-                  onPressed: onOpenSettings,
-                  icon: const Icon(Icons.settings_rounded),
-                ),
+          IconButton(
+            style: IconButton.styleFrom(
+              backgroundColor: theme.colorScheme.surfaceContainerHigh,
+            ),
+            onPressed: onOpenSettings,
+            tooltip: AppLocalizations.of(context).settingsTitle,
+            icon: const Icon(Icons.settings_rounded),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 10),
+            child: IconButton(
+              style: IconButton.styleFrom(
+                backgroundColor: theme.colorScheme.surfaceContainerHigh,
               ),
+              onPressed: onAddSubscription,
+              tooltip: AppLocalizations.of(context).addSubscription,
+              icon: const Icon(Icons.add_rounded),
             ),
           ),
         ],
@@ -226,6 +228,66 @@ class HomePage extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _HomeBrandTitle extends StatelessWidget {
+  const _HomeBrandTitle({
+    required this.brandName,
+    required this.versionLabel,
+    required this.titleColor,
+    required this.onOpenChangelog,
+  });
+
+  final String brandName;
+  final String versionLabel;
+  final Color titleColor;
+  final VoidCallback onOpenChangelog;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SvgPicture.asset(
+          'assets/images/logo.svg',
+          height: 24,
+          colorFilter: ColorFilter.mode(titleColor, BlendMode.srcIn),
+        ),
+        const Gap(9),
+        Flexible(
+          child: Text(brandName, maxLines: 1, overflow: TextOverflow.ellipsis),
+        ),
+        const Gap(8),
+        InkWell(
+          borderRadius: BorderRadius.circular(999),
+          onTap: onOpenChangelog,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHigh.withValues(
+                alpha: .72,
+              ),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: theme.colorScheme.outlineVariant.withValues(alpha: .45),
+              ),
+            ),
+            child: Text(
+              versionLabel,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -893,24 +955,25 @@ class ActiveProxyDelayIndicator extends StatelessWidget {
     final latencyChecking = proxy?.latencyChecking == true;
     final latencyUnavailable = proxy?.latencyUnavailable == true;
     final latencyUnknown = !latencyUnavailable && latency == null;
+    final showCheckingIndicator = latencyChecking && latency == null;
     final hidden = !connected || proxy == null;
     final color = latencyUnavailable
         ? theme.colorScheme.onSurfaceVariant
-        : latencyChecking || !latencyFresh || latency == null
+        : !latencyFresh || latency == null
         ? theme.colorScheme.onSurfaceVariant
         : latency < 350
         ? theme.colorScheme.primary
         : latency < 900
         ? theme.colorScheme.tertiary
         : theme.colorScheme.error;
-    final valueText = latencyChecking
+    final valueText = latency != null
+        ? '$latency'
+        : latencyChecking
         ? l10n.checkingLatencyShort
         : latencyUnavailable
         ? '—'
-        : latency == null
-        ? '—'
-        : '$latency';
-    final icon = latencyChecking
+        : '—';
+    final icon = showCheckingIndicator
         ? SizedBox(
             width: 18,
             height: 18,
@@ -924,9 +987,7 @@ class ActiveProxyDelayIndicator extends StatelessWidget {
         : !latencyFresh || latencyUnknown
         ? Icon(FluentIcons.history_24_regular, color: color)
         : Icon(FluentIcons.wifi_1_24_regular, color: color);
-    final unitText = latencyChecking || latencyUnavailable || latencyUnknown
-        ? ''
-        : l10n.millisecondsUnit;
+    final unitText = latency == null ? '' : l10n.millisecondsUnit;
     final tooltip = latencyChecking
         ? l10n.checkingLatency
         : l10n.refreshLatency;
@@ -941,7 +1002,7 @@ class ActiveProxyDelayIndicator extends StatelessWidget {
           borderRadius: BorderRadius.circular(20),
           child: InkWell(
             borderRadius: BorderRadius.circular(20),
-            onTap: hidden || latencyChecking ? null : onRefresh,
+            onTap: hidden ? null : onRefresh,
             child: SizedBox(
               height: 40,
               child: Padding(
@@ -958,7 +1019,7 @@ class ActiveProxyDelayIndicator extends StatelessWidget {
                       switchOutCurve: Curves.easeOutCubic,
                       child: KeyedSubtree(
                         key: ValueKey(
-                          latencyChecking
+                          showCheckingIndicator
                               ? 'checking'
                               : latencyUnavailable
                               ? 'unavailable'
@@ -1180,10 +1241,10 @@ class ActiveProxyFooter extends StatelessWidget {
                         GestureDetector(
                           behavior: HitTestBehavior.opaque,
                           onTap: connected ? _refreshIp : null,
-                          child: ClipRect(
-                            child: AnimatedSize(
-                              duration: const Duration(milliseconds: 220),
-                              curve: Curves.easeOutCubic,
+                          child: SizedBox(
+                            height: 24,
+                            width: double.infinity,
+                            child: Align(
                               alignment: Alignment.centerLeft,
                               child: AnimatedSwitcher(
                                 duration: const Duration(milliseconds: 220),
@@ -1204,7 +1265,7 @@ class ActiveProxyFooter extends StatelessWidget {
                                     opacity: animation,
                                     child: SlideTransition(
                                       position: Tween<Offset>(
-                                        begin: const Offset(0, 0.12),
+                                        begin: const Offset(0, 0.08),
                                         end: Offset.zero,
                                       ).animate(animation),
                                       child: child,
@@ -1220,20 +1281,23 @@ class ActiveProxyFooter extends StatelessWidget {
                     ),
                   ),
                   const Gap(12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      _FooterStatLine(
-                        icon: FluentIcons.arrow_download_20_regular,
-                        text: speedText,
-                      ),
-                      const Gap(8),
-                      _FooterStatLine(
-                        icon:
-                            FluentIcons.arrow_bidirectional_up_down_20_regular,
-                        text: trafficText,
-                      ),
-                    ],
+                  SizedBox(
+                    width: 118,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        _FooterStatLine(
+                          icon: FluentIcons.arrow_download_20_regular,
+                          text: speedText,
+                        ),
+                        const Gap(8),
+                        _FooterStatLine(
+                          icon: FluentIcons
+                              .arrow_bidirectional_up_down_20_regular,
+                          text: trafficText,
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -1255,10 +1319,8 @@ class _FooterStatLine extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Row(
-      mainAxisSize: MainAxisSize.min,
       children: [
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 170),
+        Expanded(
           child: Text(
             text,
             maxLines: 1,

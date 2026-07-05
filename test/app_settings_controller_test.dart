@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:meow_client/app/app_settings_controller.dart';
 import 'package:meow_client/data/local/app_settings_store.dart';
+import 'package:meow_client/features/settings/settings_dns_page.dart';
 
 void main() {
   test('performance preset updates URLTest and lookup defaults', () {
@@ -32,6 +33,47 @@ void main() {
     );
   });
 
+  test('plain DNS address defaults to UDP', () {
+    final controller = AppSettingsController();
+
+    final directChange = controller.setDnsDirectResolver(' 1.1.1.1 ');
+    final proxyChange = controller.setDnsProxyResolver('dns.google:5353');
+
+    expect(directChange.changed, isFalse);
+    expect(controller.dnsDirectResolver, 'udp://1.1.1.1');
+    expect(proxyChange.changed, isTrue);
+    expect(controller.dnsProxyResolver, 'udp://dns.google:5353');
+    expect(
+      AppSettingsController.normalizedRussiaDnsDirectResolver('77.88.8.1'),
+      'udp://77.88.8.1',
+    );
+  });
+
+  test('DNS settings keep implicit UDP out of the editable field', () {
+    expect(dnsResolverFieldText('udp://1.1.1.1'), '1.1.1.1');
+    expect(dnsResolverFieldText('tcp://1.1.1.1'), 'tcp://1.1.1.1');
+    expect(dnsResolverProtocolLabel('1.1.1.1'), 'UDP');
+    expect(dnsResolverProtocolLabel('tcp://1.1.1.1'), 'TCP');
+    expect(dnsResolverProtocolLabel('tls://1.1.1.1'), 'TLS');
+    expect(dnsResolverProtocolLabel('https://dns.example/dns-query'), 'HTTPS');
+  });
+
+  test('split routing changes require a full VPN service restart', () {
+    final controller = AppSettingsController();
+
+    final modeChange = controller.setSplitRoutingMode(
+      SplitRoutingMode.bypassSelected,
+    );
+    final packagesChange = controller.setSplitRoutingPackages(const [
+      'com.example.app',
+    ]);
+
+    expect(modeChange.changed, isTrue);
+    expect(modeChange.forceFullServiceRestart, isTrue);
+    expect(packagesChange.changed, isTrue);
+    expect(packagesChange.forceFullServiceRestart, isTrue);
+  });
+
   test('toState keeps external runtime selection fields supplied by app', () {
     final controller = AppSettingsController()
       ..setLocale('ru')
@@ -52,5 +94,30 @@ void main() {
     expect(state.selectedProxyTag, 'vless-1');
     expect(state.localeCode, 'ru');
     expect(state.tlsFragmentationMode, TlsFragmentationMode.record);
+  });
+
+  test('connection mode never leaves the runtime without an inbound', () {
+    final controller = AppSettingsController();
+
+    final proxyChange = controller.setInboundConnectionMode(
+      InboundConnectionMode.proxy,
+    );
+    expect(proxyChange.forceFullServiceRestart, isTrue);
+    expect(controller.vpnInboundEnabled, isFalse);
+    expect(controller.proxyInboundEnabled, isTrue);
+
+    controller.setProxyInboundEnabled(false);
+    expect(controller.vpnInboundEnabled, isTrue);
+    expect(controller.proxyInboundEnabled, isFalse);
+  });
+
+  test('enabling LAN proxy creates a strong per-install password', () {
+    final controller = AppSettingsController();
+
+    controller.setProxyAllowLan(true);
+
+    expect(controller.proxyMixedListen, '0.0.0.0');
+    expect(isValidProxyPassword(controller.proxyPassword), isTrue);
+    expect(controller.proxyPassword.length, proxyPasswordLength);
   });
 }

@@ -30,6 +30,7 @@ class SingboxConfigCoordinatorSnapshot {
     required this.proxyInboundEnabled,
     required this.proxyMixedListen,
     required this.proxyMixedPort,
+    this.proxyPassword = '',
     required this.dnsDirectResolver,
     required this.dnsProxyResolver,
     required this.dnsPreferIpv6,
@@ -81,6 +82,7 @@ class SingboxConfigCoordinatorSnapshot {
   final bool proxyInboundEnabled;
   final String proxyMixedListen;
   final int proxyMixedPort;
+  final String proxyPassword;
   final String dnsDirectResolver;
   final String dnsProxyResolver;
   final bool dnsPreferIpv6;
@@ -192,10 +194,19 @@ class SingboxConfigCoordinator {
   int _runtimeConfigApplyGeneration = 0;
   int _singboxConfigBuildGeneration = 0;
   Future<String?>? _singboxConfigPathFuture;
+  Future<void> _runtimeConfigApplyQueue = Future<void>.value();
 
-  void emitCurrentConfigLog(String reason, {bool restartRuntime = true}) {
+  void emitCurrentConfigLog(
+    String reason, {
+    bool restartRuntime = true,
+    bool forceFullServiceRestart = false,
+  }) {
     unawaited(
-      emitCurrentConfigLogAsync(reason, restartRuntime: restartRuntime),
+      emitCurrentConfigLogAsync(
+        reason,
+        restartRuntime: restartRuntime,
+        forceFullServiceRestart: forceFullServiceRestart,
+      ),
     );
   }
 
@@ -203,6 +214,7 @@ class SingboxConfigCoordinator {
     String reason, {
     required bool restartRuntime,
     bool applyWhenNativeRunning = false,
+    bool forceFullServiceRestart = false,
   }) async {
     var snapshot = _readSnapshot();
     var applyToRuntime =
@@ -244,6 +256,7 @@ class SingboxConfigCoordinator {
       build: build,
       useVpn: snapshot.vpnInboundEnabled,
       restartRuntime: restartRuntime,
+      forceFullServiceRestart: forceFullServiceRestart,
       generation: generation,
     );
   }
@@ -252,15 +265,44 @@ class SingboxConfigCoordinator {
     required SingboxConfigBuildResult build,
     required bool useVpn,
     required bool restartRuntime,
+    bool forceFullServiceRestart = false,
     int? generation,
-  }) async {
+  }) {
     final applyGeneration = generation ?? ++_runtimeConfigApplyGeneration;
+    final operation = _runtimeConfigApplyQueue.then(
+      (_) => _applyRuntimeConfigSerially(
+        build: build,
+        useVpn: useVpn,
+        restartRuntime: restartRuntime,
+        forceFullServiceRestart: forceFullServiceRestart,
+        generation: applyGeneration,
+      ),
+    );
+    _runtimeConfigApplyQueue = operation.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
+    );
+    return operation;
+  }
+
+  Future<void> _applyRuntimeConfigSerially({
+    required SingboxConfigBuildResult build,
+    required bool useVpn,
+    required bool restartRuntime,
+    required bool forceFullServiceRestart,
+    required int generation,
+  }) async {
+    var preparedBuildPromoted = false;
     try {
+      if (!_isMounted() || !_isCurrentApply(generation)) {
+        return;
+      }
       final policy = await _resolveRuntimeApplyPolicy(
         useVpn: useVpn,
         restartRuntime: restartRuntime,
+        forceFullServiceRestart: forceFullServiceRestart,
       );
-      if (!_isMounted() || !_isCurrentApply(applyGeneration)) {
+      if (!_isMounted() || !_isCurrentApply(generation)) {
         return;
       }
       if (policy == RuntimeApplyPolicy.logOnly) {
@@ -279,13 +321,16 @@ class SingboxConfigCoordinator {
         build: build,
         useVpn: useVpn,
         policy: policy,
-        promotePreparedConfig: promotePreparedConfigBuild,
+        promotePreparedConfig: (candidate) async {
+          await promotePreparedConfigBuild(candidate);
+          preparedBuildPromoted = candidate.hasPreparedConfig;
+        },
         cacheStartedBuild: _cacheStartedBuild,
         logCall: _logCall,
         trimMemory: _trimRuntimeStartMemory,
         onWatchdogTimeout: _onRuntimeLifecycleTimeout,
       );
-      if (!_isMounted() || !_isCurrentApply(applyGeneration)) {
+      if (!_isMounted() || !_isCurrentApply(generation)) {
         return;
       }
       if (!result.success) {
@@ -321,6 +366,12 @@ class SingboxConfigCoordinator {
       if (_isMounted()) {
         _setPhase(SingboxConfigCoordinatorPhase.failed);
         _showRuntimeFailure(timedOut: false);
+      }
+    } finally {
+      // Applying a prepared build consumes its staged file. If the operation
+      // became stale or failed before promotion, remove the orphan candidate.
+      if (!preparedBuildPromoted) {
+        discardPreparedConfigCandidate(build);
       }
     }
   }
@@ -457,6 +508,7 @@ class SingboxConfigCoordinator {
   Future<RuntimeApplyPolicy> _resolveRuntimeApplyPolicy({
     required bool useVpn,
     required bool restartRuntime,
+    required bool forceFullServiceRestart,
   }) async {
     final status = await _runtimeStatusSnapshot(reason: 'config_apply_policy');
     final running = status['running'] == true;
@@ -465,19 +517,23 @@ class SingboxConfigCoordinator {
     final recordedServiceAlive = status['recordedServiceAlive'] == true;
     final runtimeIntentFresh = status['runtimeIntentFresh'] == true;
     final transitionInProgress = _readSnapshot().runtimeTransitionInProgress;
-    final policy = running && currentMode == targetMode
+    final serviceMayBeAlive =
+        running ||
+        recordedServiceAlive ||
+        runtimeIntentFresh ||
+        transitionInProgress;
+    final policy = forceFullServiceRestart && serviceMayBeAlive
+        ? RuntimeApplyPolicy.fullServiceRestart
+        : running && currentMode == targetMode
         ? RuntimeApplyPolicy.safeCoreRestart
-        : (running ||
-                  recordedServiceAlive ||
-                  runtimeIntentFresh ||
-                  transitionInProgress ||
-                  restartRuntime
+        : (serviceMayBeAlive || restartRuntime
               ? RuntimeApplyPolicy.fullServiceRestart
               : RuntimeApplyPolicy.logOnly);
     AppLogStore.info(
       'runtime',
       'config apply policy resolved policy=${policy.name} '
           'requestedRestart=$restartRuntime running=$running '
+          'forceFullServiceRestart=$forceFullServiceRestart '
           'mode=${currentMode ?? ''} target=$targetMode '
           'recordedServiceAlive=$recordedServiceAlive '
           'runtimeIntentFresh=$runtimeIntentFresh',
@@ -521,6 +577,7 @@ class SingboxConfigCoordinator {
       proxyInboundEnabled: snapshot.proxyInboundEnabled,
       proxyMixedListen: snapshot.proxyMixedListen,
       proxyMixedPort: snapshot.proxyMixedPort,
+      proxyPassword: snapshot.proxyPassword,
       dnsDirectResolver: snapshot.dnsDirectResolver,
       dnsProxyResolver: snapshot.dnsProxyResolver,
       dnsPreferIpv6: snapshot.dnsPreferIpv6,

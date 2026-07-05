@@ -373,7 +373,9 @@ void main() {
     expect(selector['default'], 'group-auto');
     expect(lowest['outbounds'], ['group-auto']);
     expect(lowest['timeout'], '8s');
+    expect(lowest['idle_timeout'], '77s');
     expect(lowest['concurrency'], 9);
+    expect(lowest, isNot(contains('auto_check')));
     expect(lowest['tolerance'], 1);
     expect(lowest['interrupt_exist_connections'], isFalse);
     expect(lowest['interrupt_delay_threshold'], 300);
@@ -385,8 +387,10 @@ void main() {
     expect(groupUrltest['method'], 'setback');
     expect(groupUrltest['url'], 'https://subscription.example/generate_204');
     expect(groupUrltest['interval'], '77s');
+    expect(groupUrltest['idle_timeout'], '77s');
     expect(groupUrltest['timeout'], '8s');
     expect(groupUrltest['concurrency'], 9);
+    expect(groupUrltest, isNot(contains('auto_check')));
     expect(groupUrltest['unavailable_check_interval'], '11s');
     expect(groupUrltest['tolerance'], 1);
     expect(groupUrltest['interrupt_exist_connections'], isFalse);
@@ -531,7 +535,7 @@ void main() {
       subscription,
       selectedProxyTag: 'group-auto',
       urlTestUrl: 'https://global.example/generate_204',
-      urlTestIntervalSeconds: 181,
+      urlTestIntervalSeconds: 3600,
       urlTestTimeoutSeconds: 16,
       urlTestConcurrency: 31,
       urlTestUnavailableCheckIntervalSeconds: 12,
@@ -545,7 +549,8 @@ void main() {
     );
 
     expect(groupUrltest['url'], 'https://global.example/generate_204');
-    expect(groupUrltest['interval'], '181s');
+    expect(groupUrltest['interval'], '3600s');
+    expect(groupUrltest['idle_timeout'], '3600s');
     expect(groupUrltest['timeout'], '16s');
     expect(groupUrltest['concurrency'], 31);
     expect(groupUrltest['unavailable_check_interval'], '12s');
@@ -1696,6 +1701,17 @@ void main() {
     final routeRules = (route['rules'] as List).cast<Map>();
     expect(route['final'], 'select');
     expect(routeRules.any((rule) => rule.containsKey('package_name')), isFalse);
+    expect(
+      routeRules.any(
+        (rule) =>
+            rule['inbound'] == 'tun-in' &&
+            rule['network'] == 'icmp' &&
+            rule['ip_cidr'] == '172.19.0.2/32' &&
+            rule['action'] == 'reject' &&
+            rule['method'] == 'drop',
+      ),
+      isTrue,
+    );
   });
 
   test('split, local, adblock and Russia route rules keep stable priority', () {
@@ -1909,6 +1925,80 @@ void main() {
     );
   });
 
+  test('VPN TUN captures both IPv4 and IPv6', () {
+    const subscription = Subscription(
+      id: 'dual-stack-tun',
+      name: 'Dual stack',
+      url: 'https://example.com/sub',
+      outbounds: [],
+    );
+    final config = _defaultBuilder(
+      subscription,
+      vpnInboundEnabled: true,
+    ).build();
+    final tun = (config['inbounds'] as List).cast<Map>().firstWhere(
+      (inbound) => inbound['type'] == 'tun',
+    );
+
+    expect(tun['address'], contains('172.19.0.1/30'));
+    expect(tun['address'], contains('fdfe:dcba:9876::1/126'));
+  });
+
+  test('VPN TUN and local proxy can run in the same service config', () {
+    const subscription = Subscription(
+      id: 'vpn-with-local-proxy',
+      name: 'VPN with local proxy',
+      url: 'https://example.com/sub',
+      outbounds: [],
+    );
+    final config = _defaultBuilder(
+      subscription,
+      vpnInboundEnabled: true,
+      proxyInboundEnabled: true,
+    ).build();
+    final inbounds = (config['inbounds'] as List).cast<Map>();
+
+    expect(inbounds.where((inbound) => inbound['type'] == 'tun'), hasLength(1));
+    expect(
+      inbounds.where((inbound) => inbound['type'] == 'mixed'),
+      hasLength(1),
+    );
+    expect(inbounds.map((inbound) => inbound['tag']).toSet(), {
+      'tun-in',
+      'mixed-in',
+    });
+  });
+
+  test('LAN proxy requires and writes separate local credentials', () {
+    const subscription = Subscription(
+      id: 'lan-proxy',
+      name: 'LAN proxy',
+      url: 'https://example.com/sub',
+      outbounds: [],
+    );
+    final config = _defaultBuilder(
+      subscription,
+      proxyInboundEnabled: true,
+      proxyMixedListen: '0.0.0.0',
+      proxyPassword: 'LocalOnlyPassword123456',
+    ).build();
+    final mixed = (config['inbounds'] as List).cast<Map>().firstWhere(
+      (inbound) => inbound['type'] == 'mixed',
+    );
+
+    expect(mixed['users'], [
+      {'username': defaultProxyUsername, 'password': 'LocalOnlyPassword123456'},
+    ]);
+    expect(
+      () => _defaultBuilder(
+        subscription,
+        proxyInboundEnabled: true,
+        proxyMixedListen: '0.0.0.0',
+      ).build(),
+      throwsStateError,
+    );
+  });
+
   test('invalid Russia route paths do not activate route rule sets', () {
     const subscription = Subscription(
       id: 'invalid-russia',
@@ -2014,6 +2104,13 @@ void main() {
     }
 
     expect(remoteDns('udp://1.1.1.1')['type'], 'udp');
+    expect(remoteDns('1.1.1.1'), {
+      'type': 'udp',
+      'tag': 'dns-remote',
+      'server': '1.1.1.1',
+      'server_port': 53,
+      'detour': 'select',
+    });
     expect(remoteDns('tcp://1.1.1.1')['type'], 'tcp');
     expect(remoteDns('tls://dns.google')['server_port'], 853);
     expect(remoteDns('https://dns.google/dns-query')['path'], '/dns-query');
@@ -2027,6 +2124,11 @@ void main() {
       (server) => server['tag'] == 'dns-direct',
     );
     expect(direct['type'], 'local');
+    expect(
+      (config['route'] as Map)['default_domain_resolver'],
+      'dns-local',
+      reason: 'proxy endpoint resolution must not depend on custom DNS',
+    );
 
     expect(
       () => _defaultBuilder(
@@ -2060,7 +2162,7 @@ void main() {
     final config = _defaultBuilder(
       subscription,
       useRussiaRouteData: true,
-      russiaDnsDirectResolver: 'udp://77.88.8.1',
+      russiaDnsDirectResolver: '77.88.8.1',
     ).build();
 
     final servers = ((config['dns'] as Map)['servers'] as List)
@@ -2087,6 +2189,8 @@ SingboxConfigBuilder _defaultBuilder(
   TlsFragmentationMode tlsFragmentationMode = TlsFragmentationMode.disabled,
   bool vpnInboundEnabled = false,
   bool proxyInboundEnabled = false,
+  String proxyMixedListen = '127.0.0.1',
+  String proxyPassword = '',
   SplitRoutingMode splitRoutingMode = SplitRoutingMode.disabled,
   List<String> splitRoutingPackages = const <String>[],
   bool adBlockEnabled = false,
@@ -2104,8 +2208,9 @@ SingboxConfigBuilder _defaultBuilder(
     vpnStrictRoute: true,
     vpnTunImplementation: TunImplementationPreference.mixed,
     proxyInboundEnabled: proxyInboundEnabled,
-    proxyMixedListen: '127.0.0.1',
+    proxyMixedListen: proxyMixedListen,
     proxyMixedPort: 1080,
+    proxyPassword: proxyPassword,
     dnsDirectResolver: dnsDirectResolver,
     dnsProxyResolver: dnsProxyResolver,
     dnsPreferIpv6: false,

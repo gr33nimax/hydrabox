@@ -9,6 +9,7 @@ import 'package:meow_client/features/settings/settings_ui.dart';
 import 'package:meow_client/l10n/generated/app_localizations.dart';
 import 'package:meow_client/singbox/singbox_runtime.dart';
 import 'package:meow_client/widgets/progressive_blur_scaffold.dart';
+import 'package:meow_client/widgets/release_notes_card.dart';
 
 class SettingsUpdatePage extends StatefulWidget {
   const SettingsUpdatePage({
@@ -38,7 +39,10 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage>
   AppUpdateVerificationResult? _verification;
   String? _downloadedFilePath;
   late String _currentVersion = widget.currentVersion;
+  int _currentVersionCode = 0;
   late AppUpdateInstallMode _installMode = widget.installMode;
+  AppUpdateInfo? _pendingAutoInstallInfo;
+  bool _resumingAutoInstall = false;
 
   @override
   void initState() {
@@ -57,7 +61,23 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(_refreshInstalledVersion());
-      unawaited(_refreshInstallPermissionStatus(showFeedback: true));
+      unawaited(_resumePendingAutoInstall());
+    }
+  }
+
+  Future<void> _resumePendingAutoInstall() async {
+    if (_resumingAutoInstall) return;
+    _resumingAutoInstall = true;
+    try {
+      final canInstall = await _refreshInstallPermissionStatus(
+        showFeedback: true,
+      );
+      final pending = _pendingAutoInstallInfo;
+      if (!canInstall || pending == null || !mounted || _downloading) return;
+      _pendingAutoInstallInfo = null;
+      await _download(pending, installAfterDownload: true);
+    } finally {
+      _resumingAutoInstall = false;
     }
   }
 
@@ -70,8 +90,12 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage>
     final info = await SingboxRuntime.instance.getAppVersionInfo();
     if (!mounted) return;
     final next = info.displayVersion;
-    if (next != _currentVersion) {
-      setState(() => _currentVersion = next);
+    final nextBuildNumber = info.updateBuildNumber;
+    if (next != _currentVersion || nextBuildNumber != _currentVersionCode) {
+      setState(() {
+        _currentVersion = next;
+        _currentVersionCode = nextBuildNumber;
+      });
     }
   }
 
@@ -87,6 +111,7 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage>
     });
     final result = await AppUpdateService.instance.checkForUpdates(
       currentVersion: _currentVersion,
+      currentBuildNumber: _currentVersionCode,
       manual: manual,
     );
     if (!mounted) return;
@@ -112,8 +137,10 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage>
     }
 
     if (mode == AppUpdateInstallMode.auto) {
+      _pendingAutoInstallInfo = info;
       final canInstall = await _ensureInstallPermission();
       if (!canInstall || !mounted) return;
+      _pendingAutoInstallInfo = null;
     }
     await _download(
       info,
@@ -123,7 +150,7 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage>
 
   Future<_InstallModeDecision?> _showInstallModeSheet() {
     final l10n = AppLocalizations.of(context);
-    var selected = AppUpdateInstallMode.manual;
+    var selected = AppUpdateInstallMode.auto;
     var remember = false;
     return showModalBottomSheet<_InstallModeDecision>(
       context: context,
@@ -399,8 +426,8 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage>
       return;
     }
     final l10n = AppLocalizations.of(context);
-    final version = _result?.info?.version.trim().isNotEmpty == true
-        ? 'v${_result!.info!.version}'
+    final version = _result?.info?.displayVersion.trim().isNotEmpty == true
+        ? 'v${_result!.info!.displayVersion}'
         : _currentVersion;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -425,6 +452,7 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage>
     setState(() => _clearingUpdateCache = true);
     final deleted = await AppUpdateService.instance.deleteCachedInstallers(
       currentVersion: _currentVersion,
+      currentBuildNumber: _currentVersionCode,
     );
     final metadata = await AppUpdateService.instance.loadMetadata();
     if (!mounted) return;
@@ -509,7 +537,7 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage>
           ],
           if (info != null) ...[
             const Gap(12),
-            _ReleaseNotesCard(body: info.body),
+            ReleaseNotesCard(body: info.body),
           ],
           if (result?.status == AppUpdateStatus.error) ...[
             const Gap(12),
@@ -541,6 +569,7 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage>
     if (_downloading) return l10n.updatesDownloadingTitle;
     return switch (result?.status) {
       AppUpdateStatus.updateAvailable => l10n.updatesAvailableTitle,
+      AppUpdateStatus.unsupportedAndroid => l10n.updatesUnsupportedAndroidTitle,
       AppUpdateStatus.downloaded => l10n.updatesDownloadedTitle,
       AppUpdateStatus.upToDate => l10n.updatesUpToDateTitle,
       AppUpdateStatus.error => l10n.updatesErrorTitle,
@@ -556,8 +585,13 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage>
     return switch (result?.status) {
       AppUpdateStatus.updateAvailable when info != null =>
         l10n.updatesAvailableSubtitle(
-          _displayVersion(info.version),
+          info.displayVersion,
           _formatBytes(info.asset.sizeBytes, l10n),
+        ),
+      AppUpdateStatus.unsupportedAndroid when info != null =>
+        l10n.updatesUnsupportedAndroidSubtitle(
+          info.displayVersion,
+          info.minimumAndroidSdk ?? 0,
         ),
       AppUpdateStatus.downloaded => l10n.updatesDownloadedSubtitle(
         (_downloadedFilePath ?? _downloadProgress?.filePath) == null
@@ -643,6 +677,13 @@ class _UpdateActionButton extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
+      );
+    }
+    if (result?.status == AppUpdateStatus.unsupportedAndroid) {
+      return OutlinedButton(
+        onPressed: checking ? null : onCheck,
+        style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+        child: Text(l10n.updatesCheckAction),
       );
     }
     return OutlinedButton(
@@ -786,7 +827,7 @@ class _UpdateInfoCard extends StatelessWidget {
             const Gap(8),
             _InfoRow(
               label: l10n.updatesLatestVersion,
-              value: info == null ? '—' : _displayVersion(info!.version),
+              value: info?.displayVersion ?? '—',
             ),
             const Gap(14),
             action,
@@ -841,6 +882,13 @@ class _DownloadProgressCard extends StatelessWidget {
         ? _formatBytes(progress!.totalBytes, l10n)
         : l10n.updatesUnknownSize;
     final eta = _formatEta(context, progress?.etaSeconds);
+    final stage = progress?.stage ?? AppUpdateDownloadStage.downloading;
+    final title = switch (stage) {
+      AppUpdateDownloadStage.cleaning => l10n.updatesStageCleaning,
+      AppUpdateDownloadStage.downloading => l10n.updatesDownloadingTitle,
+      AppUpdateDownloadStage.verifying => l10n.updatesStageVerifying,
+      AppUpdateDownloadStage.ready => l10n.updatesDownloadedTitle,
+    };
     return Card(
       margin: EdgeInsets.zero,
       child: Padding(
@@ -849,7 +897,7 @@ class _DownloadProgressCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              l10n.updatesDownloadingTitle,
+              title,
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w800,
               ),
@@ -857,8 +905,11 @@ class _DownloadProgressCard extends StatelessWidget {
             const Gap(12),
             LinearProgressIndicator(value: value, minHeight: 4),
             const Gap(10),
-            Text(l10n.updatesProgressBytes(downloaded, total)),
-            if (progress != null && progress!.bytesPerSecond > 0) ...[
+            if (stage == AppUpdateDownloadStage.downloading)
+              Text(l10n.updatesProgressBytes(downloaded, total)),
+            if (stage == AppUpdateDownloadStage.downloading &&
+                progress != null &&
+                progress!.bytesPerSecond > 0) ...[
               const Gap(4),
               Text(
                 l10n.updatesProgressSpeedEta(
@@ -873,101 +924,6 @@ class _DownloadProgressCard extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _ReleaseNotesCard extends StatelessWidget {
-  const _ReleaseNotesCard({required this.body});
-
-  final String body;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    final theme = Theme.of(context);
-    final lines = _releaseNoteLines(body);
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              l10n.updatesReleaseNotesTitle,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const Gap(12),
-            if (lines.isEmpty)
-              Text(
-                l10n.updatesNoReleaseNotes,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              )
-            else
-              ...lines.map((line) => _ReleaseNoteLine(line: line)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ReleaseNoteLine extends StatelessWidget {
-  const _ReleaseNoteLine({required this.line});
-
-  final _ReleaseLine line;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
-    final textStyle = switch (line.kind) {
-      _ReleaseLineKind.heading => theme.textTheme.titleMedium?.copyWith(
-        fontWeight: FontWeight.w900,
-      ),
-      _ReleaseLineKind.bullet => theme.textTheme.bodyMedium?.copyWith(
-        color: cs.onSurfaceVariant,
-        height: 1.35,
-      ),
-      _ReleaseLineKind.paragraph => theme.textTheme.bodyMedium?.copyWith(
-        color: cs.onSurfaceVariant,
-        height: 1.35,
-      ),
-    };
-    if (line.kind == _ReleaseLineKind.bullet) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Container(
-                width: 5,
-                height: 5,
-                decoration: BoxDecoration(
-                  color: cs.primary,
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ),
-            const Gap(10),
-            Expanded(child: Text(line.text, style: textStyle)),
-          ],
-        ),
-      );
-    }
-    return Padding(
-      padding: EdgeInsets.only(
-        top: line.kind == _ReleaseLineKind.heading ? 8 : 0,
-        bottom: line.kind == _ReleaseLineKind.heading ? 8 : 10,
-      ),
-      child: Text(line.text, style: textStyle),
     );
   }
 }
@@ -1027,51 +983,6 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
-enum _ReleaseLineKind { heading, bullet, paragraph }
-
-class _ReleaseLine {
-  const _ReleaseLine(this.kind, this.text);
-
-  final _ReleaseLineKind kind;
-  final String text;
-}
-
-List<_ReleaseLine> _releaseNoteLines(String body) {
-  final trimmedBody = body.trim();
-  if (trimmedBody.isEmpty) return const <_ReleaseLine>[];
-  final limited = trimmedBody.length > 6000
-      ? '${trimmedBody.substring(0, 6000)}…'
-      : trimmedBody;
-  final lines = <_ReleaseLine>[];
-  for (final raw in limited.split(RegExp(r'\r?\n'))) {
-    final line = raw.trim();
-    if (line.isEmpty) continue;
-    if (line.startsWith('#')) {
-      lines.add(
-        _ReleaseLine(
-          _ReleaseLineKind.heading,
-          line.replaceFirst(RegExp(r'^#+\s*'), ''),
-        ),
-      );
-    } else if (line.startsWith('- ') ||
-        line.startsWith('* ') ||
-        RegExp(r'^\d+\.\s+').hasMatch(line)) {
-      lines.add(
-        _ReleaseLine(
-          _ReleaseLineKind.bullet,
-          line
-              .replaceFirst(RegExp(r'^[-*]\s+'), '')
-              .replaceFirst(RegExp(r'^\d+\.\s+'), ''),
-        ),
-      );
-    } else {
-      lines.add(_ReleaseLine(_ReleaseLineKind.paragraph, line));
-    }
-    if (lines.length >= 48) break;
-  }
-  return lines;
-}
-
 String _formatBytes(int bytes, AppLocalizations l10n) {
   if (bytes <= 0) return l10n.updatesUnknownSize;
   const units = ['B', 'KB', 'MB', 'GB'];
@@ -1090,11 +1001,6 @@ String _formatEta(BuildContext context, int? seconds) {
   if (seconds == null || seconds < 0) return '—';
   if (seconds < 60) return l10n.updatesEtaSeconds(seconds);
   return l10n.updatesEtaMinutes(seconds ~/ 60, seconds % 60);
-}
-
-String _displayVersion(String version) {
-  final normalized = AppUpdateService.normalizeVersion(version);
-  return normalized.isEmpty ? version.trim() : normalized;
 }
 
 String _formatTime(DateTime time) {

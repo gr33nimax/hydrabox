@@ -6,9 +6,9 @@ class IpRefreshDots extends StatefulWidget {
   const IpRefreshDots({
     super.key,
     this.color,
-    this.dotSize = 4,
-    this.spacing = 3,
-    this.lift = 3.5,
+    this.dotSize = 4.2,
+    this.spacing = 4,
+    this.lift = 4.5,
   });
 
   final Color? color;
@@ -29,7 +29,7 @@ class _IpRefreshDotsState extends State<IpRefreshDots>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(milliseconds: 1350),
     )..repeat();
   }
 
@@ -46,8 +46,10 @@ class _IpRefreshDotsState extends State<IpRefreshDots>
         DefaultTextStyle.of(context).style.color ??
         Theme.of(context).colorScheme.onSurfaceVariant;
     return SizedBox(
-      height: widget.dotSize + widget.lift * 2 + 2,
-      child: Center(
+      width: widget.dotSize * 3 + widget.spacing * 2,
+      height: widget.dotSize + widget.lift + 8,
+      child: Align(
+        alignment: Alignment.centerLeft,
         child: AnimatedBuilder(
           animation: _controller,
           builder: (context, _) {
@@ -91,9 +93,12 @@ class _AnimatedIpDot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final phase = (value * math.pi * 2) - index * .72;
-    final wave = (math.sin(phase) + 1) / 2;
-    final eased = Curves.easeInOutSine.transform(wave);
+    final raw = (value * 3 - index) % 3;
+    final local = raw < 0 ? raw + 3 : raw;
+    final liftProgress = local <= 1
+        ? math.sin(local * math.pi).clamp(0.0, 1.0)
+        : 0.0;
+    final eased = Curves.easeInOutCubic.transform(liftProgress);
     return Transform.translate(
       offset: Offset(0, -lift * eased),
       child: Opacity(

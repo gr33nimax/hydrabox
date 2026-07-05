@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/services.dart';
+import 'package:meow_client/data/subscription/happ_crypt5_local.dart';
 import 'package:meow_client/data/subscription/happ_crypto_link.dart';
 
 const _legacyBazaruCrypt5Link =
@@ -25,6 +27,30 @@ bool _skipWhenHappCryptoAssetsAreUnavailable() {
 }
 
 void main() {
+  test('crypt5 capability requires every compatibility asset', () async {
+    final support = await HappCrypt5Local.checkSupport(
+      bundle: _MemoryAssetBundle({
+        'assets/happ_crypto/selectors.json': '[["ab", "cdef", "gh"]]',
+        'assets/happ_crypto/expanded_rsa_keys.json': '{"abcdefgh":"key"}',
+      }),
+    );
+
+    expect(support.supported, isFalse);
+  });
+
+  test('crypt5 capability accepts a complete structural asset set', () async {
+    final support = await HappCrypt5Local.checkSupport(
+      bundle: _MemoryAssetBundle({
+        'assets/happ_crypto/selectors.json': '[["ab", "cdef", "gh"]]',
+        'assets/happ_crypto/expanded_rsa_keys.json': '{"abcdefgh":"key1"}',
+        'assets/happ_crypto/crypt51_rsa_keys.json': '{"abcdefgh":"key2"}',
+        'assets/happ_crypto/native_rsa_keys.json': '{"abcdefgh":"key3"}',
+      }),
+    );
+
+    expect(support.supported, isTrue);
+  });
+
   test('happRequestInfo enables HWID and Happ user agent', () {
     final info = HappCryptoLinkDecoder.happRequestInfo();
 
@@ -105,4 +131,19 @@ void main() {
       }),
     );
   });
+}
+
+class _MemoryAssetBundle extends CachingAssetBundle {
+  _MemoryAssetBundle(this.assets);
+
+  final Map<String, String> assets;
+
+  @override
+  Future<ByteData> load(String key) async {
+    final value = assets[key];
+    if (value == null) {
+      throw StateError('Missing test asset: $key');
+    }
+    return ByteData.sublistView(Uint8List.fromList(utf8.encode(value)));
+  }
 }

@@ -317,14 +317,20 @@ abstract class AppLocalizations {
   /// No description provided for @aboutHeroSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Android VPN client focused on speed, stability, and a clean daily experience.'**
+  /// **'An Android VPN client we are building to be fast, understandable, and reliable for everyday use.'**
   String get aboutHeroSubtitle;
 
   /// No description provided for @aboutDevelopedBy.
   ///
   /// In en, this message translates to:
-  /// **'Developed by MeowTeam.'**
+  /// **'Etonify is developed by the small independent MeowTeam.'**
   String get aboutDevelopedBy;
+
+  /// No description provided for @aboutContactLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Message the developers'**
+  String get aboutContactLabel;
 
   /// No description provided for @aboutCoreSourceLabel.
   ///
@@ -395,7 +401,7 @@ abstract class AppLocalizations {
   /// No description provided for @legalContactAction.
   ///
   /// In en, this message translates to:
-  /// **'Contact'**
+  /// **'Ask a question'**
   String get legalContactAction;
 
   /// No description provided for @legalImportBlockedMessage.
@@ -407,13 +413,13 @@ abstract class AppLocalizations {
   /// No description provided for @legalTermsBody.
   ///
   /// In en, this message translates to:
-  /// **'# Etonify Terms of Use\n\nEtonify is an Android VPN client made by MeowTeam for private, everyday network access. The app does not provide VPN servers by itself. You are responsible for the subscriptions, profiles, and servers you add.\n\nUse Etonify only in a legal and responsible way. Do not use the client for fraud, attacks, harassment, malware distribution, or other illegal activity. MeowTeam is not responsible for how users apply third-party VPN profiles or network access.\n\nEtonify is provided as-is. We work on stability and security, but we cannot guarantee that every provider, route, DNS resolver, network, or Android firmware will behave perfectly. If something breaks, send feedback through the official Telegram channel or the contacts on the MeowTeam page.\n\nSome features need Android permissions: VPN service creates the system VPN tunnel, camera scans QR codes, notifications show service state, package visibility helps split tunneling, and APK install permission is used only for user-requested updates.\n\nBy continuing, you confirm that you understand these rules and accept responsibility for your own use of the client.'**
+  /// **'# Etonify Terms of Use\n\n## What the app does\n\nEtonify is an Android VPN client. **It does not sell or provide VPN servers:** users add subscriptions, profiles, and servers from third-party providers.\n\n## User responsibility\n\nUse Etonify according to applicable law and service rules. Do not use it for attacks, fraud, malware, harassment, or other illegal activity.\n\n- You are responsible for added profiles and access keys.\n- Third-party providers determine their own service terms.\n- MeowTeam does not control subscription content or third-party server traffic.\n\n## Operation and updates\n\nEtonify is provided **as is**. We improve reliability and security, but cannot guarantee every server, route, DNS resolver, carrier, or modified Android firmware. Updates are installed only after user action and Android system confirmation.\n\n## Feedback\n\nQuestions, bug reports, and feature requests can be sent directly to the developers: **https://t.me/etonify?direct**.\n\nBy continuing, you confirm that you have read these terms and accept responsibility for using the app.'**
   String get legalTermsBody;
 
   /// No description provided for @legalPrivacyBody.
   ///
   /// In en, this message translates to:
-  /// **'# Etonify Privacy Policy\n\nEtonify does not include analytics, advertising SDKs, or hidden tracking. MeowTeam does not sell your data and does not collect your VPN keys on our servers.\n\nYour subscriptions, imported profiles, selected server, settings, and logs are stored locally on your device. Some backup/export features can create files that contain VPN keys. Keep exported profiles private, especially if you export without password encryption.\n\nWhen you import or refresh a subscription, Etonify connects directly to the URL you provided. A Happ subscription may require HWID and a Happ user agent; Etonify asks before sending HWID.\n\nLogs are meant for troubleshooting. We try to redact secrets before showing or exporting logs, but you should still review exported logs before sharing them publicly.\n\nIf you have questions or want something removed from feedback you sent manually, contact us through the official Telegram channel or MeowTeam contacts.'**
+  /// **'# Etonify Privacy Policy\n\n## Summary\n\nEtonify has **no advertising, analytics SDKs, or hidden tracking**. MeowTeam does not sell user data or automatically receive your VPN keys.\n\n## Data stored on the device\n\nSubscriptions, profiles, selected servers, settings, diagnostic logs, and downloaded rule files are stored locally. Backups and exports may contain access keys, so keep them private.\n\n## Network requests\n\n- Subscription imports and refreshes contact the address supplied by the user. That server can see normal request information, including the IP address.\n- Client and routing-rule update checks contact GitHub and the sources named in the interface.\n- HWID is sent to a subscription service only for profiles where the user enables it.\n\n## Android permissions\n\n- **VPN service** creates the system VPN tunnel.\n- **QUERY_ALL_PACKAGES** is used only to display installed apps for split tunneling. The app list is not sent to MeowTeam.\n- **Camera** is used only to scan QR codes.\n- **Notifications** display VPN service state.\n- **APK installation** is used only for user-approved updates. Android shows a separate system confirmation.\n\n## Logs and messages\n\nLogs are stored locally until the user exports or sends them. Review exported files before sharing publicly. Information voluntarily sent through Telegram is handled under Telegram\'s rules.\n\nPrivacy questions can be sent directly to the developers: **https://t.me/etonify?direct**.'**
   String get legalPrivacyBody;
 
   /// No description provided for @coreVersionLabel.
@@ -485,7 +491,7 @@ abstract class AppLocalizations {
   /// No description provided for @teamIntroBody.
   ///
   /// In en, this message translates to:
-  /// **'We are a small team building our own VPN client and improving it step by step.'**
+  /// **'MeowTeam is two developers building Etonify and custom networking components as an independent technical project.'**
   String get teamIntroBody;
 
   /// No description provided for @teamTimelineForkTitle.
@@ -509,7 +515,7 @@ abstract class AppLocalizations {
   /// No description provided for @teamTimelineRefactorBody.
   ///
   /// In en, this message translates to:
-  /// **'The old backend carried too much technical debt, patches, dead code, and behavior that was hard to maintain. We moved the client through a deep refactor and rebuilt the runtime layer around a cleaner Android-first flow.'**
+  /// **'We gradually split the large legacy code into focused components, simplified VPN control, and added checks for critical scenarios.'**
   String get teamTimelineRefactorBody;
 
   /// No description provided for @teamTimelineCoreTitle.
@@ -539,13 +545,13 @@ abstract class AppLocalizations {
   /// No description provided for @teamDeveloperDdosxdRole.
   ///
   /// In en, this message translates to:
-  /// **'MeowTeam developer'**
+  /// **'Core, networking, and custom protocols'**
   String get teamDeveloperDdosxdRole;
 
   /// No description provided for @teamDeveloperYamixdevRole.
   ///
   /// In en, this message translates to:
-  /// **'MeowTeam developer'**
+  /// **'Android client, interface, and releases'**
   String get teamDeveloperYamixdevRole;
 
   /// No description provided for @teamTelegramRole.
@@ -691,6 +697,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Retry'**
   String get updatesRetryAction;
+
+  /// No description provided for @updatesUnsupportedAndroidTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Update not supported'**
+  String get updatesUnsupportedAndroidTitle;
+
+  /// No description provided for @updatesUnsupportedAndroidSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Version {version} requires Android SDK {minSdk} or newer. This device can keep using the latest compatible release.'**
+  String updatesUnsupportedAndroidSubtitle(String version, int minSdk);
 
   /// No description provided for @updatesDownloadAction.
   ///
@@ -925,6 +943,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Downloading update'**
   String get updatesDownloadingTitle;
+
+  /// No description provided for @updatesStageCleaning.
+  ///
+  /// In en, this message translates to:
+  /// **'Removing old files…'**
+  String get updatesStageCleaning;
+
+  /// No description provided for @updatesStageVerifying.
+  ///
+  /// In en, this message translates to:
+  /// **'Verifying APK and signature…'**
+  String get updatesStageVerifying;
 
   /// No description provided for @updatesDownloadedTitle.
   ///
@@ -1568,6 +1598,138 @@ abstract class AppLocalizations {
   /// **'Local mixed inbound port'**
   String get proxyPortSubtitle;
 
+  /// No description provided for @connectionModeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Connection mode'**
+  String get connectionModeTitle;
+
+  /// No description provided for @connectionModeSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'VPN covers the whole phone. Local proxy is used only by apps and devices configured with its address manually.'**
+  String get connectionModeSubtitle;
+
+  /// No description provided for @connectionModeVpn.
+  ///
+  /// In en, this message translates to:
+  /// **'VPN'**
+  String get connectionModeVpn;
+
+  /// No description provided for @connectionModeVpnSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'System Android VPN for all phone traffic'**
+  String get connectionModeVpnSubtitle;
+
+  /// No description provided for @connectionModeProxy.
+  ///
+  /// In en, this message translates to:
+  /// **'Proxy'**
+  String get connectionModeProxy;
+
+  /// No description provided for @connectionModeProxySubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Local HTTP/SOCKS without a system VPN'**
+  String get connectionModeProxySubtitle;
+
+  /// No description provided for @connectionModeActiveStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'Active: {mode}'**
+  String connectionModeActiveStatus(String mode);
+
+  /// No description provided for @connectionModeVpnStatusName.
+  ///
+  /// In en, this message translates to:
+  /// **'VPN TUN'**
+  String get connectionModeVpnStatusName;
+
+  /// No description provided for @connectionModeProxyStatusName.
+  ///
+  /// In en, this message translates to:
+  /// **'Proxy'**
+  String get connectionModeProxyStatusName;
+
+  /// No description provided for @advancedTunTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Advanced TUN settings'**
+  String get advancedTunTitle;
+
+  /// No description provided for @advancedTunSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'MTU, strict routing, and network stack implementation'**
+  String get advancedTunSubtitle;
+
+  /// No description provided for @localProxyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Local proxy'**
+  String get localProxyTitle;
+
+  /// No description provided for @localProxySubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Additional HTTP/SOCKS endpoint for manually configured apps'**
+  String get localProxySubtitle;
+
+  /// No description provided for @lanProxySecurityTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Access protected'**
+  String get lanProxySecurityTitle;
+
+  /// No description provided for @lanProxySecuritySubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'LAN devices must provide the username and password. Authentication prevents unauthorized use but does not encrypt the local network by itself.'**
+  String get lanProxySecuritySubtitle;
+
+  /// No description provided for @proxyUsernameTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Username'**
+  String get proxyUsernameTitle;
+
+  /// No description provided for @proxyPasswordTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Password'**
+  String get proxyPasswordTitle;
+
+  /// No description provided for @regenerateProxyPasswordTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Change password'**
+  String get regenerateProxyPasswordTitle;
+
+  /// No description provided for @copyProxyCredentialsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy connection details'**
+  String get copyProxyCredentialsTitle;
+
+  /// No description provided for @proxyCredentialsCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'Proxy connection details copied'**
+  String get proxyCredentialsCopied;
+
+  /// No description provided for @proxyEndpointTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Address'**
+  String get proxyEndpointTitle;
+
+  /// No description provided for @proxyLanAddressHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Phone IP'**
+  String get proxyLanAddressHint;
+
   /// No description provided for @dnsUsePresetTitle.
   ///
   /// In en, this message translates to:
@@ -1595,19 +1757,19 @@ abstract class AppLocalizations {
   /// No description provided for @dnsRussiaDirectTitle.
   ///
   /// In en, this message translates to:
-  /// **'DNS for Russia routes'**
+  /// **'Smart routing DNS'**
   String get dnsRussiaDirectTitle;
 
   /// No description provided for @dnsRussiaDirectSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Used only when Russia routes are enabled. Russian domains resolve directly through this DNS so sites and apps reach direct routing faster.'**
+  /// **'Used only for domains routed directly. It does not choose the route, but can return a suitable regional address.'**
   String get dnsRussiaDirectSubtitle;
 
   /// No description provided for @dnsRussiaDirectResolverSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Default: udp://77.88.8.8. Keep a fast Russian DNS when using “all except RU through VPN”.'**
+  /// **'Default: udp://77.88.8.8. Keep this value if you are unsure.'**
   String get dnsRussiaDirectResolverSubtitle;
 
   /// No description provided for @dnsProxyPresetSubtitle.
@@ -1649,7 +1811,7 @@ abstract class AppLocalizations {
   /// No description provided for @dnsPresetCustomSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Enter your own resolver: udp://, tcp://, tls://, or https://.'**
+  /// **'Enter an IP/host (UDP by default) or use udp://, tcp://, tls://, or https://.'**
   String get dnsPresetCustomSubtitle;
 
   /// No description provided for @dnsPresetUdpSubtitle.
@@ -1817,19 +1979,19 @@ abstract class AppLocalizations {
   /// No description provided for @sendHwidSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Adds the device HWID to the subscription request'**
+  /// **'Required by some Happ subscriptions'**
   String get sendHwidSubtitle;
 
   /// No description provided for @useCustomHwidTitle.
   ///
   /// In en, this message translates to:
-  /// **'Use custom HWID'**
+  /// **'Set a custom HWID'**
   String get useCustomHwidTitle;
 
   /// No description provided for @useCustomHwidSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Override the device HWID with your own value'**
+  /// **'Use it instead of this device\'s HWID'**
   String get useCustomHwidSubtitle;
 
   /// No description provided for @customUserAgentTitle.
@@ -1853,7 +2015,7 @@ abstract class AppLocalizations {
   /// No description provided for @customHwidSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Used only when custom HWID is enabled'**
+  /// **'Leave empty to use the device HWID'**
   String get customHwidSubtitle;
 
   /// No description provided for @customRequestHeadersTitle.
@@ -2174,11 +2336,101 @@ abstract class AppLocalizations {
   /// **'Refresh all'**
   String get refreshAll;
 
+  /// No description provided for @refreshSubscriptions.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh subscriptions'**
+  String get refreshSubscriptions;
+
+  /// No description provided for @subscriptionSortTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Sort subscriptions'**
+  String get subscriptionSortTitle;
+
+  /// No description provided for @subscriptionSortManual.
+  ///
+  /// In en, this message translates to:
+  /// **'Current order'**
+  String get subscriptionSortManual;
+
+  /// No description provided for @subscriptionSortByName.
+  ///
+  /// In en, this message translates to:
+  /// **'By name'**
+  String get subscriptionSortByName;
+
+  /// No description provided for @subscriptionSortByUpdated.
+  ///
+  /// In en, this message translates to:
+  /// **'By last update'**
+  String get subscriptionSortByUpdated;
+
+  /// No description provided for @subscriptionSortByServers.
+  ///
+  /// In en, this message translates to:
+  /// **'By proxy count'**
+  String get subscriptionSortByServers;
+
+  /// No description provided for @subscriptionActionsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Subscription actions'**
+  String get subscriptionActionsTitle;
+
+  /// No description provided for @subscriptionCopyUrl.
+  ///
+  /// In en, this message translates to:
+  /// **'URL to clipboard'**
+  String get subscriptionCopyUrl;
+
+  /// No description provided for @subscriptionShowUrlQr.
+  ///
+  /// In en, this message translates to:
+  /// **'Show URL QR code'**
+  String get subscriptionShowUrlQr;
+
+  /// No description provided for @subscriptionCopyJson.
+  ///
+  /// In en, this message translates to:
+  /// **'JSON to clipboard'**
+  String get subscriptionCopyJson;
+
+  /// No description provided for @subscriptionUrlCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'Subscription URL copied'**
+  String get subscriptionUrlCopied;
+
+  /// No description provided for @subscriptionJsonCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'Subscription JSON copied'**
+  String get subscriptionJsonCopied;
+
+  /// No description provided for @subscriptionImportHelpTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'How to add a subscription'**
+  String get subscriptionImportHelpTitle;
+
+  /// No description provided for @subscriptionImportHelpBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy the subscription link from your provider and tap Clipboard, or scan a QR code. If the link is not recognized, open Manual and paste a URL, vless:// link, key list, or sing-box/Xray config. For Happ subscriptions, enable User-Agent or HWID in manual import when your provider requires it.'**
+  String get subscriptionImportHelpBody;
+
   /// No description provided for @subscriptionsRefreshAllComplete.
   ///
   /// In en, this message translates to:
   /// **'Updated {updated} subscriptions, {failed} failed'**
   String subscriptionsRefreshAllComplete(int updated, int failed);
+
+  /// No description provided for @subscriptionsRefreshAllProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Updating {completed} of {total}'**
+  String subscriptionsRefreshAllProgress(int completed, int total);
 
   /// No description provided for @deleteSubscription.
   ///
@@ -2321,7 +2573,7 @@ abstract class AppLocalizations {
   /// No description provided for @subscriptionServersCount.
   ///
   /// In en, this message translates to:
-  /// **'{count, plural, one{{count} server} other{{count} servers}}'**
+  /// **'{count} proxies'**
   String subscriptionServersCount(int count);
 
   /// No description provided for @subscriptionReparseRecommended.
@@ -2447,7 +2699,7 @@ abstract class AppLocalizations {
   /// No description provided for @deepLinkImportHappNotice.
   ///
   /// In en, this message translates to:
-  /// **'This subscription is intended for the Happ app and may require your device HWID. Etonify will send the HWID and Happ User-Agent only if you confirm this import.'**
+  /// **'Some Happ subscriptions require an HWID. Etonify sends it only after you confirm.'**
   String get deepLinkImportHappNotice;
 
   /// No description provided for @deepLinkImportHappSendHwidAction.
@@ -2495,13 +2747,13 @@ abstract class AppLocalizations {
   /// No description provided for @happCryptoLinkImportedLabel.
   ///
   /// In en, this message translates to:
-  /// **'Imported via Happ Crypto Link'**
+  /// **'Imported from a Happ link'**
   String get happCryptoLinkImportedLabel;
 
   /// No description provided for @happCryptoLinkTitle.
   ///
   /// In en, this message translates to:
-  /// **'Happ Crypto Link'**
+  /// **'Happ link'**
   String get happCryptoLinkTitle;
 
   /// No description provided for @happCryptUnsupportedTitle.
@@ -2513,7 +2765,7 @@ abstract class AppLocalizations {
   /// No description provided for @happCryptUnsupportedMessage.
   ///
   /// In en, this message translates to:
-  /// **'This Happ Crypto Link version is not supported yet.'**
+  /// **'This Happ link is not supported yet.'**
   String get happCryptUnsupportedMessage;
 
   /// No description provided for @happImportTitle.
@@ -2525,7 +2777,7 @@ abstract class AppLocalizations {
   /// No description provided for @happImportMessage.
   ///
   /// In en, this message translates to:
-  /// **'This subscription is intended for the Happ app and may require your device HWID. You can send HWID now, import without HWID, or cancel. If the provider requires HWID, importing without it may show placeholder nodes about an unsupported device.'**
+  /// **'This Happ subscription may require an HWID. Send it now or try importing without it.'**
   String get happImportMessage;
 
   /// No description provided for @subscriptionOperationSlowWarning.
@@ -2573,7 +2825,7 @@ abstract class AppLocalizations {
   /// No description provided for @russiaRoutesTitle.
   ///
   /// In en, this message translates to:
-  /// **'Russia routes'**
+  /// **'Smart routing'**
   String get russiaRoutesTitle;
 
   /// No description provided for @russiaRoutesRunetFreedomBadge.
@@ -2591,13 +2843,13 @@ abstract class AppLocalizations {
   /// No description provided for @russiaRoutesSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'The client downloads the live runetfreedom sing-box.zip, verifies required rule-set files, and uses the bundled fallback if it fails.'**
+  /// **'Russian services go direct while blocked resources stay on VPN.'**
   String get russiaRoutesSubtitle;
 
   /// No description provided for @russiaRoutesInstallAction.
   ///
   /// In en, this message translates to:
-  /// **'Prepare'**
+  /// **'Download rules'**
   String get russiaRoutesInstallAction;
 
   /// No description provided for @russiaRoutesReinstallAction.
@@ -2609,67 +2861,151 @@ abstract class AppLocalizations {
   /// No description provided for @russiaRoutesUpdateAction.
   ///
   /// In en, this message translates to:
-  /// **'Update'**
+  /// **'Check now'**
   String get russiaRoutesUpdateAction;
+
+  /// No description provided for @russiaRoutesUpdateAvailable.
+  ///
+  /// In en, this message translates to:
+  /// **'A new rules version is available: {version}'**
+  String russiaRoutesUpdateAvailable(String version);
+
+  /// No description provided for @russiaRoutesLatest.
+  ///
+  /// In en, this message translates to:
+  /// **'The latest rules version is installed.'**
+  String get russiaRoutesLatest;
 
   /// No description provided for @russiaRoutesEnableTitle.
   ///
   /// In en, this message translates to:
-  /// **'Use Russia routes'**
+  /// **'Enable smart routing'**
   String get russiaRoutesEnableTitle;
 
   /// No description provided for @russiaRoutesEnabledSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Required routes will be applied automatically: reachable Russian services go direct, everything else stays on VPN.'**
+  /// **'Apply the prepared rules to the VPN connection.'**
   String get russiaRoutesEnabledSubtitle;
 
   /// No description provided for @russiaRoutesMissingSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Prepare the route package first in order to use it.'**
+  /// **'The bundled database works offline and is connected when enabled.'**
   String get russiaRoutesMissingSubtitle;
 
   /// No description provided for @russiaRoutesPreparingStatus.
   ///
   /// In en, this message translates to:
-  /// **'Preparing local route files...'**
+  /// **'Updating rules...'**
   String get russiaRoutesPreparingStatus;
+
+  /// No description provided for @russiaRoutesPreparingHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading the latest database, verifying SRS files, and safely replacing local rules.'**
+  String get russiaRoutesPreparingHint;
+
+  /// No description provided for @russiaRoutesStageChecking.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking rule version…'**
+  String get russiaRoutesStageChecking;
+
+  /// No description provided for @russiaRoutesStageDownloading.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading rule archive…'**
+  String get russiaRoutesStageDownloading;
+
+  /// No description provided for @russiaRoutesStageVerifying.
+  ///
+  /// In en, this message translates to:
+  /// **'Verifying archive integrity…'**
+  String get russiaRoutesStageVerifying;
+
+  /// No description provided for @russiaRoutesStageExtracting.
+  ///
+  /// In en, this message translates to:
+  /// **'Extracting SRS files…'**
+  String get russiaRoutesStageExtracting;
+
+  /// No description provided for @russiaRoutesStageCategories.
+  ///
+  /// In en, this message translates to:
+  /// **'Updating service lists…'**
+  String get russiaRoutesStageCategories;
+
+  /// No description provided for @russiaRoutesStageCompiling.
+  ///
+  /// In en, this message translates to:
+  /// **'Compiling local rules…'**
+  String get russiaRoutesStageCompiling;
+
+  /// No description provided for @russiaRoutesStageActivating.
+  ///
+  /// In en, this message translates to:
+  /// **'Replacing rules safely…'**
+  String get russiaRoutesStageActivating;
+
+  /// No description provided for @russiaRoutesStageComplete.
+  ///
+  /// In en, this message translates to:
+  /// **'Rules updated'**
+  String get russiaRoutesStageComplete;
+
+  /// No description provided for @russiaRoutesDownloadProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloaded {completed} of {total}.'**
+  String russiaRoutesDownloadProgress(String completed, String total);
+
+  /// No description provided for @russiaRoutesItemsProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Processed lists: {completed} of {total}.'**
+  String russiaRoutesItemsProgress(int completed, int total);
 
   /// No description provided for @russiaRoutesMissingStatus.
   ///
   /// In en, this message translates to:
-  /// **'Local routes are not prepared yet'**
+  /// **'Rules are not installed yet'**
   String get russiaRoutesMissingStatus;
 
   /// No description provided for @russiaRoutesMissingHint.
   ///
   /// In en, this message translates to:
-  /// **'The client will download runetfreedom sing-box.zip, verify required `.srs`, and use the bundled fallback if needed.'**
+  /// **'The bundled database is connected first, then a fresh version is checked and downloaded in the background.'**
   String get russiaRoutesMissingHint;
+
+  /// No description provided for @russiaRoutesReadyHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Rules are stored locally. New versions are checked on startup, at most once a day.'**
+  String get russiaRoutesReadyHint;
 
   /// No description provided for @russiaRoutesReadyStatus.
   ///
   /// In en, this message translates to:
-  /// **'Routes are ready, version: {versionTag}'**
+  /// **'Ready · {versionTag}'**
   String russiaRoutesReadyStatus(String versionTag);
 
   /// No description provided for @russiaRoutesLiveSource.
   ///
   /// In en, this message translates to:
-  /// **'runetfreedom sing-box.zip'**
+  /// **'runetfreedom'**
   String get russiaRoutesLiveSource;
 
   /// No description provided for @russiaRoutesBundledSource.
   ///
   /// In en, this message translates to:
-  /// **'bundled fallback'**
+  /// **'bundled database'**
   String get russiaRoutesBundledSource;
 
   /// No description provided for @russiaRoutesSourceMeta.
   ///
   /// In en, this message translates to:
-  /// **'Source: {source} · verified: {verifiedAt} · files: {fileCount}'**
+  /// **'Source: {source} · {verifiedAt} · files: {fileCount}'**
   String russiaRoutesSourceMeta(
     String source,
     String verifiedAt,
@@ -2735,6 +3071,64 @@ abstract class AppLocalizations {
   /// **'Downloading and building the local filter...'**
   String get adBlockDownloadingStatus;
 
+  /// No description provided for @adBlockStageConnecting.
+  ///
+  /// In en, this message translates to:
+  /// **'Connecting to AdGuard…'**
+  String get adBlockStageConnecting;
+
+  /// No description provided for @adBlockStageDownloading.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading the filter list…'**
+  String get adBlockStageDownloading;
+
+  /// No description provided for @adBlockStageCompiling.
+  ///
+  /// In en, this message translates to:
+  /// **'Building the local rule set…'**
+  String get adBlockStageCompiling;
+
+  /// No description provided for @adBlockStageActivating.
+  ///
+  /// In en, this message translates to:
+  /// **'Replacing the rule set safely…'**
+  String get adBlockStageActivating;
+
+  /// No description provided for @adBlockStageComplete.
+  ///
+  /// In en, this message translates to:
+  /// **'Filter updated'**
+  String get adBlockStageComplete;
+
+  /// No description provided for @adBlockPreparingHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing the download…'**
+  String get adBlockPreparingHint;
+
+  /// No description provided for @adBlockDownloadedProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloaded {completed}'**
+  String adBlockDownloadedProgress(String completed);
+
+  /// No description provided for @adBlockDownloadProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'{completed} of {total}'**
+  String adBlockDownloadProgress(String completed, String total);
+
+  /// No description provided for @adBlockDownloadProgressEta.
+  ///
+  /// In en, this message translates to:
+  /// **'{completed} of {total} · about {seconds}s left'**
+  String adBlockDownloadProgressEta(
+    String completed,
+    String total,
+    int seconds,
+  );
+
   /// No description provided for @adBlockMissingStatus.
   ///
   /// In en, this message translates to:
@@ -2768,7 +3162,7 @@ abstract class AppLocalizations {
   /// No description provided for @splitRoutingSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Route selected Android apps through VPN TUN or fully outside the VPN.'**
+  /// **'Choose which apps use the VPN and which connect directly.'**
   String get splitRoutingSubtitle;
 
   /// No description provided for @splitRoutingUnavailableTitle.
@@ -2786,7 +3180,7 @@ abstract class AppLocalizations {
   /// No description provided for @splitRoutingTunOnly.
   ///
   /// In en, this message translates to:
-  /// **'Per-app split tunneling works only when VPN TUN is enabled. Local Proxy In cannot see Android app package names.'**
+  /// **'Available only in VPN mode. Local proxy mode cannot manage apps.'**
   String get splitRoutingTunOnly;
 
   /// No description provided for @splitRoutingModeTitle.
@@ -2804,7 +3198,7 @@ abstract class AppLocalizations {
   /// No description provided for @splitRoutingModeDisabledSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Use the normal routing flow for all apps'**
+  /// **'Split routing is not used'**
   String get splitRoutingModeDisabledSubtitle;
 
   /// No description provided for @splitRoutingModeProxySelected.
@@ -2816,7 +3210,7 @@ abstract class AppLocalizations {
   /// No description provided for @splitRoutingModeProxySelectedSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Only selected apps enter VPN TUN and use the selected server'**
+  /// **'Only selected apps use the VPN'**
   String get splitRoutingModeProxySelectedSubtitle;
 
   /// No description provided for @splitRoutingModeBypassSelected.
@@ -2828,14 +3222,26 @@ abstract class AppLocalizations {
   /// No description provided for @splitRoutingModeBypassSelectedSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Selected apps do not enter VPN TUN and go direct'**
+  /// **'Selected apps connect directly'**
   String get splitRoutingModeBypassSelectedSubtitle;
+
+  /// No description provided for @splitRoutingLockdownWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'Android Always-on VPN with \'Block connections without VPN\' can block network access for apps selected outside the VPN.'**
+  String get splitRoutingLockdownWarning;
 
   /// No description provided for @splitRoutingAppsTitle.
   ///
   /// In en, this message translates to:
   /// **'Applications'**
   String get splitRoutingAppsTitle;
+
+  /// No description provided for @splitRoutingAppVisibilityNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Android gives Etonify the installed-app list only for selection. The list stays on this device.'**
+  String get splitRoutingAppVisibilityNotice;
 
   /// No description provided for @splitRoutingPackagesTitle.
   ///
@@ -2852,7 +3258,7 @@ abstract class AppLocalizations {
   /// No description provided for @splitRoutingPackagesHelper.
   ///
   /// In en, this message translates to:
-  /// **'Package names only, for example org.telegram.messenger. App display names are ignored'**
+  /// **'Package name, for example org.telegram.messenger'**
   String get splitRoutingPackagesHelper;
 
   /// No description provided for @splitRoutingPickAppsAction.
@@ -2900,7 +3306,7 @@ abstract class AppLocalizations {
   /// No description provided for @splitRoutingNoAppsSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Pick Android apps to apply split routing to them'**
+  /// **'Choose apps for this mode'**
   String get splitRoutingNoAppsSubtitle;
 
   /// No description provided for @splitRoutingManualEditorTitle.
@@ -2912,7 +3318,7 @@ abstract class AppLocalizations {
   /// No description provided for @splitRoutingManualEditorSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Use this if you want to edit package names directly'**
+  /// **'Enter package names manually'**
   String get splitRoutingManualEditorSubtitle;
 
   /// No description provided for @refreshIntervalDaysShort.
@@ -2936,31 +3342,31 @@ abstract class AppLocalizations {
   /// No description provided for @happCrypt5Supported.
   ///
   /// In en, this message translates to:
-  /// **'Supported'**
+  /// **'Available'**
   String get happCrypt5Supported;
 
   /// No description provided for @happCrypt5Unsupported.
   ///
   /// In en, this message translates to:
-  /// **'Not supported'**
+  /// **'Unavailable'**
   String get happCrypt5Unsupported;
 
   /// No description provided for @happCrypt5Checking.
   ///
   /// In en, this message translates to:
-  /// **'Checking happ://crypt5/... decrypt support'**
+  /// **'Checking Happ crypt5...'**
   String get happCrypt5Checking;
 
   /// No description provided for @happCrypt5SupportedDescription.
   ///
   /// In en, this message translates to:
-  /// **'Your device can decrypt Happ crypt5 crypto links directly in the app.'**
+  /// **'This build can open Happ crypt5 links.'**
   String get happCrypt5SupportedDescription;
 
   /// No description provided for @happCrypt5UnsupportedDescription.
   ///
   /// In en, this message translates to:
-  /// **'Happ crypt5 decrypt is currently unavailable on this device.'**
+  /// **'This build has no Happ crypt5 files. Regular subscriptions still work.'**
   String get happCrypt5UnsupportedDescription;
 
   /// No description provided for @subscriptionLikelyRequiresHwidTitle.
@@ -3298,6 +3704,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Choose at least one app or disable split tunneling before starting VPN.'**
   String get splitRoutingEmptyWhitelist;
+
+  /// No description provided for @splitRoutingUnknownAppLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'App not found'**
+  String get splitRoutingUnknownAppLabel;
+
+  /// No description provided for @splitRoutingLoadingAppLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Looking up app…'**
+  String get splitRoutingLoadingAppLabel;
 
   /// No description provided for @connectionStagePreparing.
   ///

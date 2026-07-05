@@ -15,6 +15,7 @@ import android.widget.Toast
 import com.etonify.meow_client.singbox.MeowBoxService
 import com.etonify.meow_client.singbox.MeowProxyService
 import com.etonify.meow_client.singbox.MeowVpnService
+import com.etonify.meow_client.singbox.RuntimeServiceModeResolver
 import com.etonify.meow_client.singbox.SingboxController
 import org.json.JSONObject
 
@@ -41,17 +42,11 @@ class MeowQuickSettingsTileService : TileService() {
 
     override fun onClick() {
         super.onClick()
-        val isVpnRunning = isVpnRunning()
-        if (isVpnRunning) {
-            stopVpn()
+        val activeMode = activeRuntimeMode()
+        if (activeMode != null) {
+            stopRuntime(activeMode)
             renderTile(isActive = false)
             scheduleRefreshes()
-            return
-        }
-
-        val vpnPrepareIntent = VpnService.prepare(this)
-        if (vpnPrepareIntent != null) {
-            openIntent(vpnPrepareIntent)
             return
         }
 
@@ -64,7 +59,21 @@ class MeowQuickSettingsTileService : TileService() {
             return
         }
 
-        startVpn()
+        val targetMode = configuredMode()
+        if (targetMode == null) {
+            Toast.makeText(this, "No VPN or proxy inbound enabled", Toast.LENGTH_SHORT).show()
+            openApp()
+            return
+        }
+        if (targetMode == RuntimeServiceModeResolver.VPN) {
+            val vpnPrepareIntent = VpnService.prepare(this)
+            if (vpnPrepareIntent != null) {
+                openIntent(vpnPrepareIntent)
+                return
+            }
+        }
+
+        startRuntime(targetMode)
         renderTile(
             isActive = true,
             activeLabel = readActiveTileLabel(),
@@ -72,15 +81,17 @@ class MeowQuickSettingsTileService : TileService() {
         scheduleRefreshes()
     }
 
-    private fun isVpnRunning(): Boolean {
-        return SingboxController.running && SingboxController.serviceMode == "vpn" ||
-            MeowApplication.isRecordedServiceAlive("vpn")
-    }
+    private fun activeRuntimeMode(): String? = RuntimeServiceModeResolver.activeMode(
+        runningMode = SingboxController.serviceMode.takeIf { SingboxController.running },
+        vpnRecorded = MeowApplication.isRecordedServiceAlive(RuntimeServiceModeResolver.VPN),
+        proxyRecorded = MeowApplication.isRecordedServiceAlive(RuntimeServiceModeResolver.PROXY),
+    )
 
-    private fun stopVpn() {
+    private fun stopRuntime(mode: String) {
         MeowBoxService.requestStopAll("quick_tile_stop")
+        val serviceClass = serviceClass(mode)
         startService(
-            Intent(this, MeowVpnService::class.java)
+            Intent(this, serviceClass)
                 .setAction(MeowBoxService.ACTION_STOP)
                 .putExtra(MeowBoxService.EXTRA_STOP_REASON, "quick_tile"),
         )
@@ -95,32 +106,57 @@ class MeowQuickSettingsTileService : TileService() {
         }, 1_200L)
     }
 
-    private fun startVpn() {
-        if (SingboxController.running && SingboxController.serviceMode == "proxy") {
-            startService(Intent(this, MeowProxyService::class.java).setAction(MeowBoxService.ACTION_STOP))
+    private fun startRuntime(targetMode: String) {
+        val runningMode = SingboxController.serviceMode
+        if (SingboxController.running && runningMode != targetMode) {
+            startService(
+                Intent(this, serviceClass(runningMode)).setAction(MeowBoxService.ACTION_STOP),
+            )
             SingboxController.awaitStopped { stopped ->
                 if (stopped) {
-                    startVpnService()
+                    startRuntimeService(targetMode)
                 } else {
                     SingboxController.log(
                         "error",
-                        "quick tile mode switch aborted: proxy stop timed out",
+                        "quick tile mode switch aborted: $runningMode stop timed out",
                     )
                     requestRefresh(this)
                 }
             }
             return
         }
-        startVpnService()
+        startRuntimeService(targetMode)
     }
 
-    private fun startVpnService() {
-        val intent = Intent(this, MeowVpnService::class.java).setAction(MeowBoxService.ACTION_START)
+    private fun startRuntimeService(mode: String) {
+        val intent = Intent(this, serviceClass(mode)).setAction(MeowBoxService.ACTION_START)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(intent)
         } else {
             startService(intent)
         }
+    }
+
+    private fun serviceClass(mode: String): Class<out android.app.Service> =
+        if (mode == RuntimeServiceModeResolver.PROXY) {
+            MeowProxyService::class.java
+        } else {
+            MeowVpnService::class.java
+        }
+
+    private fun configuredMode(): String? {
+        val rawConfig = runCatching { MeowApplication.configFile.readText() }.getOrNull()
+            ?: return null
+        return runCatching {
+            val inbounds = JSONObject(rawConfig).optJSONArray("inbounds") ?: return@runCatching null
+            val types = buildList {
+                for (index in 0 until inbounds.length()) {
+                    val type = inbounds.optJSONObject(index)?.optString("type").orEmpty()
+                    if (type.isNotBlank()) add(type)
+                }
+            }
+            RuntimeServiceModeResolver.configuredMode(types)
+        }.getOrNull()
     }
 
     @SuppressLint("StartActivityAndCollapseDeprecated")
@@ -151,7 +187,7 @@ class MeowQuickSettingsTileService : TileService() {
 
     private fun updateTile() {
         renderTile(
-            isActive = isVpnRunning(),
+            isActive = activeRuntimeMode() != null,
             activeLabel = readActiveTileLabel(),
         )
     }

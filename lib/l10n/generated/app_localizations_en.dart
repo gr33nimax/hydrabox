@@ -122,10 +122,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get aboutHeroSubtitle =>
-      'Android VPN client focused on speed, stability, and a clean daily experience.';
+      'An Android VPN client we are building to be fast, understandable, and reliable for everyday use.';
 
   @override
-  String get aboutDevelopedBy => 'Developed by MeowTeam.';
+  String get aboutDevelopedBy =>
+      'Etonify is developed by the small independent MeowTeam.';
+
+  @override
+  String get aboutContactLabel => 'Message the developers';
 
   @override
   String get aboutCoreSourceLabel => 'core source code';
@@ -165,7 +169,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get legalDocumentReadAction => 'I have read it';
 
   @override
-  String get legalContactAction => 'Contact';
+  String get legalContactAction => 'Ask a question';
 
   @override
   String get legalImportBlockedMessage =>
@@ -173,11 +177,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get legalTermsBody =>
-      '# Etonify Terms of Use\n\nEtonify is an Android VPN client made by MeowTeam for private, everyday network access. The app does not provide VPN servers by itself. You are responsible for the subscriptions, profiles, and servers you add.\n\nUse Etonify only in a legal and responsible way. Do not use the client for fraud, attacks, harassment, malware distribution, or other illegal activity. MeowTeam is not responsible for how users apply third-party VPN profiles or network access.\n\nEtonify is provided as-is. We work on stability and security, but we cannot guarantee that every provider, route, DNS resolver, network, or Android firmware will behave perfectly. If something breaks, send feedback through the official Telegram channel or the contacts on the MeowTeam page.\n\nSome features need Android permissions: VPN service creates the system VPN tunnel, camera scans QR codes, notifications show service state, package visibility helps split tunneling, and APK install permission is used only for user-requested updates.\n\nBy continuing, you confirm that you understand these rules and accept responsibility for your own use of the client.';
+      '# Etonify Terms of Use\n\n## What the app does\n\nEtonify is an Android VPN client. **It does not sell or provide VPN servers:** users add subscriptions, profiles, and servers from third-party providers.\n\n## User responsibility\n\nUse Etonify according to applicable law and service rules. Do not use it for attacks, fraud, malware, harassment, or other illegal activity.\n\n- You are responsible for added profiles and access keys.\n- Third-party providers determine their own service terms.\n- MeowTeam does not control subscription content or third-party server traffic.\n\n## Operation and updates\n\nEtonify is provided **as is**. We improve reliability and security, but cannot guarantee every server, route, DNS resolver, carrier, or modified Android firmware. Updates are installed only after user action and Android system confirmation.\n\n## Feedback\n\nQuestions, bug reports, and feature requests can be sent directly to the developers: **https://t.me/etonify?direct**.\n\nBy continuing, you confirm that you have read these terms and accept responsibility for using the app.';
 
   @override
   String get legalPrivacyBody =>
-      '# Etonify Privacy Policy\n\nEtonify does not include analytics, advertising SDKs, or hidden tracking. MeowTeam does not sell your data and does not collect your VPN keys on our servers.\n\nYour subscriptions, imported profiles, selected server, settings, and logs are stored locally on your device. Some backup/export features can create files that contain VPN keys. Keep exported profiles private, especially if you export without password encryption.\n\nWhen you import or refresh a subscription, Etonify connects directly to the URL you provided. A Happ subscription may require HWID and a Happ user agent; Etonify asks before sending HWID.\n\nLogs are meant for troubleshooting. We try to redact secrets before showing or exporting logs, but you should still review exported logs before sharing them publicly.\n\nIf you have questions or want something removed from feedback you sent manually, contact us through the official Telegram channel or MeowTeam contacts.';
+      '# Etonify Privacy Policy\n\n## Summary\n\nEtonify has **no advertising, analytics SDKs, or hidden tracking**. MeowTeam does not sell user data or automatically receive your VPN keys.\n\n## Data stored on the device\n\nSubscriptions, profiles, selected servers, settings, diagnostic logs, and downloaded rule files are stored locally. Backups and exports may contain access keys, so keep them private.\n\n## Network requests\n\n- Subscription imports and refreshes contact the address supplied by the user. That server can see normal request information, including the IP address.\n- Client and routing-rule update checks contact GitHub and the sources named in the interface.\n- HWID is sent to a subscription service only for profiles where the user enables it.\n\n## Android permissions\n\n- **VPN service** creates the system VPN tunnel.\n- **QUERY_ALL_PACKAGES** is used only to display installed apps for split tunneling. The app list is not sent to MeowTeam.\n- **Camera** is used only to scan QR codes.\n- **Notifications** display VPN service state.\n- **APK installation** is used only for user-approved updates. Android shows a separate system confirmation.\n\n## Logs and messages\n\nLogs are stored locally until the user exports or sends them. Review exported files before sharing publicly. Information voluntarily sent through Telegram is handled under Telegram\'s rules.\n\nPrivacy questions can be sent directly to the developers: **https://t.me/etonify?direct**.';
 
   @override
   String get coreVersionLabel => 'Core version';
@@ -218,7 +222,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get teamIntroBody =>
-      'We are a small team building our own VPN client and improving it step by step.';
+      'MeowTeam is two developers building Etonify and custom networking components as an independent technical project.';
 
   @override
   String get teamTimelineForkTitle => 'Started as a Hiddify fork';
@@ -232,7 +236,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get teamTimelineRefactorBody =>
-      'The old backend carried too much technical debt, patches, dead code, and behavior that was hard to maintain. We moved the client through a deep refactor and rebuilt the runtime layer around a cleaner Android-first flow.';
+      'We gradually split the large legacy code into focused components, simplified VPN control, and added checks for critical scenarios.';
 
   @override
   String get teamTimelineCoreTitle => 'MeowSingBox core';
@@ -249,10 +253,12 @@ class AppLocalizationsEn extends AppLocalizations {
       'Etonify is still evolving: we keep simplifying UX, improving Android stability, and cutting technical debt without losing the speed-focused VPN experience.';
 
   @override
-  String get teamDeveloperDdosxdRole => 'MeowTeam developer';
+  String get teamDeveloperDdosxdRole =>
+      'Core, networking, and custom protocols';
 
   @override
-  String get teamDeveloperYamixdevRole => 'MeowTeam developer';
+  String get teamDeveloperYamixdevRole =>
+      'Android client, interface, and releases';
 
   @override
   String get teamTelegramRole => 'Official channel and release news';
@@ -327,6 +333,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get updatesRetryAction => 'Retry';
+
+  @override
+  String get updatesUnsupportedAndroidTitle => 'Update not supported';
+
+  @override
+  String updatesUnsupportedAndroidSubtitle(String version, int minSdk) {
+    return 'Version $version requires Android SDK $minSdk or newer. This device can keep using the latest compatible release.';
+  }
 
   @override
   String get updatesDownloadAction => 'Download update';
@@ -466,6 +480,12 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get updatesDownloadingTitle => 'Downloading update';
+
+  @override
+  String get updatesStageCleaning => 'Removing old files…';
+
+  @override
+  String get updatesStageVerifying => 'Verifying APK and signature…';
 
   @override
   String get updatesDownloadedTitle => 'Update downloaded';
@@ -837,6 +857,80 @@ class AppLocalizationsEn extends AppLocalizations {
   String get proxyPortSubtitle => 'Local mixed inbound port';
 
   @override
+  String get connectionModeTitle => 'Connection mode';
+
+  @override
+  String get connectionModeSubtitle =>
+      'VPN covers the whole phone. Local proxy is used only by apps and devices configured with its address manually.';
+
+  @override
+  String get connectionModeVpn => 'VPN';
+
+  @override
+  String get connectionModeVpnSubtitle =>
+      'System Android VPN for all phone traffic';
+
+  @override
+  String get connectionModeProxy => 'Proxy';
+
+  @override
+  String get connectionModeProxySubtitle =>
+      'Local HTTP/SOCKS without a system VPN';
+
+  @override
+  String connectionModeActiveStatus(String mode) {
+    return 'Active: $mode';
+  }
+
+  @override
+  String get connectionModeVpnStatusName => 'VPN TUN';
+
+  @override
+  String get connectionModeProxyStatusName => 'Proxy';
+
+  @override
+  String get advancedTunTitle => 'Advanced TUN settings';
+
+  @override
+  String get advancedTunSubtitle =>
+      'MTU, strict routing, and network stack implementation';
+
+  @override
+  String get localProxyTitle => 'Local proxy';
+
+  @override
+  String get localProxySubtitle =>
+      'Additional HTTP/SOCKS endpoint for manually configured apps';
+
+  @override
+  String get lanProxySecurityTitle => 'Access protected';
+
+  @override
+  String get lanProxySecuritySubtitle =>
+      'LAN devices must provide the username and password. Authentication prevents unauthorized use but does not encrypt the local network by itself.';
+
+  @override
+  String get proxyUsernameTitle => 'Username';
+
+  @override
+  String get proxyPasswordTitle => 'Password';
+
+  @override
+  String get regenerateProxyPasswordTitle => 'Change password';
+
+  @override
+  String get copyProxyCredentialsTitle => 'Copy connection details';
+
+  @override
+  String get proxyCredentialsCopied => 'Proxy connection details copied';
+
+  @override
+  String get proxyEndpointTitle => 'Address';
+
+  @override
+  String get proxyLanAddressHint => 'Phone IP';
+
+  @override
   String get dnsUsePresetTitle => 'Use preset';
 
   @override
@@ -850,15 +944,15 @@ class AppLocalizationsEn extends AppLocalizations {
       'DNS for direct requests without proxy';
 
   @override
-  String get dnsRussiaDirectTitle => 'DNS for Russia routes';
+  String get dnsRussiaDirectTitle => 'Smart routing DNS';
 
   @override
   String get dnsRussiaDirectSubtitle =>
-      'Used only when Russia routes are enabled. Russian domains resolve directly through this DNS so sites and apps reach direct routing faster.';
+      'Used only for domains routed directly. It does not choose the route, but can return a suitable regional address.';
 
   @override
   String get dnsRussiaDirectResolverSubtitle =>
-      'Default: udp://77.88.8.8. Keep a fast Russian DNS when using “all except RU through VPN”.';
+      'Default: udp://77.88.8.8. Keep this value if you are unsure.';
 
   @override
   String get dnsProxyPresetSubtitle =>
@@ -882,7 +976,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get dnsPresetCustomSubtitle =>
-      'Enter your own resolver: udp://, tcp://, tls://, or https://.';
+      'Enter an IP/host (UDP by default) or use udp://, tcp://, tls://, or https://.';
 
   @override
   String get dnsPresetUdpSubtitle => 'Plain UDP DNS. Fast, but not encrypted.';
@@ -980,15 +1074,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sendHwidTitle => 'Send HWID';
 
   @override
-  String get sendHwidSubtitle =>
-      'Adds the device HWID to the subscription request';
+  String get sendHwidSubtitle => 'Required by some Happ subscriptions';
 
   @override
-  String get useCustomHwidTitle => 'Use custom HWID';
+  String get useCustomHwidTitle => 'Set a custom HWID';
 
   @override
-  String get useCustomHwidSubtitle =>
-      'Override the device HWID with your own value';
+  String get useCustomHwidSubtitle => 'Use it instead of this device\'s HWID';
 
   @override
   String get customUserAgentTitle => 'Custom User-Agent';
@@ -1001,7 +1093,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get customHwidTitle => 'Custom HWID';
 
   @override
-  String get customHwidSubtitle => 'Used only when custom HWID is enabled';
+  String get customHwidSubtitle => 'Leave empty to use the device HWID';
 
   @override
   String get customRequestHeadersTitle => 'Custom headers';
@@ -1174,8 +1266,56 @@ class AppLocalizationsEn extends AppLocalizations {
   String get refreshAll => 'Refresh all';
 
   @override
+  String get refreshSubscriptions => 'Refresh subscriptions';
+
+  @override
+  String get subscriptionSortTitle => 'Sort subscriptions';
+
+  @override
+  String get subscriptionSortManual => 'Current order';
+
+  @override
+  String get subscriptionSortByName => 'By name';
+
+  @override
+  String get subscriptionSortByUpdated => 'By last update';
+
+  @override
+  String get subscriptionSortByServers => 'By proxy count';
+
+  @override
+  String get subscriptionActionsTitle => 'Subscription actions';
+
+  @override
+  String get subscriptionCopyUrl => 'URL to clipboard';
+
+  @override
+  String get subscriptionShowUrlQr => 'Show URL QR code';
+
+  @override
+  String get subscriptionCopyJson => 'JSON to clipboard';
+
+  @override
+  String get subscriptionUrlCopied => 'Subscription URL copied';
+
+  @override
+  String get subscriptionJsonCopied => 'Subscription JSON copied';
+
+  @override
+  String get subscriptionImportHelpTitle => 'How to add a subscription';
+
+  @override
+  String get subscriptionImportHelpBody =>
+      'Copy the subscription link from your provider and tap Clipboard, or scan a QR code. If the link is not recognized, open Manual and paste a URL, vless:// link, key list, or sing-box/Xray config. For Happ subscriptions, enable User-Agent or HWID in manual import when your provider requires it.';
+
+  @override
   String subscriptionsRefreshAllComplete(int updated, int failed) {
     return 'Updated $updated subscriptions, $failed failed';
+  }
+
+  @override
+  String subscriptionsRefreshAllProgress(int completed, int total) {
+    return 'Updating $completed of $total';
   }
 
   @override
@@ -1260,13 +1400,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String subscriptionServersCount(int count) {
-    String _temp0 = intl.Intl.pluralLogic(
-      count,
-      locale: localeName,
-      other: '$count servers',
-      one: '$count server',
-    );
-    return '$_temp0';
+    return '$count proxies';
   }
 
   @override
@@ -1341,7 +1475,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get deepLinkImportHappNotice =>
-      'This subscription is intended for the Happ app and may require your device HWID. Etonify will send the HWID and Happ User-Agent only if you confirm this import.';
+      'Some Happ subscriptions require an HWID. Etonify sends it only after you confirm.';
 
   @override
   String get deepLinkImportHappSendHwidAction => 'Send HWID and import';
@@ -1367,24 +1501,24 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get happCryptoLinkImportedLabel => 'Imported via Happ Crypto Link';
+  String get happCryptoLinkImportedLabel => 'Imported from a Happ link';
 
   @override
-  String get happCryptoLinkTitle => 'Happ Crypto Link';
+  String get happCryptoLinkTitle => 'Happ link';
 
   @override
   String get happCryptUnsupportedTitle => 'Happ crypt5';
 
   @override
   String get happCryptUnsupportedMessage =>
-      'This Happ Crypto Link version is not supported yet.';
+      'This Happ link is not supported yet.';
 
   @override
   String get happImportTitle => 'Happ subscription';
 
   @override
   String get happImportMessage =>
-      'This subscription is intended for the Happ app and may require your device HWID. You can send HWID now, import without HWID, or cancel. If the provider requires HWID, importing without it may show placeholder nodes about an unsupported device.';
+      'This Happ subscription may require an HWID. Send it now or try importing without it.';
 
   @override
   String get subscriptionOperationSlowWarning =>
@@ -1411,7 +1545,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Route private and LAN addresses directly';
 
   @override
-  String get russiaRoutesTitle => 'Russia routes';
+  String get russiaRoutesTitle => 'Smart routing';
 
   @override
   String get russiaRoutesRunetFreedomBadge => 'runetfreedom';
@@ -1421,48 +1555,98 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get russiaRoutesSubtitle =>
-      'The client downloads the live runetfreedom sing-box.zip, verifies required rule-set files, and uses the bundled fallback if it fails.';
+      'Russian services go direct while blocked resources stay on VPN.';
 
   @override
-  String get russiaRoutesInstallAction => 'Prepare';
+  String get russiaRoutesInstallAction => 'Download rules';
 
   @override
   String get russiaRoutesReinstallAction => 'Update';
 
   @override
-  String get russiaRoutesUpdateAction => 'Update';
+  String get russiaRoutesUpdateAction => 'Check now';
 
   @override
-  String get russiaRoutesEnableTitle => 'Use Russia routes';
-
-  @override
-  String get russiaRoutesEnabledSubtitle =>
-      'Required routes will be applied automatically: reachable Russian services go direct, everything else stays on VPN.';
-
-  @override
-  String get russiaRoutesMissingSubtitle =>
-      'Prepare the route package first in order to use it.';
-
-  @override
-  String get russiaRoutesPreparingStatus => 'Preparing local route files...';
-
-  @override
-  String get russiaRoutesMissingStatus => 'Local routes are not prepared yet';
-
-  @override
-  String get russiaRoutesMissingHint =>
-      'The client will download runetfreedom sing-box.zip, verify required `.srs`, and use the bundled fallback if needed.';
-
-  @override
-  String russiaRoutesReadyStatus(String versionTag) {
-    return 'Routes are ready, version: $versionTag';
+  String russiaRoutesUpdateAvailable(String version) {
+    return 'A new rules version is available: $version';
   }
 
   @override
-  String get russiaRoutesLiveSource => 'runetfreedom sing-box.zip';
+  String get russiaRoutesLatest => 'The latest rules version is installed.';
 
   @override
-  String get russiaRoutesBundledSource => 'bundled fallback';
+  String get russiaRoutesEnableTitle => 'Enable smart routing';
+
+  @override
+  String get russiaRoutesEnabledSubtitle =>
+      'Apply the prepared rules to the VPN connection.';
+
+  @override
+  String get russiaRoutesMissingSubtitle =>
+      'The bundled database works offline and is connected when enabled.';
+
+  @override
+  String get russiaRoutesPreparingStatus => 'Updating rules...';
+
+  @override
+  String get russiaRoutesPreparingHint =>
+      'Downloading the latest database, verifying SRS files, and safely replacing local rules.';
+
+  @override
+  String get russiaRoutesStageChecking => 'Checking rule version…';
+
+  @override
+  String get russiaRoutesStageDownloading => 'Downloading rule archive…';
+
+  @override
+  String get russiaRoutesStageVerifying => 'Verifying archive integrity…';
+
+  @override
+  String get russiaRoutesStageExtracting => 'Extracting SRS files…';
+
+  @override
+  String get russiaRoutesStageCategories => 'Updating service lists…';
+
+  @override
+  String get russiaRoutesStageCompiling => 'Compiling local rules…';
+
+  @override
+  String get russiaRoutesStageActivating => 'Replacing rules safely…';
+
+  @override
+  String get russiaRoutesStageComplete => 'Rules updated';
+
+  @override
+  String russiaRoutesDownloadProgress(String completed, String total) {
+    return 'Downloaded $completed of $total.';
+  }
+
+  @override
+  String russiaRoutesItemsProgress(int completed, int total) {
+    return 'Processed lists: $completed of $total.';
+  }
+
+  @override
+  String get russiaRoutesMissingStatus => 'Rules are not installed yet';
+
+  @override
+  String get russiaRoutesMissingHint =>
+      'The bundled database is connected first, then a fresh version is checked and downloaded in the background.';
+
+  @override
+  String get russiaRoutesReadyHint =>
+      'Rules are stored locally. New versions are checked on startup, at most once a day.';
+
+  @override
+  String russiaRoutesReadyStatus(String versionTag) {
+    return 'Ready · $versionTag';
+  }
+
+  @override
+  String get russiaRoutesLiveSource => 'runetfreedom';
+
+  @override
+  String get russiaRoutesBundledSource => 'bundled database';
 
   @override
   String russiaRoutesSourceMeta(
@@ -1470,7 +1654,7 @@ class AppLocalizationsEn extends AppLocalizations {
     String verifiedAt,
     int fileCount,
   ) {
-    return 'Source: $source · verified: $verifiedAt · files: $fileCount';
+    return 'Source: $source · $verifiedAt · files: $fileCount';
   }
 
   @override
@@ -1512,6 +1696,43 @@ class AppLocalizationsEn extends AppLocalizations {
       'Downloading and building the local filter...';
 
   @override
+  String get adBlockStageConnecting => 'Connecting to AdGuard…';
+
+  @override
+  String get adBlockStageDownloading => 'Downloading the filter list…';
+
+  @override
+  String get adBlockStageCompiling => 'Building the local rule set…';
+
+  @override
+  String get adBlockStageActivating => 'Replacing the rule set safely…';
+
+  @override
+  String get adBlockStageComplete => 'Filter updated';
+
+  @override
+  String get adBlockPreparingHint => 'Preparing the download…';
+
+  @override
+  String adBlockDownloadedProgress(String completed) {
+    return 'Downloaded $completed';
+  }
+
+  @override
+  String adBlockDownloadProgress(String completed, String total) {
+    return '$completed of $total';
+  }
+
+  @override
+  String adBlockDownloadProgressEta(
+    String completed,
+    String total,
+    int seconds,
+  ) {
+    return '$completed of $total · about ${seconds}s left';
+  }
+
+  @override
   String get adBlockMissingStatus => 'Filter is not downloaded yet';
 
   @override
@@ -1533,7 +1754,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get splitRoutingSubtitle =>
-      'Route selected Android apps through VPN TUN or fully outside the VPN.';
+      'Choose which apps use the VPN and which connect directly.';
 
   @override
   String get splitRoutingUnavailableTitle => 'Temporarily unavailable';
@@ -1544,7 +1765,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get splitRoutingTunOnly =>
-      'Per-app split tunneling works only when VPN TUN is enabled. Local Proxy In cannot see Android app package names.';
+      'Available only in VPN mode. Local proxy mode cannot manage apps.';
 
   @override
   String get splitRoutingModeTitle => 'Mode';
@@ -1553,25 +1774,32 @@ class AppLocalizationsEn extends AppLocalizations {
   String get splitRoutingModeDisabled => 'Off';
 
   @override
-  String get splitRoutingModeDisabledSubtitle =>
-      'Use the normal routing flow for all apps';
+  String get splitRoutingModeDisabledSubtitle => 'Split routing is not used';
 
   @override
   String get splitRoutingModeProxySelected => 'Through VPN';
 
   @override
   String get splitRoutingModeProxySelectedSubtitle =>
-      'Only selected apps enter VPN TUN and use the selected server';
+      'Only selected apps use the VPN';
 
   @override
   String get splitRoutingModeBypassSelected => 'Outside VPN';
 
   @override
   String get splitRoutingModeBypassSelectedSubtitle =>
-      'Selected apps do not enter VPN TUN and go direct';
+      'Selected apps connect directly';
+
+  @override
+  String get splitRoutingLockdownWarning =>
+      'Android Always-on VPN with \'Block connections without VPN\' can block network access for apps selected outside the VPN.';
 
   @override
   String get splitRoutingAppsTitle => 'Applications';
+
+  @override
+  String get splitRoutingAppVisibilityNotice =>
+      'Android gives Etonify the installed-app list only for selection. The list stays on this device.';
 
   @override
   String get splitRoutingPackagesTitle => 'Package names';
@@ -1581,7 +1809,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get splitRoutingPackagesHelper =>
-      'Package names only, for example org.telegram.messenger. App display names are ignored';
+      'Package name, for example org.telegram.messenger';
 
   @override
   String get splitRoutingPickAppsAction => 'Choose apps';
@@ -1608,15 +1836,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get splitRoutingNoAppsTitle => 'No apps selected yet';
 
   @override
-  String get splitRoutingNoAppsSubtitle =>
-      'Pick Android apps to apply split routing to them';
+  String get splitRoutingNoAppsSubtitle => 'Choose apps for this mode';
 
   @override
   String get splitRoutingManualEditorTitle => 'Manual package list';
 
   @override
-  String get splitRoutingManualEditorSubtitle =>
-      'Use this if you want to edit package names directly';
+  String get splitRoutingManualEditorSubtitle => 'Enter package names manually';
 
   @override
   String refreshIntervalDaysShort(int count) {
@@ -1634,21 +1860,21 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get happCrypt5Supported => 'Supported';
+  String get happCrypt5Supported => 'Available';
 
   @override
-  String get happCrypt5Unsupported => 'Not supported';
+  String get happCrypt5Unsupported => 'Unavailable';
 
   @override
-  String get happCrypt5Checking => 'Checking happ://crypt5/... decrypt support';
+  String get happCrypt5Checking => 'Checking Happ crypt5...';
 
   @override
   String get happCrypt5SupportedDescription =>
-      'Your device can decrypt Happ crypt5 crypto links directly in the app.';
+      'This build can open Happ crypt5 links.';
 
   @override
   String get happCrypt5UnsupportedDescription =>
-      'Happ crypt5 decrypt is currently unavailable on this device.';
+      'This build has no Happ crypt5 files. Regular subscriptions still work.';
 
   @override
   String get subscriptionLikelyRequiresHwidTitle => 'HWID may be required';
@@ -1847,6 +2073,12 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get splitRoutingEmptyWhitelist =>
       'Choose at least one app or disable split tunneling before starting VPN.';
+
+  @override
+  String get splitRoutingUnknownAppLabel => 'App not found';
+
+  @override
+  String get splitRoutingLoadingAppLabel => 'Looking up app…';
 
   @override
   String get connectionStagePreparing => 'Preparing VPN';

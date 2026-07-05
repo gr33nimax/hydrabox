@@ -15,6 +15,7 @@ import android.os.Process
 import android.system.ErrnoException
 import android.system.OsConstants
 import android.util.Base64
+import androidx.annotation.RequiresApi
 import com.etonify.meow_client.MeowApplication
 import io.nekohasekai.libbox.ConnectionOwner
 import io.nekohasekai.libbox.ExchangeContext
@@ -182,8 +183,14 @@ abstract class MeowBasePlatformInterface(
 
 class MeowVpnPlatformInterface(
     private val service: VpnService,
-    private val onTunOpened: (Int) -> Unit,
 ) : MeowBasePlatformInterface(service) {
+    companion object {
+        @Volatile
+        private var lastTunPackageSummary = "not_opened"
+
+        fun describeLastTunPackages(): String = lastTunPackageSummary
+    }
+
     override fun autoDetectInterfaceControl(fd: Int) {
         val protected = runCatching { service.protect(fd) }.getOrElse { error ->
             MeowDiagnostics.log("MeowVpnPlatform", "protect fd=$fd failed", error)
@@ -208,6 +215,7 @@ class MeowVpnPlatformInterface(
             .setMtu(options.mtu)
         var hasIpv4Address = false
         var hasIpv6Address = false
+        lastTunPackageSummary = "autoRoute=${options.autoRoute} allowed=0 disallowed=0"
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             builder.setMetered(false)
@@ -236,13 +244,25 @@ class MeowVpnPlatformInterface(
         }
 
         if (options.autoRoute) {
-            val includedPackages = mutableListOf<String>()
-            while (options.includePackage.hasNext()) {
-                includedPackages += options.includePackage.next()
-            }
-            val excludedPackages = mutableListOf<String>()
-            while (options.excludePackage.hasNext()) {
-                excludedPackages += options.excludePackage.next()
+            val splitPackages = readSplitTunnelPackages(
+                includePackage = { options.includePackage },
+                excludePackage = { options.excludePackage },
+            )
+            val includedPackages = splitPackages.included
+            val excludedPackages = splitPackages.excluded
+            lastTunPackageSummary = buildString {
+                append("autoRoute=true allowed=")
+                append(includedPackages.size)
+                append(" disallowed=")
+                append(excludedPackages.size)
+                if (includedPackages.isNotEmpty()) {
+                    append(" allowedPackages=")
+                    append(includedPackages.joinToString(","))
+                }
+                if (excludedPackages.isNotEmpty()) {
+                    append(" disallowedPackages=")
+                    append(excludedPackages.joinToString(","))
+                }
             }
             val dnsServerAddress = runCatching { options.dnsServerAddress }.getOrNull()
             while (dnsServerAddress?.hasNext() == true) {
@@ -312,7 +332,7 @@ class MeowVpnPlatformInterface(
             addPackages(builder, excludedPackages.iterator(), false)
             MeowDiagnostics.log(
                 "MeowVpnPlatform",
-                "openTun packages allowed=${includedPackages.size} disallowed=${excludedPackages.size}",
+                "openTun packages $lastTunPackageSummary",
             )
         }
 
@@ -337,8 +357,13 @@ class MeowVpnPlatformInterface(
             MeowDiagnostics.log("MeowVpnPlatform", "openTun establish failed", it)
         }.getOrThrow()
         val fd = pfd.detachFd()
-        MeowDiagnostics.log("MeowVpnPlatform", "openTun established fd=$fd detached=true")
-        onTunOpened(fd)
+        // Ownership is transferred to libbox. Its Go platform wrapper always
+        // closes this original descriptor after duplicating it (or on every
+        // failure path), so Kotlin must never retain or close this integer.
+        MeowDiagnostics.log(
+            "MeowVpnPlatform",
+            "openTun established fd=$fd detached=true ownership=libbox",
+        )
         return fd
     }
 
@@ -422,6 +447,7 @@ class MeowVpnPlatformInterface(
         value.length <= 255 &&
             Regex("^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+$").matches(value)
 
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     private fun RoutePrefix.toIpPrefix(): IpPrefix {
         return IpPrefix(InetAddress.getByName(address()), prefix())
     }
@@ -465,7 +491,7 @@ private object MeowLocalResolver : LocalDNSTransport {
                 "exchange raw require failed current=${MeowDefaultNetworkMonitor.describeCurrentState()}",
                 it,
             )
-            ctx.errnoCode(OsConstants.ENONET)
+            ctx.errnoCode(OsConstants.ENETUNREACH)
             return
         }
         MeowDiagnostics.log(
@@ -546,7 +572,7 @@ private object MeowLocalResolver : LocalDNSTransport {
                     }
                 }
             } else {
-                ctx.errnoCode(OsConstants.ENONET)
+                ctx.errnoCode(OsConstants.ENETUNREACH)
             }
             return
         }

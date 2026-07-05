@@ -41,6 +41,8 @@ class SubscriptionStore {
   static Box? _payloadBox;
   static final Map<String, Future<void>> _subscriptionWriteLocks =
       <String, Future<void>>{};
+  static final Map<String, Future<Subscription>> _refreshesInFlight =
+      <String, Future<Subscription>>{};
 
   // ─────────────────── Lifecycle ───────────────────
 
@@ -59,8 +61,11 @@ class SubscriptionStore {
       await _migrateLegacyData();
       await _cleanupLegacySummaryBox();
     } catch (error, stackTrace) {
-      debugPrint('[SubscriptionStore] Failed to open box: $error');
-      debugPrintStack(stackTrace: stackTrace);
+      AppLogStore.error(
+        'subscription storage',
+        'Failed to initialize Hive subscription boxes: '
+            '$error\n$stackTrace',
+      );
       rethrow;
     }
   }
@@ -270,16 +275,9 @@ class SubscriptionStore {
     required Map<String, int> latestPings,
     required Map<String, Map<String, String?>> externalInfos,
   }) async {
-    final normalizedPings = <String, int>{
-      for (final entry in latestPings.entries)
-        if (entry.key.trim().isNotEmpty && entry.value > 0)
-          entry.key: entry.value,
-    };
+    // Latency belongs to the current runtime session. Persisting it makes an
+    // old value look fresh after reconnect or process restart.
     final updates = <String, Map<String, Object?>>{};
-    for (final entry in normalizedPings.entries) {
-      updates.putIfAbsent(entry.key, () => <String, Object?>{})['latest_ping'] =
-          entry.value;
-    }
     for (final entry in externalInfos.entries) {
       final tag = entry.key.trim();
       if (tag.isEmpty) {
@@ -507,7 +505,21 @@ class SubscriptionStore {
   /// Refreshes an existing subscription (re-fetches from URL).
   ///
   /// Returns the updated [Subscription].
-  static Future<Subscription> refresh(
+  static Future<Subscription> refresh(String id, {Duration? operationTimeout}) {
+    final inFlight = _refreshesInFlight[id];
+    if (inFlight != null) {
+      return inFlight;
+    }
+    final operation = _refresh(id, operationTimeout: operationTimeout);
+    _refreshesInFlight[id] = operation;
+    return operation.whenComplete(() {
+      if (identical(_refreshesInFlight[id], operation)) {
+        _refreshesInFlight.remove(id);
+      }
+    });
+  }
+
+  static Future<Subscription> _refresh(
     String id, {
     Duration? operationTimeout,
   }) async {
@@ -666,6 +678,40 @@ class SubscriptionStore {
     reordered[index - 1] = reordered[index];
     reordered[index] = previous;
     await _saveOrdered(reordered);
+  }
+
+  static Future<void> reorder(List<Subscription> subscriptions) async {
+    await _saveOrdered(subscriptions);
+  }
+
+  static Future<void> cachePayloadSummaries(
+    Map<String, ({int visibleProxyCount, bool hasRawPayload})> summaries,
+  ) async {
+    if (summaries.isEmpty) {
+      return;
+    }
+    final updates = <dynamic, String>{};
+    for (final entry in summaries.entries) {
+      final raw = _metaStore.get(entry.key);
+      if (raw is! String) {
+        continue;
+      }
+      try {
+        final metadata =
+            Subscription.fromMetadataMap(
+              jsonDecode(raw) as Map<String, dynamic>,
+            ).copyWith(
+              cachedVisibleProxyCount: entry.value.visibleProxyCount,
+              hasRawPayload: entry.value.hasRawPayload,
+            );
+        updates[entry.key] = jsonEncode(metadata.toMetadataMap());
+      } catch (_) {
+        // Leave corrupt metadata untouched; getAllMetadata already skips it.
+      }
+    }
+    if (updates.isNotEmpty) {
+      await _metaStore.putAll(updates);
+    }
   }
 
   // ─────────────────── Helpers ───────────────────

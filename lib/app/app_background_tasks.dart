@@ -70,6 +70,7 @@ class SingboxConfigBuildInput {
     required this.proxyInboundEnabled,
     required this.proxyMixedListen,
     required this.proxyMixedPort,
+    this.proxyPassword = '',
     required this.dnsDirectResolver,
     required this.dnsProxyResolver,
     required this.dnsPreferIpv6,
@@ -118,6 +119,7 @@ class SingboxConfigBuildInput {
   final bool proxyInboundEnabled;
   final String proxyMixedListen;
   final int proxyMixedPort;
+  final String proxyPassword;
   final String dnsDirectResolver;
   final String dnsProxyResolver;
   final bool dnsPreferIpv6;
@@ -451,6 +453,7 @@ SingboxConfigBuildResult buildSingboxConfig(SingboxConfigBuildInput input) {
     proxyInboundEnabled: input.proxyInboundEnabled,
     proxyMixedListen: input.proxyMixedListen,
     proxyMixedPort: input.proxyMixedPort,
+    proxyPassword: input.proxyPassword,
     dnsDirectResolver: input.dnsDirectResolver,
     dnsProxyResolver: input.dnsProxyResolver,
     dnsPreferIpv6: input.dnsPreferIpv6,

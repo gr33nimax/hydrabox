@@ -10,6 +10,7 @@ import java.util.Locale
 object MeowDiagnostics {
     private const val MAX_LOG_BYTES = 256 * 1024
     private const val KEEP_LOG_BYTES = 160 * 1024
+    private const val CRASH_LOG_BYTES = 64 * 1024
     private val lock = Any()
     private val timestampFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ", Locale.US)
 
@@ -47,9 +48,42 @@ object MeowDiagnostics {
                 if (!file.exists()) {
                     return ""
                 }
-                val bytes = file.readBytes()
-                val start = (bytes.size - maxBytes.coerceAtLeast(0)).coerceAtLeast(0)
-                bytes.copyOfRange(start, bytes.size).toString(Charsets.UTF_8).trim()
+                readFileTail(file, maxBytes)
+            }
+        }.getOrDefault("")
+    }
+
+    fun readCrashReportTail(maxBytes: Int = CRASH_LOG_BYTES): String {
+        return runCatching {
+            synchronized(lock) {
+                val workingDir = File(
+                    MeowApplication.application.getExternalFilesDir(null)
+                        ?: MeowApplication.application.filesDir,
+                    "singbox-work",
+                )
+                val report = workingDir.listFiles()
+                    ?.filter { it.isFile && it.name.startsWith("CrashReport-") && it.length() > 0L }
+                    ?.maxByOrNull { it.lastModified() }
+                    ?: return ""
+                "file=${report.name} modifiedAtMillis=${report.lastModified()}\n" +
+                    readFileTail(report, maxBytes)
+            }
+        }.getOrDefault("")
+    }
+
+    fun readLatestOomReportMetadata(): String {
+        return runCatching {
+            synchronized(lock) {
+                val workingDir = File(
+                    MeowApplication.application.getExternalFilesDir(null)
+                        ?: MeowApplication.application.filesDir,
+                    "singbox-work/oom_reports",
+                )
+                val metadata = workingDir.walkTopDown()
+                    .filter { it.isFile && it.name == "metadata.json" }
+                    .maxByOrNull { it.lastModified() }
+                    ?: return ""
+                metadata.readText().trim()
             }
         }.getOrDefault("")
     }
@@ -76,7 +110,21 @@ object MeowDiagnostics {
             return
         }
         val bytes = file.readBytes()
-        val start = (bytes.size - KEEP_LOG_BYTES).coerceAtLeast(0)
+        var start = (bytes.size - KEEP_LOG_BYTES).coerceAtLeast(0)
+        while (start < bytes.size && start > 0 && bytes[start - 1] != '\n'.code.toByte()) {
+            start++
+        }
         file.writeBytes(bytes.copyOfRange(start, bytes.size))
+    }
+
+    private fun readFileTail(file: File, maxBytes: Int): String {
+        val bytes = file.readBytes()
+        var start = (bytes.size - maxBytes.coerceAtLeast(0)).coerceAtLeast(0)
+        if (start > 0) {
+            while (start < bytes.size && bytes[start - 1] != '\n'.code.toByte()) {
+                start++
+            }
+        }
+        return bytes.copyOfRange(start, bytes.size).toString(Charsets.UTF_8).trim()
     }
 }

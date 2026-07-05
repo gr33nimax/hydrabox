@@ -90,6 +90,85 @@ void main() {
     expect(entries.single.timestamp, DateTime.fromMillisecondsSinceEpoch(42));
   });
 
+  test('nativeLog reports hard interface dial failures as runtime issues', () {
+    final issues = <String>[];
+    final controller = RuntimeEventController(
+      events: const Stream.empty(),
+      onState: (_) {},
+      onStatus: (_) {},
+      onNetwork: (_) {},
+      onGroups: (_) {},
+      shouldRecordLog: (_) => false,
+      onRuntimeLogIssue: (reason, message) {
+        issues.add('$reason|$message');
+      },
+    );
+
+    controller.dispatch({
+      'type': 'nativeLog',
+      'level': 'error',
+      'message':
+          'connection: open connection using outbound/vless[vless-1]: '
+          'dial ccmni1 (14): dial tcp 203.0.113.1:443: network is unreachable',
+    });
+
+    expect(issues, hasLength(1));
+    expect(issues.single, contains('core_interface_dial_failure'));
+  });
+
+  test('nativeLog ignores remote timeout on a valid interface', () {
+    final issues = <String>[];
+    final controller = RuntimeEventController(
+      events: const Stream.empty(),
+      onState: (_) {},
+      onStatus: (_) {},
+      onNetwork: (_) {},
+      onGroups: (_) {},
+      shouldRecordLog: (_) => false,
+      onRuntimeLogIssue: (reason, message) {
+        issues.add('$reason|$message');
+      },
+    );
+
+    controller.dispatch({
+      'type': 'nativeLog',
+      'level': 'error',
+      'message':
+          'connection: open connection using outbound/vless[vless-1]: '
+          'dial wlan0 (36): dial tcp 203.0.113.1:443: i/o timeout',
+    });
+
+    expect(issues, isEmpty);
+  });
+
+  test('logs batch reports no-interface runtime issues', () {
+    final issues = <String>[];
+    final controller = RuntimeEventController(
+      events: const Stream.empty(),
+      onState: (_) {},
+      onStatus: (_) {},
+      onNetwork: (_) {},
+      onGroups: (_) {},
+      shouldRecordLog: (_) => true,
+      onRuntimeLogIssue: (reason, message) {
+        issues.add(reason);
+      },
+    );
+
+    controller.dispatch({
+      'type': 'logs',
+      'logs': [
+        {
+          'level': 4,
+          'message': 'manual URLTest skipped: no usable network interface',
+        },
+        {'level': 4, 'message': 'regular proxy timeout'},
+      ],
+    });
+
+    expect(issues, ['core_no_usable_interface']);
+  });
+
   test('start subscribes to stream and dispose cancels subscription', () async {
     final stream = StreamController<Map<String, dynamic>>();
     addTearDown(stream.close);

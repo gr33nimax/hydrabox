@@ -4,7 +4,7 @@ import 'package:meow_client/models/subscription.dart';
 
 void main() {
   test('URLTest group delay updates runtime latency', () {
-    final controller = ProxyRuntimeController()..urlTestInFlight = true;
+    final controller = ProxyRuntimeController()..beginLatencySession();
     addTearDown(controller.dispose);
 
     final result = controller.applyGroupUpdates(
@@ -14,31 +14,35 @@ void main() {
             'tag': 'select',
             'selected': 'vless-1',
             'items': [
-              {'tag': 'vless-1', 'status': 'available', 'delay': 73, 'time': 1},
+              {
+                'tag': 'vless-1',
+                'status': 'available',
+                'delay': 73,
+                'time': DateTime.now().millisecondsSinceEpoch ~/ 1000,
+              },
             ],
           },
         ],
+        latencySessionRunning: true,
       ),
     );
 
     expect(result.changed, isTrue);
     expect(result.requiresRootRebuild, isTrue);
-    expect(result.shouldCancelUrlTestFallbackTimer, isTrue);
-    expect(controller.urlTestInFlight, isFalse);
     expect(controller.runtimeLatencies['vless-1'], 73);
     expect(controller.lowestLatency, 73);
     expect(controller.unavailableLatencyTags, isNot(contains('vless-1')));
   });
 
   test(
-    'first unavailable result keeps known latency before marking failed',
+    'URLTest failures keep the last latency and never mark proxy unavailable',
     () {
       final controller = ProxyRuntimeController();
       addTearDown(controller.dispose);
+      controller.runtimeLatencies['vless-1'] = 82;
 
       final first = controller.applyGroupUpdates(
         _input(
-          latestPings: const {'vless-1': 82},
           rawGroups: [
             {
               'tag': 'select',
@@ -57,12 +61,12 @@ void main() {
 
       expect(first.changed, isTrue);
       expect(controller.unavailableLatencyTags, isNot(contains('vless-1')));
-      expect(controller.latencyErrors, isNot(contains('vless-1')));
+      expect(controller.runtimeLatencies['vless-1'], 82);
+      expect(controller.latencyErrors['vless-1'], 'context deadline exceeded');
       expect(controller.latencyFailureCounts['vless-1'], 1);
 
       final second = controller.applyGroupUpdates(
         _input(
-          latestPings: const {'vless-1': 82},
           rawGroups: [
             {
               'tag': 'select',
@@ -80,7 +84,8 @@ void main() {
       );
 
       expect(second.changed, isTrue);
-      expect(controller.unavailableLatencyTags, contains('vless-1'));
+      expect(controller.unavailableLatencyTags, isNot(contains('vless-1')));
+      expect(controller.runtimeLatencies['vless-1'], 82);
       expect(controller.latencyErrors['vless-1'], 'context deadline exceeded');
       expect(controller.latencyFailureCounts['vless-1'], 2);
     },
@@ -137,20 +142,34 @@ void main() {
     expect(controller.lowestLatency, 91);
   });
 
-  test('reachable endpoint fallback wins only when caller allows it', () {
+  test('unfinished session entries become timeout without losing latency', () {
+    final controller = ProxyRuntimeController();
+    addTearDown(controller.dispose);
+    controller.runtimeLatencies['vless-1'] = 73;
+
+    controller.beginLatencySession();
+    final changed = controller.finishLatencySession(const ['vless-1']);
+
+    expect(changed, isTrue);
+    expect(controller.runtimeLatencies['vless-1'], 73);
+    expect(controller.latencyErrors['vless-1'], 'timeout');
+    expect(controller.unavailableLatencyTags, isEmpty);
+  });
+
+  test('reachable endpoint fallback does not override URLTest failure', () {
     expect(
       ProxyRuntimeController.effectiveLatencyUnavailable(
         urlTestUnavailable: true,
         endpointFallbackReachable: true,
       ),
-      isFalse,
+      isTrue,
     );
     expect(
       ProxyRuntimeController.effectiveLatencyError(
         urlTestError: 'context deadline exceeded',
         endpointFallbackReachable: true,
       ),
-      isNull,
+      'context deadline exceeded',
     );
     expect(
       ProxyRuntimeController.effectiveLatencyUnavailable(
@@ -198,9 +217,9 @@ void main() {
 
 ProxyRuntimeGroupUpdateInput _input({
   required List<dynamic> rawGroups,
-  Map<String, int?> latestPings = const {'vless-1': null},
   String selectedProxyTag = 'vless-1',
   bool runtimeSelectionUpdatesAllowed = true,
+  bool latencySessionRunning = false,
 }) {
   return ProxyRuntimeGroupUpdateInput(
     rawGroups: rawGroups,
@@ -225,7 +244,7 @@ ProxyRuntimeGroupUpdateInput _input({
     runtimeSelectionUpdatesAllowed: runtimeSelectionUpdatesAllowed,
     currentResolvedActiveOutboundTag: 'vless-1',
     activeOutboundTags: const {'vless-1', 'vless-2'},
-    activeOutboundLatestPings: latestPings,
+    latencySessionRunning: latencySessionRunning,
     proxyCacheContainsTag: (tag) => tag == 'vless-1',
     visibleGroupProxyCacheMissingChild: (_, _) => false,
   );

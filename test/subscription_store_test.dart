@@ -8,9 +8,12 @@ import 'package:meow_client/models/subscription.dart';
 
 void main() {
   late Directory tempDir;
+  HttpOverrides? previousHttpOverrides;
 
   setUpAll(() async {
     TestWidgetsFlutterBinding.ensureInitialized();
+    previousHttpOverrides = HttpOverrides.current;
+    HttpOverrides.global = _PassthroughHttpOverrides();
     tempDir = await Directory.systemTemp.createTemp('meow-client-hive-');
     Hive.init(tempDir.path);
     await SubscriptionStore.init();
@@ -23,6 +26,7 @@ void main() {
   tearDownAll(() async {
     await SubscriptionStore.clear();
     await Hive.close();
+    HttpOverrides.global = previousHttpOverrides;
     if (tempDir.existsSync()) {
       await tempDir.delete(recursive: true);
     }
@@ -74,6 +78,54 @@ void main() {
     );
     expect(result.subscription.disableAutoUpdate, isTrue);
     expect(result.subscription.outbounds, isNotEmpty);
+
+    final metadata = SubscriptionStore.getAllMetadata().single;
+    expect(metadata.cachedVisibleProxyCount, greaterThan(0));
+    expect(metadata.hasRawPayload, isTrue);
+  });
+
+  test('coalesces concurrent refreshes of the same subscription', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    var requestCount = 0;
+
+    server.listen((request) async {
+      requestCount++;
+      request.response.statusCode = HttpStatus.ok;
+      request.response.headers.contentType = ContentType.text;
+      request.response.write(
+        'vless://3a1a58e6-e167-4d9f-8b60-34fee9ee51e9@server.example.com:443'
+        '?encryption=none&security=tls#Node',
+      );
+      await request.response.close();
+    });
+
+    final url = 'http://${server.address.host}:${server.port}/subscription';
+    await SubscriptionStore.save(
+      Subscription(
+        id: 'single-flight-refresh',
+        name: 'Single flight',
+        url: url,
+        outbounds: const [
+          Outbound(
+            tag: 'old-node',
+            name: 'Old node',
+            config: {
+              'type': 'vless',
+              'server': 'old.example.com',
+              'server_port': 443,
+            },
+          ),
+        ],
+      ),
+    );
+
+    final first = SubscriptionStore.refresh('single-flight-refresh');
+    final second = SubscriptionStore.refresh('single-flight-refresh');
+
+    final results = await Future.wait([first, second]);
+    expect(requestCount, 1);
+    expect(results[0].outbounds.single.tag, results[1].outbounds.single.tag);
   });
 
   test('builds Husi-style proxy chain detours from parsed links', () {
@@ -197,49 +249,46 @@ void main() {
     expect(selected, 'lowest');
   });
 
-  test(
-    'saves outbound runtime info without clearing location fields',
-    () async {
-      const subscription = Subscription(
-        id: 'runtime-sub',
-        name: 'Runtime subscription',
-        url: 'https://example.com/sub',
-        outbounds: [
-          Outbound(
-            tag: 'leaf-1',
-            name: 'Leaf 1',
-            config: {'type': 'vless', 'tag': 'leaf-1'},
-            info: OutboundInfo(externalIp: '1.1.1.1', country: 'FI'),
-          ),
-        ],
-      );
+  test('keeps latency runtime-only without clearing location fields', () async {
+    const subscription = Subscription(
+      id: 'runtime-sub',
+      name: 'Runtime subscription',
+      url: 'https://example.com/sub',
+      outbounds: [
+        Outbound(
+          tag: 'leaf-1',
+          name: 'Leaf 1',
+          config: {'type': 'vless', 'tag': 'leaf-1'},
+          info: OutboundInfo(externalIp: '1.1.1.1', country: 'FI'),
+        ),
+      ],
+    );
 
-      await SubscriptionStore.save(subscription);
-      await SubscriptionStore.saveOutboundRuntimeInfoInBackground(
-        subscription.id,
-        latestPings: const {'leaf-1': 42},
-      );
+    await SubscriptionStore.save(subscription);
+    await SubscriptionStore.saveOutboundRuntimeInfoInBackground(
+      subscription.id,
+      latestPings: const {'leaf-1': 42},
+    );
 
-      var saved = SubscriptionStore.get(subscription.id);
-      expect(saved, isNotNull);
-      expect(saved!.outbounds.single.info.latestPing, 42);
-      expect(saved.outbounds.single.info.externalIp, '1.1.1.1');
-      expect(saved.outbounds.single.info.country, 'FI');
+    var saved = SubscriptionStore.get(subscription.id);
+    expect(saved, isNotNull);
+    expect(saved!.outbounds.single.info.latestPing, isNull);
+    expect(saved.outbounds.single.info.externalIp, '1.1.1.1');
+    expect(saved.outbounds.single.info.country, 'FI');
 
-      await SubscriptionStore.saveOutboundRuntimeInfoInBackground(
-        subscription.id,
-        externalInfos: const {
-          'leaf-1': {'external_ip': '2.2.2.2', 'country': 'DE'},
-        },
-      );
+    await SubscriptionStore.saveOutboundRuntimeInfoInBackground(
+      subscription.id,
+      externalInfos: const {
+        'leaf-1': {'external_ip': '2.2.2.2', 'country': 'DE'},
+      },
+    );
 
-      saved = SubscriptionStore.get(subscription.id);
-      expect(saved, isNotNull);
-      expect(saved!.outbounds.single.info.latestPing, 42);
-      expect(saved.outbounds.single.info.externalIp, '2.2.2.2');
-      expect(saved.outbounds.single.info.country, 'DE');
-    },
-  );
+    saved = SubscriptionStore.get(subscription.id);
+    expect(saved, isNotNull);
+    expect(saved!.outbounds.single.info.latestPing, isNull);
+    expect(saved.outbounds.single.info.externalIp, '2.2.2.2');
+    expect(saved.outbounds.single.info.country, 'DE');
+  });
 
   test('preserves state across duplicate endpoints when credentials match', () {
     final oldOutbounds = [
@@ -443,6 +492,15 @@ void main() {
       'interval': 300,
     });
   });
+}
+
+class _PassthroughHttpOverrides extends HttpOverrides {
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    final client = super.createHttpClient(context);
+    client.connectionTimeout = const Duration(seconds: 15);
+    return client;
+  }
 }
 
 Outbound _outbound({

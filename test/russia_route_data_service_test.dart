@@ -1,7 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:meow_client/data/routing/russia_route_data_service.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test('Russia route status only needs daily update after 24 hours', () {
     final now = DateTime.now().millisecondsSinceEpoch;
     final fresh = RussiaRouteDataStatus(
@@ -22,4 +26,90 @@ void main() {
     expect(fresh.needsDailyUpdate, isFalse);
     expect(stale.needsDailyUpdate, isTrue);
   });
+
+  test(
+    'bundled smart routing installs offline and remains due for refresh',
+    () async {
+      await _withIsolatedRouteStorage(() async {
+        final status = await RussiaRouteDataService.instance
+            .ensureBundledInstalled();
+
+        expect(status.available, isTrue);
+        expect(status.sourceKind, RussiaRouteDataService.sourceKindBundled);
+        expect(status.needsDailyUpdate, isTrue);
+        expect(status.verifiedFiles, hasLength(6));
+        expect(status.curatedDirectServicesPath, isNull);
+        expect(status.aiServicesPath, isNull);
+        expect(File(status.geositeRuBlockedPath!).existsSync(), isTrue);
+        expect(File(status.geoipRuPath!).existsSync(), isTrue);
+      });
+    },
+  );
+
+  test('bundled installation publishes and clears shared activity', () async {
+    await _withIsolatedRouteStorage(() async {
+      final service = RussiaRouteDataService.instance;
+      final install = service.ensureBundledInstalled();
+
+      expect(service.isUpdating, isTrue);
+      await Future<void>.delayed(Duration.zero);
+      expect(service.progress.value, isNotNull);
+
+      await install;
+
+      expect(service.isUpdating, isFalse);
+      expect(service.progress.value, isNull);
+    });
+  });
+
+  test('corrupt bundled SRS is rejected on the next status load', () async {
+    await _withIsolatedRouteStorage(() async {
+      final installed = await RussiaRouteDataService.instance
+          .ensureBundledInstalled();
+      await File(installed.geoipRuPath!).writeAsBytes([1, 2, 3, 4, 5]);
+
+      final reloaded = await RussiaRouteDataService.instance.loadStatus();
+
+      expect(reloaded.available, isFalse);
+    });
+  });
+
+  test('smart routing progress is bounded for bytes and items', () {
+    expect(
+      const RussiaRouteUpdateProgress(
+        stage: RussiaRouteUpdateStage.downloadingPackage,
+        completedBytes: 25,
+        totalBytes: 100,
+      ).fraction,
+      0.25,
+    );
+    expect(
+      const RussiaRouteUpdateProgress(
+        stage: RussiaRouteUpdateStage.downloadingCategories,
+        completedItems: 12,
+        totalItems: 4,
+      ).fraction,
+      1,
+    );
+    expect(
+      const RussiaRouteUpdateProgress(
+        stage: RussiaRouteUpdateStage.verifyingPackage,
+      ).fraction,
+      isNull,
+    );
+  });
+}
+
+Future<T> _withIsolatedRouteStorage<T>(Future<T> Function() action) async {
+  final root = await Directory.systemTemp.createTemp('etonify-route-test-');
+  try {
+    return await IOOverrides.runZoned(
+      action,
+      getSystemTempDirectory: () => root,
+    );
+  } finally {
+    if (root.existsSync()) {
+      await root.delete(recursive: true);
+    }
+  }
 }

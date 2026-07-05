@@ -22,6 +22,7 @@ class SettingsAboutPage extends StatefulWidget {
     'https://github.com/dudosxdev/sing-box',
   );
   static final Uri _telegramUri = Uri.parse('https://t.me/etonify');
+  static final Uri _contactUri = Uri.parse('https://t.me/etonify?direct');
 
   final String versionLabel;
   final VoidCallback onShowOnboarding;
@@ -131,6 +132,7 @@ class _SettingsAboutPageState extends State<SettingsAboutPage> {
                       _openUri(SettingsAboutPage._coreSourceUri),
                   onOpenTelegram: () =>
                       _openUri(SettingsAboutPage._telegramUri),
+                  onOpenContact: () => _openUri(SettingsAboutPage._contactUri),
                   onOpenTerms: () => _openLegalDocument(privacy: false),
                   onOpenPrivacy: () => _openLegalDocument(privacy: true),
                   onOpenTeam: _openTeamPage,
@@ -175,6 +177,7 @@ class _AboutInfoCard extends StatelessWidget {
     required this.coreVersion,
     required this.onOpenCoreSource,
     required this.onOpenTelegram,
+    required this.onOpenContact,
     required this.onOpenTerms,
     required this.onOpenPrivacy,
     required this.onOpenTeam,
@@ -184,6 +187,7 @@ class _AboutInfoCard extends StatelessWidget {
   final String? coreVersion;
   final VoidCallback onOpenCoreSource;
   final VoidCallback onOpenTelegram;
+  final VoidCallback onOpenContact;
   final VoidCallback onOpenTerms;
   final VoidCallback onOpenPrivacy;
   final VoidCallback onOpenTeam;
@@ -242,6 +246,11 @@ class _AboutInfoCard extends StatelessWidget {
                   icon: Icons.send_rounded,
                   label: l10n.telegramChannelLabel,
                   onTap: onOpenTelegram,
+                ),
+                _AboutActionChip(
+                  icon: Icons.forum_rounded,
+                  label: l10n.aboutContactLabel,
+                  onTap: onOpenContact,
                 ),
                 _AboutActionChip(
                   icon: Icons.description_rounded,
@@ -505,7 +514,7 @@ class _AboutActionChip extends StatelessWidget {
 class _MeowTeamPage extends StatelessWidget {
   const _MeowTeamPage();
 
-  static final Uri _ddosxdUri = Uri.parse('https://t.me/dddosxd');
+  static final Uri _dudosxdevUri = Uri.parse('https://t.me/dddosxd');
   static final Uri _yamixdevUri = Uri.parse('https://t.me/Ilushadev');
   static final Uri _telegramUri = Uri.parse('https://t.me/etonify');
   static final Uri _coreUri = Uri.parse(
@@ -575,10 +584,10 @@ class _MeowTeamPage extends StatelessWidget {
           ),
           const Gap(14),
           _DeveloperCard(
-            name: 'ddosxd',
+            name: 'dudosxdev',
             role: l10n.teamDeveloperDdosxdRole,
             avatarAsset: 'assets/images/team/ddosxd.jpg',
-            onTap: () => _open(context, _ddosxdUri),
+            onTap: () => _open(context, _dudosxdevUri),
           ),
           const Gap(10),
           _DeveloperCard(

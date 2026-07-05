@@ -2,6 +2,7 @@ package com.etonify.meow_client.singbox
 
 import android.annotation.TargetApi
 import android.net.ConnectivityManager
+import android.net.LinkProperties
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
@@ -81,6 +82,14 @@ object MeowDefaultNetworkMonitor {
             MeowDiagnostics.log(
                 TAG,
                 "onCapabilitiesChanged ${describeNetwork(network, networkCapabilities)}",
+            )
+            updateNetwork(network)
+        }
+
+        override fun onLinkPropertiesChanged(network: Network, linkProperties: LinkProperties) {
+            MeowDiagnostics.log(
+                TAG,
+                "onLinkPropertiesChanged network=$network interface=${linkProperties.interfaceName}",
             )
             updateNetwork(network)
         }
@@ -187,8 +196,7 @@ object MeowDefaultNetworkMonitor {
             Log.i(TAG, "heartbeat re-assert cached=$cached")
             notifyListener(force = true)
         } else if (cached != null) {
-            Log.i(TAG, "heartbeat re-assert current=$cached")
-            notifyListener(force = true)
+            Log.d(TAG, "heartbeat current network remains valid cached=$cached")
         }
     }
 
@@ -528,12 +536,20 @@ object MeowDefaultNetworkMonitor {
                     score = networkScore(capabilities, isActive, isValidated),
                 )
             }
-        val selected = candidates
-            .filter { it.isValidated }
-            .maxByOrNull { it.score }
-            ?: candidates
-                .filter { it.isActive }
-                .maxByOrNull { it.score }
+        val current = synchronized(lock) { currentNetwork }
+        val selectedNetwork = selectDefaultNetworkCandidate(
+            candidates = candidates.map { candidate ->
+                DefaultNetworkCandidate(
+                    value = candidate.network,
+                    isActive = candidate.isActive,
+                    isValidated = candidate.isValidated,
+                    hasUsableInterface = hasUsableNetworkInterface(candidate.network),
+                    score = candidate.score,
+                )
+            },
+            current = current,
+        )?.value
+        val selected = candidates.firstOrNull { it.network == selectedNetwork }
         if (selected == null && candidates.isNotEmpty()) {
             MeowDiagnostics.log(
                 TAG,
@@ -542,7 +558,11 @@ object MeowDefaultNetworkMonitor {
             )
         }
         return selected?.network?.also {
-            val fallback = if (!selected.isValidated) " fallback_unvalidated=true" else ""
+            val fallback = when {
+                selected.isValidated -> ""
+                selected.isActive -> " fallback_unvalidated=true"
+                else -> " fallback_interface=true"
+            }
             Log.i(TAG, "resolveBestNetwork -> $it")
             MeowDiagnostics.log(
                 TAG,
@@ -579,7 +599,17 @@ object MeowDefaultNetworkMonitor {
             false
         }
         val validated = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-        return validated || active
+        return validated || active || hasUsableNetworkInterface(network)
+    }
+
+    private fun hasUsableNetworkInterface(network: Network): Boolean {
+        val interfaceName = MeowApplication.connectivity
+            .getLinkProperties(network)
+            ?.interfaceName
+            ?.takeIf { it.isNotBlank() }
+            ?: return false
+        return runCatching { NetworkInterface.getByName(interfaceName)?.index ?: -1 }
+            .getOrDefault(-1) >= 0
     }
 
     private fun networkScore(
@@ -680,28 +710,24 @@ object MeowDefaultNetworkMonitor {
                 }.onFailure {
                     SingboxController.log("error", "default network callback failed: ${it.message}")
                 }
-            in 28 until 31 ->
-                @TargetApi(28)
+            in 26 until 31 ->
+                @TargetApi(26)
                 runCatching {
-                    MeowDiagnostics.log(TAG, "register method=requestNetwork(networkHandler) sdk=${Build.VERSION.SDK_INT}")
-                    MeowApplication.connectivity.requestNetwork(request, callback, networkHandler)
-                }.onFailure {
-                    SingboxController.log("error", "default network request failed: ${it.message}")
-                }
-            in 24 until 28 ->
-                @TargetApi(24)
-                runCatching {
-                    MeowDiagnostics.log(TAG, "register method=requestNetwork(networkHandler) sdk=${Build.VERSION.SDK_INT}")
-                    MeowApplication.connectivity.requestNetwork(request, callback, networkHandler)
+                    MeowDiagnostics.log(TAG, "register method=registerNetworkCallback(networkHandler) sdk=${Build.VERSION.SDK_INT}")
+                    MeowApplication.connectivity.registerNetworkCallback(
+                        request,
+                        callback,
+                        networkHandler,
+                    )
                 }.onFailure {
                     SingboxController.log("error", "default network callback failed: ${it.message}")
                 }
             else ->
                 runCatching {
-                    MeowDiagnostics.log(TAG, "register method=requestNetwork sdk=${Build.VERSION.SDK_INT}")
-                    MeowApplication.connectivity.requestNetwork(request, callback)
+                    MeowDiagnostics.log(TAG, "register method=registerNetworkCallback sdk=${Build.VERSION.SDK_INT}")
+                    MeowApplication.connectivity.registerNetworkCallback(request, callback)
                 }.onFailure {
-                    SingboxController.log("error", "default network request failed: ${it.message}")
+                    SingboxController.log("error", "default network callback failed: ${it.message}")
                 }
         }
     }

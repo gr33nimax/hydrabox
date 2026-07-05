@@ -243,11 +243,56 @@ jobs:
       - name: List APK outputs
         run: ls -lah build/release-apks/*.apk
 
+      - name: Generate updater manifest
+        shell: bash
+        run: |
+          apk="build/release-apks/etonify-v${RELEASE_VERSION}-universal.apk"
+          analyzer="${ANDROID_HOME}/cmdline-tools/latest/bin/apkanalyzer"
+          if [ ! -x "$analyzer" ]; then
+            analyzer="$(command -v apkanalyzer || true)"
+          fi
+          if [ -z "$analyzer" ] || [ ! -x "$analyzer" ]; then
+            echo "::error title=Missing apkanalyzer::Cannot read APK compatibility metadata"
+            exit 1
+          fi
+          min_sdk="$($analyzer manifest min-sdk "$apk")"
+          version_code="$($analyzer manifest version-code "$apk")"
+          python3 - "$RELEASE_VERSION" "$version_code" "$min_sdk" <<'PY'
+          import hashlib
+          import json
+          import sys
+          from pathlib import Path
+
+          version, build_number, min_sdk = sys.argv[1:]
+          assets = []
+          for apk in sorted(Path("build/release-apks").glob("*.apk")):
+              assets.append({
+                  "name": apk.name,
+                  "sizeBytes": apk.stat().st_size,
+                  "sha256": hashlib.sha256(apk.read_bytes()).hexdigest(),
+              })
+          manifest = {
+              "schemaVersion": 1,
+              "version": version,
+              "buildNumber": int(build_number),
+              "minSdk": int(min_sdk),
+              "packageName": "com.etonify.meow_client",
+              "assets": assets,
+          }
+          Path("build/release-apks/etonify-update.json").write_text(
+              json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          cat build/release-apks/etonify-update.json
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: etonify-release-apks-${{ github.run_number }}
-          path: build/release-apks/*.apk
+          path: |
+            build/release-apks/*.apk
+            build/release-apks/etonify-update.json
           if-no-files-found: error
           retention-days: 14
 
@@ -265,7 +310,19 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           notes_file="build/release-notes.md"
-          cat > "$notes_file" <<EOF
+          if [ -f CHANGELOG.md ]; then
+            awk -v version="$RELEASE_VERSION" '
+              index($0, "## [" version "]") == 1 { found=1; next }
+              found && index($0, "## [") == 1 { exit }
+              found { print }
+            ' CHANGELOG.md > "$notes_file"
+          else
+            : > "$notes_file"
+          fi
+          cat >> "$notes_file" <<EOF
+
+          ---
+
           Signed Android APKs built from ${GITHUB_SHA}.
           Dart obfuscation is enabled. Debug symbols are attached as a separate workflow artifact.
 
@@ -278,9 +335,9 @@ jobs:
 
           if gh release view "$TAG_NAME" >/dev/null 2>&1; then
             gh release edit "$TAG_NAME" --title "$RELEASE_TITLE" --notes-file "$notes_file"
-            gh release upload "$TAG_NAME" build/release-apks/*.apk --clobber
+            gh release upload "$TAG_NAME" build/release-apks/*.apk build/release-apks/etonify-update.json --clobber
           else
-            gh release create "$TAG_NAME" build/release-apks/*.apk \
+            gh release create "$TAG_NAME" build/release-apks/*.apk build/release-apks/etonify-update.json \
               --draft \
               --title "$RELEASE_TITLE" \
               --notes-file "$notes_file"

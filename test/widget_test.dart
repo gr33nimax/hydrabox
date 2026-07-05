@@ -20,7 +20,7 @@ void main() {
         store: MemoryAppSettingsStore(
           const AppSettingsState(
             onboardingCompleted: true,
-            acceptedLegalVersion: '0.2.0',
+            acceptedLegalVersion: '0.2.1',
             acceptedLegalAtMillis: 1,
             activeProfileId: '',
             selectedProxyTag: '',
@@ -139,7 +139,7 @@ void main() {
         store: MemoryAppSettingsStore(
           const AppSettingsState(
             onboardingCompleted: true,
-            acceptedLegalVersion: '0.2.0',
+            acceptedLegalVersion: '0.2.1',
             acceptedLegalAtMillis: 1,
             activeProfileId: '',
             selectedProxyTag: '',
@@ -487,6 +487,50 @@ void main() {
   });
 
   testWidgets(
+    'embedded proxy row shows URLTest error without marking it dead',
+    (tester) async {
+      final proxies = <AppProxySummary>[_proxy('proxy-1', 'proxy 1')];
+      final runtimeStates = ProxyRuntimeVisualStore();
+      addTearDown(runtimeStates.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          supportedLocales: AppLocalizations.supportedLocales,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          home: Scaffold(
+            body: SizedBox(
+              height: 720,
+              child: ProxiesPage(
+                proxies: proxies,
+                totalTopLevelProxies: proxies.length,
+                selectedTag: 'proxy-1',
+                connected: true,
+                progressiveBlurEnabled: false,
+                onSelected: (_) {},
+                onUrlTest: () async {},
+                embedded: true,
+                sheetAtMaxExtent: true,
+                sheetExtent: 1,
+                runtimeStates: runtimeStates,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      runtimeStates.replaceAll(const <String, ProxyRuntimeVisualState>{
+        'proxy-1': ProxyRuntimeVisualState(
+          latencyError: 'unexpected EOF',
+          latencyUnavailable: false,
+        ),
+      });
+      await tester.pump();
+
+      expect(find.text('EOF'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
     'embedded proxy row shows switching feedback from runtime notifier',
     (tester) async {
       final proxies = <AppProxySummary>[
@@ -749,7 +793,7 @@ void main() {
     expect(find.text('57.128.200.35'), findsNothing);
   });
 
-  testWidgets('active proxy delay indicator shows checking state once', (
+  testWidgets('active proxy delay keeps a stable value while rechecking', (
     tester,
   ) async {
     var refreshCount = 0;
@@ -785,13 +829,16 @@ void main() {
       ),
     );
 
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
-    expect(find.text('Checking…'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    final latencyText = find.text('42 ms', findRichText: true);
+    expect(latencyText, findsOneWidget);
 
-    await tester.tap(find.text('Checking…'));
+    await tester.tap(latencyText);
     await tester.pump();
 
-    expect(refreshCount, 0);
+    // The tap is still forwarded while a check is running so the app can
+    // explain that the current session is already in progress.
+    expect(refreshCount, 1);
   });
 
   testWidgets('active profile refresh button calls current refresh callback', (
@@ -827,7 +874,9 @@ void main() {
           onOpenSubscriptions: () {},
           onAddSubscription: () {},
           onOpenSettings: () {},
+          onOpenChangelog: () {},
           brandName: 'Etonify',
+          versionLabel: '0.2.1',
           bottomInset: 0,
           showActiveProfileRefreshAction: true,
           onRefreshActiveSubscription: () async {
@@ -874,7 +923,9 @@ void main() {
           onOpenSubscriptions: () {},
           onAddSubscription: () {},
           onOpenSettings: () {},
+          onOpenChangelog: () {},
           brandName: 'Etonify',
+          versionLabel: '0.2.1',
           bottomInset: 0,
           showActiveProfileRefreshAction: true,
           activeProfileRefreshing: true,
@@ -975,8 +1026,8 @@ void main() {
     expect(find.text('Started as a Hiddify fork'), findsOneWidget);
     expect(find.text('MeowSingBox core'), findsOneWidget);
 
-    await tester.scrollUntilVisible(find.text('ddosxd'), 500);
-    expect(find.text('ddosxd'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('dudosxdev'), 500);
+    expect(find.text('dudosxdev'), findsOneWidget);
     expect(find.text('yamixdev'), findsOneWidget);
     expect(find.text('© 2026 MeowTeam™'), findsOneWidget);
   });
@@ -1006,13 +1057,13 @@ void main() {
     expect(find.text('Settings'), findsOneWidget);
   });
 
-  test('subscription server count labels are localized', () async {
+  test('subscription proxy count labels are localized', () async {
     final en = await AppLocalizations.delegate.load(const Locale('en'));
     final ru = await AppLocalizations.delegate.load(const Locale('ru'));
 
-    expect(en.subscriptionServersCount(13), '13 servers');
+    expect(en.subscriptionServersCount(13), '13 proxies');
     expect(en.subscriptionProxyTypeLabel, 'Proxies');
-    expect(ru.subscriptionServersCount(13), '13 серверов');
+    expect(ru.subscriptionServersCount(13), '13 прокси');
     expect(ru.subscriptionProxyTypeLabel, 'Прокси');
   });
 }

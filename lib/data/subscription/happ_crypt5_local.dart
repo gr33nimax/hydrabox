@@ -4,11 +4,41 @@ import 'package:asn1lib/asn1lib.dart';
 import 'package:flutter/services.dart';
 import 'package:pointycastle/export.dart';
 
+class HappCrypt5Support {
+  const HappCrypt5Support({required this.supported, required this.detail});
+
+  final bool supported;
+  final String detail;
+}
+
 class HappCrypt5Local {
   HappCrypt5Local._();
 
   static Future<_Crypt5Data>? _dataFuture;
   static final _keyCache = <String, RSAPrivateKey>{};
+
+  static Future<HappCrypt5Support> checkSupport({AssetBundle? bundle}) async {
+    try {
+      final data = bundle == null
+          ? await _loadData()
+          : await _Crypt5Data.load(bundle: bundle);
+      if (!data.isStructurallyValid) {
+        return const HappCrypt5Support(
+          supported: false,
+          detail: 'Happ crypt5 compatibility assets are incomplete.',
+        );
+      }
+      return const HappCrypt5Support(
+        supported: true,
+        detail: 'Happ crypt5 compatibility assets are loaded.',
+      );
+    } catch (error) {
+      return HappCrypt5Support(
+        supported: false,
+        detail: 'Happ crypt5 compatibility assets are unavailable: $error',
+      );
+    }
+  }
 
   static Future<String> decrypt(String link) async {
     final payload = link.trim().startsWith('happ://crypt5/')
@@ -357,12 +387,13 @@ class _Crypt5Data {
   final Map<String, String> crypt51Keys;
   final Map<String, String> nativeKeys;
 
-  static Future<_Crypt5Data> load() async {
+  static Future<_Crypt5Data> load({AssetBundle? bundle}) async {
+    final assetBundle = bundle ?? rootBundle;
     final values = await Future.wait([
-      rootBundle.loadString('assets/happ_crypto/selectors.json'),
-      rootBundle.loadString('assets/happ_crypto/expanded_rsa_keys.json'),
-      rootBundle.loadString('assets/happ_crypto/crypt51_rsa_keys.json'),
-      rootBundle.loadString('assets/happ_crypto/native_rsa_keys.json'),
+      assetBundle.loadString('assets/happ_crypto/selectors.json'),
+      assetBundle.loadString('assets/happ_crypto/expanded_rsa_keys.json'),
+      assetBundle.loadString('assets/happ_crypto/crypt51_rsa_keys.json'),
+      assetBundle.loadString('assets/happ_crypto/native_rsa_keys.json'),
     ]);
 
     return _Crypt5Data(
@@ -375,6 +406,25 @@ class _Crypt5Data {
           .cast<String, String>(),
       nativeKeys: (jsonDecode(values[3]) as Map<String, dynamic>)
           .cast<String, String>(),
+    );
+  }
+
+  bool get isStructurallyValid {
+    if (selectors.isEmpty ||
+        expandedKeys.isEmpty ||
+        crypt51Keys.isEmpty ||
+        nativeKeys.isEmpty) {
+      return false;
+    }
+    if (selectors.any(
+      (row) => row.length < 3 || row.take(3).any((value) => value.isEmpty),
+    )) {
+      return false;
+    }
+    return <Map<String, String>>[expandedKeys, crypt51Keys, nativeKeys].every(
+      (keys) => keys.entries.every(
+        (entry) => entry.key.trim().isNotEmpty && entry.value.trim().isNotEmpty,
+      ),
     );
   }
 

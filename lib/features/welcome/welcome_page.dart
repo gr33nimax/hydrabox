@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:meow_client/l10n/generated/app_localizations.dart';
+import 'package:meow_client/widgets/etonify_logo_badge.dart';
 
 class WelcomePage extends StatefulWidget {
   const WelcomePage({
@@ -74,36 +75,7 @@ class _WelcomePageState extends State<WelcomePage>
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Container(
-                          width: 124,
-                          height: 124,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Colors.white,
-                            boxShadow: [
-                              BoxShadow(
-                                color: cs.primary.withValues(alpha: .18),
-                                blurRadius: 32,
-                                spreadRadius: 2,
-                              ),
-                            ],
-                          ),
-                          child: Center(
-                            child: Container(
-                              width: 74,
-                              height: 74,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: cs.primary.withValues(alpha: .12),
-                              ),
-                              child: Icon(
-                                Icons.nightlight_round,
-                                size: 42,
-                                color: cs.primary,
-                              ),
-                            ),
-                          ),
-                        ),
+                        const EtonifyLogoBadge(size: 124, logoSize: 48),
                         const SizedBox(height: 28),
                         Text(
                           widget.brandName,

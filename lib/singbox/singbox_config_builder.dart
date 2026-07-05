@@ -44,6 +44,7 @@ class SingboxConfigBuilder {
     required this.proxyInboundEnabled,
     required this.proxyMixedListen,
     required this.proxyMixedPort,
+    this.proxyPassword = '',
     required this.dnsDirectResolver,
     required this.dnsProxyResolver,
     required this.dnsPreferIpv6,
@@ -90,6 +91,7 @@ class SingboxConfigBuilder {
   final bool proxyInboundEnabled;
   final String proxyMixedListen;
   final int proxyMixedPort;
+  final String proxyPassword;
   final String dnsDirectResolver;
   final String dnsProxyResolver;
   final bool dnsPreferIpv6;
@@ -125,11 +127,19 @@ class SingboxConfigBuilder {
   final String? snowtunBinaryPath;
   final String? snowtunProtectPath;
 
+  bool get _proxyLanEnabled =>
+      proxyMixedListen.trim().toLowerCase() != '127.0.0.1';
+
   Map<String, dynamic> build() {
     return buildPlan().config;
   }
 
   SingboxBuildPlan buildPlan() {
+    if (proxyInboundEnabled &&
+        _proxyLanEnabled &&
+        !isValidProxyPassword(proxyPassword)) {
+      throw StateError('LAN proxy requires a valid access password');
+    }
     final outbounds = _visibleOutbounds();
     final outboundTags = outbounds
         .map((outbound) => outbound.tag)
@@ -337,7 +347,7 @@ class SingboxConfigBuilder {
             {
               'type': 'tun',
               'tag': 'tun-in',
-              'address': ['172.19.0.1/30'],
+              'address': ['172.19.0.1/30', 'fdfe:dcba:9876::1/126'],
               'mtu': max(vpnMtu, 1280),
               'auto_route': true,
               'strict_route': vpnStrictRoute,
@@ -353,6 +363,10 @@ class SingboxConfigBuilder {
               'tag': 'mixed-in',
               'listen': proxyMixedListen,
               'listen_port': proxyMixedPort,
+              if (_proxyLanEnabled)
+                'users': [
+                  {'username': defaultProxyUsername, 'password': proxyPassword},
+                ],
             },
         ],
         'outbounds': [
@@ -396,7 +410,12 @@ class SingboxConfigBuilder {
         ],
         'route': {
           'auto_detect_interface': true,
-          'default_domain_resolver': 'dns-direct',
+          // Proxy endpoint hostnames must be resolved before a proxy exists.
+          // Using the user-selected direct resolver here makes startup depend
+          // on public UDP/DoT reachability and can create a bootstrap failure.
+          // Android's current network DNS is the reliable bootstrap resolver;
+          // user DNS choices still handle routed application queries above.
+          'default_domain_resolver': 'dns-local',
           if (russiaRouteDataActive ||
               russiaCuratedDirectServicesActive ||
               russiaAiServicesActive ||
@@ -489,6 +508,14 @@ class SingboxConfigBuilder {
               ],
               'action': 'hijack-dns',
             },
+            if (vpnInboundEnabled)
+              {
+                'inbound': 'tun-in',
+                'network': 'icmp',
+                'ip_cidr': '172.19.0.2/32',
+                'action': 'reject',
+                'method': 'drop',
+              },
             if (blockLeaks) {'protocol': 'stun', 'action': 'reject'},
             if (bypassLocalNetwork)
               {'ip_is_private': true, 'outbound': 'direct'},
@@ -872,6 +899,10 @@ class SingboxConfigBuilder {
         activeSubscription?.urlTestConfig.intervalSeconds ??
             urlTestIntervalSeconds,
       ),
+      'idle_timeout': _urltestInterval(
+        activeSubscription?.urlTestConfig.intervalSeconds ??
+            urlTestIntervalSeconds,
+      ),
       'timeout': _urltestTimeout(
         activeSubscription?.urlTestConfig.timeoutSeconds ??
             urlTestTimeoutSeconds,
@@ -932,6 +963,10 @@ class SingboxConfigBuilder {
       ...?_urltestMethodEntry(group.urlTestConfig.method),
       'url': activeSubscription?.urlTestConfig.url ?? urlTestUrl,
       'interval': _urltestInterval(
+        activeSubscription?.urlTestConfig.intervalSeconds ??
+            urlTestIntervalSeconds,
+      ),
+      'idle_timeout': _urltestInterval(
         activeSubscription?.urlTestConfig.intervalSeconds ??
             urlTestIntervalSeconds,
       ),
@@ -1000,7 +1035,7 @@ class SingboxConfigBuilder {
     required String value,
     String? detour,
   }) {
-    final trimmed = value.trim();
+    final trimmed = normalizeDnsResolverInput(value);
     if (trimmed == 'device://network') {
       return {'type': 'local', 'tag': tag};
     }

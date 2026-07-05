@@ -1,8 +1,5 @@
-import 'dart:async';
-
 import 'package:flutter/foundation.dart';
 import 'package:meow_client/core/lowest_proxy_groups.dart';
-import 'package:meow_client/data/subscription/subscription_store.dart';
 import 'package:meow_client/logging/app_log_store.dart';
 import 'package:meow_client/models/subscription.dart';
 
@@ -15,7 +12,7 @@ class ProxyRuntimeGroupUpdateInput {
     required this.runtimeSelectionUpdatesAllowed,
     required this.currentResolvedActiveOutboundTag,
     required this.activeOutboundTags,
-    required this.activeOutboundLatestPings,
+    required this.latencySessionRunning,
     required this.proxyCacheContainsTag,
     required this.visibleGroupProxyCacheMissingChild,
   });
@@ -27,7 +24,7 @@ class ProxyRuntimeGroupUpdateInput {
   final bool runtimeSelectionUpdatesAllowed;
   final String? currentResolvedActiveOutboundTag;
   final Set<String> activeOutboundTags;
-  final Map<String, int?> activeOutboundLatestPings;
+  final bool latencySessionRunning;
   final bool Function(String? tag) proxyCacheContainsTag;
   final bool Function(String groupTag, String childTag)
   visibleGroupProxyCacheMissingChild;
@@ -39,7 +36,6 @@ class ProxyRuntimeGroupUpdateResult {
     required this.requiresRootRebuild,
     required this.shouldRebuildProxyCache,
     required this.shouldClearRuntimeProxySelectionGuard,
-    required this.shouldCancelUrlTestFallbackTimer,
     required this.realOutboundRuntimeStateChanged,
     this.selectedProxyTagToApply,
   });
@@ -49,7 +45,6 @@ class ProxyRuntimeGroupUpdateResult {
     requiresRootRebuild: false,
     shouldRebuildProxyCache: false,
     shouldClearRuntimeProxySelectionGuard: false,
-    shouldCancelUrlTestFallbackTimer: false,
     realOutboundRuntimeStateChanged: false,
   );
 
@@ -57,7 +52,6 @@ class ProxyRuntimeGroupUpdateResult {
   final bool requiresRootRebuild;
   final bool shouldRebuildProxyCache;
   final bool shouldClearRuntimeProxySelectionGuard;
-  final bool shouldCancelUrlTestFallbackTimer;
   final bool realOutboundRuntimeStateChanged;
   final String? selectedProxyTagToApply;
 }
@@ -69,20 +63,21 @@ class ProxyRuntimeController {
     required bool urlTestUnavailable,
     required bool endpointFallbackReachable,
   }) {
-    return urlTestUnavailable && !endpointFallbackReachable;
+    // Endpoint probing only proves that the host:port accepted a TCP socket.
+    // It must not turn a failed sing-box URLTest into a healthy proxy ping:
+    // VLESS/Trojan TLS/Reality/WS can still fail after the port opens.
+    return urlTestUnavailable;
   }
 
   static String? effectiveLatencyError({
     required String? urlTestError,
     required bool endpointFallbackReachable,
   }) {
-    return endpointFallbackReachable ? null : urlTestError;
+    return urlTestError;
   }
 
   int? lowestLatency;
   String? runtimeLowestOutboundTag;
-  bool urlTestInFlight = false;
-
   final Map<String, String> runtimeLowestSelections = <String, String>{};
   final Map<String, int> runtimeLatencies = <String, int>{};
   final Set<String> unavailableLatencyTags = <String>{};
@@ -90,25 +85,45 @@ class ProxyRuntimeController {
   final Map<String, int> latencyFailureCounts = <String, int>{};
   final Map<String, String> runtimeGroupSelections = <String, String>{};
 
-  final Map<String, Map<String, int>> _pendingLatestPingSaves =
-      <String, Map<String, int>>{};
-  Timer? _latestPingSaveTimer;
-  bool _latestPingSaveInFlight = false;
-  bool _latestPingSaveRequested = false;
   bool _updatesFrozen = false;
+  int? _latencySessionStartedAtSeconds;
+  final Set<String> _latencySessionTouchedTags = <String>{};
 
   bool get updatesFrozen => _updatesFrozen;
 
-  void dispose() {
-    _latestPingSaveTimer?.cancel();
+  void beginLatencySession() {
+    _latencySessionStartedAtSeconds =
+        DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    _latencySessionTouchedTags.clear();
+    unavailableLatencyTags.clear();
+    latencyErrors.clear();
+    latencyFailureCounts.clear();
   }
+
+  bool finishLatencySession(Iterable<String> expectedTags) {
+    var changed = false;
+    for (final rawTag in expectedTags) {
+      final tag = rawTag.trim();
+      if (tag.isEmpty || _latencySessionTouchedTags.contains(tag)) {
+        continue;
+      }
+      if (latencyErrors[tag] != 'timeout') {
+        latencyErrors[tag] = 'timeout';
+        changed = true;
+      }
+    }
+    _latencySessionStartedAtSeconds = null;
+    _latencySessionTouchedTags.clear();
+    return changed;
+  }
+
+  void dispose() {}
 
   void beginTransition() {
     if (_updatesFrozen) {
       return;
     }
     _updatesFrozen = true;
-    urlTestInFlight = false;
     AppLogStore.info(
       'proxy',
       'urlTest updates frozen during runtime transition',
@@ -126,7 +141,7 @@ class ProxyRuntimeController {
     );
   }
 
-  void reset({bool resetUrlTestInFlight = true}) {
+  void reset() {
     _updatesFrozen = false;
     runtimeLatencies.clear();
     unavailableLatencyTags.clear();
@@ -136,9 +151,8 @@ class ProxyRuntimeController {
     runtimeLowestSelections.clear();
     lowestLatency = null;
     runtimeLowestOutboundTag = null;
-    if (resetUrlTestInFlight) {
-      urlTestInFlight = false;
-    }
+    _latencySessionStartedAtSeconds = null;
+    _latencySessionTouchedTags.clear();
   }
 
   String? runtimeLowestOutboundTagFor(String lowestTag) {
@@ -224,6 +238,13 @@ class ProxyRuntimeController {
         final time = (item['time'] as num?)?.toInt();
         final currentTime = times[itemTag];
         final nextTime = time != null && time > 0 ? time : null;
+        final sessionStartedAt = _latencySessionStartedAtSeconds;
+        if (input.latencySessionRunning &&
+            sessionStartedAt != null &&
+            nextTime != null &&
+            nextTime < sessionStartedAt) {
+          continue;
+        }
         final shouldReplace =
             currentTime == null ||
             (nextTime != null && nextTime >= currentTime);
@@ -242,6 +263,9 @@ class ProxyRuntimeController {
         }
         if (nextTime != null) {
           times[itemTag] = nextTime;
+          if (sessionStartedAt != null && nextTime >= sessionStartedAt) {
+            _latencySessionTouchedTags.add(itemTag);
+          }
         }
         delays[itemTag] = delay != null && delay > 0 ? delay : null;
       }
@@ -254,14 +278,8 @@ class ProxyRuntimeController {
       errors: errors,
       runtimeSelected: runtimeSelected,
       activeOutboundTag: input.currentResolvedActiveOutboundTag,
+      latencySessionRunning: input.latencySessionRunning,
     );
-
-    final persistableDelays = <String, int?>{
-      for (final entry in delays.entries)
-        if (input.activeOutboundTags.contains(entry.key))
-          entry.key: entry.value,
-    };
-    _queueLatestPingSave(input.activeSubscription.id, persistableDelays);
 
     if (delays.isEmpty &&
         statuses.isEmpty &&
@@ -285,28 +303,12 @@ class ProxyRuntimeController {
     for (final tag in touchedTags) {
       final status = statuses[tag];
       if (status == urlTestStatusUnavailable) {
-        if (_isTransientLatencyError(errors[tag])) {
-          nextUnavailableLatencyTags.remove(tag);
-          nextLatencyErrors.remove(tag);
-          nextLatencyFailureCounts.remove(tag);
-          continue;
-        }
-        final knownLatency =
-            nextRuntimeLatencies[tag] ?? input.activeOutboundLatestPings[tag];
         final failureCount = (nextLatencyFailureCounts[tag] ?? 0) + 1;
         nextLatencyFailureCounts[tag] = failureCount;
-        if (knownLatency != null && failureCount < 2) {
-          AppLogStore.debug(
-            'proxy',
-            'urlTest single failure ignored tag=$tag error=${errors[tag] ?? ''}',
-          );
-          nextUnavailableLatencyTags.remove(tag);
-          nextLatencyErrors.remove(tag);
-          continue;
-        }
-        nextRuntimeLatencies.remove(tag);
-        nextUnavailableLatencyTags.add(tag);
-        nextLatencyErrors[tag] = errors[tag] ?? '';
+        nextUnavailableLatencyTags.remove(tag);
+        nextLatencyErrors[tag] = errors[tag]?.trim().isNotEmpty == true
+            ? errors[tag]!
+            : 'URL test failed';
         continue;
       }
       if (statuses.containsKey(tag)) {
@@ -364,7 +366,7 @@ class ProxyRuntimeController {
         input.selectedProxyTag != runtimeSelected;
     final latencyStateChanged =
         lowestLatency != nextLowestLatency ||
-        urlTestInFlight ||
+        input.latencySessionRunning ||
         !mapEquals(runtimeLatencies, nextRuntimeLatencies) ||
         !setEquals(unavailableLatencyTags, nextUnavailableLatencyTags) ||
         !mapEquals(latencyErrors, nextLatencyErrors) ||
@@ -407,7 +409,7 @@ class ProxyRuntimeController {
         lowestSelectionsChanged ||
         groupSelectionsChanged ||
         activeProxyTouched ||
-        urlTestInFlight;
+        input.latencySessionRunning;
 
     runtimeLatencies
       ..clear()
@@ -429,89 +431,14 @@ class ProxyRuntimeController {
       ..addAll(lowestSelections);
     lowestLatency = nextLowestLatency;
     runtimeLowestOutboundTag = nextRuntimeLowestOutboundTag;
-    final shouldCancelUrlTestFallbackTimer = urlTestInFlight;
-    urlTestInFlight = false;
-
     return ProxyRuntimeGroupUpdateResult(
       changed: true,
       requiresRootRebuild: requiresRootRebuild,
       shouldRebuildProxyCache: shouldRebuildProxyCache,
       shouldClearRuntimeProxySelectionGuard: runtimeSelectionConfirmsPending,
-      shouldCancelUrlTestFallbackTimer: shouldCancelUrlTestFallbackTimer,
       realOutboundRuntimeStateChanged: realOutboundRuntimeStateChanged,
       selectedProxyTagToApply: runtimeSelectionChanged ? runtimeSelected : null,
     );
-  }
-
-  void _queueLatestPingSave(String subscriptionId, Map<String, int?> delays) {
-    if (subscriptionId.isEmpty || delays.isEmpty) {
-      return;
-    }
-    final pending = _pendingLatestPingSaves.putIfAbsent(
-      subscriptionId,
-      () => <String, int>{},
-    );
-    var changed = false;
-    for (final entry in delays.entries) {
-      final tag = entry.key.trim();
-      final delay = entry.value;
-      if (tag.isEmpty || delay == null || delay <= 0) {
-        continue;
-      }
-      if (pending[tag] == delay) {
-        continue;
-      }
-      pending[tag] = delay;
-      changed = true;
-    }
-    if (!changed) {
-      return;
-    }
-    _latestPingSaveTimer?.cancel();
-    _latestPingSaveTimer = Timer(
-      const Duration(milliseconds: 900),
-      _flushLatestPingSaves,
-    );
-  }
-
-  void _flushLatestPingSaves() {
-    _latestPingSaveTimer?.cancel();
-    _latestPingSaveTimer = null;
-    if (_latestPingSaveInFlight) {
-      _latestPingSaveRequested = true;
-      return;
-    }
-    if (_pendingLatestPingSaves.isEmpty) {
-      return;
-    }
-    final batches = <String, Map<String, int>>{
-      for (final entry in _pendingLatestPingSaves.entries)
-        entry.key: Map<String, int>.from(entry.value),
-    };
-    _pendingLatestPingSaves.clear();
-    _latestPingSaveInFlight = true;
-    unawaited(() async {
-      try {
-        for (final entry in batches.entries) {
-          await SubscriptionStore.saveOutboundRuntimeInfoInBackground(
-            entry.key,
-            latestPings: entry.value,
-          );
-        }
-      } catch (error, stackTrace) {
-        AppLogStore.warning(
-          'subscription',
-          'Failed to persist URLTest latency: $error',
-        );
-        debugPrintStack(stackTrace: stackTrace);
-      } finally {
-        _latestPingSaveInFlight = false;
-        if (_latestPingSaveRequested || _pendingLatestPingSaves.isNotEmpty) {
-          _latestPingSaveRequested = false;
-          _flushLatestPingSaves();
-        }
-      }
-    }());
   }
 
   void _logUrlTestGroupUpdateSummary({
@@ -521,11 +448,12 @@ class ProxyRuntimeController {
     required Map<String, String> errors,
     required String? runtimeSelected,
     required String? activeOutboundTag,
+    required bool latencySessionRunning,
   }) {
     final positiveDelays = delays.entries
         .where((entry) => entry.value != null && entry.value! > 0)
         .toList();
-    if (positiveDelays.isEmpty && !urlTestInFlight) {
+    if (positiveDelays.isEmpty && !latencySessionRunning) {
       return;
     }
     MapEntry<String, int?>? minEntry;
@@ -539,7 +467,7 @@ class ProxyRuntimeController {
       }
     }
     final maxDelay = maxEntry?.value ?? 0;
-    if (!urlTestInFlight && maxDelay < 1000) {
+    if (!latencySessionRunning && maxDelay < 1000) {
       return;
     }
     final unavailableCount = statuses.values
@@ -563,16 +491,5 @@ class ProxyRuntimeController {
     } else {
       AppLogStore.info('proxy', message);
     }
-  }
-
-  bool _isTransientLatencyError(String? error) {
-    final text = error?.toLowerCase() ?? '';
-    if (text.isEmpty) {
-      return false;
-    }
-    return text.contains('no available network interface') ||
-        text.contains('network is unreachable') ||
-        text.contains('no route to host') ||
-        text.contains('temporary failure in name resolution');
   }
 }

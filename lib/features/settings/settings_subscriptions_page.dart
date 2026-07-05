@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:gap/gap.dart';
 import 'package:meow_client/data/local/app_settings_store.dart';
+import 'package:meow_client/data/subscription/happ_crypto_link.dart';
 import 'package:meow_client/features/settings/settings_ui.dart';
 import 'package:meow_client/l10n/generated/app_localizations.dart';
+import 'package:meow_client/logging/app_log_store.dart';
 import 'package:meow_client/models/subscription.dart';
 import 'package:meow_client/singbox/singbox_runtime.dart';
 import 'package:meow_client/widgets/progressive_blur_scaffold.dart';
@@ -59,7 +61,9 @@ class _SettingsSubscriptionsPageState extends State<SettingsSubscriptionsPage> {
     _timeoutSeconds = widget.currentConfig.timeoutSeconds ?? 10;
     _concurrency = widget.currentConfig.concurrency ?? 4;
     _unavailableCheckIntervalSeconds =
-        widget.currentConfig.unavailableCheckIntervalSeconds ?? 60;
+        (widget.currentConfig.unavailableCheckIntervalSeconds ?? 15)
+            .clamp(1, 30)
+            .toInt();
     _locationLookupLimit = widget.currentLocationLookupLimit
         .clamp(0, 50)
         .toInt();
@@ -89,10 +93,15 @@ class _SettingsSubscriptionsPageState extends State<SettingsSubscriptionsPage> {
   }
 
   Future<void> _loadHappSupport() async {
-    final support = await SingboxRuntime.instance.getHappCrypt5Support();
+    final support = await HappCryptoLinkDecoder.getCrypt5Support();
+    if (support.supported) {
+      AppLogStore.info('happ crypto', support.detail);
+    } else {
+      AppLogStore.warning('happ crypto', support.detail);
+    }
     if (!mounted) return;
     setState(() {
-      _happCrypt5Supported = support['supported'] == true;
+      _happCrypt5Supported = support.supported;
       _loadingHappSupport = false;
     });
   }

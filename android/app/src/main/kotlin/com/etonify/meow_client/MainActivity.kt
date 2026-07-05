@@ -17,6 +17,7 @@ import android.os.Debug
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.util.AtomicFile
 import android.util.Log
 import androidx.core.content.FileProvider
 // Legacy Happ native crypt5 path is intentionally disabled. Crypt5/5.1 is now
@@ -26,6 +27,7 @@ import com.etonify.meow_client.singbox.MeowBoxService
 import com.etonify.meow_client.singbox.MeowDefaultNetworkMonitor
 import com.etonify.meow_client.singbox.MeowDiagnostics
 import com.etonify.meow_client.singbox.MeowProxyService
+import com.etonify.meow_client.singbox.MeowVpnPlatformInterface
 import com.etonify.meow_client.singbox.MeowVpnService
 import com.etonify.meow_client.singbox.SingboxController
 import com.etonify.meow_client.generated.EndpointProbeRequestMessage
@@ -34,6 +36,7 @@ import com.etonify.meow_client.generated.FlutterError as PigeonFlutterError
 import com.etonify.meow_client.generated.NetworkInterfaceStateMessage
 import com.etonify.meow_client.generated.RuntimeFlagsMessage
 import com.etonify.meow_client.generated.SingboxHostApi
+import com.etonify.meow_client.generated.UrlTestRequestMessage
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.BinaryMessenger
@@ -43,8 +46,9 @@ import io.nekohasekai.libbox.Libbox
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
+import java.net.HttpURLConnection
+import java.net.URL
+import java.security.MessageDigest
 import java.util.concurrent.Executors
 
 class MainActivity : FlutterActivity() {
@@ -65,6 +69,8 @@ class MainActivity : FlutterActivity() {
     private var deepLinkEventSink: EventChannel.EventSink? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private val ioExecutor = Executors.newSingleThreadExecutor()
+    private val subscriptionNetworkExecutor = Executors.newFixedThreadPool(2)
+    private val appIconExecutor = Executors.newFixedThreadPool(3)
 
     private class PigeonMethodResult<T>(
         private val callback: (Result<T>) -> Unit,
@@ -182,6 +188,148 @@ class MainActivity : FlutterActivity() {
         startActivity(intent)
     }
 
+    private fun inspectDownloadedApk(path: String): Map<String, Any> {
+        val file = File(path)
+        require(file.exists() && file.isFile) { "APK file does not exist." }
+        require(file.name.lowercase().endsWith(".apk")) { "File is not an APK." }
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            PackageManager.GET_SIGNING_CERTIFICATES
+        } else {
+            @Suppress("DEPRECATION")
+            PackageManager.GET_SIGNATURES
+        }
+        val archiveInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            packageManager.getPackageArchiveInfo(
+                file.absolutePath,
+                PackageManager.PackageInfoFlags.of(flags.toLong()),
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.getPackageArchiveInfo(file.absolutePath, flags)
+        } ?: return linkedMapOf("valid" to false)
+        archiveInfo.applicationInfo?.apply {
+            sourceDir = file.absolutePath
+            publicSourceDir = file.absolutePath
+        }
+        val installedInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            packageManager.getPackageInfo(
+                packageName,
+                PackageManager.PackageInfoFlags.of(flags.toLong()),
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.getPackageInfo(packageName, flags)
+        }
+        val archiveVersionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            archiveInfo.longVersionCode
+        } else {
+            @Suppress("DEPRECATION")
+            archiveInfo.versionCode.toLong()
+        }
+        return linkedMapOf(
+            "valid" to true,
+            "packageName" to archiveInfo.packageName,
+            "installedPackageName" to packageName,
+            "versionName" to (archiveInfo.versionName ?: ""),
+            "versionCode" to archiveVersionCode,
+            "minSdk" to (archiveInfo.applicationInfo?.minSdkVersion ?: 0),
+            "targetSdk" to (archiveInfo.applicationInfo?.targetSdkVersion ?: 0),
+            "deviceSdk" to Build.VERSION.SDK_INT,
+            "signingCertificateSha256" to signingCertificateDigests(archiveInfo),
+            "installedCertificateSha256" to signingCertificateDigests(installedInfo),
+        )
+    }
+
+    private fun signingCertificateDigests(info: PackageInfo): List<String> {
+        val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val signingInfo = info.signingInfo ?: return emptyList()
+            if (signingInfo.hasMultipleSigners()) {
+                signingInfo.apkContentsSigners
+            } else {
+                signingInfo.signingCertificateHistory
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            info.signatures
+        }
+        return signatures
+            .orEmpty()
+            .map { signature ->
+                MessageDigest.getInstance("SHA-256")
+                    .digest(signature.toByteArray())
+                    .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+            }
+            .distinct()
+    }
+
+    private fun fetchUrlOnUnderlyingNetwork(
+        rawUrl: String,
+        headers: Map<String, String>,
+        maxBytes: Int,
+        timeoutMs: Int,
+    ): Map<String, Any> {
+        val url = URL(rawUrl)
+        require(url.protocol == "http" || url.protocol == "https") {
+            "Only HTTP and HTTPS URLs are supported."
+        }
+        val network = MeowDefaultNetworkMonitor.require()
+        val connection = network.openConnection(url) as HttpURLConnection
+        val boundedTimeout = timeoutMs.coerceIn(3_000, 60_000)
+        val abortOnDeadline = Runnable { connection.disconnect() }
+        mainHandler.postDelayed(abortOnDeadline, boundedTimeout.toLong())
+        return try {
+            connection.requestMethod = "GET"
+            connection.instanceFollowRedirects = true
+            connection.connectTimeout = boundedTimeout
+            connection.readTimeout = boundedTimeout
+            connection.useCaches = false
+            for ((name, value) in headers) {
+                if (name.isBlank() || name.any { it == '\r' || it == '\n' }) continue
+                if (value.any { it == '\r' || it == '\n' }) continue
+                connection.setRequestProperty(name, value)
+            }
+            val statusCode = connection.responseCode
+            val declaredLength = connection.contentLengthLong
+            require(declaredLength <= maxBytes || declaredLength < 0) {
+                "Response is larger than $maxBytes bytes."
+            }
+            val stream = if (statusCode in 200..299) {
+                connection.inputStream
+            } else {
+                connection.errorStream
+            }
+            val output = ByteArrayOutputStream(
+                declaredLength.coerceIn(0, maxBytes.toLong()).toInt(),
+            )
+            stream?.use { input ->
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                var total = 0
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    total += read
+                    require(total <= maxBytes) { "Response is larger than $maxBytes bytes." }
+                    output.write(buffer, 0, read)
+                }
+            }
+            val responseHeaders = linkedMapOf<String, String>()
+            for ((name, values) in connection.headerFields) {
+                if (name == null || values.isNullOrEmpty()) continue
+                responseHeaders[name.lowercase()] = values.joinToString(", ")
+            }
+            linkedMapOf(
+                "statusCode" to statusCode,
+                "body" to output.toString(Charsets.UTF_8.name()),
+                "headers" to responseHeaders,
+                "finalUrl" to connection.url.toString(),
+                "network" to MeowDefaultNetworkMonitor.describeNetwork(network),
+            )
+        } finally {
+            mainHandler.removeCallbacks(abortOnDeadline)
+            connection.disconnect()
+        }
+    }
+
     private fun buildImportDeepLinkPayload(uri: Uri?): Map<String, Any?>? {
         if (uri == null) {
             return null
@@ -264,28 +412,14 @@ class MainActivity : FlutterActivity() {
         val target = MeowApplication.configFile
         val directory = target.parentFile ?: throw IllegalStateException("Config directory missing")
         directory.mkdirs()
-        val temp = File.createTempFile(target.nameWithoutExtension, ".tmp", directory)
+        val atomicFile = AtomicFile(target)
+        var output: FileOutputStream? = null
         try {
-            FileOutputStream(temp).use { stream ->
-                stream.write(config.toByteArray(Charsets.UTF_8))
-                stream.fd.sync()
-            }
-            runCatching {
-                Files.move(
-                    temp.toPath(),
-                    target.toPath(),
-                    StandardCopyOption.REPLACE_EXISTING,
-                    StandardCopyOption.ATOMIC_MOVE,
-                )
-            }.getOrElse {
-                Files.move(
-                    temp.toPath(),
-                    target.toPath(),
-                    StandardCopyOption.REPLACE_EXISTING,
-                )
-            }
+            output = atomicFile.startWrite()
+            output.write(config.toByteArray(Charsets.UTF_8))
+            atomicFile.finishWrite(output)
         } catch (error: Throwable) {
-            temp.delete()
+            output?.let(atomicFile::failWrite)
             throw error
         }
     }
@@ -430,6 +564,10 @@ class MainActivity : FlutterActivity() {
             "android stop requested reason=$reason running=${SingboxController.running} " +
                 "mode=${SingboxController.serviceMode}",
         )
+        // Persist the user's stop intent before native cleanup. If Android
+        // kills the process during cleanup, START_STICKY must not resurrect a
+        // VPN the user has just stopped.
+        MeowApplication.clearRuntimeIntent()
         MeowBoxService.requestStopForMode(modeAtRequest, "main_activity_stop:$reason")
         runCatching {
             startService(
@@ -623,13 +761,30 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun getHappCrypt5Support(): Map<String, Any> {
-        val supportedAbis = setOf("arm64-v8a", "armeabi-v7a")
-        val matchedAbi = Build.SUPPORTED_ABIS.firstOrNull { it in supportedAbis }
-        val supported = matchedAbi != null
+        val requiredAssets = listOf(
+            "assets/happ_crypto/selectors.json",
+            "assets/happ_crypto/expanded_rsa_keys.json",
+            "assets/happ_crypto/crypt51_rsa_keys.json",
+            "assets/happ_crypto/native_rsa_keys.json",
+        )
+        val missingAssets = requiredAssets.filterNot { assetPath ->
+            runCatching {
+                assets.open("flutter_assets/$assetPath").use { input ->
+                    input.read() != -1
+                }
+            }.getOrDefault(false)
+        }
+        val supported = missingAssets.isEmpty()
         return linkedMapOf(
             "supported" to supported,
-            "abi" to (matchedAbi ?: Build.SUPPORTED_ABIS.firstOrNull().orEmpty()),
+            "detail" to if (supported) {
+                "Happ crypt5 compatibility assets are bundled."
+            } else {
+                "Happ crypt5 compatibility assets are unavailable in this build."
+            },
+            "abi" to Build.SUPPORTED_ABIS.firstOrNull().orEmpty(),
             "abis" to Build.SUPPORTED_ABIS.toList(),
+            "missingAssets" to missingAssets,
         )
     }
 
@@ -702,9 +857,12 @@ class MainActivity : FlutterActivity() {
         val staleRuntimeStateCleaned = cleanupStaleRuntimeStateIfNeeded("status")
         val recordedState = MeowApplication.readServiceState()
         val runtimeIntent = MeowApplication.readRuntimeIntent()
+        val recordedServiceAlive = MeowApplication.isRecordedServiceAlive()
         val activeRuntimeOwner = MeowBoxService.hasActiveRuntimeOwner(
             SingboxController.serviceMode.takeIf { it.isNotBlank() },
         )
+        val nativeRecoveryPending =
+            !SingboxController.running && (recordedServiceAlive || activeRuntimeOwner)
         return mapOf(
             "running" to SingboxController.running,
             "mode" to SingboxController.serviceMode,
@@ -712,12 +870,13 @@ class MainActivity : FlutterActivity() {
             "downlink" to SingboxController.downlink,
             "uplinkTotal" to SingboxController.uplinkTotal,
             "downlinkTotal" to SingboxController.downlinkTotal,
-            "recordedServiceAlive" to MeowApplication.isRecordedServiceAlive(),
+            "recordedServiceAlive" to recordedServiceAlive,
             "recordedServiceMode" to recordedState?.mode,
             "recordedServicePid" to recordedState?.pid,
             "recordedServiceUpdatedAtMillis" to recordedState?.updatedAtMillis,
             "recordedServiceState" to MeowApplication.describeRecordedServiceState(),
             "activeRuntimeOwner" to activeRuntimeOwner,
+            "nativeRecoveryPending" to nativeRecoveryPending,
             "staleRuntimeStateCleaned" to staleRuntimeStateCleaned,
             "runtimeIntentFresh" to MeowApplication.isRuntimeIntentFresh(),
             "runtimeIntentMode" to runtimeIntent?.mode,
@@ -730,16 +889,31 @@ class MainActivity : FlutterActivity() {
 
     private fun logsWithNativeDiagnostics(content: String): String {
         val nativeDiagnostics = MeowDiagnostics.readTail()
-        if (nativeDiagnostics.isBlank()) {
-            return content
-        }
+        val crashReport = MeowDiagnostics.readCrashReportTail()
+        val oomReport = MeowDiagnostics.readLatestOomReportMetadata()
+        val runtimeSnapshot = runCatching { runtimeStatusMap().toString() }.getOrDefault("unavailable")
+        val splitSnapshot = MeowVpnPlatformInterface.describeLastTunPackages()
         return buildString {
             append(content)
             if (content.isNotBlank()) {
                 append("\n\n")
             }
-            append("# Native diagnostics\n")
-            append(nativeDiagnostics)
+            append("# Runtime snapshot\n")
+            append(runtimeSnapshot)
+            append("\n# Split tunnel snapshot\n")
+            append(splitSnapshot)
+            if (nativeDiagnostics.isNotBlank()) {
+                append("\n# Native diagnostics\n")
+                append(nativeDiagnostics)
+            }
+            if (crashReport.isNotBlank()) {
+                append("\n# Native crash report\n")
+                append(crashReport)
+            }
+            if (oomReport.isNotBlank()) {
+                append("\n# Latest OOM report\n")
+                append(oomReport)
+            }
         }
     }
 
@@ -802,10 +976,7 @@ class MainActivity : FlutterActivity() {
                     "packageName" to appInfo.packageName,
                     "label" to if (label.isNotEmpty()) label else appInfo.packageName,
                     "system" to isSystem,
-                    "launchable" to (
-                        appInfo.packageName in launchablePackages ||
-                            packageManager.getLaunchIntentForPackage(appInfo.packageName) != null
-                        ),
+                    "launchable" to (appInfo.packageName in launchablePackages),
                 )
             }
             .sortedWith(
@@ -1081,8 +1252,18 @@ class MainActivity : FlutterActivity() {
                     }
                 }
 
-                override fun urlTest(groupTag: String, callback: (Result<Unit>) -> Unit) {
-                    SingboxController.urlTest(groupTag.ifBlank { "select" }) { urlTestResult ->
+                override fun urlTest(request: UrlTestRequestMessage, callback: (Result<Unit>) -> Unit) {
+                    SingboxController.urlTest(
+                        groupTag = request.groupTag.ifBlank { "select" },
+                        targetOutboundTag = request.targetOutboundTag,
+                        priorityOutboundTag = request.priorityOutboundTag,
+                        excludeOutboundTag = request.excludeOutboundTag,
+                        url = request.url,
+                        timeoutMillis = request.timeoutMillis.toInt(),
+                        concurrency = request.concurrency.toInt(),
+                        deadlineMillis = request.deadlineMillis.toInt(),
+                        force = request.force,
+                    ) { urlTestResult ->
                         urlTestResult
                             .onSuccess { callback(Result.success(Unit)) }
                             .onFailure { callback(errorResult("urltest_failed", it.message)) }
@@ -1434,6 +1615,16 @@ class MainActivity : FlutterActivity() {
                     result.success(true)
                 }
 
+                "setRuntimeUiForeground" -> {
+                    val foreground = call.argument<Boolean>("foreground")
+                    if (foreground == null) {
+                        result.error("missing_foreground", "Foreground state is missing", null)
+                    } else {
+                        SingboxController.setUiForeground(foreground)
+                        result.success(true)
+                    }
+                }
+
                 "getPerformanceSnapshot" -> {
                     result.success(buildPerformanceSnapshot())
                 }
@@ -1553,7 +1744,17 @@ class MainActivity : FlutterActivity() {
 
                 "urlTest" -> {
                     val groupTag = call.argument<String>("groupTag") ?: "select"
-                    SingboxController.urlTest(groupTag) { urlTestResult ->
+                    SingboxController.urlTest(
+                        groupTag = groupTag,
+                        targetOutboundTag = call.argument<String>("targetOutboundTag").orEmpty(),
+                        priorityOutboundTag = call.argument<String>("priorityOutboundTag").orEmpty(),
+                        excludeOutboundTag = call.argument<String>("excludeOutboundTag").orEmpty(),
+                        url = call.argument<String>("url").orEmpty(),
+                        timeoutMillis = call.argument<Number>("timeoutMillis")?.toInt() ?: 3_000,
+                        concurrency = call.argument<Number>("concurrency")?.toInt() ?: 0,
+                        deadlineMillis = call.argument<Number>("deadlineMillis")?.toInt() ?: 10_000,
+                        force = call.argument<Boolean>("force") ?: true,
+                    ) { urlTestResult ->
                         urlTestResult.onSuccess {
                             result.success(true)
                         }.onFailure {
@@ -1666,6 +1867,55 @@ class MainActivity : FlutterActivity() {
                         .onFailure { result.error("install_apk_failed", it.message, null) }
                 }
 
+                "inspectDownloadedApk" -> {
+                    val path = call.argument<String>("path")?.trim().orEmpty()
+                    if (path.isEmpty()) {
+                        result.error("missing_apk_path", "APK path is empty", null)
+                        return@setMethodCallHandler
+                    }
+                    ioExecutor.execute {
+                        runCatching { inspectDownloadedApk(path) }
+                            .onSuccess { inspection ->
+                                mainHandler.post { result.success(inspection) }
+                            }
+                            .onFailure { error ->
+                                mainHandler.post {
+                                    result.error("inspect_apk_failed", error.message, null)
+                                }
+                            }
+                    }
+                }
+
+                "fetchUrlOnUnderlyingNetwork" -> {
+                    val url = call.argument<String>("url")?.trim().orEmpty()
+                    if (url.isEmpty()) {
+                        result.error("missing_url", "URL is empty", null)
+                        return@setMethodCallHandler
+                    }
+                    val rawHeaders = call.argument<Map<*, *>>("headers").orEmpty()
+                    val headers = rawHeaders.entries
+                        .mapNotNull { (key, value) ->
+                            val name = key?.toString()?.trim().orEmpty()
+                            val headerValue = value?.toString().orEmpty()
+                            if (name.isEmpty()) null else name to headerValue
+                        }
+                        .toMap()
+                    val maxBytes = (call.argument<Number>("maxBytes")?.toInt()
+                        ?: 16 * 1024 * 1024).coerceIn(1, 32 * 1024 * 1024)
+                    val timeoutMs = call.argument<Number>("timeoutMs")?.toInt() ?: 20_000
+                    subscriptionNetworkExecutor.execute {
+                        runCatching {
+                            fetchUrlOnUnderlyingNetwork(url, headers, maxBytes, timeoutMs)
+                        }.onSuccess { response ->
+                            mainHandler.post { result.success(response) }
+                        }.onFailure { error ->
+                            mainHandler.post {
+                                result.error("underlying_http_failed", error.message, null)
+                            }
+                        }
+                    }
+                }
+
                 "getAndroidId" -> {
                     result.success(
                         Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "",
@@ -1716,7 +1966,7 @@ class MainActivity : FlutterActivity() {
                 "getInstalledAppIcon" -> {
                     val packageName = call.argument<String>("packageName")
                     val sizePx = call.argument<Int>("sizePx")
-                    ioExecutor.execute {
+                    appIconExecutor.execute {
                         val iconBytes = getInstalledAppIcon(packageName, sizePx)
                         mainHandler.post {
                             result.success(iconBytes)

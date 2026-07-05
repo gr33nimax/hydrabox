@@ -2225,10 +2225,10 @@ class _ActiveProxyLabel extends StatelessWidget {
                   GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: connected ? _refreshIp : null,
-                    child: ClipRect(
-                      child: AnimatedSize(
-                        duration: const Duration(milliseconds: 220),
-                        curve: Curves.easeOutCubic,
+                    child: SizedBox(
+                      height: 24,
+                      width: double.infinity,
+                      child: Align(
                         alignment: Alignment.centerLeft,
                         child: AnimatedSwitcher(
                           duration: const Duration(milliseconds: 220),
@@ -4263,21 +4263,26 @@ class ProxyTile extends StatelessWidget {
     final latencyUnavailable =
         state?.latencyUnavailable ?? proxy.latencyUnavailable;
     final latencyError = state?.latencyError ?? proxy.latencyError;
+    final hasLatencyError = latencyError?.trim().isNotEmpty == true;
     final highlighted = state?.highlighted ?? this.highlighted;
     final selecting = state?.selecting ?? false;
     final latencyText = selecting
         ? l10n.proxySwitching
-        : latencyChecking
+        : latencyChecking && latency == null
         ? '... ms'
         : latencyUnavailable
+        ? _latencyErrorLabel(latencyError)
+        : latency == null && hasLatencyError
         ? _latencyErrorLabel(latencyError)
         : latency == null
         ? '—'
         : '$latency ms';
     final delayColor = selecting
         ? theme.colorScheme.primary
-        : latencyUnavailable && latencyError != null && latencyError.isNotEmpty
+        : latencyUnavailable
         ? theme.colorScheme.error
+        : latency == null && hasLatencyError
+        ? theme.colorScheme.tertiary
         : !latencyFresh || latency == null
         ? theme.colorScheme.onSurfaceVariant
         : latency < 800
@@ -4292,9 +4297,10 @@ class ProxyTile extends StatelessWidget {
     final latencyLabel = _ProxyLatencyLabel(
       text: latencyText,
       color: delayColor,
-      checking: latencyChecking && !selecting,
-      emphasized: selecting || latencyFresh || latencyUnavailable,
-      tooltip: latencyUnavailable ? _latencyErrorTooltip(latencyError) : null,
+      checking: latencyChecking && latency == null && !selecting,
+      emphasized:
+          selecting || latencyFresh || latencyUnavailable || hasLatencyError,
+      tooltip: hasLatencyError ? _latencyErrorTooltip(latencyError) : null,
     );
 
     final horizontalInset = !forceBaseInset && proxy.isGroupChild ? 24.0 : 6.0;

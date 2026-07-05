@@ -37,8 +37,21 @@ class AppVersionInfo {
   final String versionName;
   final int versionCode;
 
-  String get displayVersion =>
-      versionName.trim().isEmpty ? '0.2.0' : versionName.trim();
+  String get displayVersion {
+    final normalized = versionName.trim();
+    return normalized.isEmpty ? '0.2.1' : normalized;
+  }
+
+  int get updateBuildNumber => normalizeSplitApkVersionCode(versionCode);
+
+  static int normalizeSplitApkVersionCode(int value) {
+    if (value <= 0) return 0;
+    final abiSplitBuildNumber = value % 1000;
+    if (value >= 1000 && abiSplitBuildNumber > 0) {
+      return abiSplitBuildNumber;
+    }
+    return value;
+  }
 }
 
 class NetworkInterfaceSnapshot {
@@ -323,6 +336,19 @@ class SingboxRuntime {
     () => _methods.invokeMethod<void>('reload'),
   );
 
+  Future<void> setRuntimeUiForeground(bool foreground) async {
+    if (!Platform.isAndroid) {
+      return;
+    }
+    try {
+      await _methods.invokeMethod<void>('setRuntimeUiForeground', {
+        'foreground': foreground,
+      });
+    } on MissingPluginException {
+      // Older Android bridges keep their existing telemetry behavior.
+    }
+  }
+
   Future<void> stop({String reason = 'unspecified'}) {
     return _withMethodChannelFallback(
       () => _hostApi.stop(reason),
@@ -375,10 +401,46 @@ class SingboxRuntime {
     );
   }
 
-  Future<void> urlTest({required String groupTag}) {
+  Future<void> urlTest({
+    required String groupTag,
+    String targetOutboundTag = '',
+    String priorityOutboundTag = '',
+    String excludeOutboundTag = '',
+    String url = '',
+    int timeoutMillis = 3000,
+    int concurrency = 0,
+    int deadlineMillis = 10000,
+    bool force = true,
+  }) {
     return _withMethodChannelFallback(
-      () => _hostApi.urlTest(groupTag),
-      () => _methods.invokeMethod<void>('urlTest', {'groupTag': groupTag}),
+      () async {
+        await _hostApi.urlTest(
+          pigeon.UrlTestRequestMessage(
+            groupTag: groupTag,
+            targetOutboundTag: targetOutboundTag,
+            priorityOutboundTag: priorityOutboundTag,
+            excludeOutboundTag: excludeOutboundTag,
+            url: url,
+            timeoutMillis: timeoutMillis,
+            concurrency: concurrency,
+            deadlineMillis: deadlineMillis,
+            force: force,
+          ),
+        );
+      },
+      () async {
+        await _methods.invokeMethod<void>('urlTest', {
+          'groupTag': groupTag,
+          'targetOutboundTag': targetOutboundTag,
+          'priorityOutboundTag': priorityOutboundTag,
+          'excludeOutboundTag': excludeOutboundTag,
+          'url': url,
+          'timeoutMillis': timeoutMillis,
+          'concurrency': concurrency,
+          'deadlineMillis': deadlineMillis,
+          'force': force,
+        });
+      },
     );
   }
 
@@ -613,6 +675,44 @@ class SingboxRuntime {
     });
   }
 
+  Future<Map<String, dynamic>> inspectDownloadedApk(String path) async {
+    if (!Platform.isAndroid) {
+      return const <String, dynamic>{'valid': true};
+    }
+    final normalizedPath = path.trim();
+    if (normalizedPath.isEmpty) {
+      throw ArgumentError.value(path, 'path', 'APK path is empty');
+    }
+    return await _methods.invokeMapMethod<String, dynamic>(
+          'inspectDownloadedApk',
+          <String, Object?>{'path': normalizedPath},
+        ) ??
+        const <String, dynamic>{'valid': false};
+  }
+
+  Future<Map<String, dynamic>> fetchUrlOnUnderlyingNetwork({
+    required Uri uri,
+    required Map<String, String> headers,
+    required int maxBytes,
+    required Duration timeout,
+  }) async {
+    if (!Platform.isAndroid) {
+      throw UnsupportedError(
+        'Underlying-network HTTP is only available on Android.',
+      );
+    }
+    return await _methods.invokeMapMethod<String, dynamic>(
+          'fetchUrlOnUnderlyingNetwork',
+          <String, Object?>{
+            'url': uri.toString(),
+            'headers': headers,
+            'maxBytes': maxBytes,
+            'timeoutMs': timeout.inMilliseconds,
+          },
+        ) ??
+        const <String, dynamic>{};
+  }
+
   Future<String> getAndroidId() async {
     final value = await _withMethodChannelFallback<String?>(
       () => _hostApi.getAndroidId(),
@@ -657,7 +757,7 @@ class SingboxRuntime {
     if (!Platform.isAndroid) {
       return const AppVersionInfo(
         packageName: '',
-        versionName: '0.2.0',
+        versionName: '0.2.1',
         versionCode: 0,
       );
     }
@@ -678,7 +778,7 @@ class SingboxRuntime {
     } on MissingPluginException {
       return const AppVersionInfo(
         packageName: '',
-        versionName: '0.2.0',
+        versionName: '0.2.1',
         versionCode: 0,
       );
     }

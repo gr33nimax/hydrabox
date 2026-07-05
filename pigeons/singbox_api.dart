@@ -75,6 +75,30 @@ class EndpointProbeResultMessage {
   bool protectedSocket;
 }
 
+class UrlTestRequestMessage {
+  UrlTestRequestMessage({
+    required this.groupTag,
+    required this.targetOutboundTag,
+    required this.priorityOutboundTag,
+    required this.excludeOutboundTag,
+    required this.url,
+    required this.timeoutMillis,
+    required this.concurrency,
+    required this.deadlineMillis,
+    required this.force,
+  });
+
+  String groupTag;
+  String targetOutboundTag;
+  String priorityOutboundTag;
+  String excludeOutboundTag;
+  String url;
+  int timeoutMillis;
+  int concurrency;
+  int deadlineMillis;
+  bool force;
+}
+
 @HostApi()
 abstract class SingboxHostApi {
   @async
@@ -120,7 +144,7 @@ abstract class SingboxHostApi {
   void removeOutbound(String selectorTag, String outboundTag);
 
   @async
-  void urlTest(String groupTag);
+  void urlTest(UrlTestRequestMessage request);
 
   @async
   void removeUrlTestOutbounds(String groupTag, List<String?> outboundTags);

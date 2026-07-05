@@ -342,6 +342,86 @@ class EndpointProbeResultMessage {
   int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
 }
 
+class UrlTestRequestMessage {
+  UrlTestRequestMessage({
+    required this.groupTag,
+    required this.targetOutboundTag,
+    required this.priorityOutboundTag,
+    required this.excludeOutboundTag,
+    required this.url,
+    required this.timeoutMillis,
+    required this.concurrency,
+    required this.deadlineMillis,
+    required this.force,
+  });
+
+  String groupTag;
+
+  String targetOutboundTag;
+
+  String priorityOutboundTag;
+
+  String excludeOutboundTag;
+
+  String url;
+
+  int timeoutMillis;
+
+  int concurrency;
+
+  int deadlineMillis;
+
+  bool force;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      groupTag,
+      targetOutboundTag,
+      priorityOutboundTag,
+      excludeOutboundTag,
+      url,
+      timeoutMillis,
+      concurrency,
+      deadlineMillis,
+      force,
+    ];
+  }
+
+  Object encode() {
+    return _toList();  }
+
+  static UrlTestRequestMessage decode(Object result) {
+    result as List<Object?>;
+    return UrlTestRequestMessage(
+      groupTag: result[0]! as String,
+      targetOutboundTag: result[1]! as String,
+      priorityOutboundTag: result[2]! as String,
+      excludeOutboundTag: result[3]! as String,
+      url: result[4]! as String,
+      timeoutMillis: result[5]! as int,
+      concurrency: result[6]! as int,
+      deadlineMillis: result[7]! as int,
+      force: result[8]! as bool,
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! UrlTestRequestMessage || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(groupTag, other.groupTag) && _deepEquals(targetOutboundTag, other.targetOutboundTag) && _deepEquals(priorityOutboundTag, other.priorityOutboundTag) && _deepEquals(excludeOutboundTag, other.excludeOutboundTag) && _deepEquals(url, other.url) && _deepEquals(timeoutMillis, other.timeoutMillis) && _deepEquals(concurrency, other.concurrency) && _deepEquals(deadlineMillis, other.deadlineMillis) && _deepEquals(force, other.force);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+}
+
 
 class _PigeonCodec extends StandardMessageCodec {
   const _PigeonCodec();
@@ -362,6 +442,9 @@ class _PigeonCodec extends StandardMessageCodec {
     }    else if (value is EndpointProbeResultMessage) {
       buffer.putUint8(132);
       writeValue(buffer, value.encode());
+    }    else if (value is UrlTestRequestMessage) {
+      buffer.putUint8(133);
+      writeValue(buffer, value.encode());
     } else {
       super.writeValue(buffer, value);
     }
@@ -378,6 +461,8 @@ class _PigeonCodec extends StandardMessageCodec {
         return EndpointProbeRequestMessage.decode(readValue(buffer)!);
       case 132:
         return EndpointProbeResultMessage.decode(readValue(buffer)!);
+      case 133:
+        return UrlTestRequestMessage.decode(readValue(buffer)!);
       default:
         return super.readValueOfType(type, buffer);
     }
@@ -653,14 +738,14 @@ class SingboxHostApi {
     ;
   }
 
-  Future<void> urlTest(String groupTag) async {
+  Future<void> urlTest(UrlTestRequestMessage request) async {
     final pigeonVar_channelName = 'dev.flutter.pigeon.meow_client.SingboxHostApi.urlTest$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
       binaryMessenger: pigeonVar_binaryMessenger,
     );
-    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[groupTag]);
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[request]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
     _extractReplyValueOrThrow(

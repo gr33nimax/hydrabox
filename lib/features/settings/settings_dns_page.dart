@@ -10,6 +10,27 @@ final _kDnsSingleLineFormatter = FilteringTextInputFormatter.deny(
   RegExp(r'[\r\n]'),
 );
 
+String dnsResolverFieldText(String value) {
+  final trimmed = value.trim();
+  if (!trimmed.toLowerCase().startsWith('udp://')) {
+    return trimmed;
+  }
+  final endpoint = trimmed.substring('udp://'.length);
+  if (endpoint.startsWith('[') && endpoint.endsWith(']')) {
+    return endpoint.substring(1, endpoint.length - 1);
+  }
+  return endpoint;
+}
+
+String dnsResolverProtocolLabel(String value) {
+  final normalized = normalizeDnsResolverInput(value).toLowerCase();
+  if (normalized.startsWith('tcp://')) return 'TCP';
+  if (normalized.startsWith('tls://')) return 'TLS';
+  if (normalized.startsWith('https://')) return 'HTTPS';
+  if (normalized.startsWith('device://')) return 'Android';
+  return 'UDP';
+}
+
 class SettingsDnsPage extends StatefulWidget {
   const SettingsDnsPage({
     super.key,
@@ -136,12 +157,36 @@ class _SettingsDnsPageState extends State<SettingsDnsPage> {
   void initState() {
     super.initState();
     _directController = TextEditingController(
-      text: widget.currentDirectResolver,
+      text: dnsResolverFieldText(widget.currentDirectResolver),
     );
-    _proxyController = TextEditingController(text: widget.currentProxyResolver);
+    _proxyController = TextEditingController(
+      text: dnsResolverFieldText(widget.currentProxyResolver),
+    );
     _russiaDirectController = TextEditingController(
-      text: widget.currentRussiaDnsDirectResolver,
+      text: dnsResolverFieldText(widget.currentRussiaDnsDirectResolver),
     );
+  }
+
+  @override
+  void didUpdateWidget(covariant SettingsDnsPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncResolverController(_directController, widget.currentDirectResolver);
+    _syncResolverController(_proxyController, widget.currentProxyResolver);
+    _syncResolverController(
+      _russiaDirectController,
+      widget.currentRussiaDnsDirectResolver,
+    );
+  }
+
+  void _syncResolverController(
+    TextEditingController controller,
+    String resolver,
+  ) {
+    if (normalizeDnsResolverInput(controller.text) ==
+        normalizeDnsResolverInput(resolver)) {
+      return;
+    }
+    controller.text = dnsResolverFieldText(resolver);
   }
 
   @override
@@ -182,7 +227,9 @@ class _SettingsDnsPageState extends State<SettingsDnsPage> {
   void _commitDirectResolver() {
     final value = _directController.text.trim();
     if (value.isEmpty) {
-      _directController.text = widget.currentDirectResolver;
+      _directController.text = dnsResolverFieldText(
+        widget.currentDirectResolver,
+      );
       return;
     }
     if (value != widget.currentDirectResolver) {
@@ -193,7 +240,7 @@ class _SettingsDnsPageState extends State<SettingsDnsPage> {
   void _commitProxyResolver() {
     final value = _proxyController.text.trim();
     if (value.isEmpty) {
-      _proxyController.text = widget.currentProxyResolver;
+      _proxyController.text = dnsResolverFieldText(widget.currentProxyResolver);
       return;
     }
     if (value != widget.currentProxyResolver) {
@@ -204,7 +251,9 @@ class _SettingsDnsPageState extends State<SettingsDnsPage> {
   void _commitRussiaDirectResolver() {
     final value = _russiaDirectController.text.trim();
     if (value.isEmpty) {
-      _russiaDirectController.text = defaultRussiaDnsDirectResolver;
+      _russiaDirectController.text = dnsResolverFieldText(
+        defaultRussiaDnsDirectResolver,
+      );
       widget.onRussiaDnsDirectResolverChanged(defaultRussiaDnsDirectResolver);
       return;
     }
@@ -250,7 +299,8 @@ class _SettingsDnsPageState extends State<SettingsDnsPage> {
                     iconColor: cs.primary,
                     title: l10n.dnsResolverTitle,
                     subtitle:
-                        '${_dnsPresetLabel(l10n, directPreset)} • ${widget.currentDirectResolver}',
+                        '${_dnsPresetLabel(l10n, directPreset)} • '
+                        '${dnsResolverProtocolLabel(widget.currentDirectResolver)}',
                     onTap: () => _showPresetPicker(
                       context: context,
                       title: l10n.dnsDirectTitle,
@@ -260,7 +310,9 @@ class _SettingsDnsPageState extends State<SettingsDnsPage> {
                         widget.onDirectPresetChanged(preset.id);
                         if (preset.id != 'custom') {
                           widget.onDirectResolverChanged(preset.value);
-                          _directController.text = preset.value;
+                          _directController.text = dnsResolverFieldText(
+                            preset.value,
+                          );
                         }
                         setState(() {});
                       },
@@ -283,7 +335,7 @@ class _SettingsDnsPageState extends State<SettingsDnsPage> {
                       decoration: InputDecoration(
                         labelText: l10n.dnsResolverTitle,
                         helperText: l10n.dnsDirectResolverSubtitle,
-                        hintText: 'udp://1.1.1.1',
+                        hintText: '1.1.1.1',
                       ),
                     ),
                 ],
@@ -305,7 +357,8 @@ class _SettingsDnsPageState extends State<SettingsDnsPage> {
                     iconColor: cs.primary,
                     title: l10n.dnsResolverTitle,
                     subtitle:
-                        '${_dnsPresetLabel(l10n, proxyPreset)} • ${widget.currentProxyResolver}',
+                        '${_dnsPresetLabel(l10n, proxyPreset)} • '
+                        '${dnsResolverProtocolLabel(widget.currentProxyResolver)}',
                     onTap: () => _showPresetPicker(
                       context: context,
                       title: l10n.dnsProxyTitle,
@@ -315,7 +368,9 @@ class _SettingsDnsPageState extends State<SettingsDnsPage> {
                         widget.onProxyPresetChanged(preset.id);
                         if (preset.id != 'custom') {
                           widget.onProxyResolverChanged(preset.value);
-                          _proxyController.text = preset.value;
+                          _proxyController.text = dnsResolverFieldText(
+                            preset.value,
+                          );
                         }
                         setState(() {});
                       },

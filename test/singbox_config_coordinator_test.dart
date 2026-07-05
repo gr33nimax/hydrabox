@@ -1,0 +1,260 @@
+import 'dart:async';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:meow_client/app/app_background_tasks.dart';
+import 'package:meow_client/app/runtime_lifecycle_controller.dart';
+import 'package:meow_client/app/singbox_config_coordinator.dart';
+import 'package:meow_client/data/local/app_settings_store.dart';
+import 'package:meow_client/singbox/singbox_config_builder.dart';
+import 'package:meow_client/singbox/singbox_runtime.dart';
+
+void main() {
+  test('serializes config applies and drops queued stale builds', () async {
+    final runtime = _BlockingRuntime();
+    final lifecycle = RuntimeLifecycleController(
+      runtime: runtime,
+      healthCheckTimeout: const Duration(milliseconds: 20),
+    );
+    addTearDown(lifecycle.dispose);
+    final coordinator = _coordinator(runtimeLifecycle: lifecycle);
+
+    final first = coordinator.applyRuntimeConfig(
+      build: _build('first'),
+      useVpn: true,
+      restartRuntime: true,
+    );
+    unawaited(
+      first.then<void>(
+        (_) {
+          if (!runtime.firstApplyStarted.isCompleted) {
+            runtime.firstApplyStarted.completeError(
+              StateError('first apply completed without reaching runtime'),
+            );
+          }
+        },
+        onError: (Object error, StackTrace stackTrace) {
+          if (!runtime.firstApplyStarted.isCompleted) {
+            runtime.firstApplyStarted.completeError(error, stackTrace);
+          }
+        },
+      ),
+    );
+    await runtime.firstApplyStarted.future.timeout(
+      const Duration(seconds: 5),
+      onTimeout: () => throw TimeoutException('first apply did not start'),
+    );
+
+    final stale = coordinator.applyRuntimeConfig(
+      build: _build('stale'),
+      useVpn: true,
+      restartRuntime: true,
+    );
+    final latest = coordinator.applyRuntimeConfig(
+      build: _build('latest'),
+      useVpn: true,
+      restartRuntime: true,
+    );
+
+    expect(runtime.appliedConfigs, ['first']);
+    expect(runtime.maxConcurrentApplies, 1);
+
+    runtime.releaseFirstApply.complete();
+    await Future.wait([first, stale, latest]).timeout(
+      const Duration(seconds: 5),
+      onTimeout: () => throw TimeoutException('queued applies did not finish'),
+    );
+
+    expect(runtime.appliedConfigs, ['first', 'latest']);
+    expect(runtime.maxConcurrentApplies, 1);
+  });
+
+  test('split routing apply forces a full VPN service restart', () async {
+    final runtime = _BlockingRuntime();
+    final lifecycle = RuntimeLifecycleController(
+      runtime: runtime,
+      healthCheckTimeout: const Duration(milliseconds: 20),
+    );
+    addTearDown(lifecycle.dispose);
+    final coordinator = _coordinator(runtimeLifecycle: lifecycle);
+
+    await coordinator.applyRuntimeConfig(
+      build: _build('split-routing'),
+      useVpn: true,
+      restartRuntime: true,
+      forceFullServiceRestart: true,
+    );
+
+    expect(runtime.stopCalls, 1);
+    expect(runtime.startCalls, 1);
+    expect(runtime.appliedConfigs, ['split-routing']);
+  });
+}
+
+SingboxConfigCoordinator _coordinator({
+  required RuntimeLifecycleController runtimeLifecycle,
+}) {
+  return SingboxConfigCoordinator(
+    readSnapshot: _snapshot,
+    isMounted: () => true,
+    ensureActiveSubscriptionHydrated: () async => true,
+    runtimeLifecycle: runtimeLifecycle,
+    applyStartupValidationResult: (_, _) => true,
+    showNoValidOutboundsWarning: () {},
+    setPhase: (_) {},
+    showRuntimeFailure: ({required bool timedOut}) {},
+    logCall: (_, _) {},
+    trimRuntimeStartMemory: (_) {},
+    onRuntimeLifecycleTimeout: (_) {},
+    cacheStartedBuild: (_) {},
+    schedulePostConnectSelectedProxyUrlTest:
+        ({required String reason, required Duration delay}) {},
+    syncRuntimeState: () async {},
+  );
+}
+
+SingboxConfigCoordinatorSnapshot _snapshot() {
+  return const SingboxConfigCoordinatorSnapshot(
+    connected: true,
+    runtimeTransitionInProgress: false,
+    activeSubscription: null,
+    selectedProxyTag: '',
+    excludedOutboundTags: <String>{},
+    vpnInboundEnabled: true,
+    vpnMtu: 9000,
+    vpnStrictRoute: false,
+    vpnTunImplementation: TunImplementationPreference.mixed,
+    proxyInboundEnabled: false,
+    proxyMixedListen: '127.0.0.1',
+    proxyMixedPort: 2080,
+    dnsDirectResolver: 'local',
+    dnsProxyResolver: 'https://dns.google/dns-query',
+    dnsPreferIpv6: false,
+    russiaDnsDirectResolver: defaultRussiaDnsDirectResolver,
+    urlTestUrl: defaultUrlTestUrl,
+    urlTestIntervalSeconds: 300,
+    urlTestTimeoutSeconds: 5,
+    urlTestConcurrency: 4,
+    urlTestUnavailableCheckIntervalSeconds: 60,
+    blockLeaks: true,
+    adBlockEnabled: false,
+    adBlockBlockRuleSetPath: null,
+    adBlockAllowRuleSetPath: null,
+    useRussiaRouteData: false,
+    routeDataAvailable: false,
+    routeDataSourceKind: 'test',
+    routeDataRelease: null,
+    russiaGeositeRuBlockedPath: null,
+    russiaGeositeRuAvailableOnlyInsidePath: null,
+    russiaGeositeCategoryRuPath: null,
+    russiaGeoipRuBlockedPath: null,
+    russiaGeoipRuWhitelistPath: null,
+    russiaGeoipRuPath: null,
+    russiaCuratedDirectServicesPath: null,
+    russiaAiServicesPath: null,
+    bypassLocalNetwork: true,
+    splitRoutingMode: SplitRoutingMode.disabled,
+    splitRoutingPackages: <String>[],
+    logLevel: 'info',
+    tcpFastOpenEnabled: false,
+    tcpMultiPathEnabled: false,
+    tlsFragmentationMode: TlsFragmentationMode.disabled,
+    interruptExistingConnections: false,
+    urlTestStrictTolerance: false,
+    markAllServersRussia: false,
+  );
+}
+
+SingboxConfigBuildResult _build(String config) {
+  return SingboxConfigBuildResult(
+    plan: const SingboxBuildPlan(
+      config: <String, dynamic>{},
+      proxyOutboundTagsByIndex: <int, String>{0: 'vless-1'},
+      visibleProxyOutboundCount: 1,
+    ),
+    configJson: config,
+    configPath: null,
+    configLength: config.length,
+    configOutboundCount: 1,
+    configInboundCount: 1,
+    configRouteRuleCount: 1,
+    invalidOutbounds: const <InvalidStartupOutbound>[],
+    invalidOutboundCount: 0,
+    selectedProxyInvalid: false,
+    startableOutboundCount: 1,
+  );
+}
+
+class _BlockingRuntime implements RuntimeLifecycleRuntime {
+  final Completer<void> firstApplyStarted = Completer<void>();
+  final Completer<void> releaseFirstApply = Completer<void>();
+  final List<String> appliedConfigs = <String>[];
+  int _concurrentApplies = 0;
+  int maxConcurrentApplies = 0;
+  int startCalls = 0;
+  int stopCalls = 0;
+
+  @override
+  Future<void> applyConfig({
+    required String config,
+    required bool useVpn,
+    required bool restartCore,
+  }) async {
+    await _trackConfigApply(config);
+  }
+
+  Future<void> _trackConfigApply(String config) async {
+    appliedConfigs.add(config);
+    _concurrentApplies++;
+    if (_concurrentApplies > maxConcurrentApplies) {
+      maxConcurrentApplies = _concurrentApplies;
+    }
+    try {
+      if (config == 'first') {
+        firstApplyStarted.complete();
+        await releaseFirstApply.future;
+      }
+    } finally {
+      _concurrentApplies--;
+    }
+  }
+
+  @override
+  Future<void> applyPreparedConfig({
+    required bool useVpn,
+    required bool restartCore,
+  }) async {}
+
+  @override
+  Future<NetworkInterfaceSnapshot> getNetworkInterfaceState() async {
+    return const NetworkInterfaceSnapshot(
+      available: true,
+      interfaceName: 'wlan0',
+      interfaceIndex: 1,
+      generation: 1,
+      reason: 'test',
+      updatedAtMillis: 1,
+    );
+  }
+
+  @override
+  Future<bool> prepareVpn({required bool requiresVpn}) async => true;
+
+  @override
+  Future<void> start({required String config, required bool useVpn}) {
+    startCalls++;
+    return _trackConfigApply(config);
+  }
+
+  @override
+  Future<void> startPrepared({required bool useVpn}) async {}
+
+  @override
+  Future<Map<String, dynamic>> status() async {
+    return const <String, dynamic>{'running': true, 'mode': 'vpn'};
+  }
+
+  @override
+  Future<void> stop({required String reason}) async {
+    stopCalls++;
+  }
+}

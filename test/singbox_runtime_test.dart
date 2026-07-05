@@ -2,6 +2,19 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:meow_client/singbox/singbox_runtime.dart';
 
 void main() {
+  group('AppVersionInfo', () {
+    test('does not expose Android versionCode in display version', () {
+      const info = AppVersionInfo(
+        packageName: 'com.etonify.meow_client',
+        versionName: '0.2.1',
+        versionCode: 2005,
+      );
+
+      expect(info.displayVersion, '0.2.1');
+      expect(info.updateBuildNumber, 5);
+    });
+  });
+
   group('SingboxRuntime Pigeon normalization', () {
     test('accepts installed app maps with Object keys', () {
       final value = <Object?>[

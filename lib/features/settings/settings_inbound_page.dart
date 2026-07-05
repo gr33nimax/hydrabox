@@ -17,13 +17,15 @@ class SettingsInboundPage extends StatefulWidget {
     required this.currentProxyAllowLan,
     required this.currentProxyMixedListen,
     required this.currentProxyMixedPort,
-    required this.onVpnInboundEnabledChanged,
+    required this.currentProxyPassword,
+    required this.onConnectionModeChanged,
     required this.onVpnMtuChanged,
     required this.onVpnStrictRouteChanged,
     required this.onVpnTunImplementationChanged,
     required this.onProxyInboundEnabledChanged,
     required this.onProxyAllowLanChanged,
     required this.onProxyMixedPortChanged,
+    required this.onProxyPasswordChanged,
   });
 
   final bool currentVpnInboundEnabled;
@@ -34,13 +36,15 @@ class SettingsInboundPage extends StatefulWidget {
   final bool currentProxyAllowLan;
   final String currentProxyMixedListen;
   final int currentProxyMixedPort;
-  final ValueChanged<bool> onVpnInboundEnabledChanged;
+  final String currentProxyPassword;
+  final ValueChanged<InboundConnectionMode> onConnectionModeChanged;
   final ValueChanged<int> onVpnMtuChanged;
   final ValueChanged<bool> onVpnStrictRouteChanged;
   final ValueChanged<TunImplementationPreference> onVpnTunImplementationChanged;
   final ValueChanged<bool> onProxyInboundEnabledChanged;
   final ValueChanged<bool> onProxyAllowLanChanged;
   final ValueChanged<int> onProxyMixedPortChanged;
+  final ValueChanged<String> onProxyPasswordChanged;
 
   @override
   State<SettingsInboundPage> createState() => _SettingsInboundPageState();
@@ -49,6 +53,11 @@ class SettingsInboundPage extends StatefulWidget {
 class _SettingsInboundPageState extends State<SettingsInboundPage> {
   static const _mtuOptions = <int>[1280, 1400, 1450, 1500, 3400, 9000];
   late final TextEditingController _portController;
+  late InboundConnectionMode _connectionMode;
+  late bool _proxyEnabled;
+  late bool _proxyAllowLan;
+  late String _proxyPassword;
+  bool _passwordVisible = false;
 
   @override
   void initState() {
@@ -56,6 +65,36 @@ class _SettingsInboundPageState extends State<SettingsInboundPage> {
     _portController = TextEditingController(
       text: widget.currentProxyMixedPort.toString(),
     );
+    _connectionMode = widget.currentVpnInboundEnabled
+        ? InboundConnectionMode.vpn
+        : InboundConnectionMode.proxy;
+    _proxyEnabled = widget.currentProxyInboundEnabled;
+    _proxyAllowLan = widget.currentProxyAllowLan;
+    _proxyPassword = widget.currentProxyPassword;
+    if (_proxyAllowLan && !isValidProxyPassword(_proxyPassword)) {
+      _proxyPassword = generateProxyPassword();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) widget.onProxyPasswordChanged(_proxyPassword);
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant SettingsInboundPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _connectionMode = widget.currentVpnInboundEnabled
+        ? InboundConnectionMode.vpn
+        : InboundConnectionMode.proxy;
+    _proxyEnabled = widget.currentProxyInboundEnabled;
+    _proxyAllowLan = widget.currentProxyAllowLan;
+    if (widget.currentProxyPassword != oldWidget.currentProxyPassword &&
+        isValidProxyPassword(widget.currentProxyPassword)) {
+      _proxyPassword = widget.currentProxyPassword;
+    }
+    if (widget.currentProxyMixedPort != oldWidget.currentProxyMixedPort &&
+        !_portController.selection.isValid) {
+      _portController.text = widget.currentProxyMixedPort.toString();
+    }
   }
 
   @override
@@ -150,11 +189,394 @@ class _SettingsInboundPageState extends State<SettingsInboundPage> {
     widget.onProxyMixedPortChanged(value);
   }
 
+  void _setConnectionMode(InboundConnectionMode mode) {
+    if (_connectionMode == mode) return;
+    setState(() {
+      _connectionMode = mode;
+      _proxyEnabled = mode == InboundConnectionMode.proxy;
+    });
+    widget.onConnectionModeChanged(mode);
+  }
+
+  void _setProxyEnabled(bool value) {
+    setState(() => _proxyEnabled = value);
+    widget.onProxyInboundEnabledChanged(value);
+  }
+
+  void _setProxyAllowLan(bool value) {
+    if (value && !isValidProxyPassword(_proxyPassword)) {
+      _proxyPassword = generateProxyPassword();
+      widget.onProxyPasswordChanged(_proxyPassword);
+    }
+    setState(() => _proxyAllowLan = value);
+    widget.onProxyAllowLanChanged(value);
+  }
+
+  void _regenerateProxyPassword() {
+    final password = generateProxyPassword();
+    setState(() {
+      _proxyPassword = password;
+      _passwordVisible = true;
+    });
+    widget.onProxyPasswordChanged(password);
+  }
+
+  Future<void> _copyProxyCredentials(AppLocalizations l10n) async {
+    final host = _proxyAllowLan ? l10n.proxyLanAddressHint : '127.0.0.1';
+    final buffer = StringBuffer(
+      'HTTP/SOCKS: $host:${widget.currentProxyMixedPort}',
+    );
+    if (_proxyAllowLan) {
+      buffer
+        ..writeln()
+        ..writeln('${l10n.proxyUsernameTitle}: $defaultProxyUsername')
+        ..write('${l10n.proxyPasswordTitle}: $_proxyPassword');
+    }
+    await Clipboard.setData(ClipboardData(text: buffer.toString()));
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(l10n.proxyCredentialsCopied)));
+  }
+
+  Future<void> _copyProxyValue(String value, AppLocalizations l10n) async {
+    await Clipboard.setData(ClipboardData(text: value));
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(l10n.proxyCredentialsCopied)));
+  }
+
+  Widget _buildAdvancedTunCard(
+    BuildContext context,
+    AppLocalizations l10n,
+    ColorScheme colors,
+  ) {
+    return Card(
+      margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias,
+      child: ExpansionTile(
+        leading: SettingsLeadingIcon(
+          icon: Icons.tune_rounded,
+          color: colors.primary,
+        ),
+        title: Text(l10n.advancedTunTitle),
+        subtitle: Text(l10n.advancedTunSubtitle),
+        children: [
+          ListTile(
+            leading: SettingsLeadingIcon(
+              icon: Icons.swap_vert_rounded,
+              color: colors.primary,
+            ),
+            title: Text(l10n.mtuTitle),
+            subtitle: Text('${widget.currentVpnMtu} • ${l10n.mtuSubtitle}'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => _showMtuPicker(context),
+          ),
+          SwitchListTile(
+            secondary: SettingsLeadingIcon(
+              icon: Icons.route_rounded,
+              color: colors.primary,
+            ),
+            title: Text(l10n.strictRouteTitle),
+            subtitle: Text(l10n.strictRouteSubtitle),
+            value: widget.currentVpnStrictRoute,
+            onChanged: widget.onVpnStrictRouteChanged,
+          ),
+          ListTile(
+            leading: SettingsLeadingIcon(
+              icon: Icons.memory_rounded,
+              color: colors.primary,
+            ),
+            title: Text(l10n.tunImplementationTitle),
+            subtitle: Text(
+              '${_tunImplementationLabel(l10n, widget.currentVpnTunImplementation)} • ${_tunImplementationDescription(l10n, widget.currentVpnTunImplementation)}',
+            ),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => _showTunImplementationPicker(context),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProxyCard(
+    BuildContext context,
+    AppLocalizations l10n,
+    ColorScheme colors, {
+    required bool optionalInVpn,
+  }) {
+    final enabled = optionalInVpn ? _proxyEnabled : true;
+    final endpointHost = _proxyAllowLan
+        ? l10n.proxyLanAddressHint
+        : '127.0.0.1';
+    final hiddenPassword = List<String>.filled(
+      _proxyPassword.length,
+      '•',
+      growable: false,
+    ).join();
+
+    return Card(
+      margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          if (optionalInVpn)
+            SwitchListTile(
+              secondary: SettingsLeadingIcon(
+                icon: Icons.lan_rounded,
+                color: colors.primary,
+              ),
+              title: Text(l10n.localProxyTitle),
+              subtitle: Text(l10n.localProxySubtitle),
+              value: _proxyEnabled,
+              onChanged: _setProxyEnabled,
+            )
+          else
+            ListTile(
+              leading: SettingsLeadingIcon(
+                icon: Icons.lan_rounded,
+                color: colors.primary,
+              ),
+              title: Text(l10n.localProxyTitle),
+              subtitle: Text(l10n.connectionModeProxySubtitle),
+            ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: enabled
+                ? Column(
+                    key: const ValueKey('proxy-controls'),
+                    children: [
+                      SwitchListTile(
+                        secondary: SettingsLeadingIcon(
+                          icon: Icons.wifi_tethering_rounded,
+                          color: colors.primary,
+                        ),
+                        title: Text(l10n.allowLanConnectionsTitle),
+                        subtitle: Text(l10n.allowLanConnectionsSubtitle),
+                        value: _proxyAllowLan,
+                        onChanged: _setProxyAllowLan,
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                        child: TextField(
+                          controller: _portController,
+                          onTapOutside: (_) {
+                            FocusScope.of(context).unfocus();
+                            _commitPort();
+                          },
+                          onSubmitted: (_) => _commitPort(),
+                          onEditingComplete: () {
+                            FocusScope.of(context).unfocus();
+                            _commitPort();
+                          },
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.deny(RegExp(r'[\r\n]')),
+                            FilteringTextInputFormatter.digitsOnly,
+                          ],
+                          decoration: InputDecoration(
+                            labelText: l10n.portTitle,
+                            hintText: '1080',
+                            helperText: l10n.proxyPortSubtitle,
+                          ),
+                        ),
+                      ),
+                      ListTile(
+                        leading: SettingsLeadingIcon(
+                          icon: Icons.link_rounded,
+                          color: colors.primary,
+                        ),
+                        title: Text(l10n.proxyEndpointTitle),
+                        subtitle: Text(
+                          '$endpointHost:${widget.currentProxyMixedPort}',
+                        ),
+                        trailing: IconButton(
+                          tooltip: l10n.copyProxyCredentialsTitle,
+                          icon: const Icon(Icons.copy_rounded),
+                          onPressed: () => _copyProxyCredentials(l10n),
+                        ),
+                      ),
+                      if (_proxyAllowLan) ...[
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: colors.secondaryContainer.withValues(
+                                alpha: 0.55,
+                              ),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(14),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(
+                                    Icons.shield_rounded,
+                                    color: colors.onSecondaryContainer,
+                                  ),
+                                  const Gap(12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          l10n.lanProxySecurityTitle,
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.titleSmall,
+                                        ),
+                                        const Gap(4),
+                                        Text(
+                                          l10n.lanProxySecuritySubtitle,
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.bodySmall,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        ListTile(
+                          title: Text(l10n.proxyUsernameTitle),
+                          subtitle: const Text(defaultProxyUsername),
+                          trailing: IconButton(
+                            tooltip: l10n.copyProxyCredentialsTitle,
+                            icon: const Icon(Icons.copy_rounded),
+                            onPressed: () =>
+                                _copyProxyValue(defaultProxyUsername, l10n),
+                          ),
+                        ),
+                        ListTile(
+                          title: Text(l10n.proxyPasswordTitle),
+                          subtitle: Text(
+                            _passwordVisible ? _proxyPassword : hiddenPassword,
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: Icon(
+                                  _passwordVisible
+                                      ? Icons.visibility_off_rounded
+                                      : Icons.visibility_rounded,
+                                ),
+                                onPressed: () => setState(
+                                  () => _passwordVisible = !_passwordVisible,
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: l10n.copyProxyCredentialsTitle,
+                                icon: const Icon(Icons.copy_rounded),
+                                onPressed: () =>
+                                    _copyProxyValue(_proxyPassword, l10n),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: _regenerateProxyPassword,
+                                  icon: const Icon(Icons.refresh_rounded),
+                                  label: Text(
+                                    l10n.regenerateProxyPasswordTitle,
+                                  ),
+                                ),
+                              ),
+                              const Gap(8),
+                              IconButton.filledTonal(
+                                tooltip: l10n.copyProxyCredentialsTitle,
+                                onPressed: () => _copyProxyCredentials(l10n),
+                                icon: const Icon(Icons.copy_all_rounded),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  )
+                : const SizedBox.shrink(key: ValueKey('proxy-disabled')),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActiveModeStatus(
+    BuildContext context,
+    AppLocalizations l10n,
+    ColorScheme colors,
+  ) {
+    final vpnActive = _connectionMode == InboundConnectionMode.vpn;
+    final label = l10n.connectionModeActiveStatus(
+      vpnActive
+          ? l10n.connectionModeVpnStatusName
+          : l10n.connectionModeProxyStatusName,
+    );
+
+    return Semantics(
+      container: true,
+      liveRegion: true,
+      label: label,
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 180),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          layoutBuilder: (currentChild, previousChildren) => Stack(
+            alignment: Alignment.centerLeft,
+            children: [...previousChildren, ?currentChild],
+          ),
+          child: DecoratedBox(
+            key: ValueKey(_connectionMode),
+            decoration: BoxDecoration(
+              color: colors.primaryContainer,
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    vpnActive ? Icons.shield_rounded : Icons.lan_rounded,
+                    size: 18,
+                    color: colors.onPrimaryContainer,
+                  ),
+                  const Gap(8),
+                  Text(
+                    label,
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: colors.onPrimaryContainer,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
+    final colors = Theme.of(context).colorScheme;
 
     return ProgressiveBlurScaffold(
       appBar: AppBar(title: Text(l10n.inboundTitle)),
@@ -168,128 +590,81 @@ class _SettingsInboundPageState extends State<SettingsInboundPage> {
             appBottomSafePadding(context, settingsScreenPadding.bottom),
           ),
           children: [
-            _SectionLabel(label: l10n.vpnInTitle),
+            _buildActiveModeStatus(context, l10n, colors),
+            const Gap(settingsSectionGap),
+            _SectionLabel(label: l10n.connectionModeTitle),
             const Gap(settingsSectionLabelGap),
-            _SectionDescription(label: l10n.vpnInDescription),
+            _SectionDescription(label: l10n.connectionModeSubtitle),
             const Gap(settingsSectionLabelGap),
             Card(
               margin: EdgeInsets.zero,
-              child: Column(
-                children: [
-                  SwitchListTile(
-                    secondary: SettingsLeadingIcon(
-                      icon: Icons.vpn_lock_rounded,
-                      color: cs.primary,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SegmentedButton<InboundConnectionMode>(
+                      segments: [
+                        ButtonSegment(
+                          value: InboundConnectionMode.vpn,
+                          icon: const Icon(Icons.vpn_lock_rounded),
+                          label: Text(l10n.connectionModeVpn),
+                        ),
+                        ButtonSegment(
+                          value: InboundConnectionMode.proxy,
+                          icon: const Icon(Icons.lan_rounded),
+                          label: Text(l10n.connectionModeProxy),
+                        ),
+                      ],
+                      selected: {_connectionMode},
+                      onSelectionChanged: (selection) {
+                        if (selection.isNotEmpty) {
+                          _setConnectionMode(selection.first);
+                        }
+                      },
                     ),
-                    title: Text(l10n.enableInboundTitle),
-                    subtitle: Text(l10n.vpnInboundEnabledSubtitle),
-                    value: widget.currentVpnInboundEnabled,
-                    onChanged: widget.onVpnInboundEnabledChanged,
-                  ),
-                  ListTile(
-                    enabled: widget.currentVpnInboundEnabled,
-                    leading: SettingsLeadingIcon(
-                      icon: Icons.swap_vert_rounded,
-                      color: cs.primary,
+                    const Gap(12),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 180),
+                      child: Text(
+                        _connectionMode == InboundConnectionMode.vpn
+                            ? l10n.connectionModeVpnSubtitle
+                            : l10n.connectionModeProxySubtitle,
+                        key: ValueKey(_connectionMode),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
                     ),
-                    title: Text(l10n.mtuTitle),
-                    subtitle: Text(
-                      '${widget.currentVpnMtu} • ${l10n.mtuSubtitle}',
-                    ),
-                    trailing: const Icon(Icons.chevron_right_rounded),
-                    onTap: widget.currentVpnInboundEnabled
-                        ? () => _showMtuPicker(context)
-                        : null,
-                  ),
-                  SwitchListTile(
-                    secondary: SettingsLeadingIcon(
-                      icon: Icons.route_rounded,
-                      color: cs.primary,
-                    ),
-                    title: Text(l10n.strictRouteTitle),
-                    subtitle: Text(l10n.strictRouteSubtitle),
-                    value: widget.currentVpnStrictRoute,
-                    onChanged: widget.currentVpnInboundEnabled
-                        ? widget.onVpnStrictRouteChanged
-                        : null,
-                  ),
-                  ListTile(
-                    enabled: widget.currentVpnInboundEnabled,
-                    leading: SettingsLeadingIcon(
-                      icon: Icons.tune_rounded,
-                      color: cs.primary,
-                    ),
-                    title: Text(l10n.tunImplementationTitle),
-                    subtitle: Text(
-                      '${_tunImplementationLabel(l10n, widget.currentVpnTunImplementation)} • ${_tunImplementationDescription(l10n, widget.currentVpnTunImplementation)}',
-                    ),
-                    trailing: const Icon(Icons.chevron_right_rounded),
-                    onTap: widget.currentVpnInboundEnabled
-                        ? () => _showTunImplementationPicker(context)
-                        : null,
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
             const Gap(settingsSectionGap),
-            _SectionLabel(label: l10n.proxyInTitle),
-            const Gap(settingsSectionLabelGap),
-            _SectionDescription(label: l10n.proxyInDescription),
-            const Gap(settingsSectionLabelGap),
-            Card(
-              margin: EdgeInsets.zero,
-              child: Column(
-                children: [
-                  SwitchListTile(
-                    secondary: SettingsLeadingIcon(
-                      icon: Icons.lan_rounded,
-                      color: cs.primary,
-                    ),
-                    title: Text(l10n.enableInboundTitle),
-                    subtitle: Text(l10n.proxyInboundEnabledSubtitle),
-                    value: widget.currentProxyInboundEnabled,
-                    onChanged: widget.onProxyInboundEnabledChanged,
-                  ),
-                  SwitchListTile(
-                    secondary: SettingsLeadingIcon(
-                      icon: Icons.wifi_tethering_rounded,
-                      color: cs.primary,
-                    ),
-                    title: Text(l10n.allowLanConnectionsTitle),
-                    subtitle: Text(l10n.allowLanConnectionsSubtitle),
-                    value: widget.currentProxyAllowLan,
-                    onChanged: widget.currentProxyInboundEnabled
-                        ? widget.onProxyAllowLanChanged
-                        : null,
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                    child: TextField(
-                      controller: _portController,
-                      enabled: widget.currentProxyInboundEnabled,
-                      onTapOutside: (_) {
-                        FocusScope.of(context).unfocus();
-                        _commitPort();
-                      },
-                      onSubmitted: (_) => _commitPort(),
-                      onEditingComplete: () {
-                        FocusScope.of(context).unfocus();
-                        _commitPort();
-                      },
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [
-                        FilteringTextInputFormatter.deny(RegExp(r'[\r\n]')),
-                        FilteringTextInputFormatter.digitsOnly,
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              child: _connectionMode == InboundConnectionMode.vpn
+                  ? Column(
+                      key: const ValueKey('vpn-mode-settings'),
+                      children: [
+                        _buildAdvancedTunCard(context, l10n, colors),
+                        const Gap(settingsSectionGap),
+                        _buildProxyCard(
+                          context,
+                          l10n,
+                          colors,
+                          optionalInVpn: true,
+                        ),
                       ],
-                      decoration: InputDecoration(
-                        labelText: l10n.portTitle,
-                        hintText: '1080',
-                        helperText: l10n.proxyPortSubtitle,
-                      ),
+                    )
+                  : _buildProxyCard(
+                      context,
+                      l10n,
+                      colors,
+                      optionalInVpn: false,
                     ),
-                  ),
-                ],
-              ),
             ),
           ],
         ),

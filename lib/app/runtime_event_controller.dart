@@ -20,6 +20,7 @@ typedef RuntimeStateHandler = void Function(RuntimeStateEvent event);
 typedef RuntimeRawEventHandler = void Function(Map<String, dynamic> event);
 typedef RuntimeGroupsHandler = void Function(List<dynamic> groups);
 typedef RuntimeLogFilter = bool Function(String level);
+typedef RuntimeLogIssueHandler = void Function(String reason, String message);
 
 class RuntimeEventController {
   RuntimeEventController({
@@ -29,6 +30,7 @@ class RuntimeEventController {
     required RuntimeRawEventHandler onNetwork,
     required RuntimeGroupsHandler onGroups,
     required RuntimeLogFilter shouldRecordLog,
+    RuntimeLogIssueHandler? onRuntimeLogIssue,
     DateTime Function()? now,
   }) : _events = events,
        _onState = onState,
@@ -36,7 +38,13 @@ class RuntimeEventController {
        _onNetwork = onNetwork,
        _onGroups = onGroups,
        _shouldRecordLog = shouldRecordLog,
+       _onRuntimeLogIssue = onRuntimeLogIssue,
        _now = now ?? DateTime.now;
+
+  static final RegExp _interfaceDialFailurePattern = RegExp(
+    r'\bdial\s+(?:ccmni|wlan|rmnet|swlan|eth|usb|ap)\w*\s*\(\d+\).*?\b(?:network is unreachable|no route to host)\b',
+    caseSensitive: false,
+  );
 
   final Stream<Map<String, dynamic>> _events;
   final RuntimeStateHandler _onState;
@@ -44,6 +52,7 @@ class RuntimeEventController {
   final RuntimeRawEventHandler _onNetwork;
   final RuntimeGroupsHandler _onGroups;
   final RuntimeLogFilter _shouldRecordLog;
+  final RuntimeLogIssueHandler? _onRuntimeLogIssue;
   final DateTime Function() _now;
 
   StreamSubscription<Map<String, dynamic>>? _subscription;
@@ -98,6 +107,7 @@ class RuntimeEventController {
     if (message.isEmpty) {
       return;
     }
+    _emitRuntimeLogIssueIfNeeded(message);
     final normalizedLevel = _normalizeNativeLevel(level);
     final effectiveLevel = AppLogStore.inferLevel(message) ?? normalizedLevel;
     if (!_shouldRecordLog(effectiveLevel)) {
@@ -124,6 +134,7 @@ class RuntimeEventController {
       if (message.isEmpty) {
         continue;
       }
+      _emitRuntimeLogIssueIfNeeded(message);
       final fallbackLevel = _fallbackBatchLogLevel(level);
       final effectiveLevel = AppLogStore.inferLevel(message) ?? fallbackLevel;
       if (!_shouldRecordLog(effectiveLevel)) {
@@ -139,6 +150,29 @@ class RuntimeEventController {
       );
     }
     AppLogStore.appendBatch(batch);
+  }
+
+  void _emitRuntimeLogIssueIfNeeded(String message) {
+    final reason = _runtimeLogIssueReason(message);
+    if (reason == null) {
+      return;
+    }
+    _onRuntimeLogIssue?.call(reason, message);
+  }
+
+  String? _runtimeLogIssueReason(String message) {
+    final lower = message.toLowerCase();
+    if (lower.contains('no available network interface')) {
+      return 'core_no_available_interface';
+    }
+    if (lower.contains('no usable network interface') ||
+        lower.contains('error=no_interface')) {
+      return 'core_no_usable_interface';
+    }
+    if (_interfaceDialFailurePattern.hasMatch(message)) {
+      return 'core_interface_dial_failure';
+    }
+    return null;
   }
 
   String _normalizeNativeLevel(String level) {

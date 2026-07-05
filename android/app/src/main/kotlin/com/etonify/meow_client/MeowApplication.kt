@@ -4,16 +4,23 @@ import android.app.Application
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.net.ConnectivityManager
+import android.os.Build
 import com.etonify.meow_client.singbox.MeowDiagnostics
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.SetupOptions
 import java.io.File
+import kotlin.system.exitProcess
 
 class MeowApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         application = this
-        val processName = Application.getProcessName().orEmpty()
+        installUncaughtExceptionLogger()
+        val processName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            Application.getProcessName()
+        } else {
+            applicationInfo.processName
+        }.orEmpty()
         // Legacy native Happ crypt5 used an isolated process:
         // if (!processName.endsWith(":happ_crypto5_isolated")) {
         //     MeowDiagnostics.pruneLegacyRuntimeFiles()
@@ -46,7 +53,8 @@ class MeowApplication : Application() {
         private const val FLAG_HEARTBEAT_INTERVAL_SECONDS = "network_heartbeat_interval_seconds"
         private const val FLAG_PERFORMANCE_MODE = "performance_mode"
         private const val FLAG_MEMORY_LIMIT_ENABLED = "memory_limit_enabled"
-        private const val RUNTIME_INTENT_MAX_AGE_MS = 120_000L
+        @Volatile
+        private var uncaughtExceptionLoggerInstalled = false
 
         lateinit var application: MeowApplication
         @Volatile
@@ -116,6 +124,30 @@ class MeowApplication : Application() {
                     .putBoolean(FLAG_MEMORY_LIMIT_ENABLED, value)
                     .apply()
             }
+
+        private fun installUncaughtExceptionLogger() {
+            if (uncaughtExceptionLoggerInstalled) return
+            synchronized(this) {
+                if (uncaughtExceptionLoggerInstalled) return
+                val previous = Thread.getDefaultUncaughtExceptionHandler()
+                Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+                    runCatching {
+                        MeowDiagnostics.log(
+                            "UncaughtException",
+                            "thread=${thread.name} pid=${android.os.Process.myPid()}",
+                            error,
+                        )
+                    }
+                    if (previous != null) {
+                        previous.uncaughtException(thread, error)
+                    } else {
+                        android.os.Process.killProcess(android.os.Process.myPid())
+                        exitProcess(10)
+                    }
+                }
+                uncaughtExceptionLoggerInstalled = true
+            }
+        }
 
         fun ensureLibboxSetup() {
             if (libboxReady) {
@@ -321,7 +353,7 @@ class MeowApplication : Application() {
                 append(" ageMs=")
                 append(ageMs)
                 append(" fresh=")
-                append(ageMs in 0..RUNTIME_INTENT_MAX_AGE_MS)
+                append(ageMs >= 0L)
             }
         }
 
@@ -344,8 +376,11 @@ class MeowApplication : Application() {
             if (mode != null && state.mode != mode) {
                 return false
             }
-            val ageMs = System.currentTimeMillis() - state.updatedAtMillis
-            return ageMs in 0..RUNTIME_INTENT_MAX_AGE_MS
+            // The file represents the user's desired runtime state, not a
+            // short retry token. It remains valid until an explicit stop
+            // clears it, allowing START_STICKY to recover after an overnight
+            // low-memory or OEM process kill.
+            return System.currentTimeMillis() >= state.updatedAtMillis
         }
     }
 }

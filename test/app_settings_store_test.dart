@@ -6,13 +6,14 @@ void main() {
     final state = _TestSettingsStore().mapState(const <String, dynamic>{});
 
     expect(state.performanceMode, AppPerformanceMode.standard);
-    expect(state.urlTestIntervalSeconds, 300);
-    expect(state.urlTestTimeoutSeconds, 4);
-    expect(state.urlTestConcurrency, 6);
-    expect(state.urlTestUnavailableCheckIntervalSeconds, 300);
-    expect(state.locationLookupLimit, 2);
-    expect(state.locationLookupTimeoutSeconds, 5);
-    expect(state.locationLookupConcurrency, 2);
+    expect(state.urlTestIntervalSeconds, 1800);
+    expect(state.urlTestTimeoutSeconds, 15);
+    expect(state.urlTestConcurrency, 16);
+    expect(state.urlTestUnavailableCheckIntervalSeconds, 10);
+    expect(state.urlTestUrl, defaultUrlTestUrl);
+    expect(state.locationLookupLimit, 1);
+    expect(state.locationLookupTimeoutSeconds, 3);
+    expect(state.locationLookupConcurrency, 1);
     expect(state.russiaDnsDirectResolver, defaultRussiaDnsDirectResolver);
     expect(state.memoryLimitEnabled, isTrue);
     expect(state.memoryLimitWarningDismissed, isFalse);
@@ -44,12 +45,12 @@ void main() {
     });
 
     expect(state.performanceMode, AppPerformanceMode.economy);
-    expect(state.urlTestIntervalSeconds, 300);
-    expect(state.urlTestTimeoutSeconds, 4);
-    expect(state.urlTestConcurrency, 3);
-    expect(state.urlTestUnavailableCheckIntervalSeconds, 300);
+    expect(state.urlTestIntervalSeconds, 3600);
+    expect(state.urlTestTimeoutSeconds, 15);
+    expect(state.urlTestConcurrency, 8);
+    expect(state.urlTestUnavailableCheckIntervalSeconds, 15);
     expect(state.locationLookupLimit, 0);
-    expect(state.locationLookupTimeoutSeconds, 5);
+    expect(state.locationLookupTimeoutSeconds, 3);
     expect(state.locationLookupConcurrency, 1);
   });
 
@@ -64,11 +65,11 @@ void main() {
       'urltest_unavailable_check_interval_seconds': '60',
       'location_lookup_concurrency': '1',
     });
-    expect(standard.urlTestIntervalSeconds, 300);
-    expect(standard.urlTestTimeoutSeconds, 4);
-    expect(standard.urlTestConcurrency, 6);
-    expect(standard.urlTestUnavailableCheckIntervalSeconds, 300);
-    expect(standard.locationLookupConcurrency, 2);
+    expect(standard.urlTestIntervalSeconds, 1800);
+    expect(standard.urlTestTimeoutSeconds, 15);
+    expect(standard.urlTestConcurrency, 16);
+    expect(standard.urlTestUnavailableCheckIntervalSeconds, 10);
+    expect(standard.locationLookupConcurrency, 1);
 
     final previousStandard = store.mapState(const <String, dynamic>{
       'performance_mode': 'standard',
@@ -76,9 +77,9 @@ void main() {
       'urltest_concurrency': '8',
       'urltest_unavailable_check_interval_seconds': '120',
     });
-    expect(previousStandard.urlTestIntervalSeconds, 300);
-    expect(previousStandard.urlTestConcurrency, 6);
-    expect(previousStandard.urlTestUnavailableCheckIntervalSeconds, 300);
+    expect(previousStandard.urlTestIntervalSeconds, 1800);
+    expect(previousStandard.urlTestConcurrency, 8);
+    expect(previousStandard.urlTestUnavailableCheckIntervalSeconds, 10);
 
     final economy = store.mapState(const <String, dynamic>{
       'performance_mode': 'economy',
@@ -87,10 +88,10 @@ void main() {
       'url_test_concurrency': '2',
       'urltest_unavailable_check_interval_seconds': '120',
     });
-    expect(economy.urlTestIntervalSeconds, 300);
-    expect(economy.urlTestTimeoutSeconds, 4);
-    expect(economy.urlTestConcurrency, 3);
-    expect(economy.urlTestUnavailableCheckIntervalSeconds, 300);
+    expect(economy.urlTestIntervalSeconds, 3600);
+    expect(economy.urlTestTimeoutSeconds, 15);
+    expect(economy.urlTestConcurrency, 8);
+    expect(economy.urlTestUnavailableCheckIntervalSeconds, 15);
   });
 
   test('normalizes Russia route DNS resolver', () {
@@ -104,10 +105,28 @@ void main() {
     );
     expect(
       store.mapState(const {
+        'russia_dns_direct_resolver': '77.88.8.1',
+      }).russiaDnsDirectResolver,
+      'udp://77.88.8.1',
+    );
+    expect(
+      store.mapState(const {
         'russia_dns_direct_resolver': 'bad resolver',
       }).russiaDnsDirectResolver,
       defaultRussiaDnsDirectResolver,
     );
+  });
+
+  test('normalizes plain custom DNS resolvers as UDP', () {
+    final store = _TestSettingsStore();
+
+    final state = store.mapState(const {
+      'dns_direct_resolver': '1.1.1.1',
+      'dns_proxy_resolver': 'dns.google:5353',
+    });
+
+    expect(state.dnsDirectResolver, 'udp://1.1.1.1');
+    expect(state.dnsProxyResolver, 'udp://dns.google:5353');
   });
 
   test(
@@ -177,6 +196,20 @@ void main() {
         'tls_fragmentation_mode': 'unknown',
       }).tlsFragmentationMode,
       TlsFragmentationMode.disabled,
+    );
+  });
+
+  test('stores proxy password locally but excludes it from safe export', () {
+    final store = _TestSettingsStore();
+    final state = store.mapState(const <String, dynamic>{
+      'proxy_password': 'LocalOnlyPassword123456',
+    });
+
+    expect(state.proxyPassword, 'LocalOnlyPassword123456');
+    expect(store.stateToMap(state)['proxy_password'], state.proxyPassword);
+    expect(
+      store.stateToSafeExportMap(state),
+      isNot(contains('proxy_password')),
     );
   });
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
@@ -12,10 +13,12 @@ import 'package:meow_client/singbox/singbox_runtime.dart';
 import 'package:meow_client/widgets/progressive_blur_scaffold.dart';
 
 final _installedAppIconCache = _InstalledAppIconCache(maxEntries: 96);
-const _splitRoutingTemporarilyDisabled = true;
+final _installedAppIconLoads = <String, Future<Uint8List?>>{};
+const _splitRoutingTemporarilyDisabled = false;
 
 void clearInstalledAppIconCache() {
   _installedAppIconCache.clear();
+  _installedAppIconLoads.clear();
 }
 
 class SettingsRoutingPage extends StatefulWidget {
@@ -37,6 +40,7 @@ class SettingsRoutingPage extends StatefulWidget {
     required this.onDownloadAdBlockRuleSet,
     required this.onDeleteAdBlockRuleSet,
     required this.onRussiaRouteDataEnabledChanged,
+    required this.onCheckRussiaRouteDataUpdate,
     required this.onInstallRussiaRouteData,
     required this.onDeleteRussiaRouteData,
     required this.onBypassLocalNetworkChanged,
@@ -60,6 +64,7 @@ class SettingsRoutingPage extends StatefulWidget {
   final Future<AdBlockRuleSetStatus> Function() onDownloadAdBlockRuleSet;
   final Future<AdBlockRuleSetStatus> Function() onDeleteAdBlockRuleSet;
   final ValueChanged<bool> onRussiaRouteDataEnabledChanged;
+  final Future<RussiaRouteUpdateCheck> Function() onCheckRussiaRouteDataUpdate;
   final Future<RussiaRouteDataStatus> Function() onInstallRussiaRouteData;
   final Future<RussiaRouteDataStatus> Function() onDeleteRussiaRouteData;
   final ValueChanged<bool> onBypassLocalNetworkChanged;
@@ -80,7 +85,10 @@ class _SettingsRoutingPageState extends State<SettingsRoutingPage> {
   late SplitRoutingMode _splitRoutingMode;
   late final TextEditingController _packagesController;
   bool _adBlockBusy = false;
+  AdBlockUpdateProgress? _adBlockProgress;
   bool _russiaRouteDataBusy = false;
+  bool _russiaRouteUpdateAvailable = false;
+  RussiaRouteUpdateProgress? _russiaRouteProgress;
   bool _loadingInstalledApps = false;
   String? _installedAppsError;
   bool _manualEditorExpanded = false;
@@ -99,17 +107,103 @@ class _SettingsRoutingPageState extends State<SettingsRoutingPage> {
     _packagesController = TextEditingController(
       text: widget.currentSplitRoutingPackages.join('\n'),
     );
+    final adBlockService = AdBlockRuleSetService.instance;
+    _adBlockBusy = adBlockService.isUpdating;
+    _adBlockProgress = adBlockService.progress.value;
+    adBlockService.progress.addListener(_handleAdBlockProgress);
+    final routeDataService = RussiaRouteDataService.instance;
+    _russiaRouteDataBusy = routeDataService.isUpdating;
+    _russiaRouteProgress = routeDataService.progress.value;
+    RussiaRouteDataService.instance.progress.addListener(
+      _handleRussiaRouteProgress,
+    );
     _installedApps = widget.initialInstalledApps
         .map((item) => _InstalledApp.fromMap(item))
         .where((item) => item.packageName.isNotEmpty)
         .toList(growable: false);
+    if (_installedApps.isEmpty &&
+        !kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.android) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          unawaited(_loadInstalledApps());
+        }
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant SettingsRoutingPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_adBlockBusy &&
+        !identical(
+          oldWidget.currentAdBlockStatus,
+          widget.currentAdBlockStatus,
+        )) {
+      _adBlockStatus = widget.currentAdBlockStatus;
+    }
+    if (!_russiaRouteDataBusy &&
+        !identical(
+          oldWidget.currentRussiaRouteDataStatus,
+          widget.currentRussiaRouteDataStatus,
+        )) {
+      _russiaRouteDataStatus = widget.currentRussiaRouteDataStatus;
+    }
+    if (oldWidget.currentRussiaRouteDataEnabled !=
+        widget.currentRussiaRouteDataEnabled) {
+      _russiaRouteDataEnabled = widget.currentRussiaRouteDataEnabled;
+    }
   }
 
   @override
   void dispose() {
+    AdBlockRuleSetService.instance.progress.removeListener(
+      _handleAdBlockProgress,
+    );
+    RussiaRouteDataService.instance.progress.removeListener(
+      _handleRussiaRouteProgress,
+    );
     _commitPackages();
     _packagesController.dispose();
     super.dispose();
+  }
+
+  void _handleAdBlockProgress() {
+    if (!mounted) return;
+    final service = AdBlockRuleSetService.instance;
+    final busy = service.isUpdating;
+    setState(() {
+      _adBlockBusy = busy;
+      _adBlockProgress = service.progress.value;
+    });
+    if (!busy) {
+      unawaited(_reloadAdBlockStatus());
+    }
+  }
+
+  Future<void> _reloadAdBlockStatus() async {
+    final status = await AdBlockRuleSetService.instance.loadStatus();
+    if (!mounted || AdBlockRuleSetService.instance.isUpdating) return;
+    setState(() => _adBlockStatus = status);
+  }
+
+  void _handleRussiaRouteProgress() {
+    if (!mounted) return;
+    final service = RussiaRouteDataService.instance;
+    final busy = service.isUpdating;
+    setState(() {
+      _russiaRouteDataBusy = busy;
+      _russiaRouteProgress = service.progress.value;
+    });
+    if (!busy) {
+      unawaited(_reloadRussiaRouteStatus());
+    }
+  }
+
+  Future<void> _reloadRussiaRouteStatus() async {
+    final status = await RussiaRouteDataService.instance.loadStatus();
+    if (!mounted || RussiaRouteDataService.instance.isUpdating) return;
+    setState(() => _russiaRouteDataStatus = status);
   }
 
   Future<bool> _loadInstalledApps() async {
@@ -162,6 +256,14 @@ class _SettingsRoutingPageState extends State<SettingsRoutingPage> {
     if (_packagesController.text.trim() != normalizedText) {
       _packagesController.text = normalizedText;
     }
+  }
+
+  void _removeSelectedPackage(String packageName) {
+    final packages = _selectedPackages()
+        .where((item) => item != packageName)
+        .toList(growable: false);
+    setState(() => _packagesController.text = packages.join('\n'));
+    _commitPackages();
   }
 
   void _showOperationError(Object error) {
@@ -277,6 +379,9 @@ class _SettingsRoutingPageState extends State<SettingsRoutingPage> {
     }
     setState(() {
       _russiaRouteDataBusy = true;
+      _russiaRouteProgress = const RussiaRouteUpdateProgress(
+        stage: RussiaRouteUpdateStage.checking,
+      );
     });
     try {
       final status = await widget.onInstallRussiaRouteData();
@@ -285,6 +390,7 @@ class _SettingsRoutingPageState extends State<SettingsRoutingPage> {
       }
       setState(() {
         _russiaRouteDataStatus = status;
+        _russiaRouteUpdateAvailable = false;
         if (enableAfterInstall && status.available) {
           _russiaRouteDataEnabled = true;
         }
@@ -298,8 +404,53 @@ class _SettingsRoutingPageState extends State<SettingsRoutingPage> {
       }
     } finally {
       if (mounted) {
+        final service = RussiaRouteDataService.instance;
+        setState(() {
+          _russiaRouteDataBusy = service.isUpdating;
+          _russiaRouteProgress = service.progress.value;
+        });
+      }
+    }
+  }
+
+  Future<void> _checkRussiaRouteDataUpdate() async {
+    if (_russiaRouteDataBusy) {
+      return;
+    }
+    setState(() {
+      _russiaRouteDataBusy = true;
+      _russiaRouteProgress = const RussiaRouteUpdateProgress(
+        stage: RussiaRouteUpdateStage.checking,
+      );
+    });
+    try {
+      final result = await widget.onCheckRussiaRouteDataUpdate();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _russiaRouteDataStatus = result.status;
+        _russiaRouteUpdateAvailable = result.updateAvailable;
+      });
+      final l10n = AppLocalizations.of(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result.updateAvailable
+                ? l10n.russiaRoutesUpdateAvailable(result.latestTag)
+                : l10n.russiaRoutesLatest,
+          ),
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        _showOperationError(error);
+      }
+    } finally {
+      if (mounted) {
         setState(() {
           _russiaRouteDataBusy = false;
+          _russiaRouteProgress = null;
         });
       }
     }
@@ -356,19 +507,11 @@ class _SettingsRoutingPageState extends State<SettingsRoutingPage> {
     if (result == null) {
       return;
     }
-    final installedAppByPackage = <String, _InstalledApp>{
-      for (final app in _installedApps) app.packageName: app,
-    };
     final packages = result.toList()..sort();
     _packagesController.text = packages.join('\n');
     _commitPackages();
     if (mounted) {
-      setState(() {
-        _installedApps = packages
-            .map((packageName) => installedAppByPackage[packageName])
-            .nonNulls
-            .toList(growable: false);
-      });
+      setState(() {});
     }
   }
 
@@ -393,13 +536,12 @@ class _SettingsRoutingPageState extends State<SettingsRoutingPage> {
               installedAppByPackage[packageName] ??
               _InstalledApp(
                 packageName: packageName,
-                label: packageName,
+                label: '',
                 system: false,
                 launchable: false,
               ),
         )
         .toList(growable: false);
-
     return ProgressiveBlurScaffold(
       appBar: AppBar(title: Text(l10n.routingTitle)),
       body: Theme(
@@ -500,6 +642,7 @@ class _SettingsRoutingPageState extends State<SettingsRoutingPage> {
                     _RussiaRouteDataStatusPanel(
                       status: _russiaRouteDataStatus,
                       busy: _russiaRouteDataBusy,
+                      progress: _russiaRouteProgress,
                       l10n: l10n,
                     ),
                     const Gap(12),
@@ -509,7 +652,10 @@ class _SettingsRoutingPageState extends State<SettingsRoutingPage> {
                           child: FilledButton.tonalIcon(
                             onPressed: _russiaRouteDataBusy
                                 ? null
-                                : () => _installRussiaRouteData(),
+                                : !_russiaRouteDataStatus.available ||
+                                      _russiaRouteUpdateAvailable
+                                ? () => _installRussiaRouteData()
+                                : _checkRussiaRouteDataUpdate,
                             icon: _russiaRouteDataBusy
                                 ? const SizedBox(
                                     width: 16,
@@ -519,14 +665,18 @@ class _SettingsRoutingPageState extends State<SettingsRoutingPage> {
                                     ),
                                   )
                                 : Icon(
-                                    _russiaRouteDataStatus.available
-                                        ? Icons.refresh_rounded
-                                        : Icons.download_rounded,
+                                    !_russiaRouteDataStatus.available
+                                        ? Icons.download_rounded
+                                        : _russiaRouteUpdateAvailable
+                                        ? Icons.system_update_alt_rounded
+                                        : Icons.refresh_rounded,
                                   ),
                             label: Text(
-                              _russiaRouteDataStatus.available
-                                  ? l10n.russiaRoutesUpdateAction
-                                  : l10n.russiaRoutesInstallAction,
+                              !_russiaRouteDataStatus.available
+                                  ? l10n.russiaRoutesInstallAction
+                                  : _russiaRouteUpdateAvailable
+                                  ? l10n.russiaRoutesReinstallAction
+                                  : l10n.russiaRoutesUpdateAction,
                             ),
                           ),
                         ),
@@ -599,6 +749,7 @@ class _SettingsRoutingPageState extends State<SettingsRoutingPage> {
                     _AdBlockStatusPanel(
                       status: _adBlockStatus,
                       busy: _adBlockBusy,
+                      progress: _adBlockProgress,
                       l10n: l10n,
                     ),
                     const Gap(12),
@@ -696,11 +847,13 @@ class _SettingsRoutingPageState extends State<SettingsRoutingPage> {
                       ],
                     ),
                     const Gap(14),
-                    _DisabledFeatureNotice(
-                      title: l10n.splitRoutingUnavailableTitle,
-                      message: l10n.splitRoutingUnavailableMessage,
-                    ),
-                    const Gap(18),
+                    if (_splitRoutingTemporarilyDisabled) ...[
+                      _DisabledFeatureNotice(
+                        title: l10n.splitRoutingUnavailableTitle,
+                        message: l10n.splitRoutingUnavailableMessage,
+                      ),
+                      const Gap(18),
+                    ],
                     IgnorePointer(
                       ignoring: _splitRoutingTemporarilyDisabled,
                       child: Opacity(
@@ -776,6 +929,13 @@ class _SettingsRoutingPageState extends State<SettingsRoutingPage> {
                                     }
                                   : null,
                             ),
+                            if (_splitRoutingMode ==
+                                SplitRoutingMode.bypassSelected) ...[
+                              const Gap(10),
+                              _InlineWarning(
+                                text: l10n.splitRoutingLockdownWarning,
+                              ),
+                            ],
                             if (_splitRoutingMode !=
                                 SplitRoutingMode.disabled) ...[
                               const Gap(18),
@@ -811,6 +971,13 @@ class _SettingsRoutingPageState extends State<SettingsRoutingPage> {
                                     ),
                                   ),
                                 ],
+                              ),
+                              const Gap(6),
+                              Text(
+                                l10n.splitRoutingAppVisibilityNotice,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: cs.onSurfaceVariant,
+                                ),
                               ),
                               const Gap(10),
                               if (isAndroid)
@@ -849,8 +1016,14 @@ class _SettingsRoutingPageState extends State<SettingsRoutingPage> {
                               const Gap(12),
                               _SelectedAppsPanel(
                                 apps: selectedApps,
+                                loadingMetadata: _loadingInstalledApps,
                                 emptyTitle: l10n.splitRoutingNoAppsTitle,
                                 emptySubtitle: l10n.splitRoutingNoAppsSubtitle,
+                                unknownAppLabel:
+                                    l10n.splitRoutingUnknownAppLabel,
+                                loadingAppLabel:
+                                    l10n.splitRoutingLoadingAppLabel,
+                                onRemove: _removeSelectedPackage,
                               ),
                               const Gap(12),
                               Theme(
@@ -921,17 +1094,40 @@ class _SettingsRoutingPageState extends State<SettingsRoutingPage> {
 }
 
 class _InstalledApp {
-  const _InstalledApp({
+  _InstalledApp({
     required this.packageName,
     required this.label,
     required this.system,
     required this.launchable,
-  });
+  }) : normalizedLabel = _normalizeAppSearchText(label),
+       normalizedPackage = _normalizeAppSearchText(packageName),
+       compactLabel = _compactAppSearchText(label),
+       compactPackage = _compactAppSearchText(packageName),
+       searchWords = List<String>.unmodifiable(
+         <String>[
+           ..._normalizeAppSearchText(label).split(' '),
+           ..._normalizeAppSearchText(packageName).split(' '),
+         ].where((word) => word.isNotEmpty),
+       );
 
   final String packageName;
   final String label;
   final bool system;
   final bool launchable;
+  final String normalizedLabel;
+  final String normalizedPackage;
+  final String compactLabel;
+  final String compactPackage;
+  final List<String> searchWords;
+
+  String displayLabel(String fallback) {
+    final normalized = label.trim();
+    if (normalized.isEmpty ||
+        normalized.toLowerCase() == packageName.trim().toLowerCase()) {
+      return fallback;
+    }
+    return normalized;
+  }
 
   factory _InstalledApp.fromMap(Map<String, dynamic> map) {
     return _InstalledApp(
@@ -988,14 +1184,25 @@ class _InstalledAppIcon extends StatefulWidget {
 class _InstalledAppIconState extends State<_InstalledAppIcon> {
   Uint8List? _bytes;
   int _generation = 0;
+  int _pixelSize = 0;
 
-  String get _cacheKey =>
-      '${widget.packageName}|${widget.size.round().clamp(24, 96)}';
+  String get _cacheKey => '${widget.packageName}|$_pixelSize';
 
   @override
   void initState() {
     super.initState();
-    _loadIcon();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final nextPixelSize = (widget.size * MediaQuery.devicePixelRatioOf(context))
+        .round()
+        .clamp(48, 96);
+    if (nextPixelSize != _pixelSize) {
+      _pixelSize = nextPixelSize;
+      _loadIcon();
+    }
   }
 
   @override
@@ -1003,6 +1210,9 @@ class _InstalledAppIconState extends State<_InstalledAppIcon> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.packageName != widget.packageName ||
         oldWidget.size != widget.size) {
+      _pixelSize = (widget.size * MediaQuery.devicePixelRatioOf(context))
+          .round()
+          .clamp(48, 96);
       _loadIcon();
     }
   }
@@ -1020,9 +1230,10 @@ class _InstalledAppIconState extends State<_InstalledAppIcon> {
     setState(() {
       _bytes = null;
     });
-    final bytes = await SingboxRuntime.instance.getInstalledAppIcon(
+    final bytes = await _loadInstalledAppIcon(
+      key,
       widget.packageName,
-      sizePx: widget.size.round().clamp(24, 96),
+      _pixelSize,
     );
     if (!mounted || generation != _generation) {
       return;
@@ -1053,12 +1264,33 @@ class _InstalledAppIconState extends State<_InstalledAppIcon> {
         child: Image.memory(
           bytes,
           gaplessPlayback: true,
-          filterQuality: FilterQuality.low,
+          filterQuality: FilterQuality.medium,
           fit: BoxFit.cover,
         ),
       ),
     );
   }
+}
+
+Future<Uint8List?> _loadInstalledAppIcon(
+  String key,
+  String packageName,
+  int sizePx,
+) {
+  final inFlight = _installedAppIconLoads[key];
+  if (inFlight != null) {
+    return inFlight;
+  }
+  late final Future<Uint8List?> tracked;
+  tracked = SingboxRuntime.instance
+      .getInstalledAppIcon(packageName, sizePx: sizePx)
+      .whenComplete(() {
+        if (identical(_installedAppIconLoads[key], tracked)) {
+          _installedAppIconLoads.remove(key);
+        }
+      });
+  _installedAppIconLoads[key] = tracked;
+  return tracked;
 }
 
 class _ScoredInstalledApp {
@@ -1067,6 +1299,21 @@ class _ScoredInstalledApp {
   final _InstalledApp app;
   final int score;
   final int index;
+}
+
+class _InstalledAppSearchQuery {
+  _InstalledAppSearchQuery(String rawValue)
+    : normalized = _normalizeAppSearchText(rawValue),
+      compact = _compactAppSearchText(rawValue),
+      tokens = List<String>.unmodifiable(
+        _normalizeAppSearchText(
+          rawValue,
+        ).split(' ').where((token) => token.isNotEmpty),
+      );
+
+  final String normalized;
+  final String compact;
+  final List<String> tokens;
 }
 
 String _normalizeAppSearchText(String value) {
@@ -1082,23 +1329,27 @@ String _compactAppSearchText(String value) {
 }
 
 int _installedAppSearchScore(_InstalledApp app, String rawQuery) {
-  final query = _normalizeAppSearchText(rawQuery);
+  return _installedAppSearchScorePrepared(
+    app,
+    _InstalledAppSearchQuery(rawQuery),
+  );
+}
+
+int _installedAppSearchScorePrepared(
+  _InstalledApp app,
+  _InstalledAppSearchQuery search,
+) {
+  final query = search.normalized;
   if (query.isEmpty) {
     return 0;
   }
-  final queryCompact = _compactAppSearchText(rawQuery);
-  final label = _normalizeAppSearchText(app.label);
-  final packageName = _normalizeAppSearchText(app.packageName);
-  final labelCompact = _compactAppSearchText(app.label);
-  final packageCompact = _compactAppSearchText(app.packageName);
-  final tokens = query
-      .split(' ')
-      .where((token) => token.isNotEmpty)
-      .toList(growable: false);
-  final words = <String>[
-    ...label.split(' '),
-    ...packageName.split(' '),
-  ].where((word) => word.isNotEmpty).toList(growable: false);
+  final queryCompact = search.compact;
+  final label = app.normalizedLabel;
+  final packageName = app.normalizedPackage;
+  final labelCompact = app.compactLabel;
+  final packageCompact = app.compactPackage;
+  final tokens = search.tokens;
+  final words = app.searchWords;
 
   if (label == query || packageName == query) return 0;
   if (label.startsWith(query)) return 4;
@@ -1362,13 +1613,21 @@ class _DisabledFeatureNotice extends StatelessWidget {
 class _SelectedAppsPanel extends StatelessWidget {
   const _SelectedAppsPanel({
     required this.apps,
+    required this.loadingMetadata,
     required this.emptyTitle,
     required this.emptySubtitle,
+    required this.unknownAppLabel,
+    required this.loadingAppLabel,
+    required this.onRemove,
   });
 
   final List<_InstalledApp> apps;
+  final bool loadingMetadata;
   final String emptyTitle;
   final String emptySubtitle;
+  final String unknownAppLabel;
+  final String loadingAppLabel;
+  final ValueChanged<String> onRemove;
 
   @override
   Widget build(BuildContext context) {
@@ -1405,8 +1664,6 @@ class _SelectedAppsPanel extends StatelessWidget {
       );
     }
 
-    final visibleApps = apps.take(6).toList(growable: false);
-    final remaining = apps.length - visibleApps.length;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
@@ -1415,11 +1672,18 @@ class _SelectedAppsPanel extends StatelessWidget {
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: cs.outlineVariant),
       ),
-      child: Column(
-        children: [
-          for (final app in visibleApps)
-            ListTile(
+      child: SizedBox(
+        height: (apps.length * 66.0).clamp(66.0, 396.0),
+        child: ListView.separated(
+          padding: EdgeInsets.zero,
+          itemCount: apps.length,
+          separatorBuilder: (_, _) => const Divider(height: 1),
+          itemBuilder: (context, index) {
+            final app = apps[index];
+            return ListTile(
               dense: true,
+              minVerticalPadding: 8,
+              titleAlignment: ListTileTitleAlignment.center,
               contentPadding: EdgeInsets.zero,
               leading: _InstalledAppIcon(
                 packageName: app.packageName,
@@ -1427,28 +1691,33 @@ class _SelectedAppsPanel extends StatelessWidget {
                 size: 38,
               ),
               title: Text(
-                app.label.isNotEmpty ? app.label : app.packageName,
+                app.displayLabel(
+                  loadingMetadata && app.label.trim().isEmpty
+                      ? loadingAppLabel
+                      : unknownAppLabel,
+                ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               subtitle: Text(
                 app.packageName,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          if (remaining > 0)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                '+$remaining',
-                style: theme.textTheme.labelMedium?.copyWith(
+                style: theme.textTheme.bodySmall?.copyWith(
                   color: cs.onSurfaceVariant,
-                  fontWeight: FontWeight.w700,
                 ),
               ),
-            ),
-        ],
+              trailing: IconButton(
+                tooltip: MaterialLocalizations.of(context).deleteButtonTooltip,
+                onPressed: () => onRemove(app.packageName),
+                icon: const Icon(Icons.close_rounded),
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -1486,13 +1755,14 @@ class _AppPickerSheetState extends State<_AppPickerSheet> {
     if (_query.isEmpty) {
       return widget.apps;
     }
+    final search = _InstalledAppSearchQuery(_query);
     final scoredApps = widget.apps
         .asMap()
         .entries
         .map((entry) {
           return _ScoredInstalledApp(
             entry.value,
-            _installedAppSearchScore(entry.value, _query),
+            _installedAppSearchScorePrepared(entry.value, search),
             entry.key,
           );
         })
@@ -1558,20 +1828,27 @@ class _AppPickerSheetState extends State<_AppPickerSheet> {
                 return CheckboxListTile(
                   value: selected,
                   contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.trailing,
                   secondary: _InstalledAppIcon(
                     packageName: app.packageName,
                     system: app.system,
                     size: 38,
                   ),
                   title: Text(
-                    app.label.isNotEmpty ? app.label : app.packageName,
+                    app.displayLabel(l10n.splitRoutingUnknownAppLabel),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   subtitle: Text(
                     app.packageName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                   onChanged: (value) {
                     setState(() {
@@ -1656,11 +1933,13 @@ class _AdBlockStatusPanel extends StatelessWidget {
   const _AdBlockStatusPanel({
     required this.status,
     required this.busy,
+    required this.progress,
     required this.l10n,
   });
 
   final AdBlockRuleSetStatus status;
   final bool busy;
+  final AdBlockUpdateProgress? progress;
   final AppLocalizations l10n;
 
   @override
@@ -1697,7 +1976,7 @@ class _AdBlockStatusPanel extends StatelessWidget {
           const Gap(10),
           Text(
             busy
-                ? l10n.adBlockDownloadingStatus
+                ? _stageLabel(l10n, progress?.stage)
                 : status.available
                 ? l10n.adBlockReadyStatus(status.blockedDomainCount)
                 : l10n.adBlockMissingStatus,
@@ -1707,7 +1986,9 @@ class _AdBlockStatusPanel extends StatelessWidget {
           ),
           const Gap(4),
           Text(
-            status.available
+            busy
+                ? _progressHint(l10n, progress)
+                : status.available
                 ? l10n.adBlockMeta(
                     updatedAt == null ? '—' : _formatDateTime(updatedAt),
                     status.allowedDomainCount,
@@ -1720,11 +2001,41 @@ class _AdBlockStatusPanel extends StatelessWidget {
           ),
           if (busy) ...[
             const Gap(12),
-            const LinearProgressIndicator(minHeight: 4),
+            LinearProgressIndicator(minHeight: 4, value: progress?.fraction),
           ],
         ],
       ),
     );
+  }
+
+  static String _stageLabel(AppLocalizations l10n, AdBlockUpdateStage? stage) =>
+      switch (stage) {
+        AdBlockUpdateStage.connecting => l10n.adBlockStageConnecting,
+        AdBlockUpdateStage.downloading => l10n.adBlockStageDownloading,
+        AdBlockUpdateStage.compiling => l10n.adBlockStageCompiling,
+        AdBlockUpdateStage.activating => l10n.adBlockStageActivating,
+        AdBlockUpdateStage.complete => l10n.adBlockStageComplete,
+        null => l10n.adBlockDownloadingStatus,
+      };
+
+  static String _progressHint(
+    AppLocalizations l10n,
+    AdBlockUpdateProgress? progress,
+  ) {
+    if (progress == null || progress.completedBytes <= 0) {
+      return l10n.adBlockPreparingHint;
+    }
+    final completed = _RussiaRouteDataStatusPanel._formatBytes(
+      progress.completedBytes,
+    );
+    if (progress.totalBytes <= 0) {
+      return l10n.adBlockDownloadedProgress(completed);
+    }
+    final total = _RussiaRouteDataStatusPanel._formatBytes(progress.totalBytes);
+    final eta = progress.estimatedSecondsRemaining;
+    return eta == null
+        ? l10n.adBlockDownloadProgress(completed, total)
+        : l10n.adBlockDownloadProgressEta(completed, total, eta);
   }
 
   static String _formatDateTime(DateTime value) {
@@ -1741,18 +2052,19 @@ class _RussiaRouteDataStatusPanel extends StatelessWidget {
   const _RussiaRouteDataStatusPanel({
     required this.status,
     required this.busy,
+    required this.progress,
     required this.l10n,
   });
 
   final RussiaRouteDataStatus status;
   final bool busy;
+  final RussiaRouteUpdateProgress? progress;
   final AppLocalizations l10n;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final installedAt = status.installedAt;
     final verifiedAt = status.verifiedAt;
     final routeSource =
         status.sourceKind == RussiaRouteDataService.sourceKindLive
@@ -1770,39 +2082,50 @@ class _RussiaRouteDataStatusPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: cs.primary.withValues(alpha: .10),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Text(
-              l10n.russiaRoutesRunetFreedomBadge,
-              style: theme.textTheme.labelMedium?.copyWith(
-                color: cs.primary,
-                fontWeight: FontWeight.w700,
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: cs.primary.withValues(alpha: .10),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  l10n.russiaRoutesRunetFreedomBadge,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: cs.primary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
-            ),
-          ),
-          const Gap(8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: cs.secondary.withValues(alpha: .10),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Text(
-              l10n.russiaRoutesDomainListBadge,
-              style: theme.textTheme.labelMedium?.copyWith(
-                color: cs.secondary,
-                fontWeight: FontWeight.w700,
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: cs.secondary.withValues(alpha: .10),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  l10n.russiaRoutesDomainListBadge,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: cs.secondary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
           const Gap(10),
           Text(
             busy
-                ? l10n.russiaRoutesPreparingStatus
+                ? _stageLabel(l10n, progress?.stage)
                 : status.available
                 ? l10n.russiaRoutesReadyStatus(status.versionTag)
                 : l10n.russiaRoutesMissingStatus,
@@ -1812,19 +2135,10 @@ class _RussiaRouteDataStatusPanel extends StatelessWidget {
           ),
           const Gap(4),
           Text(
-            status.available
-                ? l10n.russiaRoutesMeta(
-                    installedAt == null
-                        ? '—'
-                        : _AdBlockStatusPanel._formatDateTime(installedAt),
-                    status.domainListCommunityUpdatedAt == null
-                        ? '—'
-                        : _AdBlockStatusPanel._formatDateTime(
-                            status.domainListCommunityUpdatedAt!,
-                          ),
-                    status.domainListCommunityCategoryCount,
-                    status.domainListCommunityDomainCount,
-                  )
+            busy
+                ? _progressHint(l10n, progress)
+                : status.available
+                ? l10n.russiaRoutesReadyHint
                 : l10n.russiaRoutesMissingHint,
             style: theme.textTheme.bodySmall?.copyWith(
               color: cs.onSurfaceVariant,
@@ -1849,10 +2163,56 @@ class _RussiaRouteDataStatusPanel extends StatelessWidget {
           ],
           if (busy) ...[
             const Gap(12),
-            const LinearProgressIndicator(minHeight: 4),
+            LinearProgressIndicator(minHeight: 4, value: progress?.fraction),
           ],
         ],
       ),
     );
+  }
+
+  static String _stageLabel(
+    AppLocalizations l10n,
+    RussiaRouteUpdateStage? stage,
+  ) => switch (stage) {
+    RussiaRouteUpdateStage.checking => l10n.russiaRoutesStageChecking,
+    RussiaRouteUpdateStage.downloadingPackage =>
+      l10n.russiaRoutesStageDownloading,
+    RussiaRouteUpdateStage.verifyingPackage => l10n.russiaRoutesStageVerifying,
+    RussiaRouteUpdateStage.extractingPackage =>
+      l10n.russiaRoutesStageExtracting,
+    RussiaRouteUpdateStage.downloadingCategories =>
+      l10n.russiaRoutesStageCategories,
+    RussiaRouteUpdateStage.compiling => l10n.russiaRoutesStageCompiling,
+    RussiaRouteUpdateStage.activating => l10n.russiaRoutesStageActivating,
+    RussiaRouteUpdateStage.complete => l10n.russiaRoutesStageComplete,
+    null => l10n.russiaRoutesPreparingStatus,
+  };
+
+  static String _progressHint(
+    AppLocalizations l10n,
+    RussiaRouteUpdateProgress? progress,
+  ) {
+    if (progress == null) return l10n.russiaRoutesPreparingHint;
+    if (progress.totalBytes > 0) {
+      return l10n.russiaRoutesDownloadProgress(
+        _formatBytes(progress.completedBytes),
+        _formatBytes(progress.totalBytes),
+      );
+    }
+    if (progress.totalItems > 0) {
+      return l10n.russiaRoutesItemsProgress(
+        progress.completedItems,
+        progress.totalItems,
+      );
+    }
+    return l10n.russiaRoutesPreparingHint;
+  }
+
+  static String _formatBytes(int bytes) {
+    if (bytes >= 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    if (bytes >= 1024) return '${(bytes / 1024).toStringAsFixed(0)} KB';
+    return '$bytes B';
   }
 }

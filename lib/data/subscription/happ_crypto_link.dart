@@ -57,6 +57,14 @@ class HappCryptoLinkDecoder {
     return false;
   }
 
+  static bool isCrypt5Link(String value) {
+    return value.trim().toLowerCase().startsWith(_crypt5Prefix);
+  }
+
+  static Future<HappCrypt5Support> getCrypt5Support() {
+    return HappCrypt5Local.checkSupport();
+  }
+
   static bool isAnyHappCryptoLink(String value) {
     final normalized = value.trim().toLowerCase();
     return isSupportedLink(normalized) || normalized.startsWith(_crypt5Prefix);
@@ -80,10 +88,13 @@ class HappCryptoLinkDecoder {
 
   static Future<HappCryptoPreparedImport> prepare(String link) async {
     final normalized = link.trim();
-    if (isUnsupportedCrypt5Link(normalized)) {
-      throw const UnsupportedHappCryptoLinkException(
-        'Happ crypt5 links are not supported yet.',
-      );
+    if (isCrypt5Link(normalized)) {
+      final support = await getCrypt5Support();
+      if (!support.supported) {
+        throw const UnsupportedHappCryptoLinkException(
+          'Happ crypt5 decrypt is unavailable in this build.',
+        );
+      }
     }
     if (!isSupportedLink(normalized)) {
       return HappCryptoPreparedImport(
@@ -201,6 +212,12 @@ class HappCryptoLinkDecoder {
     //
     // The active path below is pure Dart and does not depend on liberror-code.so.
     try {
+      final support = await getCrypt5Support();
+      if (!support.supported) {
+        throw const UnsupportedHappCryptoLinkException(
+          'Happ crypt5 decrypt is unavailable in this build.',
+        );
+      }
       final resolved = (await HappCrypt5Local.decrypt(encryptedText)).trim();
       if (resolved.isEmpty) {
         throw const HappCryptoLinkException(

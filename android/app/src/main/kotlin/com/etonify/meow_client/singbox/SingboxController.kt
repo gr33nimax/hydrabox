@@ -21,6 +21,7 @@ import java.net.InetSocketAddress
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.nio.channels.SocketChannel
+import java.util.ArrayDeque
 import java.util.concurrent.Executors
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -33,8 +34,16 @@ object SingboxController {
     private const val GROUPS_EVENT_THROTTLE_COOL_MS = 1_500L
     private const val GROUPS_EVENT_THROTTLE_BALANCED_MS = 750L
     private const val GROUPS_EVENT_THROTTLE_PERFORMANCE_MS = 500L
-    private const val TRAFFIC_POLL_INTERVAL_MS = 1_000L
+    private const val TRAFFIC_POLL_STANDARD_INTERVAL_MS = 1_000L
+    private const val TRAFFIC_POLL_ECONOMY_INTERVAL_MS = 2_000L
     private const val NO_INTERFACE_REASSERT_THROTTLE_MS = 2_000L
+    private const val INTERFACE_DIAL_FAILURE_WINDOW_MS = 8_000L
+    private const val INTERFACE_DIAL_FAILURE_THRESHOLD = 4
+    private val INTERFACE_DIAL_FAILURE_REGEX =
+        Regex(
+            """\bdial\s+(?:ccmni|wlan|rmnet|swlan|eth|usb|ap)\w*\s*\(\d+\).*?\b(?:network is unreachable|no route to host)\b""",
+            RegexOption.IGNORE_CASE,
+        )
     private val mainHandler = Handler(Looper.getMainLooper())
     private val commandExecutor = Executors.newSingleThreadExecutor()
     private val lookupExecutor = Executors.newFixedThreadPool(4)
@@ -43,11 +52,15 @@ object SingboxController {
     private val runtimeGeneration = AtomicLong(0)
     private val runtimeStartGeneration = AtomicLong(0)
     private val lastNoInterfaceReassertUptimeMs = AtomicLong(0L)
+    private val interfaceFailureLock = Any()
+    private val interfaceDialFailureUptimes = ArrayDeque<Long>()
     private val stopWaiterLock = Any()
     private val stopWaiters = mutableListOf<(Boolean) -> Unit>()
 
     @Volatile
     private var eventSink: EventChannel.EventSink? = null
+    @Volatile
+    private var uiForeground = true
     @Volatile
     private var latestStatusPayload: Map<String, Any?>? = null
     @Volatile
@@ -98,7 +111,7 @@ object SingboxController {
         override fun run() {
             pollAndroidTraffic()
             if (trafficPollActive) {
-                mainHandler.postDelayed(this, TRAFFIC_POLL_INTERVAL_MS)
+                mainHandler.postDelayed(this, trafficPollIntervalMs())
             }
         }
     }
@@ -210,9 +223,7 @@ object SingboxController {
             while (messageList.hasNext()) {
                 val entry: LogEntry = messageList.next()
                 val message = entry.message ?: ""
-                if (message.contains("no available network interface", ignoreCase = true)) {
-                    maybeReassertDefaultInterfaceFromCoreLog(message)
-                }
+                maybeReassertDefaultInterfaceFromCoreLog(message)
                 logs += mapOf(
                     "level" to entry.level,
                     "message" to message,
@@ -291,10 +302,10 @@ object SingboxController {
         if (sink != null) {
             emitCurrentState()
             emitCurrentStatus()
-            if (running && commandClient == null) {
+            if (running && uiForeground && commandClient == null) {
                 connectClient()
             }
-            if (running) {
+            if (running && uiForeground) {
                 startTrafficPolling()
             }
         } else {
@@ -316,13 +327,30 @@ object SingboxController {
         emitCurrentState(error)
         emitCurrentStatus()
         if (value) {
-            if (eventSink != null) {
+            if (eventSink != null && uiForeground) {
                 connectClient()
                 startTrafficPolling()
             }
         } else {
             stopTrafficPolling(reset = true)
             disconnectClient()
+        }
+    }
+
+    fun setUiForeground(value: Boolean) {
+        if (uiForeground == value) return
+        uiForeground = value
+        MeowDiagnostics.log(TAG, "ui foreground=$value running=$running")
+        if (!value) {
+            stopTrafficPolling(reset = false)
+            disconnectClient()
+            return
+        }
+        if (running && eventSink != null) {
+            emitCurrentState()
+            emitCurrentStatus()
+            connectClient()
+            startTrafficPolling()
         }
     }
 
@@ -421,25 +449,72 @@ object SingboxController {
 
     private fun maybeReassertDefaultInterfaceFromCoreLog(message: String) {
         if (!running) return
+        val reason = classifyCoreInterfaceFailure(message) ?: return
         val now = SystemClock.uptimeMillis()
+        val failureCount = if (reason == "dial_interface_failure") {
+            recordInterfaceDialFailure(now)
+        } else {
+            clearInterfaceDialFailures()
+            1
+        }
+        if (reason == "dial_interface_failure" && failureCount < INTERFACE_DIAL_FAILURE_THRESHOLD) {
+            return
+        }
         val last = lastNoInterfaceReassertUptimeMs.get()
         if (now - last < NO_INTERFACE_REASSERT_THROTTLE_MS) return
         if (!lastNoInterfaceReassertUptimeMs.compareAndSet(last, now)) return
-        val state = MeowDefaultNetworkMonitor.currentInterfaceState("core_no_available_interface")
+        val state = MeowDefaultNetworkMonitor.currentInterfaceState("core_$reason")
         val shortMessage = message.take(180)
         log(
             "warning",
-            "core_no_available_interface_reassert interface=${state.interfaceName} " +
-                "index=${state.interfaceIndex} generation=${state.generation} message=$shortMessage",
+            "core_interface_reassert reason=$reason interface=${state.interfaceName} " +
+                "index=${state.interfaceIndex} generation=${state.generation} " +
+                "failures=$failureCount message=$shortMessage",
         )
-        MeowDefaultNetworkMonitor.reassertDefaultInterface("core_no_available_interface")
+        MeowDefaultNetworkMonitor.reassertDefaultInterface("core_$reason")
+    }
+
+    private fun classifyCoreInterfaceFailure(message: String): String? {
+        val lower = message.lowercase()
+        if (lower.contains("no available network interface")) {
+            return "no_available_interface"
+        }
+        if (lower.contains("no usable network interface") || lower.contains("error=no_interface")) {
+            return "no_usable_interface"
+        }
+        if (INTERFACE_DIAL_FAILURE_REGEX.containsMatchIn(message)) {
+            return "dial_interface_failure"
+        }
+        return null
+    }
+
+    private fun recordInterfaceDialFailure(now: Long): Int {
+        synchronized(interfaceFailureLock) {
+            interfaceDialFailureUptimes.addLast(now)
+            while (interfaceDialFailureUptimes.isNotEmpty() &&
+                now - interfaceDialFailureUptimes.first > INTERFACE_DIAL_FAILURE_WINDOW_MS
+            ) {
+                interfaceDialFailureUptimes.removeFirst()
+            }
+            val count = interfaceDialFailureUptimes.size
+            if (count >= INTERFACE_DIAL_FAILURE_THRESHOLD) {
+                interfaceDialFailureUptimes.clear()
+            }
+            return count
+        }
+    }
+
+    private fun clearInterfaceDialFailures() {
+        synchronized(interfaceFailureLock) {
+            interfaceDialFailureUptimes.clear()
+        }
     }
 
     fun connectClient() {
         commandExecutor.execute {
             disconnectClientOnExecutor("reconnect")
             runCatching {
-                if (!running || eventSink == null) {
+                if (!running || eventSink == null || !uiForeground) {
                     return@runCatching
                 }
                 MeowApplication.ensureLibboxSetup()
@@ -496,7 +571,7 @@ object SingboxController {
     }
 
     private fun startTrafficPolling() {
-        if (trafficPollActive) return
+        if (trafficPollActive || !uiForeground) return
         val rx = TrafficStats.getUidRxBytes(android.os.Process.myUid())
         val tx = TrafficStats.getUidTxBytes(android.os.Process.myUid())
         trafficPollActive = true
@@ -506,8 +581,15 @@ object SingboxController {
         lastTrafficTx = tx
         lastTrafficUptimeMs = SystemClock.uptimeMillis()
         mainHandler.removeCallbacks(trafficPollRunnable)
-        mainHandler.postDelayed(trafficPollRunnable, TRAFFIC_POLL_INTERVAL_MS)
+        mainHandler.postDelayed(trafficPollRunnable, trafficPollIntervalMs())
     }
+
+    private fun trafficPollIntervalMs(): Long =
+        if (MeowApplication.performanceMode == "economy") {
+            TRAFFIC_POLL_ECONOMY_INTERVAL_MS
+        } else {
+            TRAFFIC_POLL_STANDARD_INTERVAL_MS
+        }
 
     private fun stopTrafficPolling(reset: Boolean) {
         trafficPollActive = false
@@ -527,7 +609,7 @@ object SingboxController {
     }
 
     private fun pollAndroidTraffic() {
-        if (!running || eventSink == null) {
+        if (!running || eventSink == null || !uiForeground) {
             stopTrafficPolling(reset = false)
             return
         }
@@ -640,18 +722,42 @@ object SingboxController {
         }
     }
 
-    fun urlTest(groupTag: String, callback: (Result<Unit>) -> Unit) {
-        log("info", "libbox urlTest group=$groupTag")
+    fun urlTest(
+        groupTag: String,
+        targetOutboundTag: String,
+        priorityOutboundTag: String,
+        excludeOutboundTag: String,
+        url: String,
+        timeoutMillis: Int,
+        concurrency: Int,
+        deadlineMillis: Int,
+        force: Boolean,
+        callback: (Result<Unit>) -> Unit,
+    ) {
+        log(
+            "info",
+            "libbox urlTest group=$groupTag target=$targetOutboundTag priority=$priorityOutboundTag " +
+                "timeoutMs=$timeoutMillis concurrency=$concurrency deadlineMs=$deadlineMillis",
+        )
         commandExecutor.execute {
             val result = runCatching {
                 withStandaloneCommandClient { client ->
-                    client.urlTest(groupTag)
+                    if (url.isBlank()) {
+                        client.urlTest(groupTag)
+                    } else {
+                        client.urlTestWithURL(groupTag, url)
+                    }
                 }
             }
             result.onFailure {
                 log("error", "libbox urlTest failed group=$groupTag error=${it.message}")
             }
-            mainHandler.post { callback(result.map { Unit }) }
+            val completion = Runnable { callback(result.map { Unit }) }
+            if (result.isSuccess) {
+                mainHandler.postDelayed(completion, deadlineMillis.coerceIn(1_000, 30_000).toLong())
+            } else {
+                mainHandler.post(completion)
+            }
         }
     }
 

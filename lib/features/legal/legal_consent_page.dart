@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:meow_client/l10n/generated/app_localizations.dart';
+import 'package:meow_client/widgets/etonify_logo_badge.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class LegalConsentPage extends StatefulWidget {
@@ -20,7 +21,7 @@ class LegalConsentPage extends StatefulWidget {
 class _LegalConsentPageState extends State<LegalConsentPage>
     with SingleTickerProviderStateMixin {
   static final Uri _telegramUri = Uri.parse('https://t.me/etonify');
-  static final Uri _contactUri = Uri.parse('https://t.me/Ilushadev');
+  static final Uri _contactUri = Uri.parse('https://t.me/etonify?direct');
 
   late final AnimationController _controller;
   late final Animation<double> _fade;
@@ -108,7 +109,7 @@ class _LegalConsentPageState extends State<LegalConsentPage>
                   22 + MediaQuery.paddingOf(context).bottom,
                 ),
                 children: [
-                  const Center(child: _LegalMoonBadge()),
+                  const Center(child: EtonifyLogoBadge(size: 96, logoSize: 38)),
                   const Gap(24),
                   Text(
                     l10n.legalGateTitle,
@@ -238,34 +239,67 @@ class _LegalDocumentPageState extends State<LegalDocumentPage> {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
     final cs = theme.colorScheme;
-    final sections = widget.body.split('\n\n');
+    final lines = widget.body.split('\n');
     return Scaffold(
       appBar: AppBar(title: Text(widget.title)),
       body: Column(
         children: [
           Expanded(
-            child: ListView.separated(
-              controller: _scrollController,
-              padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
-              itemCount: sections.length,
-              separatorBuilder: (_, _) => const Gap(14),
-              itemBuilder: (context, index) {
-                final section = sections[index].trim();
-                final isHeading = section.startsWith('# ');
-                final text = isHeading ? section.substring(2) : section;
-                return Text(
-                  text,
-                  style: isHeading
-                      ? theme.textTheme.titleLarge?.copyWith(
+            child: SelectionArea(
+              child: ListView.builder(
+                controller: _scrollController,
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+                itemCount: lines.length,
+                itemBuilder: (context, index) {
+                  final line = lines[index].trim();
+                  if (line.isEmpty) return const Gap(10);
+                  if (line.startsWith('# ')) {
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: _LegalMarkdownText(
+                        text: line.substring(2),
+                        style: theme.textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.w900,
                           letterSpacing: 0,
-                        )
-                      : theme.textTheme.bodyMedium?.copyWith(
-                          color: cs.onSurfaceVariant,
-                          height: 1.42,
                         ),
-                );
-              },
+                      ),
+                    );
+                  }
+                  if (line.startsWith('## ')) {
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 6, bottom: 4),
+                      child: _LegalMarkdownText(
+                        text: line.substring(3),
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    );
+                  }
+                  final bullet = line.startsWith('- ');
+                  return Padding(
+                    padding: EdgeInsets.only(left: bullet ? 4 : 0, bottom: 3),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (bullet) ...[
+                          Text('•', style: theme.textTheme.bodyMedium),
+                          const Gap(10),
+                        ],
+                        Expanded(
+                          child: _LegalMarkdownText(
+                            text: bullet ? line.substring(2) : line,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: cs.onSurfaceVariant,
+                              height: 1.42,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
             ),
           ),
           SafeArea(
@@ -289,6 +323,34 @@ class _LegalDocumentPageState extends State<LegalDocumentPage> {
         ],
       ),
     );
+  }
+}
+
+class _LegalMarkdownText extends StatelessWidget {
+  const _LegalMarkdownText({required this.text, required this.style});
+
+  final String text;
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) {
+    final spans = <InlineSpan>[];
+    final pattern = RegExp(r'\*\*(.+?)\*\*');
+    var offset = 0;
+    for (final match in pattern.allMatches(text)) {
+      if (match.start > offset) {
+        spans.add(TextSpan(text: text.substring(offset, match.start)));
+      }
+      spans.add(
+        TextSpan(
+          text: match.group(1),
+          style: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+      );
+      offset = match.end;
+    }
+    if (offset < text.length) spans.add(TextSpan(text: text.substring(offset)));
+    return Text.rich(TextSpan(style: style, children: spans));
   }
 }
 
@@ -334,33 +396,6 @@ class _LegalReadTile extends StatelessWidget {
           read ? Icons.check_circle_rounded : Icons.chevron_right_rounded,
           color: read ? cs.primary : cs.onSurfaceVariant,
         ),
-      ),
-    );
-  }
-}
-
-class _LegalMoonBadge extends StatelessWidget {
-  const _LegalMoonBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Container(
-      width: 96,
-      height: 96,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(
-            color: cs.primary.withValues(alpha: .18),
-            blurRadius: 28,
-            spreadRadius: 2,
-          ),
-        ],
-      ),
-      child: Center(
-        child: Icon(Icons.nightlight_round, size: 48, color: cs.primary),
       ),
     );
   }

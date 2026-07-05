@@ -41,12 +41,62 @@ void main() {
     test('normalizes version with and without v prefix', () {
       expect(AppUpdateService.normalizeVersion('v0.1.0'), '0.1.0');
       expect(AppUpdateService.normalizeVersion('0.1.0'), '0.1.0');
+      expect(AppUpdateService.normalizeVersion('0.1.0+7'), '0.1.0');
+      expect(AppUpdateService.extractBuildNumber('0.1.0+7'), 7);
+      expect(
+        AppUpdateService.extractBuildNumber(
+          'Версия проекта обновлена до 0.2.0+4',
+        ),
+        4,
+      );
     });
 
     test('compares versions', () {
       expect(AppUpdateService.isRemoteVersionNewer('0.1.1', '0.1.0'), isTrue);
       expect(AppUpdateService.isRemoteVersionNewer('0.1.0', '0.1.0'), isFalse);
       expect(AppUpdateService.isRemoteVersionNewer('0.1.0', '0.1.1'), isFalse);
+      expect(
+        AppUpdateService.isRemoteVersionNewer(
+          '0.2.0',
+          '0.2.0',
+          remoteBuildNumber: 4,
+          currentBuildNumber: 3,
+        ),
+        isTrue,
+      );
+      expect(
+        AppUpdateService.isRemoteVersionNewer(
+          '0.2.0',
+          '0.2.0',
+          remoteBuildNumber: 4,
+          currentBuildNumber: 4,
+        ),
+        isFalse,
+      );
+      expect(
+        AppUpdateService.isRemoteVersionNewer('0.2.0+4', '0.2.0+3'),
+        isTrue,
+      );
+    });
+
+    test('keeps user-facing update version without build code', () {
+      const info = AppUpdateInfo(
+        version: '0.2.1',
+        buildNumber: 5,
+        tagName: '0.2.1',
+        title: '0.2.1',
+        body: '',
+        htmlUrl: 'https://example.com/release',
+        publishedAt: null,
+        asset: AppUpdateAsset(
+          name: 'etonify-v0.2.1-arm64-v8a.apk',
+          downloadUrl: 'https://example.com/app.apk',
+          sizeBytes: 100,
+        ),
+      );
+
+      expect(info.displayVersion, '0.2.1');
+      expect(info.technicalVersion, '0.2.1+5');
     });
 
     test('sanitizes APK asset file names', () {
@@ -57,6 +107,54 @@ void main() {
       expect(
         AppUpdateService.sanitizeAssetFileName('not-an-apk.zip'),
         'etonify-update.apk',
+      );
+    });
+
+    test('parses release manifest compatibility and integrity metadata', () {
+      final sha256 = List.filled(32, 'ab').join();
+      final manifest = AppUpdateManifest.fromJson({
+        'version': 'v0.2.1+5',
+        'buildNumber': 5,
+        'minSdk': 24,
+        'packageName': 'com.etonify.meow_client',
+        'assets': [
+          {
+            'name': 'etonify-v0.2.1-arm64-v8a.apk',
+            'sizeBytes': 123456,
+            'sha256': sha256,
+          },
+        ],
+      });
+
+      expect(manifest, isNotNull);
+      expect(manifest!.version, '0.2.1');
+      expect(manifest.buildNumber, 5);
+      expect(manifest.minimumAndroidSdk, 24);
+      expect(manifest.packageName, 'com.etonify.meow_client');
+      expect(
+        manifest.assets['etonify-v0.2.1-arm64-v8a.apk']?.sizeBytes,
+        123456,
+      );
+      expect(manifest.assets['etonify-v0.2.1-arm64-v8a.apk']?.sha256, sha256);
+    });
+
+    test('rejects a manifest without version, package, or asset list', () {
+      expect(AppUpdateManifest.fromJson(null), isNull);
+      expect(
+        AppUpdateManifest.fromJson({
+          'version': '0.2.1',
+          'packageName': '',
+          'assets': const [],
+        }),
+        isNull,
+      );
+      expect(
+        AppUpdateManifest.fromJson({
+          'version': '',
+          'packageName': 'com.etonify.meow_client',
+          'assets': const [],
+        }),
+        isNull,
       );
     });
   });

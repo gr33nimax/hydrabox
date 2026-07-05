@@ -86,6 +86,12 @@ android {
             excludes += setOf("**/liberror-code.so")
         }
     }
+
+    lint {
+        // Flutter regenerates android/local.properties with valid Windows paths
+        // before Gradle runs, while Android lint incorrectly flags that file.
+        disable += "PropertyEscape"
+    }
 }
 
 flutter {
@@ -94,6 +100,7 @@ flutter {
 
 dependencies {
     implementation(files("libs/libbox.aar"))
+    testImplementation("junit:junit:4.13.2")
 }
 
 tasks.withType<JavaCompile>().configureEach {

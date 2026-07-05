@@ -162,7 +162,6 @@ class OutboundInfo {
     if (deleted) 'deleted': true,
     if (externalIp != null) 'external_ip': externalIp,
     if (country != null) 'country': country,
-    if (latestPing != null) 'latest_ping': latestPing,
   };
 
   factory OutboundInfo.fromMap(Map<String, dynamic> map) {
@@ -171,7 +170,9 @@ class OutboundInfo {
       deleted: map['deleted'] == true,
       externalIp: map['external_ip'] as String?,
       country: map['country'] as String?,
-      latestPing: map['latest_ping'] as int?,
+      // Latency is runtime-only. Persisted values are stale after reconnects
+      // and must not be presented as a fresh proxy measurement.
+      latestPing: null,
     );
   }
 
@@ -437,6 +438,8 @@ class Subscription {
     this.disableAutoUpdate = false,
     this.markAllServersRussia = false,
     this.autoRefreshMinutes = 360,
+    this.cachedVisibleProxyCount = -1,
+    this.hasRawPayload = false,
     this.rawContent = '',
     this.outbounds = const [],
     this.groups = const [],
@@ -454,6 +457,8 @@ class Subscription {
   final bool disableAutoUpdate;
   final bool markAllServersRussia;
   final int autoRefreshMinutes; // 0 = disabled
+  final int cachedVisibleProxyCount; // -1 = summary not cached yet
+  final bool hasRawPayload;
   final String rawContent; // raw response body
   final List<Outbound> outbounds;
   final List<SubscriptionGroup> groups;
@@ -467,21 +472,35 @@ class Subscription {
     return (now - lastUpdated) > autoRefreshMinutes * 60 * 1000;
   }
 
-  Map<String, dynamic> toMetadataMap() => {
-    'id': id,
-    'name': name,
-    'url': url,
-    if (selectedProxyTag.isNotEmpty) 'selected_proxy_tag': selectedProxyTag,
-    if (sortOrder != null) 'sort_order': sortOrder,
-    'last_updated': lastUpdated,
-    'disable_auto_update': disableAutoUpdate,
-    if (markAllServersRussia) 'mark_all_servers_russia': true,
-    'auto_refresh_minutes': autoRefreshMinutes,
-    if (proxyChains.isNotEmpty)
-      'proxy_chains': proxyChains.map((chain) => chain.toMap()).toList(),
-    'urltest_config': urlTestConfig.toMap(),
-    if (info != null) 'info': info!.toMap(),
-  };
+  Map<String, dynamic> toMetadataMap() {
+    final payloadLoaded = rawContent.isNotEmpty || outbounds.isNotEmpty;
+    final visibleProxyCount = payloadLoaded
+        ? outbounds
+              .where((outbound) => !outbound.info.deleted)
+              .where((outbound) => outbound.config['_group_only'] != true)
+              .length
+        : cachedVisibleProxyCount;
+    final rawPayloadAvailable = payloadLoaded
+        ? rawContent.trim().length > 16
+        : hasRawPayload;
+    return {
+      'id': id,
+      'name': name,
+      'url': url,
+      if (selectedProxyTag.isNotEmpty) 'selected_proxy_tag': selectedProxyTag,
+      if (sortOrder != null) 'sort_order': sortOrder,
+      'last_updated': lastUpdated,
+      'disable_auto_update': disableAutoUpdate,
+      if (markAllServersRussia) 'mark_all_servers_russia': true,
+      'auto_refresh_minutes': autoRefreshMinutes,
+      if (visibleProxyCount >= 0) 'visible_proxy_count': visibleProxyCount,
+      if (rawPayloadAvailable) 'has_raw_payload': true,
+      if (proxyChains.isNotEmpty)
+        'proxy_chains': proxyChains.map((chain) => chain.toMap()).toList(),
+      'urltest_config': urlTestConfig.toMap(),
+      if (info != null) 'info': info!.toMap(),
+    };
+  }
 
   Map<String, dynamic> toPayloadMap() => {
     'raw_content': rawContent,
@@ -502,6 +521,8 @@ class Subscription {
       disableAutoUpdate: map['disable_auto_update'] == true,
       markAllServersRussia: map['mark_all_servers_russia'] == true,
       autoRefreshMinutes: map['auto_refresh_minutes'] as int? ?? 360,
+      cachedVisibleProxyCount: map['visible_proxy_count'] as int? ?? -1,
+      hasRawPayload: map['has_raw_payload'] == true,
       proxyChains:
           (map['proxy_chains'] as List?)
               ?.map(
@@ -564,6 +585,8 @@ class Subscription {
     bool? disableAutoUpdate,
     bool? markAllServersRussia,
     int? autoRefreshMinutes,
+    int? cachedVisibleProxyCount,
+    bool? hasRawPayload,
     String? rawContent,
     List<Outbound>? outbounds,
     List<SubscriptionGroup>? groups,
@@ -581,6 +604,9 @@ class Subscription {
       disableAutoUpdate: disableAutoUpdate ?? this.disableAutoUpdate,
       markAllServersRussia: markAllServersRussia ?? this.markAllServersRussia,
       autoRefreshMinutes: autoRefreshMinutes ?? this.autoRefreshMinutes,
+      cachedVisibleProxyCount:
+          cachedVisibleProxyCount ?? this.cachedVisibleProxyCount,
+      hasRawPayload: hasRawPayload ?? this.hasRawPayload,
       rawContent: rawContent ?? this.rawContent,
       outbounds: outbounds ?? this.outbounds,
       groups: groups ?? this.groups,

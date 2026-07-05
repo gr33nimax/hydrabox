@@ -5,6 +5,7 @@ Etonify is developed by MeowTeam and is intended to be licensed under Apache Lic
 ## Third-Party Components
 
 - `third_party/flutter_circle_flags` is based on `circle_flags`, distributed under the MIT License. Its license is preserved in `third_party/flutter_circle_flags/LICENSE`.
+- Etonify bundles a modified sing-box/libbox core maintained by dudosxdev: https://github.com/dudosxdev/sing-box. The core and its dependencies remain subject to their own licenses.
 - Etonify uses Flutter, Android Gradle Plugin, Kotlin, sing-box/libbox integration, and other dependencies listed in `pubspec.yaml`, Gradle files, and generated lock files. Their own licenses remain applicable.
 
 ## Private Compatibility Assets
