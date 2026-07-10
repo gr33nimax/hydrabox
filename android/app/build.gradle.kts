@@ -59,17 +59,11 @@ android {
 
     buildTypes {
         release {
-            signingConfig =
-                if (keyPropertiesFile.exists()) {
-                    signingConfigs.getByName("release")
-                } else if (allowDebugReleaseSigning) {
-                    signingConfigs.getByName("debug")
-                } else {
-                    throw GradleException(
-                        "Release signing requires android/key.properties. " +
-                            "Set MEOW_ALLOW_DEBUG_RELEASE_SIGNING=true only for local release testing.",
-                    )
-                }
+            if (keyPropertiesFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            } else if (allowDebugReleaseSigning) {
+                signingConfig = signingConfigs.getByName("debug")
+            }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -91,6 +85,18 @@ android {
         // Flutter regenerates android/local.properties with valid Windows paths
         // before Gradle runs, while Android lint incorrectly flags that file.
         disable += "PropertyEscape"
+    }
+}
+
+gradle.taskGraph.whenReady {
+    val releaseTaskRequested = allTasks.any { task ->
+        task.project == project && task.name.contains("release", ignoreCase = true)
+    }
+    if (releaseTaskRequested && !keyPropertiesFile.exists() && !allowDebugReleaseSigning) {
+        throw GradleException(
+            "Release signing requires android/key.properties. " +
+                "Set MEOW_ALLOW_DEBUG_RELEASE_SIGNING=true only for local release testing.",
+        )
     }
 }
 
