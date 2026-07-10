@@ -1,6 +1,7 @@
 import java.util.Properties
 import org.gradle.api.GradleException
 import org.gradle.api.tasks.compile.JavaCompile
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     id("com.android.application")
@@ -25,10 +26,6 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
     }
 
     defaultConfig {
@@ -85,6 +82,12 @@ android {
         // Flutter regenerates android/local.properties with valid Windows paths
         // before Gradle runs, while Android lint incorrectly flags that file.
         disable += "PropertyEscape"
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = JvmTarget.JVM_17
     }
 }
 
