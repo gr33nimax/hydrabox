@@ -111,13 +111,23 @@ void main() {
     expect(controller.proxyInboundEnabled, isFalse);
   });
 
-  test('enabling LAN proxy creates a strong per-install password', () {
+  test('enabling any local proxy creates a strong per-install password', () {
     final controller = AppSettingsController();
 
-    controller.setProxyAllowLan(true);
+    controller.setProxyInboundEnabled(true);
 
-    expect(controller.proxyMixedListen, '0.0.0.0');
+    expect(controller.proxyMixedListen, '127.0.0.1');
     expect(isValidProxyPassword(controller.proxyPassword), isTrue);
     expect(controller.proxyPassword.length, proxyPasswordLength);
+  });
+
+  test('proxy sorting changes persist without restarting runtime', () {
+    final controller = AppSettingsController();
+
+    final change = controller.setProxySort('latency');
+
+    expect(change.changed, isTrue);
+    expect(change.restartRuntime, isFalse);
+    expect(controller.proxySort, 'latency');
   });
 }

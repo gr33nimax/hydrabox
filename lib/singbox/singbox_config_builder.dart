@@ -127,18 +127,13 @@ class SingboxConfigBuilder {
   final String? snowtunBinaryPath;
   final String? snowtunProtectPath;
 
-  bool get _proxyLanEnabled =>
-      proxyMixedListen.trim().toLowerCase() != '127.0.0.1';
-
   Map<String, dynamic> build() {
     return buildPlan().config;
   }
 
   SingboxBuildPlan buildPlan() {
-    if (proxyInboundEnabled &&
-        _proxyLanEnabled &&
-        !isValidProxyPassword(proxyPassword)) {
-      throw StateError('LAN proxy requires a valid access password');
+    if (proxyInboundEnabled && !isValidProxyPassword(proxyPassword)) {
+      throw StateError('Local proxy requires a valid access password');
     }
     final outbounds = _visibleOutbounds();
     final outboundTags = outbounds
@@ -363,10 +358,9 @@ class SingboxConfigBuilder {
               'tag': 'mixed-in',
               'listen': proxyMixedListen,
               'listen_port': proxyMixedPort,
-              if (_proxyLanEnabled)
-                'users': [
-                  {'username': defaultProxyUsername, 'password': proxyPassword},
-                ],
+              'users': [
+                {'username': defaultProxyUsername, 'password': proxyPassword},
+              ],
             },
         ],
         'outbounds': [
@@ -910,7 +904,7 @@ class SingboxConfigBuilder {
       'concurrency': _urltestConcurrency(
         activeSubscription?.urlTestConfig.concurrency ?? urlTestConcurrency,
       ),
-      'unavailable_check_interval': _urltestInterval(
+      'unavailable_check_interval': _urltestUnavailableInterval(
         activeSubscription?.urlTestConfig.unavailableCheckIntervalSeconds ??
             urlTestUnavailableCheckIntervalSeconds,
       ),
@@ -977,7 +971,7 @@ class SingboxConfigBuilder {
       'concurrency': _urltestConcurrency(
         activeSubscription?.urlTestConfig.concurrency ?? urlTestConcurrency,
       ),
-      'unavailable_check_interval': _urltestInterval(
+      'unavailable_check_interval': _urltestUnavailableInterval(
         activeSubscription?.urlTestConfig.unavailableCheckIntervalSeconds ??
             urlTestUnavailableCheckIntervalSeconds,
       ),
@@ -998,7 +992,15 @@ class SingboxConfigBuilder {
   }
 
   int _urltestConcurrency(int? value) {
-    return value == null || value <= 0 ? 30 : value;
+    return (value == null || value <= 0 ? 8 : value).clamp(1, 8);
+  }
+
+  String _urltestUnavailableInterval(int? seconds) {
+    final safeSeconds = (seconds == null || seconds <= 0 ? 120 : seconds).clamp(
+      120,
+      3600,
+    );
+    return '${safeSeconds}s';
   }
 
   int _urltestTolerance() {

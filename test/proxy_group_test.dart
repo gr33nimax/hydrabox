@@ -345,7 +345,7 @@ void main() {
       markAllServersRussia: false,
     ).buildPlan();
 
-    expect(plan.config['global'], {'urltest_concurrency_limit': 9});
+    expect(plan.config['global'], {'urltest_concurrency_limit': 8});
     final outbounds = (plan.config['outbounds'] as List)
         .cast<Map<String, dynamic>>();
     final selector = outbounds.firstWhere((entry) => entry['tag'] == 'select');
@@ -374,8 +374,7 @@ void main() {
     expect(lowest['outbounds'], ['group-auto']);
     expect(lowest['timeout'], '8s');
     expect(lowest['idle_timeout'], '77s');
-    expect(lowest['concurrency'], 9);
-    expect(lowest, isNot(contains('auto_check')));
+    expect(lowest['concurrency'], 8);
     expect(lowest['tolerance'], 1);
     expect(lowest['interrupt_exist_connections'], isFalse);
     expect(lowest['interrupt_delay_threshold'], 300);
@@ -389,9 +388,8 @@ void main() {
     expect(groupUrltest['interval'], '77s');
     expect(groupUrltest['idle_timeout'], '77s');
     expect(groupUrltest['timeout'], '8s');
-    expect(groupUrltest['concurrency'], 9);
-    expect(groupUrltest, isNot(contains('auto_check')));
-    expect(groupUrltest['unavailable_check_interval'], '11s');
+    expect(groupUrltest['concurrency'], 8);
+    expect(groupUrltest['unavailable_check_interval'], '120s');
     expect(groupUrltest['tolerance'], 1);
     expect(groupUrltest['interrupt_exist_connections'], isFalse);
     expect(groupUrltest['interrupt_delay_threshold'], 300);
@@ -552,8 +550,8 @@ void main() {
     expect(groupUrltest['interval'], '3600s');
     expect(groupUrltest['idle_timeout'], '3600s');
     expect(groupUrltest['timeout'], '16s');
-    expect(groupUrltest['concurrency'], 31);
-    expect(groupUrltest['unavailable_check_interval'], '12s');
+    expect(groupUrltest['concurrency'], 8);
+    expect(groupUrltest['unavailable_check_interval'], '120s');
     expect(groupUrltest['tolerance'], 1);
   });
 
@@ -1838,6 +1836,7 @@ void main() {
         subscription,
         vpnInboundEnabled: false,
         proxyInboundEnabled: true,
+        proxyPassword: 'LocalOnlyPassword123456',
         splitRoutingMode: SplitRoutingMode.proxySelected,
         splitRoutingPackages: const ['com.example.app'],
       ).build();
@@ -1955,6 +1954,7 @@ void main() {
       subscription,
       vpnInboundEnabled: true,
       proxyInboundEnabled: true,
+      proxyPassword: 'LocalOnlyPassword123456',
     ).build();
     final inbounds = (config['inbounds'] as List).cast<Map>();
 
@@ -1969,7 +1969,7 @@ void main() {
     });
   });
 
-  test('LAN proxy requires and writes separate local credentials', () {
+  test('local proxy always requires and writes credentials', () {
     const subscription = Subscription(
       id: 'lan-proxy',
       name: 'LAN proxy',
@@ -1997,6 +1997,19 @@ void main() {
       ).build(),
       throwsStateError,
     );
+
+    final loopbackConfig = _defaultBuilder(
+      subscription,
+      proxyInboundEnabled: true,
+      proxyMixedListen: '127.0.0.1',
+      proxyPassword: 'LocalOnlyPassword123456',
+    ).build();
+    final loopbackMixed = (loopbackConfig['inbounds'] as List)
+        .cast<Map>()
+        .firstWhere((inbound) => inbound['type'] == 'mixed');
+    expect(loopbackMixed['users'], [
+      {'username': defaultProxyUsername, 'password': 'LocalOnlyPassword123456'},
+    ]);
   });
 
   test('invalid Russia route paths do not activate route rule sets', () {

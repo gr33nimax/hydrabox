@@ -4,13 +4,13 @@ import 'package:meow_client/data/local/app_settings_store.dart';
 const int appSettingsDefaultUrlTestTimeoutSeconds = 15;
 const int appSettingsDefaultLocationLookupTimeoutSeconds = 3;
 const int appSettingsStandardUrlTestIntervalSeconds = 1800;
-const int appSettingsStandardUrlTestConcurrency = 16;
-const int appSettingsStandardUrlTestUnavailableCheckIntervalSeconds = 10;
+const int appSettingsStandardUrlTestConcurrency = 8;
+const int appSettingsStandardUrlTestUnavailableCheckIntervalSeconds = 120;
 const int appSettingsStandardLocationLookupLimit = 1;
 const int appSettingsStandardLocationLookupConcurrency = 1;
 const int appSettingsEconomyUrlTestIntervalSeconds = 3600;
-const int appSettingsEconomyUrlTestConcurrency = 8;
-const int appSettingsEconomyUrlTestUnavailableCheckIntervalSeconds = 15;
+const int appSettingsEconomyUrlTestConcurrency = 4;
+const int appSettingsEconomyUrlTestUnavailableCheckIntervalSeconds = 300;
 const int appSettingsEconomyLocationLookupLimit = 0;
 const int appSettingsEconomyLocationLookupConcurrency = 1;
 
@@ -51,6 +51,7 @@ class AppSettingsController {
   TlsFragmentationMode tlsFragmentationMode = TlsFragmentationMode.disabled;
   bool hapticEnabled = true;
   bool hideServerIp = false;
+  String proxySort = 'source';
   bool progressiveBlurEnabled = false;
   bool vpnInboundEnabled = true;
   int vpnMtu = 1500;
@@ -125,6 +126,7 @@ class AppSettingsController {
       acceptedLegalAtMillis: acceptedLegalAtMillis,
       activeProfileId: activeProfileId,
       selectedProxyTag: selectedProxyTag,
+      proxySort: proxySort,
       localeCode: localeCode,
       themePreference: themePreference,
       accentColorHex: accentColorHex,
@@ -185,6 +187,10 @@ class AppSettingsController {
     accentColorHex = normalizeAccentColorHex(state.accentColorHex);
     hapticEnabled = state.hapticEnabled;
     hideServerIp = state.hideServerIp;
+    proxySort =
+        const {'source', 'latency', 'name', 'country'}.contains(state.proxySort)
+        ? state.proxySort
+        : 'source';
     progressiveBlurEnabled = progressiveBlurEnabledOverride;
     performanceMode = state.performanceMode;
     memoryLimitEnabled = state.memoryLimitEnabled;
@@ -203,7 +209,7 @@ class AppSettingsController {
     proxyMixedListen = proxyAllowLan ? '0.0.0.0' : '127.0.0.1';
     proxyMixedPort = state.proxyMixedPort;
     proxyPassword = state.proxyPassword.trim();
-    if (proxyAllowLan && !isValidProxyPassword(proxyPassword)) {
+    if (!isValidProxyPassword(proxyPassword)) {
       proxyPassword = generateProxyPassword();
     }
     dnsDirectPreset = state.dnsDirectPreset;
@@ -274,6 +280,18 @@ class AppSettingsController {
     }
     hideServerIp = value;
     return const AppSettingsChange(changed: true, publishTraffic: true);
+  }
+
+  AppSettingsChange setProxySort(String value) {
+    final normalized =
+        const {'source', 'latency', 'name', 'country'}.contains(value)
+        ? value
+        : 'source';
+    if (proxySort == normalized) {
+      return const AppSettingsChange.none();
+    }
+    proxySort = normalized;
+    return const AppSettingsChange(changed: true, restartRuntime: false);
   }
 
   AppSettingsChange setAccentColor(String value) {
@@ -377,6 +395,9 @@ class AppSettingsController {
       return const AppSettingsChange.none();
     }
     proxyInboundEnabled = value;
+    if (proxyInboundEnabled && !isValidProxyPassword(proxyPassword)) {
+      proxyPassword = generateProxyPassword();
+    }
     if (!proxyInboundEnabled && !vpnInboundEnabled) {
       vpnInboundEnabled = true;
     }
@@ -421,6 +442,9 @@ class AppSettingsController {
     }
     vpnInboundEnabled = nextVpnEnabled;
     proxyInboundEnabled = nextProxyEnabled;
+    if (proxyInboundEnabled && !isValidProxyPassword(proxyPassword)) {
+      proxyPassword = generateProxyPassword();
+    }
     return const AppSettingsChange(
       changed: true,
       configReason: 'inbound connection mode changed',
@@ -562,11 +586,10 @@ class AppSettingsController {
   }
 
   AppSettingsChange setUrlTestConcurrency(int value) {
-    final normalized = value <= 0
-        ? (economyMode
-              ? appSettingsEconomyUrlTestConcurrency
-              : appSettingsStandardUrlTestConcurrency)
-        : value;
+    final fallback = economyMode
+        ? appSettingsEconomyUrlTestConcurrency
+        : appSettingsStandardUrlTestConcurrency;
+    final normalized = (value <= 0 ? fallback : value).clamp(1, 8);
     if (urlTestConcurrency == normalized) {
       return const AppSettingsChange.none();
     }
@@ -578,11 +601,10 @@ class AppSettingsController {
   }
 
   AppSettingsChange setUrlTestUnavailableCheckIntervalSeconds(int value) {
-    final normalized = value <= 0
-        ? (economyMode
-              ? appSettingsEconomyUrlTestUnavailableCheckIntervalSeconds
-              : appSettingsStandardUrlTestUnavailableCheckIntervalSeconds)
-        : value;
+    final fallback = economyMode
+        ? appSettingsEconomyUrlTestUnavailableCheckIntervalSeconds
+        : appSettingsStandardUrlTestUnavailableCheckIntervalSeconds;
+    final normalized = (value <= 0 ? fallback : value).clamp(120, 3600);
     if (urlTestUnavailableCheckIntervalSeconds == normalized) {
       return const AppSettingsChange.none();
     }

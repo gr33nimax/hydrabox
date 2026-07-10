@@ -16,7 +16,7 @@ class ProxySelectionTimeout {
 }
 
 class ProxySelectionController {
-  static const defaultConfirmationTimeout = Duration(seconds: 8);
+  static const defaultConfirmationTimeout = Duration(seconds: 12);
 
   int _generation = 0;
   String? _pendingRuntimeSelectTag;

@@ -23,6 +23,7 @@ import com.etonify.meow_client.R
 import org.json.JSONObject
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
@@ -95,6 +96,9 @@ class MeowBoxService(
     private var pendingStartRetry: ScheduledFuture<*>? = null
 
     @Volatile
+    private var destroyed = false
+
+    @Volatile
     private var runningConfigHash: Int? = null
 
     init {
@@ -127,7 +131,7 @@ class MeowBoxService(
                         "serviceState=${MeowApplication.describeRecordedServiceState()}",
                 )
                 val token = nextStartToken("sticky_restart")
-                executor.execute { startInternal("sticky_restart", token) }
+                submitServiceTask("sticky_restart") { startInternal("sticky_restart", token) }
                 return Service.START_STICKY
             }
             Log.w(TAG, "ignoring sticky restart without fresh runtime intent")
@@ -136,7 +140,9 @@ class MeowBoxService(
                 "ignoring sticky restart without fresh runtime intent mode=$mode " +
                     "intent=${MeowApplication.describeRuntimeIntent()}",
             )
-            executor.execute { stopInternal("sticky_null_intent", startId = startId) }
+            submitServiceTask("sticky_null_intent") {
+                stopInternal("sticky_null_intent", startId = startId)
+            }
             return Service.START_NOT_STICKY
         }
         var sticky = false
@@ -144,28 +150,34 @@ class MeowBoxService(
             ACTION_START -> {
                 sticky = true
                 val token = nextStartToken("action_start")
-                executor.execute { startInternal("action_start", token) }
+                submitServiceTask("action_start") { startInternal("action_start", token) }
             }
             ACTION_STOP -> {
                 val reason = intent.getStringExtra(EXTRA_STOP_REASON)?.takeIf { it.isNotBlank() }
                     ?: "unspecified"
                 MeowApplication.clearRuntimeIntent()
-                executor.execute { stopInternal("action_stop:$reason", startId = startId) }
+                submitServiceTask("action_stop:$reason") {
+                    stopInternal("action_stop:$reason", startId = startId)
+                }
             }
             ACTION_RESTART_CORE -> {
                 sticky = true
                 val token = nextStartToken("action_restart_core")
-                executor.execute { restartCoreInternal("action_restart_core", token) }
+                submitServiceTask("action_restart_core") {
+                    restartCoreInternal("action_restart_core", token)
+                }
             }
             ACTION_RELOAD -> {
                 sticky = true
                 val token = nextStartToken("action_reload")
-                executor.execute { startOrReloadInternal(token) }
+                submitServiceTask("action_reload") { startOrReloadInternal(token) }
             }
             else -> {
                 Log.w(TAG, "ignoring unknown action=$action")
                 MeowDiagnostics.log(TAG, "ignoring unknown action=$action")
-                executor.execute { stopInternal("unknown_action", startId = startId) }
+                submitServiceTask("unknown_action") {
+                    stopInternal("unknown_action", startId = startId)
+                }
                 return Service.START_NOT_STICKY
             }
         }
@@ -173,15 +185,23 @@ class MeowBoxService(
     }
 
     fun onDestroy() {
+        if (destroyed) {
+            return
+        }
+        destroyed = true
         MeowDiagnostics.log(TAG, "onDestroy")
         activeServices -= this
-        executor.execute {
+        startRequestGeneration.set(Long.MIN_VALUE)
+        cancelPendingStartRetry("service_onDestroy")
+        retryExecutor.shutdownNow()
+        submitServiceTask("service_onDestroy", allowAfterDestroy = true) {
             stopInternal("service_onDestroy", stopSelf = false, cancelStarts = false)
         }
+        executor.shutdown()
     }
 
     fun requestStop(source: String) {
-        executor.execute { stopInternal(source) }
+        submitServiceTask("requestStop:$source") { stopInternal(source) }
     }
 
     override fun getSystemProxyStatus(): SystemProxyStatus =
@@ -192,12 +212,12 @@ class MeowBoxService(
 
     override fun serviceReload() {
         val token = nextStartToken("handler_serviceReload")
-        executor.execute { startOrReloadInternal(token) }
+        submitServiceTask("handler_serviceReload") { startOrReloadInternal(token) }
     }
 
     override fun serviceStop() {
         MeowDiagnostics.log(TAG, "serviceStop requested by libbox/platform")
-        executor.execute { stopInternal("handler_serviceStop") }
+        submitServiceTask("handler_serviceStop") { stopInternal("handler_serviceStop") }
     }
 
     override fun setSystemProxyEnabled(isEnabled: Boolean) = Unit
@@ -234,6 +254,10 @@ class MeowBoxService(
             MeowApplication.configFile.length() > 0L
 
     private fun nextStartToken(reason: String): Long {
+        if (destroyed) {
+            MeowDiagnostics.log(TAG, "start token ignored after destroy reason=$reason")
+            return Long.MIN_VALUE
+        }
         val token = SingboxController.nextStartToken("${service.javaClass.simpleName}:$reason")
         startRequestGeneration.set(token)
         return token
@@ -247,7 +271,9 @@ class MeowBoxService(
     }
 
     private fun startTokenCurrent(token: Long): Boolean =
-        startRequestGeneration.get() == token && SingboxController.isStartTokenCurrent(token)
+        !destroyed &&
+            startRequestGeneration.get() == token &&
+            SingboxController.isStartTokenCurrent(token)
 
     private fun cancelPendingStartRetry(reason: String) {
         val pending = pendingStartRetry ?: return
@@ -260,7 +286,45 @@ class MeowBoxService(
         }
     }
 
+    private fun submitServiceTask(
+        source: String,
+        allowAfterDestroy: Boolean = false,
+        task: () -> Unit,
+    ): Boolean {
+        if (destroyed && !allowAfterDestroy) {
+            MeowDiagnostics.log(TAG, "service task ignored after destroy source=$source")
+            return false
+        }
+        return try {
+            executor.execute(task)
+            true
+        } catch (error: RejectedExecutionException) {
+            MeowDiagnostics.log(TAG, "service task rejected source=$source", error)
+            false
+        }
+    }
+
+    private fun scheduleRetry(
+        source: String,
+        task: () -> Unit,
+        delayMillis: Long,
+    ): ScheduledFuture<*>? {
+        if (destroyed) {
+            return null
+        }
+        return try {
+            retryExecutor.schedule(task, delayMillis, TimeUnit.MILLISECONDS)
+        } catch (error: RejectedExecutionException) {
+            MeowDiagnostics.log(TAG, "retry task rejected source=$source", error)
+            null
+        }
+    }
+
     private fun startInternal(source: String, token: Long) {
+        if (!startTokenCurrent(token)) {
+            MeowDiagnostics.log(TAG, "start ignored for stale token=$token source=$source")
+            return
+        }
         val mode = currentMode()
         MeowApplication.writeRuntimeIntent(mode, source)
         val alreadyRunning =
@@ -343,14 +407,16 @@ class MeowBoxService(
             if (networkWaitAttempt < NETWORK_WAIT_MAX_RETRIES) {
                 showForeground("Waiting for network")
                 cancelPendingStartRetry("replace_network_wait_retry")
-                pendingStartRetry = retryExecutor.schedule(
+                pendingStartRetry = scheduleRetry(
+                    "network_wait",
                     {
                         if (startTokenCurrent(token)) {
-                            executor.execute { startOrReloadInternal(token, networkWaitAttempt + 1) }
+                            submitServiceTask("network_wait_retry") {
+                                startOrReloadInternal(token, networkWaitAttempt + 1)
+                            }
                         }
                     },
                     NETWORK_WAIT_RETRY_DELAY_MS,
-                    TimeUnit.MILLISECONDS,
                 )
                 SingboxController.log(
                     "info",
@@ -366,6 +432,10 @@ class MeowBoxService(
             "info",
             "network_interface_ready token=$token current=${MeowDefaultNetworkMonitor.describeCurrentState()}",
         )
+        if (!startTokenCurrent(token)) {
+            MeowDiagnostics.log(TAG, "start cancelled after network wait token=$token")
+            return
+        }
         val config = runCatching { MeowApplication.configFile.readText() }.getOrElse {
             Log.e(TAG, "failed to read config", it)
             fail("Failed to read config: ${it.message}")
@@ -378,6 +448,10 @@ class MeowBoxService(
         }
         val configHash = config.hashCode()
         val preparedRuntimeConfig = prepareRuntimeConfig(config)
+        if (!startTokenCurrent(token)) {
+            MeowDiagnostics.log(TAG, "start cancelled before command server token=$token")
+            return
+        }
         try {
             SingboxController.log(
                 "info",
@@ -407,7 +481,8 @@ class MeowBoxService(
                     "startElapsedMs=$elapsedMs",
             )
             MeowDefaultNetworkMonitor.reassertDefaultInterface("after_start_or_reload_service")
-            retryExecutor.schedule(
+            scheduleRetry(
+                "post_start_interface_reassert",
                 {
                     if (startTokenCurrent(token) && commandServer != null) {
                         MeowDefaultNetworkMonitor.reassertDefaultInterface(
@@ -416,7 +491,6 @@ class MeowBoxService(
                     }
                 },
                 POST_START_INTERFACE_REASSERT_DELAY_MS,
-                TimeUnit.MILLISECONDS,
             )
             showForeground("Connected")
             MeowApplication.writeServiceState(mode)
@@ -564,6 +638,10 @@ class MeowBoxService(
     }
 
     private fun restartCoreInternal(source: String, token: Long = nextStartToken("restartCoreInternal:$source")) {
+        if (!startTokenCurrent(token)) {
+            MeowDiagnostics.log(TAG, "core restart ignored for stale token=$token source=$source")
+            return
+        }
         Log.i(TAG, "restartCoreInternal source=$source service=${service.javaClass.simpleName}")
         MeowDiagnostics.log(
             TAG,

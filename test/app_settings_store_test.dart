@@ -8,8 +8,8 @@ void main() {
     expect(state.performanceMode, AppPerformanceMode.standard);
     expect(state.urlTestIntervalSeconds, 1800);
     expect(state.urlTestTimeoutSeconds, 15);
-    expect(state.urlTestConcurrency, 16);
-    expect(state.urlTestUnavailableCheckIntervalSeconds, 10);
+    expect(state.urlTestConcurrency, 8);
+    expect(state.urlTestUnavailableCheckIntervalSeconds, 120);
     expect(state.urlTestUrl, defaultUrlTestUrl);
     expect(state.locationLookupLimit, 1);
     expect(state.locationLookupTimeoutSeconds, 3);
@@ -47,8 +47,8 @@ void main() {
     expect(state.performanceMode, AppPerformanceMode.economy);
     expect(state.urlTestIntervalSeconds, 3600);
     expect(state.urlTestTimeoutSeconds, 15);
-    expect(state.urlTestConcurrency, 8);
-    expect(state.urlTestUnavailableCheckIntervalSeconds, 15);
+    expect(state.urlTestConcurrency, 4);
+    expect(state.urlTestUnavailableCheckIntervalSeconds, 300);
     expect(state.locationLookupLimit, 0);
     expect(state.locationLookupTimeoutSeconds, 3);
     expect(state.locationLookupConcurrency, 1);
@@ -67,8 +67,8 @@ void main() {
     });
     expect(standard.urlTestIntervalSeconds, 1800);
     expect(standard.urlTestTimeoutSeconds, 15);
-    expect(standard.urlTestConcurrency, 16);
-    expect(standard.urlTestUnavailableCheckIntervalSeconds, 10);
+    expect(standard.urlTestConcurrency, 8);
+    expect(standard.urlTestUnavailableCheckIntervalSeconds, 120);
     expect(standard.locationLookupConcurrency, 1);
 
     final previousStandard = store.mapState(const <String, dynamic>{
@@ -79,7 +79,7 @@ void main() {
     });
     expect(previousStandard.urlTestIntervalSeconds, 1800);
     expect(previousStandard.urlTestConcurrency, 8);
-    expect(previousStandard.urlTestUnavailableCheckIntervalSeconds, 10);
+    expect(previousStandard.urlTestUnavailableCheckIntervalSeconds, 120);
 
     final economy = store.mapState(const <String, dynamic>{
       'performance_mode': 'economy',
@@ -90,8 +90,8 @@ void main() {
     });
     expect(economy.urlTestIntervalSeconds, 3600);
     expect(economy.urlTestTimeoutSeconds, 15);
-    expect(economy.urlTestConcurrency, 8);
-    expect(economy.urlTestUnavailableCheckIntervalSeconds, 15);
+    expect(economy.urlTestConcurrency, 4);
+    expect(economy.urlTestUnavailableCheckIntervalSeconds, 300);
   });
 
   test('normalizes Russia route DNS resolver', () {
@@ -210,6 +210,21 @@ void main() {
     expect(
       store.stateToSafeExportMap(state),
       isNot(contains('proxy_password')),
+    );
+  });
+
+  test('persists proxy sorting preference and normalizes unknown values', () {
+    final store = _TestSettingsStore();
+    final latency = store.mapState(const <String, dynamic>{
+      'proxy_sort': 'latency',
+    });
+
+    expect(latency.proxySort, 'latency');
+    expect(store.stateToMap(latency)['proxy_sort'], 'latency');
+    expect(store.stateToSafeExportMap(latency)['proxy_sort'], 'latency');
+    expect(
+      store.mapState(const <String, dynamic>{'proxy_sort': 'broken'}).proxySort,
+      'source',
     );
   });
 }

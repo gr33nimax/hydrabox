@@ -2,7 +2,6 @@ package com.etonify.meow_client.singbox
 
 import android.os.Handler
 import android.os.Looper
-import android.net.TrafficStats
 import android.os.SystemClock
 import android.util.Log
 import com.etonify.meow_client.MeowApplication
@@ -16,14 +15,11 @@ import io.nekohasekai.libbox.LogIterator
 import io.nekohasekai.libbox.OutboundGroupIterator
 import io.nekohasekai.libbox.StatusMessage
 import io.nekohasekai.libbox.StringIterator
-import java.net.ConnectException
-import java.net.InetSocketAddress
-import java.net.SocketTimeoutException
-import java.net.UnknownHostException
-import java.nio.channels.SocketChannel
 import java.util.ArrayDeque
 import java.util.concurrent.Executors
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -34,8 +30,7 @@ object SingboxController {
     private const val GROUPS_EVENT_THROTTLE_COOL_MS = 1_500L
     private const val GROUPS_EVENT_THROTTLE_BALANCED_MS = 750L
     private const val GROUPS_EVENT_THROTTLE_PERFORMANCE_MS = 500L
-    private const val TRAFFIC_POLL_STANDARD_INTERVAL_MS = 1_000L
-    private const val TRAFFIC_POLL_ECONOMY_INTERVAL_MS = 2_000L
+    private const val GROUPS_DIAGNOSTIC_LOG_THROTTLE_MS = 2_000L
     private const val NO_INTERFACE_REASSERT_THROTTLE_MS = 2_000L
     private const val INTERFACE_DIAL_FAILURE_WINDOW_MS = 8_000L
     private const val INTERFACE_DIAL_FAILURE_THRESHOLD = 4
@@ -45,8 +40,22 @@ object SingboxController {
             RegexOption.IGNORE_CASE,
         )
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val commandExecutor = Executors.newSingleThreadExecutor()
-    private val lookupExecutor = Executors.newFixedThreadPool(4)
+    // Standalone clients still control one daemon/runtime. Keep command RPCs
+    // on one lane: concurrent URLTest and selector clients can otherwise see
+    // different runtime state and interfere with the active outbound.
+    private val commandExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "MeowCommand").apply { isDaemon = true }
+    }
+    private val lookupExecutor = ThreadPoolExecutor(
+        4,
+        4,
+        30L,
+        TimeUnit.SECONDS,
+        LinkedBlockingQueue(),
+        { runnable -> Thread(runnable, "MeowLookup").apply { isDaemon = true } },
+    ).apply {
+        allowCoreThreadTimeOut(true)
+    }
     private val statusEventScheduled = AtomicBoolean(false)
     private val groupsEventScheduled = AtomicBoolean(false)
     private val runtimeGeneration = AtomicLong(0)
@@ -71,6 +80,8 @@ object SingboxController {
     private var lastEmittedGroupsPayload: Map<String, Any?>? = null
     private var lastStatusEventUptimeMs: Long = 0
     private var lastGroupsEventUptimeMs: Long = 0
+    private var lastGroupsParseUptimeMs: Long = 0
+    private var lastGroupsDiagnosticLogUptimeMs: Long = 0
 
     @Volatile
     var running: Boolean = false
@@ -100,21 +111,10 @@ object SingboxController {
     var downlinkTotal: Long = 0
         private set
 
+    @Volatile
+    private var trafficAvailable: Boolean = false
+
     private var commandClient: CommandClient? = null
-    private var trafficPollActive = false
-    private var trafficBaselineRx = TrafficStats.UNSUPPORTED.toLong()
-    private var trafficBaselineTx = TrafficStats.UNSUPPORTED.toLong()
-    private var lastTrafficRx = TrafficStats.UNSUPPORTED.toLong()
-    private var lastTrafficTx = TrafficStats.UNSUPPORTED.toLong()
-    private var lastTrafficUptimeMs = 0L
-    private val trafficPollRunnable = object : Runnable {
-        override fun run() {
-            pollAndroidTraffic()
-            if (trafficPollActive) {
-                mainHandler.postDelayed(this, trafficPollIntervalMs())
-            }
-        }
-    }
     private val clientHandler = object : CommandClientHandler {
         override fun connected() {
             Log.i(TAG, "command client connected")
@@ -144,9 +144,18 @@ object SingboxController {
 
         override fun writeGroups(message: OutboundGroupIterator?) {
             if (message == null) return
+            val now = SystemClock.uptimeMillis()
+            val parseThrottleMs = when (MeowApplication.performanceMode) {
+                "performance" -> 1_000L
+                "balanced" -> 2_000L
+                else -> 3_000L
+            }
+            if (now - lastGroupsParseUptimeMs < parseThrottleMs) return
+            lastGroupsParseUptimeMs = now
             val groups = mutableListOf<Map<String, Any?>>()
             val selectedGroups = mutableListOf<String>()
             var itemCount = 0
+            val uniqueItemTags = mutableSetOf<String>()
             var availableCount = 0
             var unavailableCount = 0
             var maxDelay = 0L
@@ -173,6 +182,7 @@ object SingboxController {
                         continue
                     }
                     itemCount++
+                    item.tag?.takeIf { it.isNotBlank() }?.let(uniqueItemTags::add)
                     if (delay > 0L) {
                         availableCount++
                         if (delay > maxDelay) {
@@ -201,9 +211,11 @@ object SingboxController {
                     "items" to limitedGroupItems(group.tag, group.selected, items),
                 )
             }
-            if (itemCount > 0) {
+            if (itemCount > 0 && now - lastGroupsDiagnosticLogUptimeMs >= GROUPS_DIAGNOSTIC_LOG_THROTTLE_MS) {
+                lastGroupsDiagnosticLogUptimeMs = now
                 val summary =
-                    "urltest_groups_event groups=${groups.size} items=$itemCount " +
+                    "urltest_groups_event groups=${groups.size} memberships=$itemCount " +
+                        "uniqueTags=${uniqueItemTags.size} " +
                         "available=$availableCount unavailable=$unavailableCount " +
                         "maxDelayMs=$maxDelay maxDelayTag=$maxDelayTag " +
                         "selected=${selectedGroups.take(6).joinToString(",")}"
@@ -212,7 +224,13 @@ object SingboxController {
                     log("warning", "urltest_high_delay $summary")
                 }
             }
-            emitCoalescedGroups(mapOf("type" to "groups", "groups" to groups))
+            emitCoalescedGroups(
+                mapOf(
+                    "type" to "groups",
+                    "groups" to groups,
+                    "runtimeGeneration" to activeRuntimeGeneration,
+                ),
+            )
         }
 
         override fun writeOutbounds(message: io.nekohasekai.libbox.OutboundGroupItemIterator?) = Unit
@@ -228,7 +246,12 @@ object SingboxController {
                     "level" to entry.level,
                     "message" to message,
                 )
-                MeowDiagnostics.log(TAG, "libbox log level=${entry.level} message=$message")
+                // Debug/info streams are already forwarded to Flutter. Persisting
+                // every DNS/connection line caused heavy synchronous file I/O and
+                // retained browsing details in exported diagnostics.
+                if (entry.level <= 3) {
+                    MeowDiagnostics.log(TAG, "libbox log level=${entry.level} message=$message")
+                }
             }
             emit(mapOf("type" to "logs", "logs" to logs))
         }
@@ -239,6 +262,7 @@ object SingboxController {
             downlink = message.downlink
             uplinkTotal = message.uplinkTotal
             downlinkTotal = message.downlinkTotal
+            trafficAvailable = message.trafficAvailable
             emitCoalescedStatus(
                 mapOf(
                     "type" to "status",
@@ -248,7 +272,7 @@ object SingboxController {
                     "downlinkTotal" to downlinkTotal,
                     "connectionsIn" to message.connectionsIn,
                     "connectionsOut" to message.connectionsOut,
-                    "trafficAvailable" to message.trafficAvailable,
+                    "trafficAvailable" to trafficAvailable,
                 ),
             )
         }
@@ -305,11 +329,7 @@ object SingboxController {
             if (running && uiForeground && commandClient == null) {
                 connectClient()
             }
-            if (running && uiForeground) {
-                startTrafficPolling()
-            }
         } else {
-            stopTrafficPolling(reset = false)
             disconnectClient()
         }
     }
@@ -323,16 +343,15 @@ object SingboxController {
             downlink = 0
             uplinkTotal = 0
             downlinkTotal = 0
+            trafficAvailable = false
         }
         emitCurrentState(error)
         emitCurrentStatus()
         if (value) {
             if (eventSink != null && uiForeground) {
                 connectClient()
-                startTrafficPolling()
             }
         } else {
-            stopTrafficPolling(reset = true)
             disconnectClient()
         }
     }
@@ -342,7 +361,6 @@ object SingboxController {
         uiForeground = value
         MeowDiagnostics.log(TAG, "ui foreground=$value running=$running")
         if (!value) {
-            stopTrafficPolling(reset = false)
             disconnectClient()
             return
         }
@@ -350,7 +368,6 @@ object SingboxController {
             emitCurrentState()
             emitCurrentStatus()
             connectClient()
-            startTrafficPolling()
         }
     }
 
@@ -438,10 +455,11 @@ object SingboxController {
     }
 
     fun log(level: String, message: String) {
+        val safeMessage = MeowLogSanitizer.redact(message)
         when (level.lowercase()) {
-            "error" -> Log.e(TAG, message)
-            "debug" -> Log.d(TAG, message)
-            else -> Log.i(TAG, message)
+            "error" -> Log.e(TAG, safeMessage)
+            "debug" -> Log.d(TAG, safeMessage)
+            else -> Log.i(TAG, safeMessage)
         }
         MeowDiagnostics.log(TAG, "nativeLog level=$level message=$message")
         emit(mapOf("type" to "nativeLog", "level" to level, "message" to message))
@@ -523,6 +541,8 @@ object SingboxController {
                 val options = CommandClientOptions().apply {
                     addCommand(Libbox.CommandGroup)
                     addCommand(Libbox.CommandLog)
+                    addCommand(Libbox.CommandStatus)
+                    statusInterval = if (MeowApplication.performanceMode == "economy") 2_000L else 1_000L
                 }
                 val client = Libbox.newCommandClient(clientHandler, options)
                 client.connect()
@@ -570,95 +590,6 @@ object SingboxController {
             }
     }
 
-    private fun startTrafficPolling() {
-        if (trafficPollActive || !uiForeground) return
-        val rx = TrafficStats.getUidRxBytes(android.os.Process.myUid())
-        val tx = TrafficStats.getUidTxBytes(android.os.Process.myUid())
-        trafficPollActive = true
-        trafficBaselineRx = rx
-        trafficBaselineTx = tx
-        lastTrafficRx = rx
-        lastTrafficTx = tx
-        lastTrafficUptimeMs = SystemClock.uptimeMillis()
-        mainHandler.removeCallbacks(trafficPollRunnable)
-        mainHandler.postDelayed(trafficPollRunnable, trafficPollIntervalMs())
-    }
-
-    private fun trafficPollIntervalMs(): Long =
-        if (MeowApplication.performanceMode == "economy") {
-            TRAFFIC_POLL_ECONOMY_INTERVAL_MS
-        } else {
-            TRAFFIC_POLL_STANDARD_INTERVAL_MS
-        }
-
-    private fun stopTrafficPolling(reset: Boolean) {
-        trafficPollActive = false
-        mainHandler.removeCallbacks(trafficPollRunnable)
-        trafficBaselineRx = TrafficStats.UNSUPPORTED.toLong()
-        trafficBaselineTx = TrafficStats.UNSUPPORTED.toLong()
-        lastTrafficRx = TrafficStats.UNSUPPORTED.toLong()
-        lastTrafficTx = TrafficStats.UNSUPPORTED.toLong()
-        lastTrafficUptimeMs = 0L
-        if (reset) {
-            uplink = 0
-            downlink = 0
-            uplinkTotal = 0
-            downlinkTotal = 0
-            emitCurrentStatus()
-        }
-    }
-
-    private fun pollAndroidTraffic() {
-        if (!running || eventSink == null || !uiForeground) {
-            stopTrafficPolling(reset = false)
-            return
-        }
-        val rx = TrafficStats.getUidRxBytes(android.os.Process.myUid())
-        val tx = TrafficStats.getUidTxBytes(android.os.Process.myUid())
-        if (rx == TrafficStats.UNSUPPORTED.toLong() ||
-            tx == TrafficStats.UNSUPPORTED.toLong() ||
-            trafficBaselineRx == TrafficStats.UNSUPPORTED.toLong() ||
-            trafficBaselineTx == TrafficStats.UNSUPPORTED.toLong()
-        ) {
-            emitCoalescedStatus(
-                mapOf(
-                    "type" to "status",
-                    "uplink" to 0L,
-                    "downlink" to 0L,
-                    "uplinkTotal" to 0L,
-                    "downlinkTotal" to 0L,
-                    "connectionsIn" to 0,
-                    "connectionsOut" to 0,
-                    "trafficAvailable" to false,
-                ),
-            )
-            return
-        }
-        val now = SystemClock.uptimeMillis()
-        val elapsedMs = (now - lastTrafficUptimeMs).coerceAtLeast(1L)
-        val rxDelta = (rx - lastTrafficRx).coerceAtLeast(0L)
-        val txDelta = (tx - lastTrafficTx).coerceAtLeast(0L)
-        downlink = rxDelta * 1000L / elapsedMs
-        uplink = txDelta * 1000L / elapsedMs
-        downlinkTotal = (rx - trafficBaselineRx).coerceAtLeast(0L)
-        uplinkTotal = (tx - trafficBaselineTx).coerceAtLeast(0L)
-        lastTrafficRx = rx
-        lastTrafficTx = tx
-        lastTrafficUptimeMs = now
-        emitCoalescedStatus(
-            mapOf(
-                "type" to "status",
-                "uplink" to uplink,
-                "downlink" to downlink,
-                "uplinkTotal" to uplinkTotal,
-                "downlinkTotal" to downlinkTotal,
-                "connectionsIn" to 0,
-                "connectionsOut" to 0,
-                "trafficAvailable" to true,
-            ),
-        )
-    }
-
     private fun <T> withStandaloneCommandClient(block: (CommandClient) -> T): T {
         MeowApplication.ensureLibboxSetup()
         val client = Libbox.newStandaloneCommandClient()
@@ -673,11 +604,18 @@ object SingboxController {
 
     fun selectOutbound(groupTag: String, outboundTag: String, callback: (Result<Unit>) -> Unit) {
         log("info", "libbox selectOutbound group=$groupTag outbound=$outboundTag")
+        val operationGeneration = activeRuntimeGeneration
         commandExecutor.execute {
-            val result = runCatching {
+            var result = runCatching {
+                check(operationGeneration > 0L && operationGeneration == activeRuntimeGeneration && running) {
+                    "stale runtime before select outbound"
+                }
                 withStandaloneCommandClient { client ->
                     client.selectOutbound(groupTag, outboundTag)
                 }
+            }
+            if (result.isSuccess && operationGeneration != activeRuntimeGeneration) {
+                result = Result.failure(IllegalStateException("stale runtime after select outbound"))
             }
             result.onFailure {
                 log("error", "libbox selectOutbound failed group=$groupTag outbound=$outboundTag error=${it.message}")
@@ -739,25 +677,43 @@ object SingboxController {
             "libbox urlTest group=$groupTag target=$targetOutboundTag priority=$priorityOutboundTag " +
                 "timeoutMs=$timeoutMillis concurrency=$concurrency deadlineMs=$deadlineMillis",
         )
+        val operationGeneration = activeRuntimeGeneration
         commandExecutor.execute {
-            val result = runCatching {
-                withStandaloneCommandClient { client ->
-                    if (url.isBlank()) {
-                        client.urlTest(groupTag)
-                    } else {
-                        client.urlTestWithURL(groupTag, url)
+            var result: Result<Unit> = runCatching {
+                check(operationGeneration > 0L && operationGeneration == activeRuntimeGeneration && running) {
+                    "stale runtime before URL test"
+                }
+                if (targetOutboundTag.isNotBlank()) {
+                    // The stable 0.2.1 libbox can only execute a real HTTP
+                    // URLTest for the whole group. Do not replace it with a
+                    // misleading TCP/ICMP endpoint probe and do not turn an
+                    // automatic selected-outbound check into a 1000-server run.
+                    log(
+                        "debug",
+                        "targeted HTTP URLTest skipped: bundled core only supports group URLTest " +
+                            "group=$groupTag target=$targetOutboundTag",
+                    )
+                } else {
+                    withStandaloneCommandClient { client ->
+                        if (url.isBlank()) {
+                            client.urlTest(groupTag)
+                        } else {
+                            client.urlTestWithURL(groupTag, url)
+                        }
                     }
                 }
             }
+            if (operationGeneration != activeRuntimeGeneration) {
+                result = Result.failure(IllegalStateException("stale runtime after URL test"))
+            }
             result.onFailure {
-                log("error", "libbox urlTest failed group=$groupTag error=${it.message}")
+                val stale = operationGeneration != activeRuntimeGeneration || !running
+                log(
+                    if (stale) "debug" else "error",
+                    "libbox urlTest failed group=$groupTag stale=$stale error=${it.message}",
+                )
             }
-            val completion = Runnable { callback(result.map { Unit }) }
-            if (result.isSuccess) {
-                mainHandler.postDelayed(completion, deadlineMillis.coerceIn(1_000, 30_000).toLong())
-            } else {
-                mainHandler.post(completion)
-            }
+            mainHandler.post { callback(result.map { Unit }) }
         }
     }
 
@@ -783,74 +739,16 @@ object SingboxController {
     }
 
     fun lookupOutboundExternalInfo(outboundTag: String, callback: (Result<Map<String, String>>) -> Unit) {
+        val operationGeneration = activeRuntimeGeneration
         lookupExecutor.execute {
-            val result = runCatching { fetchOutboundExternalInfo(outboundTag) }
-            mainHandler.post { callback(result) }
-        }
-    }
-
-    fun probeProxyEndpoint(
-        tag: String,
-        host: String,
-        port: Int,
-        timeoutMs: Int,
-        callback: (Result<Map<String, Any?>>) -> Unit,
-    ) {
-        val normalizedTag = tag.trim()
-        val normalizedHost = host.trim()
-        val normalizedTimeout = timeoutMs.coerceIn(500, 10_000)
-        lookupExecutor.execute {
-            val result = runCatching {
-                require(normalizedTag.isNotEmpty()) { "Probe tag is empty" }
-                require(normalizedHost.isNotEmpty()) { "Probe host is empty" }
-                require(port in 1..65535) { "Probe port is invalid" }
-                val checkedAt = System.currentTimeMillis()
-                val startedAt = SystemClock.elapsedRealtime()
-                val vpnActive = running && serviceMode == "vpn"
-                var protectedSocket = false
-                var latencyMs: Long? = null
-                var errorCode = ""
-                SocketChannel.open().use { channel ->
-                    val socket = channel.socket()
-                    if (vpnActive) {
-                        protectedSocket = runCatching {
-                            MeowVpnService.protectSocket(socket)
-                        }.getOrDefault(false)
-                    }
-                    if (vpnActive && !protectedSocket) {
-                        errorCode = "protect_failed"
-                    } else {
-                        try {
-                            socket.connect(
-                                InetSocketAddress(normalizedHost, port),
-                                normalizedTimeout,
-                            )
-                            latencyMs = (SystemClock.elapsedRealtime() - startedAt).coerceAtLeast(1L)
-                        } catch (error: Throwable) {
-                            errorCode = when (error) {
-                                is SocketTimeoutException -> "timeout"
-                                is UnknownHostException -> "unknown_host"
-                                is ConnectException -> "connect_failed"
-                                else -> error.javaClass.simpleName.ifBlank { "probe_failed" }
-                            }
-                        }
-                    }
+            var result = runCatching {
+                check(operationGeneration > 0L && operationGeneration == activeRuntimeGeneration && running) {
+                    "stale runtime before outbound IP lookup"
                 }
-                val reachable = latencyMs != null
-                log(
-                    if (reachable || errorCode == "protect_failed") "debug" else "warning",
-                    "proxy_health_probe_result tag=$normalizedTag reachable=$reachable " +
-                        "latencyMs=${latencyMs ?: ""} error=$errorCode " +
-                        "protected=$protectedSocket vpnActive=$vpnActive mode=$serviceMode",
-                )
-                mapOf(
-                    "tag" to normalizedTag,
-                    "reachable" to reachable,
-                    "latencyMs" to latencyMs,
-                    "errorCode" to errorCode,
-                    "checkedAtMillis" to checkedAt,
-                    "protectedSocket" to protectedSocket,
-                )
+                fetchOutboundExternalInfo(outboundTag)
+            }
+            if (operationGeneration != activeRuntimeGeneration) {
+                result = Result.failure(IllegalStateException("stale runtime after outbound IP lookup"))
             }
             mainHandler.post { callback(result) }
         }
@@ -956,6 +854,7 @@ object SingboxController {
                 "type" to "state",
                 "running" to running,
                 "mode" to serviceMode,
+                "runtimeGeneration" to activeRuntimeGeneration,
                 "error" to error,
             ),
         )
@@ -969,7 +868,7 @@ object SingboxController {
                 "downlink" to downlink,
                 "uplinkTotal" to uplinkTotal,
                 "downlinkTotal" to downlinkTotal,
-                "trafficAvailable" to (uplink != 0L || downlink != 0L || uplinkTotal != 0L || downlinkTotal != 0L),
+                "trafficAvailable" to trafficAvailable,
             ),
         )
     }

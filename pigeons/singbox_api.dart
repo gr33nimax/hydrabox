@@ -43,38 +43,6 @@ class NetworkInterfaceStateMessage {
   int updatedAtMillis;
 }
 
-class EndpointProbeRequestMessage {
-  EndpointProbeRequestMessage({
-    required this.tag,
-    required this.host,
-    required this.port,
-    required this.timeoutMs,
-  });
-
-  String tag;
-  String host;
-  int port;
-  int timeoutMs;
-}
-
-class EndpointProbeResultMessage {
-  EndpointProbeResultMessage({
-    required this.tag,
-    required this.reachable,
-    this.latencyMs,
-    this.errorCode,
-    required this.checkedAtMillis,
-    required this.protectedSocket,
-  });
-
-  String tag;
-  bool reachable;
-  int? latencyMs;
-  String? errorCode;
-  int checkedAtMillis;
-  bool protectedSocket;
-}
-
 class UrlTestRequestMessage {
   UrlTestRequestMessage({
     required this.groupTag,
@@ -157,11 +125,6 @@ abstract class SingboxHostApi {
 
   @async
   NetworkInterfaceStateMessage getNetworkInterfaceState();
-
-  @async
-  EndpointProbeResultMessage probeProxyEndpoint(
-    EndpointProbeRequestMessage request,
-  );
 
   @async
   String? exportLogs(String content, String suggestedName);

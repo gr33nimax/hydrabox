@@ -16,6 +16,7 @@ import android.os.Build
 import android.os.Debug
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.util.AtomicFile
 import android.util.Log
@@ -26,12 +27,11 @@ import androidx.core.content.FileProvider
 import com.etonify.meow_client.singbox.MeowBoxService
 import com.etonify.meow_client.singbox.MeowDefaultNetworkMonitor
 import com.etonify.meow_client.singbox.MeowDiagnostics
+import com.etonify.meow_client.singbox.MeowLogSanitizer
 import com.etonify.meow_client.singbox.MeowProxyService
 import com.etonify.meow_client.singbox.MeowVpnPlatformInterface
 import com.etonify.meow_client.singbox.MeowVpnService
 import com.etonify.meow_client.singbox.SingboxController
-import com.etonify.meow_client.generated.EndpointProbeRequestMessage
-import com.etonify.meow_client.generated.EndpointProbeResultMessage
 import com.etonify.meow_client.generated.FlutterError as PigeonFlutterError
 import com.etonify.meow_client.generated.NetworkInterfaceStateMessage
 import com.etonify.meow_client.generated.RuntimeFlagsMessage
@@ -55,6 +55,26 @@ class MainActivity : FlutterActivity() {
     companion object {
         private const val TAG = "MeowMainActivity"
         private const val QUICK_TILE_LABEL_FILE = "quick_tile_label.txt"
+        private const val MAX_SUBSCRIPTION_REDIRECTS = 5
+        private val SUBSCRIPTION_REDIRECT_CODES = setOf(301, 302, 303, 307, 308)
+        private val SENSITIVE_SUBSCRIPTION_HEADERS = setOf(
+            "authorization",
+            "proxy-authorization",
+            "cookie",
+            "x-hwid",
+        )
+        private val SENSITIVE_SUBSCRIPTION_HEADER_PARTS = setOf(
+            "token",
+            "secret",
+            "password",
+            "api-key",
+            "apikey",
+            "hwid",
+        )
+        private val SENSITIVE_SUBSCRIPTION_QUERY = Regex(
+            "(?:^|&)(?:token|access_token|password|passwd|key|secret|uuid|auth|authorization|sub|url)=",
+            RegexOption.IGNORE_CASE,
+        )
     }
     private val vpnPrepareRequestCode = 2048
     private val exportDocumentRequestCode = 2049
@@ -62,6 +82,7 @@ class MainActivity : FlutterActivity() {
     private val eventChannelName = "meow_client/singbox_events"
     private val deepLinkMethodChannelName = "meow_client/deep_links"
     private val deepLinkEventChannelName = "meow_client/deep_link_events"
+    private val secureStorageMethodChannelName = "meow_client/secure_storage"
     // private val happCryptoMethodChannelName = "meow_client/happ_crypto"
     private var pendingPrepareResult: MethodChannel.Result? = null
     private var pendingExportResult: MethodChannel.Result? = null
@@ -268,66 +289,123 @@ class MainActivity : FlutterActivity() {
         maxBytes: Int,
         timeoutMs: Int,
     ): Map<String, Any> {
-        val url = URL(rawUrl)
+        val network = MeowDefaultNetworkMonitor.require()
+        val boundedTimeout = timeoutMs.coerceIn(3_000, 60_000)
+        val deadline = SystemClock.elapsedRealtime() + boundedTimeout
+        var url = URL(rawUrl)
+        var requestHeaders = headers.toMap()
+        var redirectCount = 0
+        while (true) {
+            validateSubscriptionRequest(url, requestHeaders)
+            val remaining = deadline - SystemClock.elapsedRealtime()
+            require(remaining > 0L) { "Subscription request timed out." }
+            val connection = network.openConnection(url) as HttpURLConnection
+            val requestTimeout = remaining.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+            val abortOnDeadline = Runnable { connection.disconnect() }
+            mainHandler.postDelayed(abortOnDeadline, remaining)
+            try {
+                connection.requestMethod = "GET"
+                connection.instanceFollowRedirects = false
+                connection.connectTimeout = requestTimeout
+                connection.readTimeout = requestTimeout
+                connection.useCaches = false
+                for ((name, value) in requestHeaders) {
+                    if (name.isBlank() || name.any { it == '\r' || it == '\n' }) continue
+                    if (value.any { it == '\r' || it == '\n' }) continue
+                    connection.setRequestProperty(name, value)
+                }
+                val statusCode = connection.responseCode
+                if (statusCode in SUBSCRIPTION_REDIRECT_CODES) {
+                    require(redirectCount < MAX_SUBSCRIPTION_REDIRECTS) {
+                        "Too many subscription redirects."
+                    }
+                    val location = connection.getHeaderField("Location")?.trim().orEmpty()
+                    require(location.isNotEmpty()) { "Subscription redirect has no Location header." }
+                    val redirectedUrl = URL(url, location)
+                    require(!(url.protocol == "https" && redirectedUrl.protocol == "http")) {
+                        "HTTPS to HTTP subscription redirect is not allowed."
+                    }
+                    if (!sameOrigin(url, redirectedUrl)) {
+                        requestHeaders = requestHeaders.filterKeys(::isSafeCrossOriginHeader)
+                    }
+                    url = redirectedUrl
+                    redirectCount++
+                    continue
+                }
+                val declaredLength = connection.contentLengthLong
+                require(declaredLength <= maxBytes || declaredLength < 0) {
+                    "Response is larger than $maxBytes bytes."
+                }
+                val stream = if (statusCode in 200..299) {
+                    connection.inputStream
+                } else {
+                    connection.errorStream
+                }
+                val output = ByteArrayOutputStream(
+                    declaredLength.coerceIn(0, maxBytes.toLong()).toInt(),
+                )
+                stream?.use { input ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    var total = 0
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        total += read
+                        require(total <= maxBytes) { "Response is larger than $maxBytes bytes." }
+                        output.write(buffer, 0, read)
+                    }
+                }
+                val responseHeaders = linkedMapOf<String, String>()
+                for ((name, values) in connection.headerFields) {
+                    if (name == null || values.isNullOrEmpty()) continue
+                    responseHeaders[name.lowercase()] = values.joinToString(", ")
+                }
+                return linkedMapOf(
+                    "statusCode" to statusCode,
+                    "body" to output.toString(Charsets.UTF_8.name()),
+                    "headers" to responseHeaders,
+                    "finalUrl" to url.toString(),
+                    "network" to MeowDefaultNetworkMonitor.describeNetwork(network),
+                )
+            } finally {
+                mainHandler.removeCallbacks(abortOnDeadline)
+                connection.disconnect()
+            }
+        }
+    }
+
+    private fun validateSubscriptionRequest(url: URL, headers: Map<String, String>) {
         require(url.protocol == "http" || url.protocol == "https") {
             "Only HTTP and HTTPS URLs are supported."
         }
-        val network = MeowDefaultNetworkMonitor.require()
-        val connection = network.openConnection(url) as HttpURLConnection
-        val boundedTimeout = timeoutMs.coerceIn(3_000, 60_000)
-        val abortOnDeadline = Runnable { connection.disconnect() }
-        mainHandler.postDelayed(abortOnDeadline, boundedTimeout.toLong())
-        return try {
-            connection.requestMethod = "GET"
-            connection.instanceFollowRedirects = true
-            connection.connectTimeout = boundedTimeout
-            connection.readTimeout = boundedTimeout
-            connection.useCaches = false
-            for ((name, value) in headers) {
-                if (name.isBlank() || name.any { it == '\r' || it == '\n' }) continue
-                if (value.any { it == '\r' || it == '\n' }) continue
-                connection.setRequestProperty(name, value)
-            }
-            val statusCode = connection.responseCode
-            val declaredLength = connection.contentLengthLong
-            require(declaredLength <= maxBytes || declaredLength < 0) {
-                "Response is larger than $maxBytes bytes."
-            }
-            val stream = if (statusCode in 200..299) {
-                connection.inputStream
-            } else {
-                connection.errorStream
-            }
-            val output = ByteArrayOutputStream(
-                declaredLength.coerceIn(0, maxBytes.toLong()).toInt(),
-            )
-            stream?.use { input ->
-                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                var total = 0
-                while (true) {
-                    val read = input.read(buffer)
-                    if (read < 0) break
-                    total += read
-                    require(total <= maxBytes) { "Response is larger than $maxBytes bytes." }
-                    output.write(buffer, 0, read)
-                }
-            }
-            val responseHeaders = linkedMapOf<String, String>()
-            for ((name, values) in connection.headerFields) {
-                if (name == null || values.isNullOrEmpty()) continue
-                responseHeaders[name.lowercase()] = values.joinToString(", ")
-            }
-            linkedMapOf(
-                "statusCode" to statusCode,
-                "body" to output.toString(Charsets.UTF_8.name()),
-                "headers" to responseHeaders,
-                "finalUrl" to connection.url.toString(),
-                "network" to MeowDefaultNetworkMonitor.describeNetwork(network),
-            )
-        } finally {
-            mainHandler.removeCallbacks(abortOnDeadline)
-            connection.disconnect()
+        if (url.protocol == "https") return
+        val hasSensitiveHeader = headers.keys.any(::isSensitiveSubscriptionHeader)
+        val hasSensitiveUrl = !url.userInfo.isNullOrBlank() ||
+            SENSITIVE_SUBSCRIPTION_QUERY.containsMatchIn(url.query.orEmpty())
+        require(!hasSensitiveHeader && !hasSensitiveUrl) {
+            "Sensitive subscription credentials require HTTPS."
         }
+    }
+
+    private fun isSensitiveSubscriptionHeader(name: String): Boolean {
+        val normalized = name.trim().lowercase()
+        return normalized in SENSITIVE_SUBSCRIPTION_HEADERS ||
+            SENSITIVE_SUBSCRIPTION_HEADER_PARTS.any(normalized::contains)
+    }
+
+    private fun isSafeCrossOriginHeader(name: String): Boolean =
+        name.equals("User-Agent", ignoreCase = true) ||
+            name.equals("Accept", ignoreCase = true)
+
+    private fun sameOrigin(first: URL, second: URL): Boolean =
+        first.protocol.equals(second.protocol, ignoreCase = true) &&
+            first.host.equals(second.host, ignoreCase = true) &&
+            effectivePort(first) == effectivePort(second)
+
+    private fun effectivePort(url: URL): Int = when {
+        url.port >= 0 -> url.port
+        url.protocol == "https" -> 443
+        else -> 80
     }
 
     private fun buildImportDeepLinkPayload(uri: Uri?): Map<String, Any?>? {
@@ -866,6 +944,7 @@ class MainActivity : FlutterActivity() {
         return mapOf(
             "running" to SingboxController.running,
             "mode" to SingboxController.serviceMode,
+            "runtimeGeneration" to SingboxController.activeRuntimeGeneration,
             "uplink" to SingboxController.uplink,
             "downlink" to SingboxController.downlink,
             "uplinkTotal" to SingboxController.uplinkTotal,
@@ -893,7 +972,7 @@ class MainActivity : FlutterActivity() {
         val oomReport = MeowDiagnostics.readLatestOomReportMetadata()
         val runtimeSnapshot = runCatching { runtimeStatusMap().toString() }.getOrDefault("unavailable")
         val splitSnapshot = MeowVpnPlatformInterface.describeLastTunPackages()
-        return buildString {
+        return MeowLogSanitizer.redact(buildString {
             append(content)
             if (content.isNotBlank()) {
                 append("\n\n")
@@ -914,7 +993,7 @@ class MainActivity : FlutterActivity() {
                 append("\n# Latest OOM report\n")
                 append(oomReport)
             }
-        }
+        })
     }
 
     private fun getInstalledApps(): List<Map<String, Any>> {
@@ -1330,37 +1409,6 @@ class MainActivity : FlutterActivity() {
                     )
                 }
 
-                override fun probeProxyEndpoint(
-                    request: EndpointProbeRequestMessage,
-                    callback: (Result<EndpointProbeResultMessage>) -> Unit,
-                ) {
-                    SingboxController.probeProxyEndpoint(
-                        tag = request.tag,
-                        host = request.host,
-                        port = request.port.toInt(),
-                        timeoutMs = request.timeoutMs.toInt(),
-                    ) { probeResult ->
-                        probeResult
-                            .onSuccess { value ->
-                                callback(
-                                    Result.success(
-                                        EndpointProbeResultMessage(
-                                            tag = value["tag"]?.toString().orEmpty(),
-                                            reachable = value["reachable"] == true,
-                                            latencyMs = (value["latencyMs"] as? Number)?.toLong(),
-                                            errorCode = value["errorCode"]?.toString()?.takeIf { it.isNotBlank() },
-                                            checkedAtMillis =
-                                                (value["checkedAtMillis"] as? Number)?.toLong()
-                                                    ?: System.currentTimeMillis(),
-                                            protectedSocket = value["protectedSocket"] == true,
-                                        ),
-                                    ),
-                                )
-                            }
-                            .onFailure { callback(errorResult("probe_endpoint_failed", it.message)) }
-                    }
-                }
-
                 override fun exportLogs(
                     content: String,
                     suggestedName: String,
@@ -1462,6 +1510,24 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         setupSingboxHostApi(flutterEngine.dartExecutor.binaryMessenger)
+
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            secureStorageMethodChannelName,
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "getOrCreateHiveDataKey" -> runCatching {
+                    SecureHiveKeyProvider.getOrCreateDataKey(applicationContext)
+                }.onSuccess(result::success).onFailure { error ->
+                    result.error(
+                        "secure_storage_key_failed",
+                        error.message ?: error.toString(),
+                        null,
+                    )
+                }
+                else -> result.notImplemented()
+            }
+        }
 
         EventChannel(
             flutterEngine.dartExecutor.binaryMessenger,
@@ -1816,20 +1882,6 @@ class MainActivity : FlutterActivity() {
                             "updatedAtMillis" to state.updatedAtMillis,
                         ),
                     )
-                }
-
-                "probeProxyEndpoint" -> {
-                    val tag = call.argument<String>("tag")?.trim().orEmpty()
-                    val host = call.argument<String>("host")?.trim().orEmpty()
-                    val port = call.argument<Number>("port")?.toInt() ?: 0
-                    val timeoutMs = call.argument<Number>("timeoutMs")?.toInt() ?: 3_000
-                    SingboxController.probeProxyEndpoint(tag, host, port, timeoutMs) { probeResult ->
-                        probeResult.onSuccess {
-                            result.success(it)
-                        }.onFailure {
-                            result.error("probe_endpoint_failed", it.message, null)
-                        }
-                    }
                 }
 
                 "exportLogs" -> {

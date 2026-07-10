@@ -8,6 +8,17 @@ import 'package:meow_client/models/subscription.dart';
 
 void main() {
   group('SubscriptionFetcher', () {
+    tearDown(
+      () => SubscriptionFetcher.configureAppVersion(
+        SubscriptionFetcher.fallbackAppVersion,
+      ),
+    );
+
+    test('derives user agent from the installed app version', () {
+      SubscriptionFetcher.configureAppVersion('v0.3.7');
+      expect(SubscriptionFetcher.defaultUserAgent, 'Etonify/0.3.7');
+    });
+
     test('uses current Etonify user agent by default', () async {
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       addTearDown(server.close);
@@ -28,32 +39,41 @@ void main() {
       expect(userAgent, SubscriptionFetcher.defaultUserAgent);
     });
 
-    test('sends custom user agent and X-HWID when requested', () async {
-      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-      addTearDown(server.close);
-
-      late String? userAgent;
-      late String? hwid;
-      server.listen((request) async {
-        userAgent = request.headers.value('user-agent');
-        hwid = request.headers.value('x-hwid');
-        request.response.write(
-          'vless://uuid@server.com:443?type=tcp&security=tls#Node1',
-        );
-        await request.response.close();
-      });
-
-      await SubscriptionFetcher.fetch(
-        'http://${server.address.host}:${server.port}/sub',
-        requestInfo: const SubscriptionInfo(
-          customUserAgent: 'CustomClient/9.9',
-          requireHwid: true,
-          customHwid: 'spoofed-hwid',
+    test('rejects X-HWID over plain HTTP', () async {
+      await expectLater(
+        SubscriptionFetcher.fetch(
+          'http://127.0.0.1/sub',
+          requestInfo: const SubscriptionInfo(
+            customUserAgent: 'CustomClient/9.9',
+            requireHwid: true,
+            customHwid: 'spoofed-hwid',
+          ),
         ),
+        throwsA(isA<HttpException>()),
       );
+    });
 
-      expect(userAgent, 'CustomClient/9.9');
-      expect(hwid, 'spoofed-hwid');
+    test('strips custom and credential headers on cross-origin redirect', () {
+      final redirected =
+          SubscriptionFetcher.headersForCrossOriginRedirectForTest({
+            'User-Agent': 'Etonify/test',
+            'Accept': '*/*',
+            'Authorization': 'Bearer secret',
+            'X-HWID': 'device-id',
+            'X-Custom': 'provider-value',
+          });
+
+      expect(redirected, {'User-Agent': 'Etonify/test', 'Accept': '*/*'});
+    });
+
+    test('rejects secret query values over plain HTTP', () {
+      expect(
+        () => SubscriptionFetcher.validateRequestSecurityForTest(
+          Uri.parse('http://example.com/sub?token=secret'),
+          const {'Accept': '*/*'},
+        ),
+        throwsA(isA<HttpException>()),
+      );
     });
 
     test('decodes profile-title with base64 prefix', () async {

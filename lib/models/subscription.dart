@@ -148,13 +148,19 @@ class OutboundInfo {
     this.deleted = false,
     this.externalIp,
     this.country,
+    this.exitCountry,
     this.latestPing,
   });
 
   final bool checked;
   final bool deleted;
   final String? externalIp;
+
+  /// Country encoded by the subscription/name and used for server grouping.
   final String? country;
+
+  /// Country observed through the proxy exit IP. It must not replace [country].
+  final String? exitCountry;
   final int? latestPing; // ms, null = not tested
 
   Map<String, dynamic> toMap() => {
@@ -162,6 +168,7 @@ class OutboundInfo {
     if (deleted) 'deleted': true,
     if (externalIp != null) 'external_ip': externalIp,
     if (country != null) 'country': country,
+    if (exitCountry != null) 'exit_country': exitCountry,
   };
 
   factory OutboundInfo.fromMap(Map<String, dynamic> map) {
@@ -170,6 +177,7 @@ class OutboundInfo {
       deleted: map['deleted'] == true,
       externalIp: map['external_ip'] as String?,
       country: map['country'] as String?,
+      exitCountry: map['exit_country'] as String?,
       // Latency is runtime-only. Persisted values are stale after reconnects
       // and must not be presented as a fresh proxy measurement.
       latestPing: null,
@@ -181,6 +189,7 @@ class OutboundInfo {
     bool? deleted,
     String? externalIp,
     String? country,
+    String? exitCountry,
     int? latestPing,
   }) {
     return OutboundInfo(
@@ -188,6 +197,7 @@ class OutboundInfo {
       deleted: deleted ?? this.deleted,
       externalIp: externalIp ?? this.externalIp,
       country: country ?? this.country,
+      exitCountry: exitCountry ?? this.exitCountry,
       latestPing: latestPing ?? this.latestPing,
     );
   }

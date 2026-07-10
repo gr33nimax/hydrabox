@@ -7,6 +7,18 @@ import org.junit.Test
 
 class SplitTunnelPackagesTest {
     @Test
+    fun `simple string iterator reports its original size`() {
+        val iterator = SimpleStringIterator(listOf("one", "two", "three"))
+
+        assertEquals(3, iterator.len())
+        assertEquals("one", iterator.next())
+        assertEquals(3, iterator.len())
+        assertEquals(listOf("two", "three"), buildList {
+            while (iterator.hasNext()) add(iterator.next())
+        })
+    }
+
+    @Test
     fun `resolves each JNI iterator getter once`() {
         var includeGetterCalls = 0
         var excludeGetterCalls = 0
@@ -50,6 +62,24 @@ class SplitTunnelPackagesTest {
                 excludePackage = { ListStringIterator(listOf("com.example.excluded")) },
             )
         }
+    }
+
+    @Test
+    fun `rejects include mode when Android applied no selected package`() {
+        assertThrows(SplitTunnelConfigurationException::class.java) {
+            requireAppliedIncludedPackages(
+                requested = listOf("org.telegram.messenger"),
+                applied = emptyList(),
+            )
+        }
+    }
+
+    @Test
+    fun `accepts include mode when Android applied a selected package`() {
+        requireAppliedIncludedPackages(
+            requested = listOf("org.telegram.messenger", "com.example.removed"),
+            applied = listOf("org.telegram.messenger"),
+        )
     }
 }
 

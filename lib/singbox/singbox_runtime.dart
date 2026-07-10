@@ -39,7 +39,7 @@ class AppVersionInfo {
 
   String get displayVersion {
     final normalized = versionName.trim();
-    return normalized.isEmpty ? '0.2.1' : normalized;
+    return normalized.isEmpty ? '0.2.2' : normalized;
   }
 
   int get updateBuildNumber => normalizeSplitApkVersionCode(versionCode);
@@ -82,38 +82,6 @@ class NetworkInterfaceSnapshot {
 
   bool get usable =>
       available && interfaceName.trim().isNotEmpty && interfaceIndex >= 0;
-}
-
-class EndpointProbeRequest {
-  const EndpointProbeRequest({
-    required this.tag,
-    required this.host,
-    required this.port,
-    required this.timeoutMs,
-  });
-
-  final String tag;
-  final String host;
-  final int port;
-  final int timeoutMs;
-}
-
-class EndpointProbeResult {
-  const EndpointProbeResult({
-    required this.tag,
-    required this.reachable,
-    required this.latencyMs,
-    required this.errorCode,
-    required this.checkedAtMillis,
-    required this.protectedSocket,
-  });
-
-  final String tag;
-  final bool reachable;
-  final int? latencyMs;
-  final String errorCode;
-  final int checkedAtMillis;
-  final bool protectedSocket;
 }
 
 class SingboxRuntime {
@@ -543,89 +511,6 @@ class SingboxRuntime {
     }
   }
 
-  Future<EndpointProbeResult> probeProxyEndpoint(
-    EndpointProbeRequest request,
-  ) async {
-    if (!Platform.isAndroid) {
-      return EndpointProbeResult(
-        tag: request.tag,
-        reachable: false,
-        latencyMs: null,
-        errorCode: 'unsupported_platform',
-        checkedAtMillis: DateTime.now().millisecondsSinceEpoch,
-        protectedSocket: false,
-      );
-    }
-    final tag = request.tag.trim();
-    final host = request.host.trim();
-    final port = request.port;
-    final timeoutMs = request.timeoutMs.clamp(500, 10000).toInt();
-    if (tag.isEmpty || host.isEmpty || port <= 0 || port > 65535) {
-      return EndpointProbeResult(
-        tag: tag,
-        reachable: false,
-        latencyMs: null,
-        errorCode: 'invalid_endpoint',
-        checkedAtMillis: DateTime.now().millisecondsSinceEpoch,
-        protectedSocket: false,
-      );
-    }
-    try {
-      return await _withMethodChannelFallback<EndpointProbeResult>(
-        () async {
-          final result = await _hostApi.probeProxyEndpoint(
-            pigeon.EndpointProbeRequestMessage(
-              tag: tag,
-              host: host,
-              port: port,
-              timeoutMs: timeoutMs,
-            ),
-          );
-          return EndpointProbeResult(
-            tag: result.tag,
-            reachable: result.reachable,
-            latencyMs: result.latencyMs,
-            errorCode: result.errorCode?.trim() ?? '',
-            checkedAtMillis: result.checkedAtMillis,
-            protectedSocket: result.protectedSocket,
-          );
-        },
-        () async {
-          final raw =
-              await _methods.invokeMapMethod<String, dynamic>(
-                'probeProxyEndpoint',
-                {
-                  'tag': tag,
-                  'host': host,
-                  'port': port,
-                  'timeoutMs': timeoutMs,
-                },
-              ) ??
-              const {};
-          return EndpointProbeResult(
-            tag: raw['tag']?.toString() ?? tag,
-            reachable: raw['reachable'] == true,
-            latencyMs: (raw['latencyMs'] as num?)?.toInt(),
-            errorCode: raw['errorCode']?.toString().trim() ?? '',
-            checkedAtMillis:
-                (raw['checkedAtMillis'] as num?)?.toInt() ??
-                DateTime.now().millisecondsSinceEpoch,
-            protectedSocket: raw['protectedSocket'] == true,
-          );
-        },
-      );
-    } on MissingPluginException {
-      return EndpointProbeResult(
-        tag: tag,
-        reachable: false,
-        latencyMs: null,
-        errorCode: 'missing_plugin',
-        checkedAtMillis: DateTime.now().millisecondsSinceEpoch,
-        protectedSocket: false,
-      );
-    }
-  }
-
   Future<String?> exportLogs({
     required String content,
     required String suggestedName,
@@ -757,7 +642,7 @@ class SingboxRuntime {
     if (!Platform.isAndroid) {
       return const AppVersionInfo(
         packageName: '',
-        versionName: '0.2.1',
+        versionName: '0.2.2',
         versionCode: 0,
       );
     }
@@ -778,7 +663,7 @@ class SingboxRuntime {
     } on MissingPluginException {
       return const AppVersionInfo(
         packageName: '',
-        versionName: '0.2.1',
+        versionName: '0.2.2',
         versionCode: 0,
       );
     }

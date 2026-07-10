@@ -1,0 +1,76 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:meow_client/features/home/home_page.dart';
+import 'package:meow_client/l10n/generated/app_localizations.dart';
+import 'package:meow_client/models/app_view_models.dart';
+
+void main() {
+  testWidgets('traffic notifier updates footer without rebuilding app state', (
+    tester,
+  ) async {
+    final traffic = ValueNotifier<TrafficUiSnapshot>(TrafficUiSnapshot.zero);
+    addTearDown(traffic.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        supportedLocales: AppLocalizations.supportedLocales,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        home: HomePage(
+          connected: true,
+          connecting: false,
+          resolvingProxy: false,
+          activeProfile: const AppProfileSummary(
+            id: 'sub',
+            name: 'Subscription',
+            consumed: 0,
+            total: 0,
+            remainingDays: null,
+            outboundsCount: 1,
+            sourceLabel: '',
+          ),
+          activeProxy: const AppProxySummary(
+            tag: 'proxy',
+            displayName: 'Germany',
+            countryCode: 'DE',
+            type: 'vless',
+            server: 'example.com',
+            port: 443,
+            detailText: 'VLESS',
+            ip: '1.1.1.1',
+            latency: 42,
+            latencyFresh: true,
+            latencyChecking: false,
+            latencyUnavailable: false,
+            latencyError: null,
+            protocolLabel: 'VLESS',
+            endpointLabel: 'example.com:443',
+          ),
+          hideServerIp: false,
+          hapticEnabled: false,
+          speedBytesPerSecond: 0,
+          trafficBytes: 0,
+          trafficListenable: traffic,
+          onToggleConnection: () {},
+          onRefreshLatency: () {},
+          onHideServerIpChanged: (_) {},
+          onOpenSubscriptions: () {},
+          onAddSubscription: () {},
+          onOpenSettings: () {},
+          onOpenChangelog: () {},
+          brandName: 'Etonify',
+          versionLabel: '0.2.2',
+          bottomInset: 0,
+        ),
+      ),
+    );
+
+    traffic.value = const TrafficUiSnapshot(
+      speedBytesPerSecond: 2048,
+      trafficBytes: 4096,
+    );
+    await tester.pump();
+
+    expect(find.text('2.00 KB/s'), findsOneWidget);
+    expect(find.text('4.00 KB'), findsOneWidget);
+  });
+}

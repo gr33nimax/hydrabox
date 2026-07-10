@@ -13,20 +13,23 @@ import 'package:meow_client/app/active_proxy_ip_controller.dart';
 import 'package:meow_client/app/app_background_tasks.dart';
 import 'package:meow_client/app/app_settings_controller.dart';
 import 'package:meow_client/app/deep_link_import.dart';
-import 'package:meow_client/app/fast_exit_ip_lookup.dart';
 import 'package:meow_client/app/latency_coordinator.dart';
 import 'package:meow_client/app/proxy_runtime_controller.dart';
 import 'package:meow_client/app/proxy_selection_controller.dart';
 import 'package:meow_client/app/runtime_lifecycle_controller.dart';
+import 'package:meow_client/app/runtime_command_coordinator.dart';
 import 'package:meow_client/app/runtime_event_controller.dart';
+import 'package:meow_client/app/runtime_operation_coordinator.dart';
 import 'package:meow_client/app/runtime_recovery_policy.dart';
 import 'package:meow_client/app/singbox_config_coordinator.dart';
 import 'package:meow_client/app/subscription_runtime_controller.dart';
 import 'package:meow_client/core/lowest_proxy_groups.dart';
+import 'package:meow_client/core/widgets/app_notice.dart';
 import 'package:meow_client/data/adblock/ad_block_rule_set_service.dart';
 import 'package:meow_client/data/local/app_settings_store.dart';
 import 'package:meow_client/data/routing/russia_route_data_service.dart';
 import 'package:meow_client/data/subscription/happ_crypto_link.dart';
+import 'package:meow_client/data/subscription/subscription_fetcher.dart';
 import 'package:meow_client/data/subscription/subscription_store.dart';
 import 'package:meow_client/data/update/app_update_service.dart';
 import 'package:meow_client/features/home/home_page.dart';
@@ -82,7 +85,7 @@ enum AppConnectionPhase {
 }
 
 class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
-  static const _fallbackClientVersionLabel = '0.2.1';
+  static const _fallbackClientVersionLabel = '0.2.2';
   static const _requiredLegalVersion = '0.2.1';
   static final RegExp _quickTileCountryCodePattern = RegExp(r'^[A-Z]{2}$');
   static const _lowestProxyTag = lowestProxyTag;
@@ -90,8 +93,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   static const _defaultUrlTestTimeoutSeconds = 15;
   static const _defaultLocationLookupTimeoutSeconds = 5;
   static const _coolUrlTestIntervalSeconds = 1800;
-  static const _coolUrlTestConcurrency = 30;
-  static const _coolUrlTestUnavailableCheckIntervalSeconds = 10;
+  static const _coolUrlTestConcurrency = 8;
+  static const _coolUrlTestUnavailableCheckIntervalSeconds = 120;
   static const _coolLocationLookupLimit = 2;
   static const _coolLocationLookupConcurrency = 2;
   static const _coolNetworkHeartbeatIntervalSeconds = 240;
@@ -186,6 +189,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   bool _trafficDashboardOpen = false;
   final ValueNotifier<TrafficDashboardSnapshot> _trafficDashboardSnapshot =
       ValueNotifier<TrafficDashboardSnapshot>(TrafficDashboardSnapshot.empty);
+  final ValueNotifier<TrafficUiSnapshot> _trafficUiSnapshot =
+      ValueNotifier<TrafficUiSnapshot>(TrafficUiSnapshot.zero);
   Map<String, dynamic>? _pendingTrafficStatusEvent;
   DateTime _lastTrafficUiUpdateAt = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime? _lastRuntimeStatusEventAt;
@@ -210,6 +215,9 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       ActiveProxyIpController();
   final RuntimeLifecycleController _runtimeLifecycle =
       RuntimeLifecycleController();
+  final RuntimeOperationCoordinator _runtimeOperations =
+      RuntimeOperationCoordinator();
+  late final RuntimeCommandCoordinator _runtimeCommands;
   late final SingboxConfigCoordinator _configCoordinator;
   late final RuntimeEventController _runtimeEvents;
   final ProxyRuntimeController _proxyRuntime = ProxyRuntimeController();
@@ -274,6 +282,10 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       _settings.tlsFragmentationMode;
   bool get _hapticEnabled => _settings.hapticEnabled;
   bool get _hideServerIp => _settings.hideServerIp;
+  ProxySort get _proxySort => ProxySort.values.firstWhere(
+    (value) => value.name == _settings.proxySort,
+    orElse: () => ProxySort.source,
+  );
   bool get _vpnInboundEnabled => _settings.vpnInboundEnabled;
   int get _vpnMtu => _settings.vpnMtu;
   bool get _vpnStrictRoute => _settings.vpnStrictRoute;
@@ -638,9 +650,11 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   Future<bool> _networkInterfaceUsable({String reason = 'dart_check'}) async {
     try {
       final state = await SingboxRuntime.instance.getNetworkInterfaceState();
-      if (state.usable) {
-        _networkInterfaceGeneration = state.generation;
-      }
+      _networkInterfaceGeneration = state.generation;
+      _runtimeOperations.updateNetwork(
+        generation: state.generation,
+        usable: state.usable,
+      );
       return state.usable;
     } catch (error) {
       AppLogStore.warning(
@@ -648,6 +662,17 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         'failed to query network interface reason=$reason error=$error',
       );
       return false;
+    }
+  }
+
+  Future<void> _refreshRuntimeDiagnosticsNetworkState() async {
+    final wasReady = _runtimeOperations.diagnosticsReady;
+    final usable = await _networkInterfaceUsable(reason: 'runtime_readiness');
+    if (!mounted || !usable || _runtimeTransitionInProgress || !_connected) {
+      return;
+    }
+    if (!wasReady && _runtimeOperations.diagnosticsReady) {
+      _onRuntimeDiagnosticsReady();
     }
   }
 
@@ -1745,6 +1770,10 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    _runtimeCommands = RuntimeCommandCoordinator(
+      selectOutbound: (groupTag, outboundTag) => SingboxRuntime.instance
+          .selectOutbound(groupTag: groupTag, outboundTag: outboundTag),
+    );
     _latencyCoordinator = LatencyCoordinator(
       runTest: (request) => SingboxRuntime.instance.urlTest(
         groupTag: request.groupTag,
@@ -1765,6 +1794,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         _ensureActiveLookupCaches();
         return _activeVisibleOutboundsLookup.length;
       },
+      canRunDiagnostics: () => _runtimeOperations.diagnosticsReady,
+      operationGeneration: () => _runtimeOperations.diagnosticGeneration,
       onSessionChanged: (running, kind, targetTag) {
         if (!mounted) return;
         if (running) {
@@ -1834,14 +1865,17 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     try {
       final info = await SingboxRuntime.instance.getAppVersionInfo();
       if (info.versionName.trim().isEmpty) {
+        SubscriptionFetcher.configureAppVersion(_fallbackClientVersionLabel);
         return const AppVersionInfo(
           packageName: '',
           versionName: _fallbackClientVersionLabel,
           versionCode: 0,
         );
       }
+      SubscriptionFetcher.configureAppVersion(info.versionName);
       return info;
     } catch (error) {
+      SubscriptionFetcher.configureAppVersion(_fallbackClientVersionLabel);
       AppLogStore.warning('app version', 'Failed to read app version: $error');
       return const AppVersionInfo(
         packageName: '',
@@ -1881,6 +1915,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     _networkRecoveryDecisionTimer?.cancel();
     _latencyFinalizeTimer?.cancel();
     _runtimeLifecycle.dispose();
+    _runtimeCommands.dispose();
     _activeProxyIpController.dispose();
     _proxySelection.dispose();
     _locationLookupRefreshRequested = false;
@@ -1901,6 +1936,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     _proxyRuntime.dispose();
     _proxyRuntimeVisualStates.dispose();
     _trafficDashboardSnapshot.dispose();
+    _trafficUiSnapshot.dispose();
     super.dispose();
   }
 
@@ -2182,14 +2218,23 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     );
   }
 
-  void _showAppSnackBar(String message) {
+  void _showAppSnackBar(
+    String message, {
+    AppNoticeTone tone = AppNoticeTone.info,
+    String? actionLabel,
+    VoidCallback? onAction,
+  }) {
     final context = _navigatorKey.currentContext;
     if (context == null) {
       return;
     }
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    messenger?.hideCurrentSnackBar();
-    messenger?.showSnackBar(SnackBar(content: Text(message)));
+    AppNotice.show(
+      context,
+      message,
+      tone: tone,
+      actionLabel: actionLabel,
+      onAction: onAction,
+    );
   }
 
   AppLocalizations? get _currentLocalizations {
@@ -2263,15 +2308,12 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         final context = _navigatorKey.currentContext;
         if (!mounted || context == null) return;
-        final messenger = ScaffoldMessenger.maybeOf(context);
-        messenger?.showSnackBar(
-          SnackBar(
-            content: Text(
-              AppLocalizations.of(
-                context,
-              ).updatesDeleteCachedApkDone(result.deletedFiles),
-            ),
-          ),
+        AppNotice.show(
+          context,
+          AppLocalizations.of(
+            context,
+          ).updatesDeleteCachedApkDone(result.deletedFiles),
+          tone: AppNoticeTone.success,
         );
       });
     } catch (error) {
@@ -2288,20 +2330,13 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     }
     final l10n = AppLocalizations.of(context);
     final version = result.info?.displayVersion;
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    messenger?.hideCurrentSnackBar();
-    messenger?.showSnackBar(
-      SnackBar(
-        content: Text(
-          version == null
-              ? l10n.updatesAvailableSnack
-              : l10n.updatesAvailableSnackVersion(version),
-        ),
-        action: SnackBarAction(
-          label: l10n.updatesOpenAction,
-          onPressed: () => unawaited(_showUpdateSettingsPage()),
-        ),
-      ),
+    AppNotice.show(
+      context,
+      version == null
+          ? l10n.updatesAvailableSnack
+          : l10n.updatesAvailableSnackVersion(version),
+      actionLabel: l10n.updatesOpenAction,
+      onAction: () => unawaited(_showUpdateSettingsPage()),
     );
   }
 
@@ -2714,7 +2749,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         (!state.vpnInboundEnabled && !state.proxyInboundEnabled) ||
         state.proxyMixedListen !=
             (state.proxyAllowLan ? '0.0.0.0' : '127.0.0.1') ||
-        (state.proxyAllowLan && !isValidProxyPassword(state.proxyPassword));
+        !isValidProxyPassword(state.proxyPassword);
     if (normalized.activeSubscriptionId != state.activeProfileId ||
         normalized.selectedProxyTag != state.selectedProxyTag ||
         inboundSettingsMigrated) {
@@ -2943,6 +2978,17 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   }
 
   void _publishTrafficDashboardSnapshot({bool force = false}) {
+    final trafficUiSnapshot = TrafficUiSnapshot(
+      speedBytesPerSecond: _connected && _trafficAvailable
+          ? _downlinkBytesPerSecond.toDouble()
+          : 0,
+      trafficBytes: _connected && _trafficAvailable
+          ? (_uplinkTotalBytes + _downlinkTotalBytes).toDouble()
+          : 0,
+    );
+    if (_trafficUiSnapshot.value != trafficUiSnapshot) {
+      _trafficUiSnapshot.value = trafficUiSnapshot;
+    }
     if (!_trafficDashboardOpen && !force) {
       return;
     }
@@ -2957,6 +3003,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     bool retryScheduled = false,
   }) {
     final wasConnected = _connected;
+    final wasTransitioning = _runtimeTransitionInProgress;
+    _runtimeOperations.synchronizeSelection(_selectedProxyTag);
     _connectionPhase = phase;
     _connected =
         phase == AppConnectionPhase.connected ||
@@ -2986,6 +3034,12 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       AppConnectionPhase.recovering => true,
       _ => false,
     };
+    if (_runtimeTransitionInProgress && !wasTransitioning) {
+      _runtimeCommands.invalidate();
+      _runtimeOperations.beginRuntimeTransition();
+    } else if (!_runtimeTransitionInProgress && wasTransitioning) {
+      _runtimeOperations.finishRuntimeTransition(running: _connected);
+    }
     if (!_connected) {
       _clearRuntimeInterfaceIssueWindow();
     }
@@ -3561,6 +3615,12 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     );
     _haptic();
     final updatedSubscription = _withSelectedOutbound(activeSubscription, tag);
+    _runtimeOperations.beginSelection(tag);
+    _latencyCoordinator.cancel();
+    _postConnectUrlTestGeneration++;
+    _postConnectUrlTestTimer?.cancel();
+    _postConnectUrlTestTimer = null;
+    _resetActiveProxyIpState(rebuild: false);
     final selectionGeneration = _connected
         ? _beginRuntimeProxySelectionGuard(tag, previousTag)
         : _beginLocalProxySelection();
@@ -3593,18 +3653,21 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
             'selectOutbound',
             'reason=user proxy select group=select outbound=$tag',
           );
-          final startedAt = DateTime.now();
-          await SingboxRuntime.instance
-              .selectOutbound(groupTag: 'select', outboundTag: tag)
-              .timeout(const Duration(seconds: 3));
+          final result = await _runtimeCommands.selectOutbound(tag);
           if (!mounted ||
               !_proxySelection.isCurrentGeneration(selectionGeneration)) {
             return;
           }
+          if (result.status == RuntimeSelectionStatus.stale) {
+            return;
+          }
+          if (!result.applied) {
+            throw result.error ?? StateError('selector command failed');
+          }
           AppLogStore.info(
             'libbox call',
             'selectOutbound done group=select outbound=$tag '
-                'elapsedMs=${DateTime.now().difference(startedAt).inMilliseconds}',
+                'elapsedMs=${result.elapsed.inMilliseconds}',
           );
           await _persistSelectedProxyConfigSnapshot(
             reason: 'proxy selection persisted',
@@ -3623,22 +3686,11 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
           }
           AppLogStore.error(
             'proxy',
-            'Failed to select proxy "$tag" via command API: $error. '
-                'Restarting runtime with selected tag.',
+            'Failed to select proxy "$tag" via command API: '
+                '$error. Runtime restart was not requested.',
           );
-          try {
-            await _configCoordinator.emitCurrentConfigLogAsync(
-              'proxy selection fallback restart',
-              restartRuntime: true,
-            );
-          } catch (restartError) {
-            AppLogStore.error(
-              'proxy',
-              'Failed to restart runtime after proxy selection error: '
-                  '$restartError',
-            );
-            _showAppSnackBar('Failed to select proxy: $error');
-          }
+          _clearRuntimeProxySelectionGuard(generation: selectionGeneration);
+          _showAppSnackBar('Failed to select proxy: $error');
         }
       }());
     }
@@ -3725,7 +3777,11 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     bool showChecking = true,
     bool ignoreCooldown = false,
   }) {
-    if (!_connected || !_foregroundLifecycleActive) return;
+    if (!_connected ||
+        !_foregroundLifecycleActive ||
+        !_runtimeOperations.diagnosticsReady) {
+      return;
+    }
     unawaited(_latencyCoordinator.runActive(reason: 'selected_proxy'));
   }
 
@@ -3746,7 +3802,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
           generation != _postConnectUrlTestGeneration ||
           !_connected ||
           !_foregroundLifecycleActive ||
-          _runtimeTransitionInProgress) {
+          _runtimeTransitionInProgress ||
+          !_runtimeOperations.diagnosticsReady) {
         return;
       }
       if (reason == 'resume_reconcile' || reason == 'runtime_sync_running') {
@@ -3762,14 +3819,14 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
             'selected=$_selectedProxyTag ignoreCooldown=$ignoreCooldown',
       );
       if (reason == 'runtime_running') {
-        // The stable libbox URLTest groups run once on startup and own their
-        // 30-minute interval. Starting another selector-wide test here races
-        // that native session and duplicates every HTTP probe.
+        // URLTest groups have native auto-check disabled. Probe only the
+        // selected leaf after startup; full-list checks remain explicit.
         _latencyCoordinator.configureAuto(null);
         AppLogStore.debug(
           'latency',
-          'startup test owned by native URLTest groups',
+          'startup test limited to selected outbound',
         );
+        unawaited(_latencyCoordinator.runActive(reason: reason));
       } else {
         unawaited(_latencyCoordinator.runActive(reason: reason));
       }
@@ -4047,6 +4104,10 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
 
   void _setHideServerIp(bool value) {
     _applySettingsChange(() => _settings.setHideServerIp(value));
+  }
+
+  void _setProxySort(ProxySort value) {
+    _applySettingsChange(() => _settings.setProxySort(value.name));
   }
 
   void _setAccentColor(String hex) {
@@ -5053,11 +5114,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       return;
     }
     if (_latencyCoordinator.isRunning) {
-      final context = _navigatorKey.currentContext;
-      if (context != null) {
-        _showAppSnackBar(AppLocalizations.of(context).checkingLatency);
-      }
-      return;
+      await _latencyCoordinator.cancelAndWait();
+      if (!mounted || !_connected || !_foregroundLifecycleActive) return;
     }
     if (haptic) {
       _haptic();
@@ -5148,6 +5206,14 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     if (!mounted) {
       return;
     }
+    if (phase == SingboxConfigCoordinatorPhase.reconfiguring ||
+        phase == SingboxConfigCoordinatorPhase.stopping) {
+      _latencyCoordinator.cancel();
+      _activeProxyIpController.cancelPending();
+      _postConnectUrlTestGeneration++;
+      _postConnectUrlTestTimer?.cancel();
+      _postConnectUrlTestTimer = null;
+    }
     setState(() {
       _setConnectionPhase(switch (phase) {
         SingboxConfigCoordinatorPhase.reconfiguring =>
@@ -5206,27 +5272,10 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     AppLogStore.warning(
       'proxy',
       'runtime did not confirm selected outbound tag=${timeout.tag} '
-          'previous=${timeout.previousTag ?? '<none>'}; '
-          'restarting runtime with local selection',
+          'previous=${timeout.previousTag ?? '<none>'}; restart suppressed',
     );
-    unawaited(() async {
-      try {
-        if (_connected) {
-          await _configCoordinator.emitCurrentConfigLogAsync(
-            'proxy selection confirmation timeout',
-            restartRuntime: true,
-          );
-        }
-      } catch (error) {
-        AppLogStore.error(
-          'proxy',
-          'Failed to restart runtime after selection confirmation timeout: '
-              '$error',
-        );
-      } finally {
-        _clearRuntimeProxySelectionGuard(generation: timeout.generation);
-      }
-    }());
+    _clearRuntimeProxySelectionGuard(generation: timeout.generation);
+    _showAppSnackBar('Proxy switch was not confirmed. Try again.');
   }
 
   void _clearRuntimeProxySelectionGuard({int? generation}) {
@@ -5340,6 +5389,12 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
 
   void _handleRuntimeStateEvent(RuntimeStateEvent event) {
     final running = event.running;
+    final nativeRuntimeGeneration =
+        (event.raw['runtimeGeneration'] as num?)?.toInt() ?? 0;
+    _runtimeOperations.updateRuntimeState(
+      running: running,
+      nativeRuntimeGeneration: nativeRuntimeGeneration,
+    );
     final error = event.error;
     final hasError = event.hasError;
     final wasRetryScheduled = _invalidOutboundRetryScheduled;
@@ -5419,6 +5474,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     if (hasError) {
       unawaited(_handleRuntimeError(error ?? '', wasRetryScheduled));
     } else if (running) {
+      unawaited(_refreshRuntimeDiagnosticsNetworkState());
       _scheduleActiveOutboundIpRefresh();
       _schedulePostConnectSelectedProxyUrlTest(reason: 'runtime_running');
       if (!_coolMode) {
@@ -5479,14 +5535,12 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       return;
     }
     _lastTrafficUiUpdateAt = now;
-    setState(() {
-      _uplinkBytesPerSecond = uplink;
-      _downlinkBytesPerSecond = downlink;
-      _uplinkTotalBytes = uplinkTotal;
-      _downlinkTotalBytes = downlinkTotal;
-      _trafficAvailable = trafficAvailable;
-      _recordTrafficSample(now);
-    });
+    _uplinkBytesPerSecond = uplink;
+    _downlinkBytesPerSecond = downlink;
+    _uplinkTotalBytes = uplinkTotal;
+    _downlinkTotalBytes = downlinkTotal;
+    _trafficAvailable = trafficAvailable;
+    _recordTrafficSample(now);
     _publishTrafficDashboardSnapshot();
   }
 
@@ -5505,15 +5559,23 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
           'networkGeneration=$networkGeneration selected=$_selectedProxyTag',
     );
     _networkInterfaceGeneration = networkGeneration;
-    if (reason == 'default_interface' &&
+    final usable =
+        reason == 'default_interface' &&
         interfaceName != null &&
         interfaceName.isNotEmpty &&
-        interfaceIndex > 0) {
-    } else {
-      _postConnectUrlTestGeneration++;
-      _postConnectUrlTestTimer?.cancel();
-      _postConnectUrlTestTimer = null;
-      _activeProxyIpController.cancelRetry();
+        interfaceIndex > 0;
+    final diagnosticsWereReady = _runtimeOperations.diagnosticsReady;
+    _runtimeOperations.updateNetwork(
+      generation: networkGeneration,
+      usable: usable,
+    );
+    _runtimeCommands.invalidate();
+    _latencyCoordinator.cancel();
+    _activeProxyIpController.cancelPending();
+    _postConnectUrlTestGeneration++;
+    _postConnectUrlTestTimer?.cancel();
+    _postConnectUrlTestTimer = null;
+    if (!usable) {
       AppLogStore.warning(
         'network',
         'default interface unavailable reason=$reason '
@@ -5523,14 +5585,14 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     if (!_connected || _runtimeTransitionInProgress) {
       return;
     }
+    if (!diagnosticsWereReady && _runtimeOperations.diagnosticsReady) {
+      _onRuntimeDiagnosticsReady();
+    }
     if (!_foregroundLifecycleActive) {
       _retryRuntimeOnResume = true;
       return;
     }
-    if (reason == 'default_interface' &&
-        interfaceName != null &&
-        interfaceName.isNotEmpty &&
-        interfaceIndex > 0) {
+    if (usable) {
       _scheduleNetworkRecovery(
         reason: 'default_interface_changed',
         networkGeneration: networkGeneration,
@@ -5538,7 +5600,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       );
       _schedulePostConnectSelectedProxyUrlTest(
         reason: 'default_interface_changed',
-        delay: const Duration(milliseconds: 900),
+        delay: const Duration(milliseconds: 2500),
       );
       return;
     }
@@ -5553,6 +5615,11 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       final status = await SingboxRuntime.instance.status();
       if (!mounted || !_foregroundLifecycleActive) return;
       final running = status['running'] == true;
+      _runtimeOperations.updateRuntimeState(
+        running: running,
+        nativeRuntimeGeneration:
+            (status['runtimeGeneration'] as num?)?.toInt() ?? 0,
+      );
       final recordedServiceAlive = status['recordedServiceAlive'] == true;
       final runtimeIntentFresh = status['runtimeIntentFresh'] == true;
       final activeRuntimeOwner = status['activeRuntimeOwner'] == true;
@@ -6058,24 +6125,48 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     _runtimeErrorDialogVisible = false;
   }
 
-  void _applyGroupUpdates(List<dynamic> rawGroups) {
+  void _applyGroupUpdates(RuntimeGroupsEvent event) {
     if (kDebugMode) {
       developer.Timeline.timeSync(
         'MeowClient._applyGroupUpdates',
-        () => _applyGroupUpdatesImpl(rawGroups),
-        arguments: <String, Object?>{'groups': rawGroups.length},
+        () => _applyGroupUpdatesImpl(event),
+        arguments: <String, Object?>{'groups': event.groups.length},
       );
       return;
     }
-    _applyGroupUpdatesImpl(rawGroups);
+    _applyGroupUpdatesImpl(event);
   }
 
-  void _applyGroupUpdatesImpl(List<dynamic> rawGroups) {
+  void _applyGroupUpdatesImpl(RuntimeGroupsEvent event) {
+    final rawGroups = event.groups;
     _recordGroupsDiagnostics(rawGroups.length);
     final activeSubscription = _activeSubscription;
     if (activeSubscription == null || rawGroups.isEmpty || !mounted) {
       return;
     }
+    var canonicalSelectedTag = '';
+    for (final rawGroup in rawGroups) {
+      if (rawGroup is Map && rawGroup['tag']?.toString() == 'select') {
+        canonicalSelectedTag = rawGroup['selected']?.toString() ?? '';
+        break;
+      }
+    }
+    final diagnosticsWereReady = _runtimeOperations.diagnosticsReady;
+    final accepted = _runtimeOperations.acceptGroupsSnapshot(
+      nativeRuntimeGeneration: event.runtimeGeneration,
+      selectedTag: canonicalSelectedTag,
+    );
+    if (!accepted) {
+      AppLogStore.debug(
+        'proxy',
+        'discarded stale groups snapshot nativeGeneration='
+            '${event.runtimeGeneration} currentGeneration='
+            '${_runtimeOperations.nativeRuntimeGeneration}',
+      );
+      return;
+    }
+    final diagnosticsBecameReady =
+        !diagnosticsWereReady && _runtimeOperations.diagnosticsReady;
     final previousActiveOutboundTag = _connected
         ? _currentResolvedActiveOutboundTag()
         : null;
@@ -6102,6 +6193,9 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       ),
     );
     if (!result.changed) {
+      if (diagnosticsBecameReady) {
+        _onRuntimeDiagnosticsReady();
+      }
       return;
     }
 
@@ -6139,6 +6233,26 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         _scheduleBestOutboundLocationRefresh();
       }
     }
+    if (diagnosticsBecameReady) {
+      _onRuntimeDiagnosticsReady();
+    }
+  }
+
+  void _onRuntimeDiagnosticsReady() {
+    AppLogStore.info(
+      'runtime',
+      'runtime diagnostics ready nativeGeneration='
+          '${_runtimeOperations.nativeRuntimeGeneration} '
+          'networkGeneration=$_networkInterfaceGeneration '
+          'selected=$_selectedProxyTag',
+    );
+    // Diagnostics are not a startup requirement. Let real application traffic
+    // use the newly established TUN before opening probe/provider connections.
+    _scheduleActiveOutboundIpRefresh(delay: const Duration(seconds: 5));
+    _schedulePostConnectSelectedProxyUrlTest(
+      reason: 'runtime_ready',
+      delay: const Duration(milliseconds: 2500),
+    );
   }
 
   void _recordGroupsDiagnostics(int groupCount) {
@@ -6269,6 +6383,13 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     Duration delay = const Duration(milliseconds: 120),
     bool forceRefresh = false,
   }) {
+    if (!_runtimeOperations.diagnosticsReady) {
+      AppLogStore.debug(
+        'proxy',
+        'active IP lookup deferred: runtime diagnostics are not ready',
+      );
+      return;
+    }
     _activeProxyIpController.schedule(
       delay: delay,
       forceRefresh: forceRefresh,
@@ -6291,7 +6412,15 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
 
   ActiveProxyIpTarget? _currentActiveProxyIpTarget() {
     final activeSubscription = _activeSubscription;
-    final activeOutbound = _currentResolvedActiveOutbound();
+    _ensureActiveLookupCaches();
+    final selectedTag = _selectedProxyTag.trim();
+    final activeOutbound =
+        isLowestProxyTag(selectedTag) ||
+            isMixedProxyTag(selectedTag) ||
+            _subscriptionGroupForTag(selectedTag) != null ||
+            _proxyChainForTag(selectedTag) != null
+        ? _currentResolvedActiveOutbound()
+        : _activeOutboundByTagLookup[selectedTag];
     if (activeSubscription == null || activeOutbound == null) {
       return null;
     }
@@ -6299,8 +6428,11 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       subscriptionId: activeSubscription.id,
       outboundTag: activeOutbound.tag,
       cachedIp: activeOutbound.info.externalIp?.trim(),
-      cachedCountryCode: _normalizeCountryCode(activeOutbound.info.country),
+      cachedCountryCode: _normalizeCountryCode(
+        activeOutbound.info.exitCountry ?? activeOutbound.info.country,
+      ),
       hasCachedLocation: _hasResolvedExternalLocation(activeOutbound),
+      operationGeneration: _runtimeOperations.diagnosticGeneration,
     );
   }
 
@@ -6343,25 +6475,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   Future<_ResolvedExternalIpInfo?> _fetchExternalIpInfo({
     required String outboundTag,
   }) async {
-    if (outboundTag == _currentResolvedActiveOutboundTag()) {
-      final result = await lookupFastExitIp();
-      if (result == null) {
-        AppLogStore.warning(
-          'proxy',
-          'active_ip_lookup_result tag=$outboundTag error=fast_lookup_failed',
-        );
-        return null;
-      }
-      AppLogStore.info(
-        'proxy',
-        'active_ip_lookup_result tag=$outboundTag status=known '
-            'source=${result.source}',
-      );
-      return _ResolvedExternalIpInfo(
-        ip: result.ip,
-        countryCode: _normalizeCountryCode(result.countryCode),
-      );
-    }
     final slot = await _acquireLocationLookupSlot();
     if (slot == null) {
       return null;
@@ -6381,15 +6494,15 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         normalizeCountryCode: _normalizeCountryCode,
       );
     } on TimeoutException {
-      AppLogStore.warning(
+      AppLogStore.debug(
         'proxy',
-        'active_ip_lookup_result tag=$outboundTag error=timeout',
+        'outbound_ip_rpc tag=$outboundTag error=timeout',
       );
       return null;
     } catch (error) {
-      AppLogStore.warning(
+      AppLogStore.debug(
         'proxy',
-        'active_ip_lookup_result tag=$outboundTag error=core_error '
+        'outbound_ip_rpc tag=$outboundTag error=core_error '
             'detail=$error',
       );
       return null;
@@ -6451,7 +6564,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       return;
     }
     var subscriptionChanged = false;
-    final runtimeUrlTestRemovals = <String, Set<String>>{};
     final updatedSubscription = latestSubscription.copyWith(
       outbounds: latestSubscription.outbounds
           .map((outbound) {
@@ -6459,31 +6571,25 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
             if (resolved == null) {
               return outbound;
             }
-            final nextCountry = resolved.countryCode ?? outbound.info.country;
+            final legacyLocationStoredInCountry =
+                outbound.info.exitCountry == null &&
+                (outbound.info.externalIp?.trim().isNotEmpty ?? false);
+            final inferredSourceCountry = legacyLocationStoredInCountry
+                ? SubscriptionStore.inferCountryCodeFromName(outbound.name)
+                : null;
+            final sourceCountry =
+                inferredSourceCountry ?? outbound.info.country;
+            final nextExitCountry =
+                resolved.countryCode ?? outbound.info.exitCountry;
             final nextInfo = outbound.info.copyWith(
               externalIp: resolved.ip,
-              country: nextCountry,
+              country: sourceCountry,
+              exitCountry: nextExitCountry,
             );
             if (nextInfo.externalIp == outbound.info.externalIp &&
-                nextInfo.country == outbound.info.country) {
+                nextInfo.country == outbound.info.country &&
+                nextInfo.exitCountry == outbound.info.exitCountry) {
               return outbound;
-            }
-            if (_russiaRouteProxiesEnabled && !_markAllServersRussia) {
-              for (final lowestTag in lowestProxyTags.skip(1)) {
-                final wasAllowed = lowestProxyAllowsCountry(
-                  lowestTag,
-                  outbound.info.country,
-                );
-                final isAllowed = lowestProxyAllowsCountry(
-                  lowestTag,
-                  nextCountry,
-                );
-                if (wasAllowed && !isAllowed) {
-                  (runtimeUrlTestRemovals[lowestTag] ??= <String>{}).add(
-                    outbound.tag,
-                  );
-                }
-              }
             }
             subscriptionChanged = true;
             return outbound.copyWith(info: nextInfo);
@@ -6497,47 +6603,21 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       _subscriptions = _replaceSubscription(updatedSubscription);
       _rebuildDerivedCaches();
     });
+    final sourceCountriesByTag = <String, String?>{
+      for (final outbound in updatedSubscription.outbounds)
+        outbound.tag: outbound.info.country,
+    };
     await SubscriptionStore.saveOutboundRuntimeInfoInBackground(
       updatedSubscription.id,
       externalInfos: {
         for (final entry in resolvedByTag.entries)
           entry.key: {
             'external_ip': entry.value.ip,
-            'country': entry.value.countryCode,
+            'source_country': sourceCountriesByTag[entry.key],
+            'exit_country': entry.value.countryCode,
           },
       },
     );
-    _removeRuntimeUrlTestOutbounds(runtimeUrlTestRemovals);
-  }
-
-  void _removeRuntimeUrlTestOutbounds(Map<String, Set<String>> removals) {
-    if (!_connected || removals.isEmpty) {
-      return;
-    }
-    for (final entry in removals.entries) {
-      final groupTag = entry.key;
-      final outboundTags = entry.value.toList(growable: false);
-      if (outboundTags.isEmpty) {
-        continue;
-      }
-      unawaited(() async {
-        try {
-          _logLibboxCall(
-            'removeUrlTestOutbounds',
-            'reason=runtime URLTest member cleanup group=$groupTag count=${outboundTags.length} tags=${outboundTags.take(12).join(', ')}',
-          );
-          await SingboxRuntime.instance.removeUrlTestOutbounds(
-            groupTag: groupTag,
-            outboundTags: outboundTags,
-          );
-        } catch (error) {
-          AppLogStore.warning(
-            'sing-box',
-            'Failed to update $groupTag URLTest members: $error',
-          );
-        }
-      }());
-    }
   }
 
   void _scheduleBestOutboundLocationRefresh({
@@ -6698,7 +6778,9 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     if (externalIp.isEmpty) {
       return false;
     }
-    return _normalizeCountryCode(outbound.info.country).isNotEmpty;
+    return _normalizeCountryCode(
+      outbound.info.exitCountry ?? outbound.info.country,
+    ).isNotEmpty;
   }
 
   String _normalizeCountryCode(String? countryCode) {
@@ -6707,9 +6789,13 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   }
 
   String _effectiveOutboundCountry(Outbound outbound) {
-    return _markAllServersRussia
-        ? 'RU'
-        : _normalizeCountryCode(outbound.info.country);
+    if (_markAllServersRussia) {
+      return 'RU';
+    }
+    final sourceCountry = _normalizeCountryCode(outbound.info.country);
+    return sourceCountry.isNotEmpty
+        ? sourceCountry
+        : _normalizeCountryCode(outbound.info.exitCountry);
   }
 
   String _protocolLabel(Map<String, dynamic> config, String fallbackType) {
@@ -6894,6 +6980,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
                 trafficBytes: _connected && _trafficAvailable
                     ? (_uplinkTotalBytes + _downlinkTotalBytes).toDouble()
                     : 0,
+                trafficListenable: _trafficUiSnapshot,
                 onToggleConnection: () => unawaited(
                   _toggleConnection(source: 'home.connection_button'),
                 ),
@@ -6944,6 +7031,9 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
                     trafficBytes: _connected && _trafficAvailable
                         ? (_uplinkTotalBytes + _downlinkTotalBytes).toDouble()
                         : 0,
+                    trafficListenable: _trafficUiSnapshot,
+                    initialSort: _proxySort,
+                    onSortChanged: _setProxySort,
                     progressiveBlurEnabled: _effectiveProgressiveBlurEnabled,
                     onSelected: _selectProxy,
                     onUrlTest: _runUrlTest,

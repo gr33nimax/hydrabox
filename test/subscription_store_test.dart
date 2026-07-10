@@ -259,7 +259,11 @@ void main() {
           tag: 'leaf-1',
           name: 'Leaf 1',
           config: {'type': 'vless', 'tag': 'leaf-1'},
-          info: OutboundInfo(externalIp: '1.1.1.1', country: 'FI'),
+          info: OutboundInfo(
+            externalIp: '1.1.1.1',
+            country: 'FI',
+            exitCountry: 'SE',
+          ),
         ),
       ],
     );
@@ -275,11 +279,16 @@ void main() {
     expect(saved!.outbounds.single.info.latestPing, isNull);
     expect(saved.outbounds.single.info.externalIp, '1.1.1.1');
     expect(saved.outbounds.single.info.country, 'FI');
+    expect(saved.outbounds.single.info.exitCountry, 'SE');
 
     await SubscriptionStore.saveOutboundRuntimeInfoInBackground(
       subscription.id,
       externalInfos: const {
-        'leaf-1': {'external_ip': '2.2.2.2', 'country': 'DE'},
+        'leaf-1': {
+          'external_ip': '2.2.2.2',
+          'source_country': 'FI',
+          'exit_country': 'DE',
+        },
       },
     );
 
@@ -287,7 +296,8 @@ void main() {
     expect(saved, isNotNull);
     expect(saved!.outbounds.single.info.latestPing, isNull);
     expect(saved.outbounds.single.info.externalIp, '2.2.2.2');
-    expect(saved.outbounds.single.info.country, 'DE');
+    expect(saved.outbounds.single.info.country, 'FI');
+    expect(saved.outbounds.single.info.exitCountry, 'DE');
   });
 
   test('preserves state across duplicate endpoints when credentials match', () {

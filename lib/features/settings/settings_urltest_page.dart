@@ -71,8 +71,11 @@ class _SettingsUrlTestPageState extends State<SettingsUrlTestPage> {
         url: url.isEmpty ? null : url,
         intervalSeconds: interval,
         timeoutSeconds: timeout,
-        concurrency: concurrency,
-        unavailableCheckIntervalSeconds: unavailableCheckInterval,
+        concurrency: concurrency?.clamp(1, 8),
+        unavailableCheckIntervalSeconds: unavailableCheckInterval?.clamp(
+          120,
+          3600,
+        ),
       ),
     );
   }
@@ -193,7 +196,7 @@ class _SettingsUrlTestPageState extends State<SettingsUrlTestPage> {
                     decoration: InputDecoration(
                       labelText: l10n.urlTestConcurrencyTitle,
                       helperText: l10n.urlTestConcurrencySubtitle,
-                      hintText: '30',
+                      hintText: '8',
                     ),
                   ),
                 ],

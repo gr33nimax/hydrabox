@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
+import 'package:meow_client/core/widgets/app_notice.dart';
 import 'package:meow_client/data/local/app_settings_store.dart';
 import 'package:meow_client/data/update/app_update_service.dart';
 import 'package:meow_client/features/settings/settings_ui.dart';
@@ -375,12 +376,10 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage>
     final previous = _canInstallApks;
     setState(() => _canInstallApks = canInstall);
     if (showFeedback && previous == false && canInstall) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            AppLocalizations.of(context).updatesInstallPermissionGranted,
-          ),
-        ),
+      AppNotice.show(
+        context,
+        AppLocalizations.of(context).updatesInstallPermissionGranted,
+        tone: AppNoticeTone.success,
       );
     }
     return canInstall;
@@ -468,8 +467,10 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage>
         error: metadata.lastError,
       );
     });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(l10n.updatesDeleteCachedApkDone(deleted))),
+    AppNotice.show(
+      context,
+      l10n.updatesDeleteCachedApkDone(deleted),
+      tone: AppNoticeTone.success,
     );
   }
 

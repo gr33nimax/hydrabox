@@ -59,10 +59,10 @@ class _SettingsSubscriptionsPageState extends State<SettingsSubscriptionsPage> {
     );
     _intervalSeconds = widget.currentConfig.intervalSeconds ?? 900;
     _timeoutSeconds = widget.currentConfig.timeoutSeconds ?? 10;
-    _concurrency = widget.currentConfig.concurrency ?? 4;
+    _concurrency = (widget.currentConfig.concurrency ?? 4).clamp(1, 8);
     _unavailableCheckIntervalSeconds =
-        (widget.currentConfig.unavailableCheckIntervalSeconds ?? 15)
-            .clamp(1, 30)
+        (widget.currentConfig.unavailableCheckIntervalSeconds ?? 120)
+            .clamp(120, 3600)
             .toInt();
     _locationLookupLimit = widget.currentLocationLookupLimit
         .clamp(0, 50)
@@ -486,8 +486,8 @@ class _SettingsSubscriptionsPageState extends State<SettingsSubscriptionsPage> {
                     child: Slider(
                       value: _concurrency.toDouble(),
                       min: 1,
-                      max: 200,
-                      divisions: 199,
+                      max: 8,
+                      divisions: 7,
                       label: resolvedConcurrency,
                       onChanged: (value) {
                         setState(() {
@@ -509,7 +509,7 @@ class _SettingsSubscriptionsPageState extends State<SettingsSubscriptionsPage> {
                         ),
                         const Spacer(),
                         Text(
-                          '200',
+                          '8',
                           style: theme.textTheme.labelSmall?.copyWith(
                             color: cs.onSurfaceVariant,
                           ),
@@ -581,9 +581,9 @@ class _SettingsSubscriptionsPageState extends State<SettingsSubscriptionsPage> {
                     ),
                     child: Slider(
                       value: _unavailableCheckIntervalSeconds.toDouble(),
-                      min: 1,
-                      max: 30,
-                      divisions: 29,
+                      min: 120,
+                      max: 3600,
+                      divisions: 58,
                       label: '$resolvedUnavailableCheckInterval сек.',
                       onChanged: (value) {
                         setState(() {
@@ -598,14 +598,14 @@ class _SettingsSubscriptionsPageState extends State<SettingsSubscriptionsPage> {
                     child: Row(
                       children: [
                         Text(
-                          '1 с',
+                          '120 с',
                           style: theme.textTheme.labelSmall?.copyWith(
                             color: cs.onSurfaceVariant,
                           ),
                         ),
                         const Spacer(),
                         Text(
-                          '30 с',
+                          '3600 с',
                           style: theme.textTheme.labelSmall?.copyWith(
                             color: cs.onSurfaceVariant,
                           ),

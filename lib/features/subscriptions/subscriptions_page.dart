@@ -7,6 +7,8 @@ import 'package:flutter/services.dart';
 import 'package:gap/gap.dart';
 import 'package:meow_client/app/bounded_task_runner.dart';
 import 'package:meow_client/core/demo_utils.dart';
+import 'package:meow_client/core/security/sensitive_clipboard.dart';
+import 'package:meow_client/core/widgets/app_notice.dart';
 import 'package:meow_client/data/subscription/happ_crypto_link.dart';
 import 'package:meow_client/data/subscription/subscription_fetcher.dart';
 import 'package:meow_client/data/subscription/subscription_store.dart';
@@ -205,12 +207,10 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
     var completed = false;
     final timer = Timer(_kSubscriptionOperationSoftWarningDelay, () {
       if (!completed && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              AppLocalizations.of(context).subscriptionOperationSlowWarning,
-            ),
-          ),
+        AppNotice.show(
+          context,
+          AppLocalizations.of(context).subscriptionOperationSlowWarning,
+          tone: AppNoticeTone.warning,
         );
       }
     });
@@ -458,8 +458,10 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
       if (mounted) {
         final l10n = AppLocalizations.of(context);
         if (createdResult.hasWarning) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(l10n.subscriptionSavedWithFetchWarning)),
+          AppNotice.show(
+            context,
+            l10n.subscriptionSavedWithFetchWarning,
+            tone: AppNoticeTone.warning,
           );
         }
         if (prepared.fileContent == null) {
@@ -681,12 +683,10 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            AppLocalizations.of(context).subscriptionHwidEnabledAndUpdated,
-          ),
-        ),
+      AppNotice.show(
+        context,
+        AppLocalizations.of(context).subscriptionHwidEnabledAndUpdated,
+        tone: AppNoticeTone.success,
       );
       await _maybeHandleMovedSubscription(updated);
       _reload();
@@ -747,14 +747,12 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            AppLocalizations.of(
-              context,
-            ).subscriptionsRefreshAllComplete(updated, failed),
-          ),
-        ),
+      AppNotice.show(
+        context,
+        AppLocalizations.of(
+          context,
+        ).subscriptionsRefreshAllComplete(updated, failed),
+        tone: failed > 0 ? AppNoticeTone.warning : AppNoticeTone.success,
       );
     } finally {
       if (mounted) {
@@ -925,10 +923,10 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
     if (value.isEmpty ||
         !HappCryptoLinkDecoder.isSupportedSubscriptionUrl(value)) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(AppLocalizations.of(context).subscriptionQrUnsupported),
-        ),
+      AppNotice.show(
+        context,
+        AppLocalizations.of(context).subscriptionQrUnsupported,
+        tone: AppNoticeTone.warning,
       );
       return;
     }
@@ -940,30 +938,28 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
   }
 
   Future<void> _copySubscriptionUrl(Subscription subscription) async {
-    await Clipboard.setData(ClipboardData(text: subscription.url));
+    await SensitiveClipboard.copy(subscription.url);
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(AppLocalizations.of(context).subscriptionUrlCopied),
-      ),
+    AppNotice.show(
+      context,
+      AppLocalizations.of(context).subscriptionUrlCopied,
+      tone: AppNoticeTone.success,
     );
   }
 
   Future<void> _copySubscriptionJson(Subscription subscription) async {
     final hydrated = SubscriptionStore.get(subscription.id) ?? subscription;
     const encoder = JsonEncoder.withIndent('  ');
-    await Clipboard.setData(
-      ClipboardData(text: encoder.convert(hydrated.toMap())),
-    );
+    await SensitiveClipboard.copy(encoder.convert(hydrated.toMap()));
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(AppLocalizations.of(context).subscriptionJsonCopied),
-      ),
+    AppNotice.show(
+      context,
+      AppLocalizations.of(context).subscriptionJsonCopied,
+      tone: AppNoticeTone.success,
     );
   }
 
@@ -2044,10 +2040,10 @@ class _SubscriptionDetailsPageState extends State<_SubscriptionDetailsPage> {
     if (trimmed.isEmpty ||
         !HappCryptoLinkDecoder.isSupportedSubscriptionUrl(trimmed)) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(AppLocalizations.of(context).subscriptionQrUnsupported),
-        ),
+      AppNotice.show(
+        context,
+        AppLocalizations.of(context).subscriptionQrUnsupported,
+        tone: AppNoticeTone.warning,
       );
       return;
     }
@@ -2078,9 +2074,7 @@ class _SubscriptionDetailsPageState extends State<_SubscriptionDetailsPage> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(error.toString())));
+      AppNotice.show(context, error.toString(), tone: AppNoticeTone.error);
     } finally {
       if (mounted) {
         setState(() => _busy = false);
@@ -2404,9 +2398,7 @@ class _SubscriptionDetailsPageState extends State<_SubscriptionDetailsPage> {
                             FilledButton.tonal(
                               onPressed: () async {
                                 _haptic();
-                                await Clipboard.setData(
-                                  ClipboardData(text: subscription.url),
-                                );
+                                await SensitiveClipboard.copy(subscription.url);
                               },
                               style: FilledButton.styleFrom(
                                 padding: const EdgeInsets.symmetric(
@@ -2482,8 +2474,8 @@ class _SubscriptionDetailsPageState extends State<_SubscriptionDetailsPage> {
                                 FilledButton.tonal(
                                   onPressed: () async {
                                     _haptic();
-                                    await Clipboard.setData(
-                                      ClipboardData(text: happCryptoLink),
+                                    await SensitiveClipboard.copy(
+                                      happCryptoLink,
                                     );
                                   },
                                   style: FilledButton.styleFrom(
@@ -3204,7 +3196,6 @@ class _AddSubscriptionSheetState extends State<_AddSubscriptionSheet> {
   final _nameController = TextEditingController();
   final _customUserAgentController = TextEditingController();
   final _customHwidController = TextEditingController();
-  String? _urlError;
   _AddSubscriptionSheetMode _mode = _AddSubscriptionSheetMode.quick;
   bool _busy = false;
   bool _useCustomUserAgent = false;
@@ -3212,12 +3203,9 @@ class _AddSubscriptionSheetState extends State<_AddSubscriptionSheet> {
   bool _useCustomHwid = false;
   int _autoRefreshMinutes = 360;
   String? _stage;
-  String? _notice;
-  Timer? _noticeTimer;
 
   @override
   void dispose() {
-    _noticeTimer?.cancel();
     _urlController.dispose();
     _nameController.dispose();
     _customUserAgentController.dispose();
@@ -3243,16 +3231,11 @@ class _AddSubscriptionSheetState extends State<_AddSubscriptionSheet> {
   }
 
   void _setError(String message) {
-    _noticeTimer?.cancel();
     setState(() {
-      _urlError = null;
-      _notice = message;
       _busy = false;
       _stage = null;
     });
-    _noticeTimer = Timer(const Duration(seconds: 4), () {
-      if (mounted) setState(() => _notice = null);
-    });
+    AppNotice.show(context, message, tone: AppNoticeTone.error);
   }
 
   Future<void> _submitResult(
@@ -3266,12 +3249,10 @@ class _AddSubscriptionSheetState extends State<_AddSubscriptionSheet> {
     if (!keepCurrentStage) {
       setState(() {
         _busy = true;
-        _urlError = null;
         _stage = l10n.addSubscriptionImporting;
       });
     } else {
       setState(() {
-        _urlError = null;
         _stage = l10n.addSubscriptionImporting;
       });
     }
@@ -3340,7 +3321,6 @@ class _AddSubscriptionSheetState extends State<_AddSubscriptionSheet> {
     if (!mounted || text.isEmpty) return;
     _urlController.text = text;
     _urlController.selection = TextSelection.collapsed(offset: text.length);
-    if (_urlError != null) setState(() => _urlError = null);
   }
 
   Future<void> _importFromClipboard() async {
@@ -3350,7 +3330,6 @@ class _AddSubscriptionSheetState extends State<_AddSubscriptionSheet> {
     final l10n = AppLocalizations.of(context);
     setState(() {
       _busy = true;
-      _urlError = null;
       _stage = l10n.addSubscriptionReadingClipboard;
     });
     final data = await Clipboard.getData('text/plain');
@@ -3386,9 +3365,7 @@ class _AddSubscriptionSheetState extends State<_AddSubscriptionSheet> {
     );
     if (!mounted || scannedUrl == null || scannedUrl.isEmpty) return;
     if (!HappCryptoLinkDecoder.isSupportedSubscriptionUrl(scannedUrl)) {
-      setState(
-        () => _urlError = AppLocalizations.of(context).invalidQrSubscription,
-      );
+      _setError(AppLocalizations.of(context).invalidQrSubscription);
       return;
     }
     await _submitResult(
@@ -3410,7 +3387,6 @@ class _AddSubscriptionSheetState extends State<_AddSubscriptionSheet> {
     final l10n = AppLocalizations.of(context);
     setState(() {
       _busy = true;
-      _urlError = null;
       _stage = l10n.addSubscriptionReadingFile;
     });
     final file = result.files.single;
@@ -3443,7 +3419,6 @@ class _AddSubscriptionSheetState extends State<_AddSubscriptionSheet> {
     }
     setState(() {
       _mode = _AddSubscriptionSheetMode.manual;
-      _urlError = null;
     });
     widget.onModeChanged(_mode);
   }
@@ -3454,7 +3429,6 @@ class _AddSubscriptionSheetState extends State<_AddSubscriptionSheet> {
     }
     setState(() {
       _mode = _AddSubscriptionSheetMode.quick;
-      _urlError = null;
     });
     widget.onModeChanged(_mode);
   }
@@ -3603,11 +3577,7 @@ class _AddSubscriptionSheetState extends State<_AddSubscriptionSheet> {
                               onAutoRefreshMinutesChanged: (value) {
                                 setState(() => _autoRefreshMinutes = value);
                               },
-                              onUrlChanged: () {
-                                if (_urlError != null) {
-                                  setState(() => _urlError = null);
-                                }
-                              },
+                              onUrlChanged: () {},
                             ),
                     ),
                   ],
@@ -3705,68 +3675,6 @@ class _AddSubscriptionSheetState extends State<_AddSubscriptionSheet> {
                           ],
                         ),
                       ),
-                    ),
-                  ),
-                ),
-              ),
-              Align(
-                alignment: Alignment.bottomCenter,
-                child: IgnorePointer(
-                  child: SafeArea(
-                    top: false,
-                    minimum: const EdgeInsets.fromLTRB(18, 0, 18, 18),
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 180),
-                      transitionBuilder: (child, animation) => SlideTransition(
-                        position:
-                            Tween<Offset>(
-                              begin: const Offset(0, .35),
-                              end: Offset.zero,
-                            ).animate(
-                              CurvedAnimation(
-                                parent: animation,
-                                curve: Curves.easeOutCubic,
-                              ),
-                            ),
-                        child: FadeTransition(opacity: animation, child: child),
-                      ),
-                      child: _notice == null
-                          ? const SizedBox.shrink()
-                          : Material(
-                              key: ValueKey(_notice),
-                              color: cs.inverseSurface,
-                              elevation: 8,
-                              borderRadius: BorderRadius.circular(16),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 13,
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.error_outline_rounded,
-                                      color: cs.onInverseSurface,
-                                      size: 20,
-                                    ),
-                                    const Gap(10),
-                                    Flexible(
-                                      child: Text(
-                                        _notice!,
-                                        maxLines: 3,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: theme.textTheme.bodyMedium
-                                            ?.copyWith(
-                                              color: cs.onInverseSurface,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
                     ),
                   ),
                 ),

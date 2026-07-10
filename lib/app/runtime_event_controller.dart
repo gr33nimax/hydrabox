@@ -16,9 +16,19 @@ class RuntimeStateEvent {
   bool get hasError => error != null && error!.isNotEmpty;
 }
 
+class RuntimeGroupsEvent {
+  const RuntimeGroupsEvent({
+    required this.groups,
+    required this.runtimeGeneration,
+  });
+
+  final List<dynamic> groups;
+  final int runtimeGeneration;
+}
+
 typedef RuntimeStateHandler = void Function(RuntimeStateEvent event);
 typedef RuntimeRawEventHandler = void Function(Map<String, dynamic> event);
-typedef RuntimeGroupsHandler = void Function(List<dynamic> groups);
+typedef RuntimeGroupsHandler = void Function(RuntimeGroupsEvent event);
 typedef RuntimeLogFilter = bool Function(String level);
 typedef RuntimeLogIssueHandler = void Function(String reason, String message);
 
@@ -86,7 +96,13 @@ class RuntimeEventController {
         _onNetwork(event);
         break;
       case 'groups':
-        _onGroups((event['groups'] as List?) ?? const []);
+        _onGroups(
+          RuntimeGroupsEvent(
+            groups: (event['groups'] as List?) ?? const [],
+            runtimeGeneration:
+                (event['runtimeGeneration'] as num?)?.toInt() ?? 0,
+          ),
+        );
         break;
       case 'nativeLog':
         _recordNativeLog(event);

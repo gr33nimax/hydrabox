@@ -78,7 +78,7 @@ abstract class MeowBasePlatformInterface(
             val owner = ConnectionOwner()
             owner.userId = uid
             owner.userName = packages?.firstOrNull() ?: ""
-            owner.setAndroidPackageNames(SimpleStringIterator(packages.orEmpty().iterator()))
+            owner.setAndroidPackageNames(SimpleStringIterator(packages.orEmpty().asIterable()))
             return owner
         } catch (error: Exception) {
             MeowDiagnostics.log("MeowPlatform", "getConnectionOwnerUid failed", error)
@@ -103,10 +103,9 @@ abstract class MeowBasePlatformInterface(
                         .mapNotNull { interfaceAddress ->
                             val hostAddress = interfaceAddress.address.hostAddress ?: return@mapNotNull null
                             "${hostAddress.substringBefore('%')}/${interfaceAddress.networkPrefixLength}"
-                        }
-                        .iterator(),
+                        },
                 )
-                dnsServer = SimpleStringIterator(linkProperties.dnsServers.mapNotNull { it.hostAddress }.iterator())
+                dnsServer = SimpleStringIterator(linkProperties.dnsServers.mapNotNull { it.hostAddress })
                 type = when {
                     capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> Libbox.InterfaceTypeWIFI
                     capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> Libbox.InterfaceTypeCellular
@@ -171,7 +170,7 @@ abstract class MeowBasePlatformInterface(
                 certificates += "-----BEGIN CERTIFICATE-----\n$encoded\n-----END CERTIFICATE-----"
             }
         }
-        return SimpleStringIterator(certificates.iterator())
+        return SimpleStringIterator(certificates)
     }
 
     override fun underNetworkExtension(): Boolean = false
@@ -250,20 +249,6 @@ class MeowVpnPlatformInterface(
             )
             val includedPackages = splitPackages.included
             val excludedPackages = splitPackages.excluded
-            lastTunPackageSummary = buildString {
-                append("autoRoute=true allowed=")
-                append(includedPackages.size)
-                append(" disallowed=")
-                append(excludedPackages.size)
-                if (includedPackages.isNotEmpty()) {
-                    append(" allowedPackages=")
-                    append(includedPackages.joinToString(","))
-                }
-                if (excludedPackages.isNotEmpty()) {
-                    append(" disallowedPackages=")
-                    append(excludedPackages.joinToString(","))
-                }
-            }
             val dnsServerAddress = runCatching { options.dnsServerAddress }.getOrNull()
             while (dnsServerAddress?.hasNext() == true) {
                 val dnsAddress = dnsServerAddress.next()
@@ -324,12 +309,37 @@ class MeowVpnPlatformInterface(
                     )
                 }
             } else {
-                addRoutes(builder, options.inet4RouteRange, "0.0.0.0", 0, false)
-                addRoutes(builder, options.inet6RouteRange, "::", 0, false)
+                // Older Android versions do not expose excludeRoute(). The core
+                // normally supplies the calculated route ranges, but some
+                // platform/core combinations return an empty iterator. Without
+                // a fallback Android only routes the implicit DNS server into
+                // the VPN, so per-app allowlists resolve domains but never send
+                // ordinary TCP/UDP traffic through TUN.
+                addRoutes(builder, options.inet4RouteRange, "0.0.0.0", 0, hasIpv4Address)
+                addRoutes(builder, options.inet6RouteRange, "::", 0, hasIpv6Address)
             }
 
-            addPackages(builder, includedPackages.iterator(), true)
-            addPackages(builder, excludedPackages.iterator(), false)
+            val appliedIncludedPackages = addPackages(builder, includedPackages.iterator(), true)
+            val appliedExcludedPackages = addPackages(builder, excludedPackages.iterator(), false)
+            requireAppliedIncludedPackages(includedPackages, appliedIncludedPackages)
+            lastTunPackageSummary = buildString {
+                append("autoRoute=true requestedAllowed=")
+                append(includedPackages.size)
+                append(" appliedAllowed=")
+                append(appliedIncludedPackages.size)
+                append(" requestedDisallowed=")
+                append(excludedPackages.size)
+                append(" appliedDisallowed=")
+                append(appliedExcludedPackages.size)
+                if (appliedIncludedPackages.isNotEmpty()) {
+                    append(" allowedPackages=")
+                    append(appliedIncludedPackages.joinToString(","))
+                }
+                if (appliedExcludedPackages.isNotEmpty()) {
+                    append(" disallowedPackages=")
+                    append(appliedExcludedPackages.joinToString(","))
+                }
+            }
             MeowDiagnostics.log(
                 "MeowVpnPlatform",
                 "openTun packages $lastTunPackageSummary",
@@ -397,7 +407,8 @@ class MeowVpnPlatformInterface(
         builder: VpnService.Builder,
         iterator: Iterator<String>,
         allowed: Boolean,
-    ) {
+    ): List<String> {
+        val applied = mutableListOf<String>()
         while (iterator.hasNext()) {
             val packageName = iterator.next().trim()
             if (packageName.isBlank()) {
@@ -431,6 +442,7 @@ class MeowVpnPlatformInterface(
                         "openTun disallow package=$packageName",
                     )
                 }
+                applied += packageName
             }.onFailure { error ->
                 if (error !is PackageManager.NameNotFoundException) {
                     throw error
@@ -441,6 +453,7 @@ class MeowVpnPlatformInterface(
                 )
             }
         }
+        return applied
     }
 
     private fun isAndroidPackageName(value: String): Boolean =
@@ -468,11 +481,16 @@ class MeowProxyPlatformInterface(
 }
 
 class SimpleStringIterator(
-    private val iterator: Iterator<String>,
+    values: Iterable<String>,
 ) : StringIterator {
-    override fun hasNext(): Boolean = iterator.hasNext()
-    override fun next(): String = iterator.next()
-    override fun len(): Int = 0
+    private val items = values.toList()
+    private var index = 0
+
+    override fun hasNext(): Boolean = index < items.size
+
+    override fun next(): String = items[index++]
+
+    override fun len(): Int = items.size
 }
 
 private object MeowLocalResolver : LocalDNSTransport {

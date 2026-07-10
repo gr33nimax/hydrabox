@@ -297,106 +297,6 @@ data class NetworkInterfaceStateMessage (
 }
 
 /** Generated class from Pigeon that represents data sent in messages. */
-data class EndpointProbeRequestMessage (
-  val tag: String,
-  val host: String,
-  val port: Long,
-  val timeoutMs: Long
-)
- {
-  companion object {
-    fun fromList(pigeonVar_list: List<Any?>): EndpointProbeRequestMessage {
-      val tag = pigeonVar_list[0] as String
-      val host = pigeonVar_list[1] as String
-      val port = pigeonVar_list[2] as Long
-      val timeoutMs = pigeonVar_list[3] as Long
-      return EndpointProbeRequestMessage(tag, host, port, timeoutMs)
-    }
-  }
-  fun toList(): List<Any?> {
-    return listOf(
-      tag,
-      host,
-      port,
-      timeoutMs,
-    )
-  }
-  override fun equals(other: Any?): Boolean {
-    if (other == null || other.javaClass != javaClass) {
-      return false
-    }
-    if (this === other) {
-      return true
-    }
-    val other = other as EndpointProbeRequestMessage
-    return SingboxApiPigeonUtils.deepEquals(this.tag, other.tag) && SingboxApiPigeonUtils.deepEquals(this.host, other.host) && SingboxApiPigeonUtils.deepEquals(this.port, other.port) && SingboxApiPigeonUtils.deepEquals(this.timeoutMs, other.timeoutMs)
-  }
-
-  override fun hashCode(): Int {
-    var result = javaClass.hashCode()
-    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.tag)
-    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.host)
-    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.port)
-    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.timeoutMs)
-    return result
-  }
-}
-
-/** Generated class from Pigeon that represents data sent in messages. */
-data class EndpointProbeResultMessage (
-  val tag: String,
-  val reachable: Boolean,
-  val latencyMs: Long? = null,
-  val errorCode: String? = null,
-  val checkedAtMillis: Long,
-  val protectedSocket: Boolean
-)
- {
-  companion object {
-    fun fromList(pigeonVar_list: List<Any?>): EndpointProbeResultMessage {
-      val tag = pigeonVar_list[0] as String
-      val reachable = pigeonVar_list[1] as Boolean
-      val latencyMs = pigeonVar_list[2] as Long?
-      val errorCode = pigeonVar_list[3] as String?
-      val checkedAtMillis = pigeonVar_list[4] as Long
-      val protectedSocket = pigeonVar_list[5] as Boolean
-      return EndpointProbeResultMessage(tag, reachable, latencyMs, errorCode, checkedAtMillis, protectedSocket)
-    }
-  }
-  fun toList(): List<Any?> {
-    return listOf(
-      tag,
-      reachable,
-      latencyMs,
-      errorCode,
-      checkedAtMillis,
-      protectedSocket,
-    )
-  }
-  override fun equals(other: Any?): Boolean {
-    if (other == null || other.javaClass != javaClass) {
-      return false
-    }
-    if (this === other) {
-      return true
-    }
-    val other = other as EndpointProbeResultMessage
-    return SingboxApiPigeonUtils.deepEquals(this.tag, other.tag) && SingboxApiPigeonUtils.deepEquals(this.reachable, other.reachable) && SingboxApiPigeonUtils.deepEquals(this.latencyMs, other.latencyMs) && SingboxApiPigeonUtils.deepEquals(this.errorCode, other.errorCode) && SingboxApiPigeonUtils.deepEquals(this.checkedAtMillis, other.checkedAtMillis) && SingboxApiPigeonUtils.deepEquals(this.protectedSocket, other.protectedSocket)
-  }
-
-  override fun hashCode(): Int {
-    var result = javaClass.hashCode()
-    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.tag)
-    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.reachable)
-    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.latencyMs)
-    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.errorCode)
-    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.checkedAtMillis)
-    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.protectedSocket)
-    return result
-  }
-}
-
-/** Generated class from Pigeon that represents data sent in messages. */
 data class UrlTestRequestMessage (
   val groupTag: String,
   val targetOutboundTag: String,
@@ -476,16 +376,6 @@ private open class SingboxApiPigeonCodec : StandardMessageCodec() {
       }
       131.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          EndpointProbeRequestMessage.fromList(it)
-        }
-      }
-      132.toByte() -> {
-        return (readValue(buffer) as? List<Any?>)?.let {
-          EndpointProbeResultMessage.fromList(it)
-        }
-      }
-      133.toByte() -> {
-        return (readValue(buffer) as? List<Any?>)?.let {
           UrlTestRequestMessage.fromList(it)
         }
       }
@@ -502,16 +392,8 @@ private open class SingboxApiPigeonCodec : StandardMessageCodec() {
         stream.write(130)
         writeValue(stream, value.toList())
       }
-      is EndpointProbeRequestMessage -> {
-        stream.write(131)
-        writeValue(stream, value.toList())
-      }
-      is EndpointProbeResultMessage -> {
-        stream.write(132)
-        writeValue(stream, value.toList())
-      }
       is UrlTestRequestMessage -> {
-        stream.write(133)
+        stream.write(131)
         writeValue(stream, value.toList())
       }
       else -> super.writeValue(stream, value)
@@ -541,7 +423,6 @@ interface SingboxHostApi {
   fun status(callback: (Result<Map<String?, Any?>>) -> Unit)
   fun lookupOutboundExternalInfo(outboundTag: String, callback: (Result<Map<String?, Any?>>) -> Unit)
   fun getNetworkInterfaceState(callback: (Result<NetworkInterfaceStateMessage>) -> Unit)
-  fun probeProxyEndpoint(request: EndpointProbeRequestMessage, callback: (Result<EndpointProbeResultMessage>) -> Unit)
   fun exportLogs(content: String, suggestedName: String, callback: (Result<String?>) -> Unit)
   fun getAndroidId(callback: (Result<String>) -> Unit)
   fun getSubscriptionRequestDeviceInfo(callback: (Result<Map<String?, Any?>>) -> Unit)
@@ -913,26 +794,6 @@ interface SingboxHostApi {
         if (api != null) {
           channel.setMessageHandler { _, reply ->
             api.getNetworkInterfaceState{ result: Result<NetworkInterfaceStateMessage> ->
-              val error = result.exceptionOrNull()
-              if (error != null) {
-                reply.reply(SingboxApiPigeonUtils.wrapError(error))
-              } else {
-                val data = result.getOrNull()
-                reply.reply(SingboxApiPigeonUtils.wrapResult(data))
-              }
-            }
-          }
-        } else {
-          channel.setMessageHandler(null)
-        }
-      }
-      run {
-        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.meow_client.SingboxHostApi.probeProxyEndpoint$separatedMessageChannelSuffix", codec)
-        if (api != null) {
-          channel.setMessageHandler { message, reply ->
-            val args = message as List<Any?>
-            val requestArg = args[0] as EndpointProbeRequestMessage
-            api.probeProxyEndpoint(requestArg) { result: Result<EndpointProbeResultMessage> ->
               val error = result.exceptionOrNull()
               if (error != null) {
                 reply.reply(SingboxApiPigeonUtils.wrapError(error))

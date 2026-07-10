@@ -36,6 +36,17 @@ internal fun requireExclusiveSplitTunnelPackages(
     }
 }
 
+internal fun requireAppliedIncludedPackages(
+    requested: List<String>,
+    applied: List<String>,
+) {
+    if (requested.isNotEmpty() && applied.isEmpty()) {
+        throw SplitTunnelConfigurationException(
+            "include_package did not contain an installed application",
+        )
+    }
+}
+
 private fun readBoundedPackageIterator(
     fieldName: String,
     iterator: StringIterator,

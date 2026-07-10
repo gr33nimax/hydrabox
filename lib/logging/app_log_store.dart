@@ -232,6 +232,13 @@ class AppLogStore {
       (match) => '${match.group(1)}://<redacted>',
     );
     result = result.replaceAllMapped(
+      RegExp(
+        r'\b(https?://)([^/\s?#"\x27<>]+)(?:[^\s"\x27<>]*)?',
+        caseSensitive: false,
+      ),
+      (match) => '${match.group(1)}${match.group(2)}/<redacted>',
+    );
+    result = result.replaceAllMapped(
       RegExp(r'([a-z][a-z0-9+.-]*://)([^/@\s]+)@', caseSensitive: false),
       (match) => '${match.group(1)}<redacted>@',
     );
@@ -251,7 +258,7 @@ class AppLogStore {
     );
     result = result.replaceAllMapped(
       RegExp(
-        r'\b(uuid|password|private_key|pre_shared_key|server_key|token|access_token|authorization|cookie)\s*[:=]\s*([^\s,;]+)',
+        r'\b(uuid|password|private_key|pre_shared_key|server_key|token|access_token|authorization|cookie|x-hwid|custom_hwid)\s*[:=]\s*([^\s,;]+)',
         caseSensitive: false,
       ),
       (match) => '${match.group(1)}=<redacted>',

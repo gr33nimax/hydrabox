@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:meow_client/app/active_proxy_ip_controller.dart';
 
@@ -260,12 +262,65 @@ void main() {
     ]);
     expect(controller.snapshot.state, ActiveProxyIpState.checking);
   });
+
+  test(
+    'stale failed lookup does not publish failure or retain backoff',
+    () async {
+      final controller = ActiveProxyIpController(
+        retryDelay: Duration.zero,
+        maxFailuresBeforeBackoff: 1,
+      );
+      addTearDown(controller.dispose);
+
+      final snapshots = <ActiveProxyIpSnapshot>[];
+      var generation = 1;
+      final lookupCompleter = Completer<ActiveProxyIpResolveResult?>();
+
+      ActiveProxyIpTarget target() => _target(operationGeneration: generation);
+
+      controller.schedule(
+        delay: Duration.zero,
+        isConnected: () => true,
+        isForegroundActive: () => true,
+        currentTarget: target,
+        networkUsable: (_) async => true,
+        resolveExternalIp: (_) => lookupCompleter.future,
+        persistResult: (_, _) async {},
+        onSnapshot: snapshots.add,
+      );
+      await Future<void>.delayed(Duration.zero);
+      generation = 2;
+      lookupCompleter.complete(null);
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(snapshots.map((snapshot) => snapshot.state), [
+        ActiveProxyIpState.checking,
+      ]);
+
+      controller.schedule(
+        delay: Duration.zero,
+        isConnected: () => true,
+        isForegroundActive: () => true,
+        currentTarget: target,
+        networkUsable: (_) async => true,
+        resolveExternalIp: (_) async =>
+            const ActiveProxyIpResolveResult(ip: '203.0.113.20'),
+        persistResult: (_, _) async {},
+        onSnapshot: snapshots.add,
+      );
+      await _waitUntil(() => controller.snapshot.hasKnownIp);
+
+      expect(controller.snapshot.ip, '203.0.113.20');
+    },
+  );
 }
 
 ActiveProxyIpTarget _target({
   String outboundTag = 'vless-1',
   String cachedIp = '',
   String cachedCountryCode = '',
+  int operationGeneration = 0,
 }) {
   return ActiveProxyIpTarget(
     subscriptionId: 'sub-1',
@@ -273,6 +328,7 @@ ActiveProxyIpTarget _target({
     cachedIp: cachedIp,
     cachedCountryCode: cachedCountryCode,
     hasCachedLocation: cachedIp.isNotEmpty && cachedCountryCode.isNotEmpty,
+    operationGeneration: operationGeneration,
   );
 }
 

@@ -4,6 +4,7 @@ import 'dart:collection';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
+import 'package:meow_client/core/widgets/app_notice.dart';
 import 'package:meow_client/data/adblock/ad_block_rule_set_service.dart';
 import 'package:meow_client/data/local/app_settings_store.dart';
 import 'package:meow_client/data/routing/russia_route_data_service.dart';
@@ -267,9 +268,7 @@ class _SettingsRoutingPageState extends State<SettingsRoutingPage> {
   }
 
   void _showOperationError(Object error) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(error.toString())));
+    AppNotice.show(context, error.toString(), tone: AppNoticeTone.error);
   }
 
   Future<void> _setAdBlock(bool value) async {
@@ -433,14 +432,14 @@ class _SettingsRoutingPageState extends State<SettingsRoutingPage> {
         _russiaRouteUpdateAvailable = result.updateAvailable;
       });
       final l10n = AppLocalizations.of(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            result.updateAvailable
-                ? l10n.russiaRoutesUpdateAvailable(result.latestTag)
-                : l10n.russiaRoutesLatest,
-          ),
-        ),
+      AppNotice.show(
+        context,
+        result.updateAvailable
+            ? l10n.russiaRoutesUpdateAvailable(result.latestTag)
+            : l10n.russiaRoutesLatest,
+        tone: result.updateAvailable
+            ? AppNoticeTone.info
+            : AppNoticeTone.success,
       );
     } catch (error) {
       if (mounted) {

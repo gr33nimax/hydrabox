@@ -5,6 +5,8 @@ import 'package:jni/jni.dart';
 import 'package:jni_flutter/jni_flutter.dart';
 import 'package:meow_client/logging/app_log_store.dart';
 
+import 'secure_hive_storage.dart';
+
 enum AppThemePreference { system, light, dark, amoled }
 
 enum TunImplementationPreference { mixed, system, gvisor }
@@ -118,6 +120,7 @@ class AppSettingsState {
     this.acceptedLegalAtMillis,
     required this.activeProfileId,
     required this.selectedProxyTag,
+    this.proxySort = 'source',
     required this.localeCode,
     required this.themePreference,
     required this.accentColorHex,
@@ -171,6 +174,7 @@ class AppSettingsState {
   final int? acceptedLegalAtMillis;
   final String activeProfileId;
   final String selectedProxyTag;
+  final String proxySort;
   final String localeCode;
   final AppThemePreference themePreference;
   final String accentColorHex; // e.g. "2D5BFF" or "default"
@@ -224,6 +228,7 @@ class AppSettingsState {
     int? acceptedLegalAtMillis,
     String? activeProfileId,
     String? selectedProxyTag,
+    String? proxySort,
     String? localeCode,
     AppThemePreference? themePreference,
     String? accentColorHex,
@@ -278,6 +283,7 @@ class AppSettingsState {
           acceptedLegalAtMillis ?? this.acceptedLegalAtMillis,
       activeProfileId: activeProfileId ?? this.activeProfileId,
       selectedProxyTag: selectedProxyTag ?? this.selectedProxyTag,
+      proxySort: proxySort ?? this.proxySort,
       localeCode: localeCode ?? this.localeCode,
       themePreference: themePreference ?? this.themePreference,
       accentColorHex: accentColorHex ?? this.accentColorHex,
@@ -345,7 +351,8 @@ class AppSettingsState {
 }
 
 abstract class AppSettingsStore {
-  static const boxName = 'app_state';
+  static const boxName = 'app_state_secure_v1';
+  static const legacyBoxName = 'app_state';
   static const exportFormatVersion = 1;
   static const exportMinClientVersion = '0.2.0';
 
@@ -354,6 +361,7 @@ abstract class AppSettingsStore {
   static const _acceptedLegalAtMillisKey = 'accepted_legal_at_millis';
   static const _activeProfileIdKey = 'active_profile_id';
   static const _selectedProxyTagKey = 'selected_proxy_tag';
+  static const _proxySortKey = 'proxy_sort';
   static const _localeCodeKey = 'locale_code';
   static const _themePreferenceKey = 'theme_preference';
   static const _accentColorHexKey = 'accent_color_hex';
@@ -417,6 +425,7 @@ abstract class AppSettingsStore {
     _accentColorHexKey,
     _hapticEnabledKey,
     _hideServerIpKey,
+    _proxySortKey,
     _performanceModeKey,
     _memoryLimitEnabledKey,
     _memoryLimitWarningDismissedKey,
@@ -512,6 +521,13 @@ abstract class AppSettingsStore {
     final unavailableCheckInterval = int.tryParse(
       map[_urlTestUnavailableCheckIntervalSecondsKey]?.toString() ?? '',
     );
+    final defaultUrlTestConcurrency = economy ? 4 : 8;
+    final normalizedUrlTestConcurrency =
+        (urlTestConcurrency ?? defaultUrlTestConcurrency).clamp(
+          1,
+          defaultUrlTestConcurrency,
+        );
+    final defaultUnavailableCheckInterval = economy ? 300 : 120;
     final locationLookupConcurrency = int.tryParse(
       map[_locationLookupConcurrencyKey]?.toString() ?? '',
     );
@@ -531,6 +547,12 @@ abstract class AppSettingsStore {
       ),
       activeProfileId: map[_activeProfileIdKey] ?? '',
       selectedProxyTag: map[_selectedProxyTagKey] ?? '',
+      proxySort: switch (map[_proxySortKey]?.toString()) {
+        'latency' => 'latency',
+        'name' => 'name',
+        'country' => 'country',
+        _ => 'source',
+      },
       localeCode: map[_localeCodeKey] ?? 'system',
       themePreference: switch (map[_themePreferenceKey]) {
         'system' => AppThemePreference.system,
@@ -620,9 +642,7 @@ abstract class AppSettingsStore {
               const <int>{4, 5, 10, 15}.contains(urlTestTimeout)
           ? 15
           : urlTestTimeout,
-      urlTestConcurrency: urlTestConcurrency == null || urlTestConcurrency == 30
-          ? (economy ? 8 : 16)
-          : urlTestConcurrency,
+      urlTestConcurrency: normalizedUrlTestConcurrency,
       urlTestUnavailableCheckIntervalSeconds:
           unavailableCheckInterval == null ||
               (economy && unavailableCheckInterval == 10) ||
@@ -633,8 +653,11 @@ abstract class AppSettingsStore {
                 120,
                 300,
               }.contains(unavailableCheckInterval)
-          ? (economy ? 15 : 10)
-          : unavailableCheckInterval,
+          ? defaultUnavailableCheckInterval
+          : unavailableCheckInterval.clamp(
+              defaultUnavailableCheckInterval,
+              3600,
+            ),
       locationLookupLimit: switch (int.tryParse(
         map[_locationLookupLimitKey]?.toString() ?? '',
       )) {
@@ -702,6 +725,7 @@ abstract class AppSettingsStore {
       _acceptedLegalAtMillisKey: state.acceptedLegalAtMillis?.toString() ?? '',
       _activeProfileIdKey: state.activeProfileId,
       _selectedProxyTagKey: state.selectedProxyTag,
+      _proxySortKey: state.proxySort,
       _localeCodeKey: state.localeCode,
       _themePreferenceKey: state.themePreference.name,
       _accentColorHexKey: state.accentColorHex,
@@ -804,6 +828,7 @@ class HiveAppSettingsStore extends AppSettingsStore {
     } else {
       await Hive.initFlutter('meow_hive');
     }
+    await SecureHiveStorage.init();
     _hiveInitialized = true;
   }
 
@@ -818,7 +843,11 @@ class HiveAppSettingsStore extends AppSettingsStore {
     }
 
     try {
-      final box = await Hive.openBox<dynamic>(AppSettingsStore.boxName);
+      final box = await Hive.openBox<dynamic>(
+        AppSettingsStore.boxName,
+        encryptionCipher: SecureHiveStorage.cipher,
+      );
+      await _migrateLegacyBox(box);
       return HiveAppSettingsStore._(box);
     } catch (error, stackTrace) {
       AppLogStore.error(
@@ -827,6 +856,35 @@ class HiveAppSettingsStore extends AppSettingsStore {
       );
       rethrow;
     }
+  }
+
+  static Future<void> _migrateLegacyBox(Box<dynamic> secureBox) async {
+    if (!await Hive.boxExists(AppSettingsStore.legacyBoxName)) return;
+
+    final legacyBox = Hive.isBoxOpen(AppSettingsStore.legacyBoxName)
+        ? Hive.box<dynamic>(AppSettingsStore.legacyBoxName)
+        : await Hive.openBox<dynamic>(AppSettingsStore.legacyBoxName);
+    try {
+      if (legacyBox.isNotEmpty) {
+        final legacyValues = Map<dynamic, dynamic>.from(legacyBox.toMap());
+        final missingValues = <dynamic, dynamic>{
+          for (final entry in legacyValues.entries)
+            if (!secureBox.containsKey(entry.key)) entry.key: entry.value,
+        };
+        if (missingValues.isNotEmpty) {
+          await secureBox.putAll(missingValues);
+          await secureBox.flush();
+        }
+        if (legacyValues.keys.any((key) => !secureBox.containsKey(key))) {
+          throw StateError('Encrypted settings migration was incomplete.');
+        }
+      }
+    } finally {
+      await legacyBox.close();
+    }
+
+    // Removal happens only after the encrypted copy was flushed and verified.
+    await Hive.deleteBoxFromDisk(AppSettingsStore.legacyBoxName);
   }
 
   @override
@@ -884,8 +942,8 @@ class MemoryAppSettingsStore extends AppSettingsStore {
             urlTestUrl: defaultUrlTestUrl,
             urlTestIntervalSeconds: 1800,
             urlTestTimeoutSeconds: 15,
-            urlTestConcurrency: 30,
-            urlTestUnavailableCheckIntervalSeconds: 10,
+            urlTestConcurrency: 8,
+            urlTestUnavailableCheckIntervalSeconds: 120,
             locationLookupLimit: 2,
             locationLookupTimeoutSeconds: 3,
             locationLookupConcurrency: 2,

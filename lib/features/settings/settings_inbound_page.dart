@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:gap/gap.dart';
+import 'package:meow_client/core/widgets/app_notice.dart';
+import 'package:meow_client/core/security/sensitive_clipboard.dart';
 import 'package:meow_client/data/local/app_settings_store.dart';
 import 'package:meow_client/features/settings/settings_ui.dart';
 import 'package:meow_client/l10n/generated/app_localizations.dart';
@@ -71,7 +73,7 @@ class _SettingsInboundPageState extends State<SettingsInboundPage> {
     _proxyEnabled = widget.currentProxyInboundEnabled;
     _proxyAllowLan = widget.currentProxyAllowLan;
     _proxyPassword = widget.currentProxyPassword;
-    if (_proxyAllowLan && !isValidProxyPassword(_proxyPassword)) {
+    if (!isValidProxyPassword(_proxyPassword)) {
       _proxyPassword = generateProxyPassword();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) widget.onProxyPasswordChanged(_proxyPassword);
@@ -191,6 +193,11 @@ class _SettingsInboundPageState extends State<SettingsInboundPage> {
 
   void _setConnectionMode(InboundConnectionMode mode) {
     if (_connectionMode == mode) return;
+    if (mode == InboundConnectionMode.proxy &&
+        !isValidProxyPassword(_proxyPassword)) {
+      _proxyPassword = generateProxyPassword();
+      widget.onProxyPasswordChanged(_proxyPassword);
+    }
     setState(() {
       _connectionMode = mode;
       _proxyEnabled = mode == InboundConnectionMode.proxy;
@@ -199,6 +206,10 @@ class _SettingsInboundPageState extends State<SettingsInboundPage> {
   }
 
   void _setProxyEnabled(bool value) {
+    if (value && !isValidProxyPassword(_proxyPassword)) {
+      _proxyPassword = generateProxyPassword();
+      widget.onProxyPasswordChanged(_proxyPassword);
+    }
     setState(() => _proxyEnabled = value);
     widget.onProxyInboundEnabledChanged(value);
   }
@@ -226,25 +237,27 @@ class _SettingsInboundPageState extends State<SettingsInboundPage> {
     final buffer = StringBuffer(
       'HTTP/SOCKS: $host:${widget.currentProxyMixedPort}',
     );
-    if (_proxyAllowLan) {
-      buffer
-        ..writeln()
-        ..writeln('${l10n.proxyUsernameTitle}: $defaultProxyUsername')
-        ..write('${l10n.proxyPasswordTitle}: $_proxyPassword');
-    }
-    await Clipboard.setData(ClipboardData(text: buffer.toString()));
+    buffer
+      ..writeln()
+      ..writeln('${l10n.proxyUsernameTitle}: $defaultProxyUsername')
+      ..write('${l10n.proxyPasswordTitle}: $_proxyPassword');
+    await SensitiveClipboard.copy(buffer.toString());
     if (!mounted) return;
-    ScaffoldMessenger.of(
+    AppNotice.show(
       context,
-    ).showSnackBar(SnackBar(content: Text(l10n.proxyCredentialsCopied)));
+      l10n.proxyCredentialsCopied,
+      tone: AppNoticeTone.success,
+    );
   }
 
   Future<void> _copyProxyValue(String value, AppLocalizations l10n) async {
-    await Clipboard.setData(ClipboardData(text: value));
+    await SensitiveClipboard.copy(value);
     if (!mounted) return;
-    ScaffoldMessenger.of(
+    AppNotice.show(
       context,
-    ).showSnackBar(SnackBar(content: Text(l10n.proxyCredentialsCopied)));
+      l10n.proxyCredentialsCopied,
+      tone: AppNoticeTone.success,
+    );
   }
 
   Widget _buildAdvancedTunCard(
@@ -399,7 +412,7 @@ class _SettingsInboundPageState extends State<SettingsInboundPage> {
                           onPressed: () => _copyProxyCredentials(l10n),
                         ),
                       ),
-                      if (_proxyAllowLan) ...[
+                      ...[
                         Padding(
                           padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
                           child: DecoratedBox(

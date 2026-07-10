@@ -11,7 +11,7 @@ void main() {
     RuntimeStateEvent? state;
     Map<String, dynamic>? status;
     Map<String, dynamic>? network;
-    List<dynamic>? groups;
+    RuntimeGroupsEvent? groups;
 
     final controller = RuntimeEventController(
       events: const Stream.empty(),
@@ -36,9 +36,10 @@ void main() {
     expect(state?.hasError, isFalse);
     expect(status?['uplink'], 11);
     expect(network?['reason'], 'default_interface');
-    expect(groups, [
+    expect(groups?.groups, [
       {'tag': 'select'},
     ]);
+    expect(groups?.runtimeGeneration, 0);
   });
 
   test('nativeLog normalizes warn and records through AppLogStore', () {

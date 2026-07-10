@@ -12,6 +12,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:meow_client/core/demo_utils.dart';
 import 'package:meow_client/core/lowest_proxy_groups.dart';
+import 'package:meow_client/core/widgets/app_notice.dart';
 import 'package:meow_client/l10n/generated/app_localizations.dart';
 import 'package:meow_client/models/app_view_models.dart';
 import 'package:meow_client/models/subscription.dart';
@@ -332,6 +333,9 @@ class ProxiesPage extends StatefulWidget {
     this.hapticEnabled = true,
     this.speedBytesPerSecond = 0,
     this.trafficBytes = 0,
+    this.trafficListenable,
+    this.initialSort = ProxySort.source,
+    this.onSortChanged,
     required this.progressiveBlurEnabled,
     required this.onSelected,
     required this.onUrlTest,
@@ -372,6 +376,9 @@ class ProxiesPage extends StatefulWidget {
   final bool hapticEnabled;
   final double speedBytesPerSecond;
   final double trafficBytes;
+  final ValueListenable<TrafficUiSnapshot>? trafficListenable;
+  final ProxySort initialSort;
+  final ValueChanged<ProxySort>? onSortChanged;
   final bool progressiveBlurEnabled;
   final ValueChanged<String> onSelected;
   final Future<void> Function() onUrlTest;
@@ -410,9 +417,10 @@ class ProxiesPage extends StatefulWidget {
 }
 
 class _ProxiesPageState extends State<ProxiesPage> {
-  ProxySort _sort = ProxySort.source;
+  late ProxySort _sort;
   List<AppProxySummary> _visibleItems = const [];
   int _hiddenCount = 0;
+  bool _showAllProxies = false;
   VelocityTracker? _proxySheetDragVelocityTracker;
   double? _pendingProxySheetCarryVelocity;
   bool _proxySheetDragMoved = false;
@@ -444,6 +452,7 @@ class _ProxiesPageState extends State<ProxiesPage> {
   @override
   void initState() {
     super.initState();
+    _sort = widget.initialSort;
     _rebuildVisibleItems();
   }
 
@@ -453,6 +462,11 @@ class _ProxiesPageState extends State<ProxiesPage> {
     if (oldWidget.proxies != widget.proxies ||
         oldWidget.totalTopLevelProxies != widget.totalTopLevelProxies ||
         oldWidget.isProxyChainTag != widget.isProxyChainTag) {
+      _rebuildVisibleItems();
+    }
+    if (oldWidget.initialSort != widget.initialSort &&
+        widget.initialSort != _sort) {
+      _sort = widget.initialSort;
       _rebuildVisibleItems();
     }
     if (!_effectiveSheetAtMaxExtent && _proxySheetHeaderScrollCollapse != 0) {
@@ -468,6 +482,7 @@ class _ProxiesPageState extends State<ProxiesPage> {
       _sort = value;
       _rebuildVisibleItems();
     });
+    widget.onSortChanged?.call(value);
   }
 
   void _rebuildVisibleItems() {
@@ -487,11 +502,16 @@ class _ProxiesPageState extends State<ProxiesPage> {
       if (_isPinnedHeaderProxy(proxy)) {
         pinnedItems.add(proxy);
       } else {
-        _insertVisibleItem(visibleItems, proxy);
+        visibleItems.add(proxy);
       }
     }
 
-    _visibleItems = [...pinnedItems, ...visibleItems];
+    _sortItems(visibleItems);
+    final displayedItems = _showAllProxies
+        ? visibleItems
+        : visibleItems.take(_kProxyListPreviewLimit).toList(growable: false);
+
+    _visibleItems = [...pinnedItems, ...displayedItems];
     final effectiveTopLevelCount = widget.embedded
         ? topLevelCount
         : widget.totalTopLevelProxies == null
@@ -615,25 +635,15 @@ class _ProxiesPageState extends State<ProxiesPage> {
     });
   }
 
-  void _insertVisibleItem(List<AppProxySummary> items, AppProxySummary item) {
-    if (_sort == ProxySort.source) {
-      if (items.length < _kProxyListPreviewLimit) {
-        items.add(item);
-      }
-      return;
+  void _showEveryProxy() {
+    if (_showAllProxies) return;
+    if (widget.hapticEnabled) {
+      HapticFeedback.selectionClick();
     }
-    var index = 0;
-    while (index < items.length &&
-        _compareProxyItems(items[index], item, keepLowestFirst: true) <= 0) {
-      index++;
-    }
-    if (index >= _kProxyListPreviewLimit) {
-      return;
-    }
-    items.insert(index, item);
-    if (items.length > _kProxyListPreviewLimit) {
-      items.removeLast();
-    }
+    setState(() {
+      _showAllProxies = true;
+      _rebuildVisibleItems();
+    });
   }
 
   List<AppProxySummary> _groupChildren(AppProxySummary group) {
@@ -690,6 +700,16 @@ class _ProxiesPageState extends State<ProxiesPage> {
                 routeAnimation: animation,
                 onSelected: widget.onSelected,
                 outboundForTag: widget.outboundForTag,
+                initialSort: _sort,
+                onSortChanged: (value) {
+                  if (_sort != value && mounted) {
+                    setState(() {
+                      _sort = value;
+                      _rebuildVisibleItems();
+                    });
+                  }
+                  widget.onSortChanged?.call(value);
+                },
               ),
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
             return child;
@@ -979,6 +999,7 @@ class _ProxiesPageState extends State<ProxiesPage> {
       hapticEnabled: widget.hapticEnabled,
       speedBytesPerSecond: widget.speedBytesPerSecond,
       trafficBytes: widget.trafficBytes,
+      trafficListenable: widget.trafficListenable,
       onSortSelected: _setSort,
       onUrlTest: widget.onUrlTest,
       onRefreshIp: widget.onActiveProxyIpRefresh,
@@ -1285,7 +1306,10 @@ class _ProxiesPageState extends State<ProxiesPage> {
       case _ProxyListEntryType.divider:
         return const _ProxyListDivider();
       case _ProxyListEntryType.moreProxies:
-        return _MoreProxiesTile(label: l10n.moreProxies(_hiddenCount));
+        return _MoreProxiesTile(
+          label: l10n.moreProxies(_hiddenCount),
+          onTap: _showEveryProxy,
+        );
     }
   }
 
@@ -1916,6 +1940,7 @@ class _ProxySheetHeader extends StatelessWidget {
     required this.hapticEnabled,
     required this.speedBytesPerSecond,
     required this.trafficBytes,
+    required this.trafficListenable,
     required this.onSortSelected,
     required this.onUrlTest,
     required this.onRefreshIp,
@@ -1937,6 +1962,7 @@ class _ProxySheetHeader extends StatelessWidget {
   final bool hapticEnabled;
   final double speedBytesPerSecond;
   final double trafficBytes;
+  final ValueListenable<TrafficUiSnapshot>? trafficListenable;
   final ValueChanged<ProxySort> onSortSelected;
   final Future<void> Function() onUrlTest;
   final VoidCallback? onRefreshIp;
@@ -2004,16 +2030,33 @@ class _ProxySheetHeader extends StatelessWidget {
                   ignoring: activeProxyOpacity < .85,
                   child: Opacity(
                     opacity: activeProxyOpacity,
-                    child: _ActiveProxyLabel(
-                      connected: connected,
-                      proxy: activeProxy!,
-                      hideIp: activeProxyHideIp,
-                      hapticEnabled: hapticEnabled,
-                      speedBytesPerSecond: speedBytesPerSecond,
-                      trafficBytes: trafficBytes,
-                      unknownText: '—',
-                      onRefreshIp: onRefreshIp,
-                    ),
+                    child: trafficListenable == null
+                        ? _ActiveProxyLabel(
+                            connected: connected,
+                            proxy: activeProxy!,
+                            hideIp: activeProxyHideIp,
+                            hapticEnabled: hapticEnabled,
+                            speedBytesPerSecond: speedBytesPerSecond,
+                            trafficBytes: trafficBytes,
+                            unknownText: '—',
+                            onRefreshIp: onRefreshIp,
+                          )
+                        : ValueListenableBuilder<TrafficUiSnapshot>(
+                            valueListenable: trafficListenable!,
+                            builder: (context, traffic, _) {
+                              return _ActiveProxyLabel(
+                                connected: connected,
+                                proxy: activeProxy!,
+                                hideIp: activeProxyHideIp,
+                                hapticEnabled: hapticEnabled,
+                                speedBytesPerSecond:
+                                    traffic.speedBytesPerSecond,
+                                trafficBytes: traffic.trafficBytes,
+                                unknownText: '—',
+                                onRefreshIp: onRefreshIp,
+                              );
+                            },
+                          ),
                   ),
                 ),
               ),
@@ -2316,21 +2359,26 @@ class _ActiveProxyStatLine extends StatelessWidget {
 }
 
 class _MoreProxiesTile extends StatelessWidget {
-  const _MoreProxiesTile({required this.label});
+  const _MoreProxiesTile({required this.label, required this.onTap});
 
   final String label;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-      child: Center(
-        child: Text(
-          label,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-            fontWeight: FontWeight.w600,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Center(
+          child: Text(
+            label,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.primary,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
       ),
@@ -2449,6 +2497,8 @@ class _GroupOutboundsSheet extends StatelessWidget {
     required this.routeAnimation,
     required this.onSelected,
     this.outboundForTag,
+    required this.initialSort,
+    this.onSortChanged,
   });
 
   final AppProxySummary group;
@@ -2459,6 +2509,8 @@ class _GroupOutboundsSheet extends StatelessWidget {
   final Animation<double> routeAnimation;
   final ValueChanged<String> onSelected;
   final Outbound? Function(String tag)? outboundForTag;
+  final ProxySort initialSort;
+  final ValueChanged<ProxySort>? onSortChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -2471,6 +2523,8 @@ class _GroupOutboundsSheet extends StatelessWidget {
       routeAnimation: routeAnimation,
       onSelected: onSelected,
       outboundForTag: outboundForTag,
+      initialSort: initialSort,
+      onSortChanged: onSortChanged,
     );
   }
 }
@@ -2485,6 +2539,8 @@ class _GroupOutboundsSheetBody extends StatefulWidget {
     required this.routeAnimation,
     required this.onSelected,
     this.outboundForTag,
+    required this.initialSort,
+    this.onSortChanged,
   });
 
   final AppProxySummary group;
@@ -2495,6 +2551,8 @@ class _GroupOutboundsSheetBody extends StatefulWidget {
   final Animation<double> routeAnimation;
   final ValueChanged<String> onSelected;
   final Outbound? Function(String tag)? outboundForTag;
+  final ProxySort initialSort;
+  final ValueChanged<ProxySort>? onSortChanged;
 
   @override
   State<_GroupOutboundsSheetBody> createState() =>
@@ -2517,7 +2575,7 @@ class _GroupOutboundsSheetBodyState extends State<_GroupOutboundsSheetBody>
       SpringDescription.withDampingRatio(mass: 0.5, stiffness: 100, ratio: 1.1);
 
   final ScrollController _scrollController = ScrollController();
-  ProxySort _sort = ProxySort.source;
+  late ProxySort _sort;
   late String _selectedTag;
   List<AppProxySummary>? _sortedChildrenCache;
   ProxySort? _sortedChildrenSort;
@@ -2537,6 +2595,7 @@ class _GroupOutboundsSheetBodyState extends State<_GroupOutboundsSheetBody>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _sort = widget.initialSort;
     _selectedTag = widget.selectedTag;
   }
 
@@ -2707,6 +2766,7 @@ class _GroupOutboundsSheetBodyState extends State<_GroupOutboundsSheetBody>
       _sortedChildrenCache = null;
       _sortedChildrenSort = null;
     });
+    widget.onSortChanged?.call(value);
   }
 
   List<AppProxySummary> _sortedChildren() {
@@ -4017,15 +4077,13 @@ class _ProxyShareSheet extends StatelessWidget {
     required String label,
   }) async {
     final navigator = Navigator.of(context);
-    final messenger = ScaffoldMessenger.of(context);
     await Clipboard.setData(ClipboardData(text: value));
     if (!context.mounted) {
       return;
     }
+    final message = _copiedText(context, label);
+    AppNotice.show(context, message, tone: AppNoticeTone.success);
     navigator.pop();
-    messenger.showSnackBar(
-      SnackBar(content: Text(_copiedText(context, label))),
-    );
   }
 
   String _copiedText(BuildContext context, String label) {

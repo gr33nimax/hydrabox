@@ -39,8 +39,17 @@ class FetchResult {
 class SubscriptionFetcher {
   SubscriptionFetcher._();
 
-  static const defaultUserAgent = 'Etonify/0.2.0';
+  static const fallbackAppVersion = '0.2.2';
+  static String _appVersion = fallbackAppVersion;
+  static String get defaultUserAgent => 'Etonify/$_appVersion';
   static const _maxSubscriptionResponseBytes = 16 * 1024 * 1024;
+  static const _maxRedirects = 5;
+  static const _redirectStatusCodes = <int>{301, 302, 303, 307, 308};
+
+  static void configureAppVersion(String value) {
+    final normalized = value.trim().replaceFirst(RegExp(r'^v'), '');
+    _appVersion = normalized.isEmpty ? fallbackAppVersion : normalized;
+  }
 
   /// Fetches and parses a subscription from [url].
   ///
@@ -55,6 +64,7 @@ class SubscriptionFetcher {
 
     try {
       final headers = await _requestHeaders(requestInfo);
+      _validateRequestSecurity(uri, headers);
       if (Platform.isAndroid) {
         try {
           final native = await SingboxRuntime.instance
@@ -105,12 +115,7 @@ class SubscriptionFetcher {
         });
       }
       try {
-        final request = await client.getUrl(uri);
-        for (final entry in headers.entries) {
-          request.headers.set(entry.key, entry.value);
-        }
-
-        final response = await request.close();
+        final response = await _openWithSafeRedirects(client, uri, headers);
 
         if (response.statusCode != 200) {
           throw HttpException(
@@ -160,6 +165,129 @@ class SubscriptionFetcher {
     }
     return headers;
   }
+
+  static Future<HttpClientResponse> _openWithSafeRedirects(
+    HttpClient client,
+    Uri initialUri,
+    Map<String, String> initialHeaders,
+  ) async {
+    var uri = initialUri;
+    var headers = Map<String, String>.from(initialHeaders);
+    for (var redirects = 0; ; redirects++) {
+      _validateRequestSecurity(uri, headers);
+      final request = await client.getUrl(uri);
+      request.followRedirects = false;
+      for (final entry in headers.entries) {
+        request.headers.set(entry.key, entry.value);
+      }
+      final response = await request.close();
+      if (!_redirectStatusCodes.contains(response.statusCode)) {
+        return response;
+      }
+      if (redirects >= _maxRedirects) {
+        throw HttpException('Too many subscription redirects', uri: uri);
+      }
+      final location = response.headers.value(HttpHeaders.locationHeader);
+      if (location == null || location.trim().isEmpty) {
+        throw HttpException(
+          'Subscription redirect has no Location header',
+          uri: uri,
+        );
+      }
+      final redirectedUri = uri.resolve(location.trim());
+      if (uri.scheme.toLowerCase() == 'https' &&
+          redirectedUri.scheme.toLowerCase() == 'http') {
+        throw HttpException(
+          'HTTPS to HTTP subscription redirect is not allowed',
+          uri: redirectedUri,
+        );
+      }
+      if (!_sameOrigin(uri, redirectedUri)) {
+        headers = _headersForCrossOriginRedirect(headers);
+      }
+      await response.listen((_) {}).cancel();
+      uri = redirectedUri;
+    }
+  }
+
+  static void _validateRequestSecurity(Uri uri, Map<String, String> headers) {
+    final scheme = uri.scheme.toLowerCase();
+    if ((scheme != 'http' && scheme != 'https') || uri.host.isEmpty) {
+      throw HttpException('Only HTTP and HTTPS URLs are supported', uri: uri);
+    }
+    if (scheme == 'https') {
+      return;
+    }
+    final hasSensitiveHeader = headers.keys.any(_isSensitiveHeaderName);
+    final hasSensitiveUrl =
+        uri.userInfo.isNotEmpty ||
+        uri.queryParameters.keys.any(_isSensitiveQueryName);
+    if (hasSensitiveHeader || hasSensitiveUrl) {
+      throw HttpException(
+        'Sensitive subscription credentials require HTTPS',
+        uri: uri,
+      );
+    }
+  }
+
+  static bool _isSensitiveHeaderName(String name) {
+    final normalized = name.trim().toLowerCase();
+    if (const {
+      'authorization',
+      'proxy-authorization',
+      'cookie',
+      'x-hwid',
+    }.contains(normalized)) {
+      return true;
+    }
+    return const [
+      'token',
+      'secret',
+      'password',
+      'api-key',
+      'apikey',
+      'hwid',
+    ].any(normalized.contains);
+  }
+
+  static bool _isSensitiveQueryName(String name) => const {
+    'token',
+    'access_token',
+    'password',
+    'passwd',
+    'key',
+    'secret',
+    'uuid',
+    'auth',
+    'authorization',
+    'sub',
+    'url',
+  }.contains(name.trim().toLowerCase());
+
+  static Map<String, String> _headersForCrossOriginRedirect(
+    Map<String, String> headers,
+  ) => <String, String>{
+    for (final entry in headers.entries)
+      if (entry.key.toLowerCase() == 'user-agent' ||
+          entry.key.toLowerCase() == 'accept')
+        entry.key: entry.value,
+  };
+
+  static bool _sameOrigin(Uri first, Uri second) =>
+      first.scheme.toLowerCase() == second.scheme.toLowerCase() &&
+      first.host.toLowerCase() == second.host.toLowerCase() &&
+      first.port == second.port;
+
+  @visibleForTesting
+  static void validateRequestSecurityForTest(
+    Uri uri,
+    Map<String, String> headers,
+  ) => _validateRequestSecurity(uri, headers);
+
+  @visibleForTesting
+  static Map<String, String> headersForCrossOriginRedirectForTest(
+    Map<String, String> headers,
+  ) => _headersForCrossOriginRedirect(headers);
 
   static Future<FetchResult> _buildResult({
     required String url,

@@ -315,6 +315,57 @@ void main() {
     expect(find.text('+ add proxy chain'), findsNothing);
   });
 
+  testWidgets('more proxies expands a virtualized large server list', (
+    tester,
+  ) async {
+    final proxies = <AppProxySummary>[
+      for (var i = 0; i < 80; i++)
+        _proxy('proxy-$i', 'proxy $i', latency: i + 1),
+    ];
+    final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        supportedLocales: AppLocalizations.supportedLocales,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        home: Scaffold(
+          body: SizedBox(
+            height: 720,
+            child: ProxiesPage(
+              proxies: proxies,
+              totalTopLevelProxies: proxies.length,
+              selectedTag: 'proxy-0',
+              connected: false,
+              progressiveBlurEnabled: false,
+              onSelected: (_) {},
+              onUrlTest: () async {},
+              embedded: true,
+              sheetAtMaxExtent: true,
+              sheetExtent: 1,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final more = find.text(l10n.moreProxies(30));
+    await tester.scrollUntilVisible(
+      more,
+      600,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.tap(more);
+    await tester.pump();
+
+    expect(find.text(l10n.moreProxies(30)), findsNothing);
+    await tester.scrollUntilVisible(
+      find.text('proxy 79'),
+      600,
+      scrollable: find.byType(Scrollable).last,
+    );
+    expect(find.text('proxy 79'), findsOneWidget);
+  });
+
   testWidgets('embedded proxy list uses SVG flag badges when expanded', (
     tester,
   ) async {

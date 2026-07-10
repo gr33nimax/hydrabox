@@ -1,5 +1,31 @@
 import 'package:flutter/foundation.dart';
 
+@immutable
+class TrafficUiSnapshot {
+  const TrafficUiSnapshot({
+    required this.speedBytesPerSecond,
+    required this.trafficBytes,
+  });
+
+  static const zero = TrafficUiSnapshot(
+    speedBytesPerSecond: 0,
+    trafficBytes: 0,
+  );
+
+  final double speedBytesPerSecond;
+  final double trafficBytes;
+
+  @override
+  bool operator ==(Object other) {
+    return other is TrafficUiSnapshot &&
+        other.speedBytesPerSecond == speedBytesPerSecond &&
+        other.trafficBytes == trafficBytes;
+  }
+
+  @override
+  int get hashCode => Object.hash(speedBytesPerSecond, trafficBytes);
+}
+
 class AppProfileSummary {
   const AppProfileSummary({
     required this.id,

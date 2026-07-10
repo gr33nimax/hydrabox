@@ -32,6 +32,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Verify pinned libbox binary
+        working-directory: android/app/libs
+        run: sha256sum --check libbox.sha256
+
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
@@ -71,3 +75,7 @@ jobs:
 
       - name: Test
         run: flutter test
+
+      - name: Android unit tests, lint and debug assemble
+        working-directory: android
+        run: bash ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug

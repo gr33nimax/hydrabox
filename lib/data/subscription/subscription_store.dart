@@ -5,6 +5,7 @@ import 'dart:isolate';
 import 'package:flutter/foundation.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:meow_client/core/lowest_proxy_groups.dart';
+import 'package:meow_client/data/local/secure_hive_storage.dart';
 import 'package:meow_client/logging/app_log_store.dart';
 import 'package:meow_client/models/subscription.dart';
 
@@ -33,8 +34,10 @@ class SubscriptionStore {
 
   SubscriptionStore._();
 
-  static const _metaBoxName = 'subscriptions';
-  static const _payloadBoxName = 'subscription_payloads';
+  static const _metaBoxName = 'subscriptions_secure_v1';
+  static const _payloadBoxName = 'subscription_payloads_secure_v1';
+  static const _legacyMetaBoxName = 'subscriptions';
+  static const _legacyPayloadBoxName = 'subscription_payloads';
   static const _legacySummaryBoxName = 'subscription_summaries';
   static const _localFileImportScheme = 'meow-file';
   static Box? _metaBox;
@@ -52,12 +55,21 @@ class SubscriptionStore {
       return;
     }
     try {
+      await SecureHiveStorage.init();
       _metaBox = Hive.isBoxOpen(_metaBoxName)
           ? Hive.box(_metaBoxName)
-          : await Hive.openBox(_metaBoxName);
+          : await Hive.openBox(
+              _metaBoxName,
+              encryptionCipher: SecureHiveStorage.cipher,
+            );
       _payloadBox = Hive.isBoxOpen(_payloadBoxName)
           ? Hive.box(_payloadBoxName)
-          : await Hive.openBox(_payloadBoxName);
+          : await Hive.openBox(
+              _payloadBoxName,
+              encryptionCipher: SecureHiveStorage.cipher,
+            );
+      await _migratePlaintextBox(_legacyMetaBoxName, _metaBox!);
+      await _migratePlaintextBox(_legacyPayloadBoxName, _payloadBox!);
       await _migrateLegacyData();
       await _cleanupLegacySummaryBox();
     } catch (error, stackTrace) {
@@ -68,6 +80,38 @@ class SubscriptionStore {
       );
       rethrow;
     }
+  }
+
+  static Future<void> _migratePlaintextBox(
+    String legacyName,
+    Box secureBox,
+  ) async {
+    if (!await Hive.boxExists(legacyName)) return;
+
+    final legacyBox = Hive.isBoxOpen(legacyName)
+        ? Hive.box(legacyName)
+        : await Hive.openBox(legacyName);
+    try {
+      if (legacyBox.isNotEmpty) {
+        final legacyValues = Map<dynamic, dynamic>.from(legacyBox.toMap());
+        final missingValues = <dynamic, dynamic>{
+          for (final entry in legacyValues.entries)
+            if (!secureBox.containsKey(entry.key)) entry.key: entry.value,
+        };
+        if (missingValues.isNotEmpty) {
+          await secureBox.putAll(missingValues);
+          await secureBox.flush();
+        }
+        if (legacyValues.keys.any((key) => !secureBox.containsKey(key))) {
+          throw StateError('Encrypted subscription migration was incomplete.');
+        }
+      }
+    } finally {
+      await legacyBox.close();
+    }
+
+    // Keep plaintext until the authenticated encrypted copy is durable.
+    await Hive.deleteBoxFromDisk(legacyName);
   }
 
   static Box get _metaStore {
@@ -284,17 +328,25 @@ class SubscriptionStore {
         continue;
       }
       final externalIp = entry.value['external_ip']?.trim();
-      final country = entry.value['country']?.trim().toUpperCase();
+      final sourceCountry = entry.value['source_country']?.trim().toUpperCase();
+      final exitCountry =
+          (entry.value['exit_country'] ?? entry.value['country'])
+              ?.trim()
+              .toUpperCase();
       if ((externalIp == null || externalIp.isEmpty) &&
-          (country == null || country.isEmpty)) {
+          (sourceCountry == null || sourceCountry.isEmpty) &&
+          (exitCountry == null || exitCountry.isEmpty)) {
         continue;
       }
       final update = updates.putIfAbsent(tag, () => <String, Object?>{});
       if (externalIp != null && externalIp.isNotEmpty) {
         update['external_ip'] = externalIp;
       }
-      if (country != null && country.isNotEmpty) {
-        update['country'] = country;
+      if (sourceCountry != null && sourceCountry.isNotEmpty) {
+        update['source_country'] = sourceCountry;
+      }
+      if (exitCountry != null && exitCountry.isNotEmpty) {
+        update['exit_country'] = exitCountry;
       }
     }
     if (updates.isEmpty) {
@@ -1097,6 +1149,7 @@ class SubscriptionStore {
                 country:
                     ob.info.country ??
                     (canCarryEndpointState ? oldInfo.country : null),
+                exitCountry: canCarryEndpointState ? oldInfo.exitCountry : null,
                 latestPing: canCarryEndpointState ? oldInfo.latestPing : null,
               ),
             );
@@ -1118,6 +1171,9 @@ class SubscriptionStore {
   static ({String name, String? countryCode}) extractCountryFromNameForTest(
     String rawName,
   ) => _extractCountryFromName(rawName);
+
+  static String? inferCountryCodeFromName(String rawName) =>
+      _extractCountryFromName(rawName).countryCode;
 
   @visibleForTesting
   static List<Outbound> buildOutboundsForTest(
@@ -1790,10 +1846,17 @@ String? _rewriteOutboundRuntimeInfoPayload(
               outboundChanged = true;
             }
           }
-          final country = update['country'];
-          if (country is String && country.isNotEmpty) {
-            if (info['country'] != country) {
-              info['country'] = country;
+          final sourceCountry = update['source_country'];
+          if (sourceCountry is String && sourceCountry.isNotEmpty) {
+            if (info['country'] != sourceCountry) {
+              info['country'] = sourceCountry;
+              outboundChanged = true;
+            }
+          }
+          final exitCountry = update['exit_country'];
+          if (exitCountry is String && exitCountry.isNotEmpty) {
+            if (info['exit_country'] != exitCountry) {
+              info['exit_country'] = exitCountry;
               outboundChanged = true;
             }
           }

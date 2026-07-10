@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
@@ -34,6 +35,7 @@ class HomePage extends StatelessWidget {
     required this.hapticEnabled,
     required this.speedBytesPerSecond,
     required this.trafficBytes,
+    this.trafficListenable,
     required this.onToggleConnection,
     required this.onRefreshLatency,
     required this.onHideServerIpChanged,
@@ -66,6 +68,7 @@ class HomePage extends StatelessWidget {
   final bool hapticEnabled;
   final double speedBytesPerSecond;
   final double trafficBytes;
+  final ValueListenable<TrafficUiSnapshot>? trafficListenable;
   final VoidCallback onToggleConnection;
   final VoidCallback onRefreshLatency;
   final ValueChanged<bool> onHideServerIpChanged;
@@ -208,16 +211,34 @@ class HomePage extends StatelessWidget {
                                   ),
                                 ),
                                 if (showActiveProxyFooter && proxy != null)
-                                  ActiveProxyFooter(
-                                    connected: connected,
-                                    proxy: proxy,
-                                    hideIp: hideServerIp,
-                                    hapticEnabled: hapticEnabled,
-                                    speedBytesPerSecond: speedBytesPerSecond,
-                                    trafficBytes: trafficBytes,
-                                    unknownText: '—',
-                                    onRefreshIp: onRefreshActiveProxyIp,
-                                  ),
+                                  if (trafficListenable == null)
+                                    ActiveProxyFooter(
+                                      connected: connected,
+                                      proxy: proxy,
+                                      hideIp: hideServerIp,
+                                      hapticEnabled: hapticEnabled,
+                                      speedBytesPerSecond: speedBytesPerSecond,
+                                      trafficBytes: trafficBytes,
+                                      unknownText: '—',
+                                      onRefreshIp: onRefreshActiveProxyIp,
+                                    )
+                                  else
+                                    ValueListenableBuilder<TrafficUiSnapshot>(
+                                      valueListenable: trafficListenable!,
+                                      builder: (context, traffic, _) {
+                                        return ActiveProxyFooter(
+                                          connected: connected,
+                                          proxy: proxy,
+                                          hideIp: hideServerIp,
+                                          hapticEnabled: hapticEnabled,
+                                          speedBytesPerSecond:
+                                              traffic.speedBytesPerSecond,
+                                          trafficBytes: traffic.trafficBytes,
+                                          unknownText: '—',
+                                          onRefreshIp: onRefreshActiveProxyIp,
+                                        );
+                                      },
+                                    ),
                               ],
                             ),
                           ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:gap/gap.dart';
+import 'package:meow_client/core/widgets/app_notice.dart';
 import 'package:meow_client/features/legal/legal_consent_page.dart';
 import 'package:meow_client/features/settings/settings_update_page.dart';
 import 'package:meow_client/features/settings/settings_ui.dart';
@@ -59,9 +60,7 @@ class _SettingsAboutPageState extends State<SettingsAboutPage> {
   Future<void> _openUri(Uri uri) async {
     final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!opened && mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(uri.toString())));
+      AppNotice.show(context, uri.toString(), tone: AppNoticeTone.error);
     }
   }
 
@@ -524,9 +523,7 @@ class _MeowTeamPage extends StatelessWidget {
   Future<void> _open(BuildContext context, Uri uri) async {
     final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!opened && context.mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(uri.toString())));
+      AppNotice.show(context, uri.toString(), tone: AppNoticeTone.error);
     }
   }
 
@@ -837,8 +834,10 @@ class _RuntimeFlagsTogglesState extends State<_RuntimeFlagsToggles> {
       final snapshot = await SingboxRuntime.instance.getPerformanceSnapshot();
       AppLogStore.info('performance snapshot', snapshot.toString());
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context).debugSnapshotDone)),
+      AppNotice.show(
+        context,
+        AppLocalizations.of(context).debugSnapshotDone,
+        tone: AppNoticeTone.success,
       );
     } finally {
       if (mounted) setState(() => _busy = false);

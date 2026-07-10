@@ -40,6 +40,7 @@ class ActiveProxyIpTarget {
     this.cachedIp,
     this.cachedCountryCode,
     this.hasCachedLocation = false,
+    this.operationGeneration = 0,
   });
 
   final String subscriptionId;
@@ -47,8 +48,9 @@ class ActiveProxyIpTarget {
   final String? cachedIp;
   final String? cachedCountryCode;
   final bool hasCachedLocation;
+  final int operationGeneration;
 
-  String get key => '$subscriptionId\n$outboundTag';
+  String get key => '$subscriptionId\n$outboundTag\n$operationGeneration';
   bool get hasCachedIp => cachedIp?.trim().isNotEmpty ?? false;
 }
 
@@ -262,6 +264,15 @@ class ActiveProxyIpController {
       );
       return;
     }
+    if (!_isCurrent(
+      token,
+      target,
+      isConnected,
+      isForegroundActive,
+      currentTarget,
+    )) {
+      return;
+    }
 
     final now = DateTime.now();
     final lastAttempt = _attempts[target.key];
@@ -293,6 +304,20 @@ class ActiveProxyIpController {
 
     final resolved = await resolveExternalIp(target.outboundTag);
     if (resolved == null) {
+      if (!_isCurrent(
+        token,
+        target,
+        isConnected,
+        isForegroundActive,
+        currentTarget,
+      )) {
+        AppLogStore.debug(
+          'proxy',
+          'discarded stale active IP failure tag=${target.outboundTag} '
+              'generation=${target.operationGeneration}',
+        );
+        return;
+      }
       _markLookupFailed(
         token: token,
         target: target,
@@ -430,9 +455,7 @@ class ActiveProxyIpController {
       return false;
     }
     final current = currentTarget();
-    return current != null &&
-        current.subscriptionId == target.subscriptionId &&
-        current.outboundTag == target.outboundTag;
+    return current != null && current.key == target.key;
   }
 
   void _setSnapshot(

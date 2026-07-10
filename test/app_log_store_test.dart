@@ -46,17 +46,19 @@ void main() {
         'subscription',
         'vless://11111111-1111-4111-8111-111111111111@example.com:443'
             '?token=super-secret&uuid=11111111-1111-4111-8111-111111111111 '
-            'https://api.example/sub?token=super-secret '
-            '"password":"plain" Authorization: BearerToken',
+            'https://api.example/private/subscription/path?token=super-secret '
+            '"password":"plain" Authorization: BearerToken X-HWID=device-id',
       );
 
       final dump = AppLogStore.dump();
       expect(dump, contains('vless://<redacted>'));
-      expect(dump, contains('token=<redacted>'));
+      expect(dump, contains('https://api.example/<redacted>'));
       expect(dump, contains('"password":"<redacted>"'));
       expect(dump, contains('Authorization=<redacted>'));
       expect(dump, isNot(contains('super-secret')));
       expect(dump, isNot(contains('BearerToken')));
+      expect(dump, isNot(contains('device-id')));
+      expect(dump, isNot(contains('private/subscription/path')));
       expect(dump, isNot(contains('11111111-1111-4111-8111-111111111111')));
     });
   });

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:meow_client/core/widgets/app_notice.dart';
 import 'package:meow_client/logging/app_log_store.dart';
 import 'package:meow_client/l10n/generated/app_localizations.dart';
 import 'package:meow_client/singbox/singbox_runtime.dart';
@@ -61,14 +62,12 @@ class _SettingsLogsPageState extends State<SettingsLogsPage> {
       exportUri = null;
     }
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          exportUri == null
-              ? 'Export failed or cancelled'
-              : 'Logs saved: $exportUri',
-        ),
-      ),
+    AppNotice.show(
+      context,
+      exportUri == null
+          ? 'Export failed or cancelled'
+          : 'Logs saved: $exportUri',
+      tone: exportUri == null ? AppNoticeTone.error : AppNoticeTone.success,
     );
   }
 
