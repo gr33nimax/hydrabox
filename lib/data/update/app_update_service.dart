@@ -7,6 +7,7 @@ import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter/foundation.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:meow_client/data/local/app_settings_store.dart';
+import 'package:meow_client/data/local/hive_storage_diagnostics.dart';
 import 'package:meow_client/logging/app_log_store.dart';
 import 'package:meow_client/singbox/singbox_runtime.dart';
 import 'package:path_provider/path_provider.dart';
@@ -333,9 +334,17 @@ class AppUpdateService {
 
   Future<Box<dynamic>> _openBox() async {
     await HiveAppSettingsStore.initHive();
-    return Hive.isBoxOpen(_metadataBoxName)
+    final stopwatch = Stopwatch()..start();
+    final box = Hive.isBoxOpen(_metadataBoxName)
         ? Hive.box<dynamic>(_metadataBoxName)
-        : Hive.openBox<dynamic>(_metadataBoxName);
+        : await Hive.openBox<dynamic>(_metadataBoxName);
+    stopwatch.stop();
+    await HiveStorageDiagnostics.logBoxOnce(
+      label: _metadataBoxName,
+      box: box,
+      openElapsed: stopwatch.elapsed,
+    );
+    return box;
   }
 
   Future<AppUpdateMetadata> loadMetadata() async {

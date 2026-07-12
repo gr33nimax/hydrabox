@@ -6,6 +6,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 plugins {
     id("com.android.application")
     id("kotlin-android")
+    id("androidx.baselineprofile")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
@@ -109,6 +110,8 @@ flutter {
 
 dependencies {
     implementation(files("libs/libbox.aar"))
+    implementation("androidx.profileinstaller:profileinstaller:1.4.1")
+    baselineProfile(project(":benchmark"))
     testImplementation("junit:junit:4.13.2")
 }
 

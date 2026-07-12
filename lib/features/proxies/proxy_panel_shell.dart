@@ -130,6 +130,7 @@ class ProxyPanelShell extends StatefulWidget {
     required this.sheetBuilder,
     this.resetListKey,
     this.onInteractionActiveChanged,
+    this.onOpenRequested,
   });
 
   final bool ready;
@@ -142,6 +143,7 @@ class ProxyPanelShell extends StatefulWidget {
   final ProxyPanelSheetBuilder sheetBuilder;
   final Object? resetListKey;
   final ValueChanged<bool>? onInteractionActiveChanged;
+  final VoidCallback? onOpenRequested;
 
   @override
   State<ProxyPanelShell> createState() => _ProxyPanelShellState();
@@ -218,6 +220,9 @@ class _ProxyPanelShellState extends State<ProxyPanelShell>
       return;
     }
     _dragging = value;
+    if (value && _isClosed) {
+      widget.onOpenRequested?.call();
+    }
     widget.onInteractionActiveChanged?.call(value);
   }
 
@@ -566,6 +571,9 @@ class _ProxyPanelShellState extends State<ProxyPanelShell>
     final target = _height <= proxyPanelMinHeight + 8
         ? maxHeight
         : proxyPanelMinHeight;
+    if (target > proxyPanelMinHeight + 0.5) {
+      widget.onOpenRequested?.call();
+    }
     _animateTo(target: target, heightVelocity: 0, maxHeight: maxHeight);
   }
 

@@ -991,6 +991,74 @@ void main() {
     );
   });
 
+  testWidgets('home adapts to a short landscape window and large text', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(900, 420);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 1.6;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        supportedLocales: AppLocalizations.supportedLocales,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        home: HomePage(
+          connected: false,
+          connecting: false,
+          resolvingProxy: false,
+          activeProfile: const AppProfileSummary(
+            id: 'sub-1',
+            name: 'A subscription with a deliberately long display name',
+            consumed: 1024,
+            total: 4096,
+            remainingDays: 30,
+            outboundsCount: 1000,
+            sourceLabel: 'Remote',
+          ),
+          activeProxy: AppProxySummary(
+            tag: 'france',
+            displayName: 'France — long proxy display name',
+            countryCode: 'FR',
+            type: 'vless',
+            server: 'france.example.com',
+            port: 443,
+            detailText: 'VLESS',
+            ip: '203.0.113.10',
+            latency: 42,
+            latencyFresh: true,
+            latencyChecking: false,
+            latencyUnavailable: false,
+            latencyError: null,
+            protocolLabel: 'VLESS',
+            endpointLabel: 'france.example.com',
+          ),
+          hideServerIp: false,
+          hapticEnabled: false,
+          speedBytesPerSecond: 1024,
+          trafficBytes: 4096,
+          onToggleConnection: () {},
+          onRefreshLatency: () {},
+          onHideServerIpChanged: (_) {},
+          onOpenSubscriptions: () {},
+          onAddSubscription: () {},
+          onOpenSettings: () {},
+          onOpenChangelog: () {},
+          brandName: 'Etonify',
+          versionLabel: '0.2.2',
+          bottomInset: 48,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Etonify'), findsOneWidget);
+    expect(find.byType(ConnectionButton), findsOneWidget);
+  });
+
   testWidgets('traffic dashboard renders live metrics and graph', (
     tester,
   ) async {

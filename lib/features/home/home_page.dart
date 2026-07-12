@@ -137,118 +137,191 @@ class HomePage extends StatelessWidget {
         color: theme.scaffoldBackgroundColor,
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 600),
+            constraints: const BoxConstraints(maxWidth: 960),
             child: profile == null
                 ? _HomeEmptyState(onAddSubscription: onAddSubscription)
-                : _HomeProxyPanelGestureRelay(
-                    onInteractionStart: onProxyPanelInteractionStart,
-                    onDragUpdate: onProxyPanelDragUpdate,
-                    onDragEnd: onProxyPanelDragEnd,
-                    child: CustomScrollView(
-                      physics: const NeverScrollableScrollPhysics(),
-                      slivers: [
-                        SliverToBoxAdapter(
-                          child: _SubscriptionTile(
-                            profile: profile,
-                            margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                            onTap: onOpenSubscriptions,
-                            onOpenTrafficDashboard: onOpenTrafficDashboard,
-                            onRefresh: onRefreshActiveSubscription,
-                            refreshing: activeProfileRefreshing,
-                            showRefreshAction: showActiveProfileRefreshAction,
-                          ),
-                        ),
-                        SliverFillRemaining(
-                          hasScrollBody: false,
-                          child: Padding(
-                            padding: EdgeInsets.fromLTRB(
-                              16,
-                              8,
-                              16,
-                              16 + bottomInset,
-                            ),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Expanded(
-                                  child: Center(
-                                    child: TweenAnimationBuilder<double>(
-                                      tween: Tween<double>(
-                                        end: connectionOccupied
-                                            ? 0
-                                            : _kActiveProxyFooterReservedHeight /
-                                                  2,
-                                      ),
-                                      duration: const Duration(
-                                        milliseconds: 220,
-                                      ),
-                                      curve: Curves.easeOutCubic,
-                                      builder: (context, offsetY, child) {
-                                        return Transform.translate(
-                                          offset: Offset(0, offsetY),
-                                          child: child,
-                                        );
-                                      },
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          ConnectionButton(
-                                            connected: connected,
-                                            connecting: connecting,
-                                            resolvingProxy: resolvingProxy,
-                                            statusLabel: connectionStatusLabel,
-                                            onTap: onToggleConnection,
-                                          ),
-                                          const Gap(8),
-                                          ActiveProxyDelayIndicator(
-                                            connected: connected,
-                                            proxy: proxy,
-                                            onRefresh: onRefreshLatency,
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                if (showActiveProxyFooter && proxy != null)
-                                  if (trafficListenable == null)
-                                    ActiveProxyFooter(
-                                      connected: connected,
-                                      proxy: proxy,
-                                      hideIp: hideServerIp,
-                                      hapticEnabled: hapticEnabled,
-                                      speedBytesPerSecond: speedBytesPerSecond,
-                                      trafficBytes: trafficBytes,
-                                      unknownText: '—',
-                                      onRefreshIp: onRefreshActiveProxyIp,
-                                    )
-                                  else
-                                    ValueListenableBuilder<TrafficUiSnapshot>(
-                                      valueListenable: trafficListenable!,
-                                      builder: (context, traffic, _) {
-                                        return ActiveProxyFooter(
-                                          connected: connected,
-                                          proxy: proxy,
-                                          hideIp: hideServerIp,
-                                          hapticEnabled: hapticEnabled,
-                                          speedBytesPerSecond:
-                                              traffic.speedBytesPerSecond,
-                                          trafficBytes: traffic.trafficBytes,
-                                          unknownText: '—',
-                                          onRefreshIp: onRefreshActiveProxyIp,
-                                        );
-                                      },
-                                    ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                : LayoutBuilder(
+                    builder: (context, constraints) {
+                      final wideLayout =
+                          constraints.maxWidth >= 720 ||
+                          (constraints.maxWidth >= 560 &&
+                              constraints.maxWidth >
+                                  constraints.maxHeight * 1.35);
+                      return _HomeProxyPanelGestureRelay(
+                        onInteractionStart: onProxyPanelInteractionStart,
+                        onDragUpdate: onProxyPanelDragUpdate,
+                        onDragEnd: onProxyPanelDragEnd,
+                        child: wideLayout
+                            ? _buildWideContent(
+                                profile,
+                                proxy,
+                                constraints.maxWidth,
+                              )
+                            : _buildCompactContent(
+                                profile,
+                                proxy,
+                                connectionOccupied,
+                              ),
+                      );
+                    },
                   ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildCompactContent(
+    AppProfileSummary profile,
+    AppProxySummary? proxy,
+    bool connectionOccupied,
+  ) {
+    return CustomScrollView(
+      physics: const NeverScrollableScrollPhysics(),
+      slivers: [
+        SliverToBoxAdapter(
+          child: _buildSubscriptionTile(
+            profile,
+            const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          ),
+        ),
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + bottomInset),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Center(
+                    child: _buildConnectionControl(
+                      proxy,
+                      connectionOccupied: connectionOccupied,
+                    ),
+                  ),
+                ),
+                ?_buildActiveProxyFooter(proxy),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildWideContent(
+    AppProfileSummary profile,
+    AppProxySummary? proxy,
+    double maxWidth,
+  ) {
+    final sideWidth = math.min(360.0, maxWidth * .42);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 8, 20, 16 + bottomInset),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            width: sideWidth,
+            child: Column(
+              children: [
+                _buildSubscriptionTile(profile, EdgeInsets.zero),
+                if (_buildActiveProxyFooter(proxy) case final footer?) ...[
+                  const Spacer(),
+                  footer,
+                ],
+              ],
+            ),
+          ),
+          const Gap(24),
+          Expanded(
+            child: Center(
+              child: _buildConnectionControl(proxy, connectionOccupied: true),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSubscriptionTile(AppProfileSummary profile, EdgeInsets margin) {
+    return _SubscriptionTile(
+      profile: profile,
+      margin: margin,
+      onTap: onOpenSubscriptions,
+      onOpenTrafficDashboard: onOpenTrafficDashboard,
+      onRefresh: onRefreshActiveSubscription,
+      refreshing: activeProfileRefreshing,
+      showRefreshAction: showActiveProfileRefreshAction,
+    );
+  }
+
+  Widget _buildConnectionControl(
+    AppProxySummary? proxy, {
+    required bool connectionOccupied,
+  }) {
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: TweenAnimationBuilder<double>(
+        tween: Tween<double>(
+          end: connectionOccupied ? 0 : _kActiveProxyFooterReservedHeight / 2,
+        ),
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        builder: (context, offsetY, child) {
+          return Transform.translate(offset: Offset(0, offsetY), child: child);
+        },
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ConnectionButton(
+              connected: connected,
+              connecting: connecting,
+              resolvingProxy: resolvingProxy,
+              statusLabel: connectionStatusLabel,
+              onTap: onToggleConnection,
+            ),
+            const Gap(8),
+            ActiveProxyDelayIndicator(
+              connected: connected,
+              proxy: proxy,
+              onRefresh: onRefreshLatency,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget? _buildActiveProxyFooter(AppProxySummary? proxy) {
+    if (!showActiveProxyFooter || proxy == null) {
+      return null;
+    }
+    if (trafficListenable == null) {
+      return ActiveProxyFooter(
+        connected: connected,
+        proxy: proxy,
+        hideIp: hideServerIp,
+        hapticEnabled: hapticEnabled,
+        speedBytesPerSecond: speedBytesPerSecond,
+        trafficBytes: trafficBytes,
+        unknownText: '—',
+        onRefreshIp: onRefreshActiveProxyIp,
+      );
+    }
+    return ValueListenableBuilder<TrafficUiSnapshot>(
+      valueListenable: trafficListenable!,
+      builder: (context, traffic, _) {
+        return ActiveProxyFooter(
+          connected: connected,
+          proxy: proxy,
+          hideIp: hideServerIp,
+          hapticEnabled: hapticEnabled,
+          speedBytesPerSecond: traffic.speedBytesPerSecond,
+          trafficBytes: traffic.trafficBytes,
+          unknownText: '—',
+          onRefreshIp: onRefreshActiveProxyIp,
+        );
+      },
     );
   }
 }

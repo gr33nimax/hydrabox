@@ -101,6 +101,7 @@ class SecureHiveStorage {
   static const _channel = MethodChannel('meow_client/secure_storage');
   static HiveCipher? _cipher;
   static bool _initialized = false;
+  static Future<void>? _initialization;
 
   static HiveCipher? get cipher => _cipher;
 
@@ -110,16 +111,31 @@ class SecureHiveStorage {
   /// remain unencrypted because Etonify's production target is Android.
   static Future<void> init() async {
     if (_initialized) return;
-    if (Platform.isAndroid) {
-      final encoded = await _channel.invokeMethod<String>(
-        'getOrCreateHiveDataKey',
-      );
-      if (encoded == null) {
-        throw StateError('Android Keystore returned no Hive data key.');
-      }
-      final key = base64Decode(encoded);
-      _cipher = HiveAesGcmCipher(key);
+    final inFlight = _initialization;
+    if (inFlight != null) {
+      await inFlight;
+      return;
     }
-    _initialized = true;
+    final initialization = () async {
+      if (Platform.isAndroid) {
+        final encoded = await _channel.invokeMethod<String>(
+          'getOrCreateHiveDataKey',
+        );
+        if (encoded == null) {
+          throw StateError('Android Keystore returned no Hive data key.');
+        }
+        final key = base64Decode(encoded);
+        _cipher = HiveAesGcmCipher(key);
+      }
+      _initialized = true;
+    }();
+    _initialization = initialization;
+    try {
+      await initialization;
+    } finally {
+      if (identical(_initialization, initialization)) {
+        _initialization = null;
+      }
+    }
   }
 }

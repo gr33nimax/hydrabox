@@ -130,8 +130,16 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
 
   void _reload() {
     final generation = ++_countHydrationGeneration;
+    unawaited(_reloadMetadataInBackground(generation));
+  }
+
+  Future<void> _reloadMetadataInBackground(int generation) async {
+    final subscriptions = await SubscriptionStore.getAllMetadataInBackground();
+    if (!mounted || generation != _countHydrationGeneration) {
+      return;
+    }
     setState(() {
-      _subscriptions = SubscriptionStore.getAllMetadata();
+      _subscriptions = subscriptions;
       for (final subscription in _subscriptions) {
         if (subscription.cachedVisibleProxyCount >= 0) {
           _subscriptionServerCounts[subscription.id] =
@@ -592,7 +600,7 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
     if (_refreshingIds.contains(id)) {
       return;
     }
-    final subscription = SubscriptionStore.get(id);
+    final subscription = await SubscriptionStore.getInBackground(id);
     if (subscription != null &&
         SubscriptionStore.isLocalFileImportUrl(subscription.url)) {
       setState(() {
@@ -661,7 +669,7 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
   }
 
   Future<void> _enableHwidAndRefreshSubscription(String id) async {
-    final current = SubscriptionStore.get(id);
+    final current = await SubscriptionStore.getInBackground(id);
     if (current == null) {
       return;
     }
@@ -950,7 +958,9 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
   }
 
   Future<void> _copySubscriptionJson(Subscription subscription) async {
-    final hydrated = SubscriptionStore.get(subscription.id) ?? subscription;
+    final hydrated =
+        await SubscriptionStore.getInBackground(subscription.id) ??
+        subscription;
     const encoder = JsonEncoder.withIndent('  ');
     await SensitiveClipboard.copy(encoder.convert(hydrated.toMap()));
     if (!mounted) {

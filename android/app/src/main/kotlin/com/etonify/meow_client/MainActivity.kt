@@ -1,6 +1,5 @@
 package com.etonify.meow_client
 
-import android.app.Activity
 import android.app.ActivityManager
 import android.content.Intent
 import android.content.IntentFilter
@@ -20,6 +19,8 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.util.AtomicFile
 import android.util.Log
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
 // Legacy Happ native crypt5 path is intentionally disabled. Crypt5/5.1 is now
 // decrypted in Dart from extracted selector/key tables.
@@ -37,7 +38,7 @@ import com.etonify.meow_client.generated.NetworkInterfaceStateMessage
 import com.etonify.meow_client.generated.RuntimeFlagsMessage
 import com.etonify.meow_client.generated.SingboxHostApi
 import com.etonify.meow_client.generated.UrlTestRequestMessage
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.EventChannel
@@ -51,7 +52,7 @@ import java.net.URL
 import java.security.MessageDigest
 import java.util.concurrent.Executors
 
-class MainActivity : FlutterActivity() {
+class MainActivity : FlutterFragmentActivity() {
     companion object {
         private const val TAG = "MeowMainActivity"
         private const val QUICK_TILE_LABEL_FILE = "quick_tile_label.txt"
@@ -76,8 +77,6 @@ class MainActivity : FlutterActivity() {
             RegexOption.IGNORE_CASE,
         )
     }
-    private val vpnPrepareRequestCode = 2048
-    private val exportDocumentRequestCode = 2049
     private val methodChannelName = "meow_client/singbox"
     private val eventChannelName = "meow_client/singbox_events"
     private val deepLinkMethodChannelName = "meow_client/deep_links"
@@ -87,11 +86,39 @@ class MainActivity : FlutterActivity() {
     private var pendingPrepareResult: MethodChannel.Result? = null
     private var pendingExportResult: MethodChannel.Result? = null
     private var pendingExportContent: String? = null
+    private var pendingInstallSettingsResult: MethodChannel.Result? = null
+    private var pendingApkInstallResult: MethodChannel.Result? = null
     private var deepLinkEventSink: EventChannel.EventSink? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private val ioExecutor = Executors.newSingleThreadExecutor()
     private val subscriptionNetworkExecutor = Executors.newFixedThreadPool(2)
     private val appIconExecutor = Executors.newFixedThreadPool(3)
+
+    private val vpnPermissionLauncher: ActivityResultLauncher<Intent> =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            val result = pendingPrepareResult
+            pendingPrepareResult = null
+            result?.success(VpnService.prepare(this) == null)
+        }
+
+    private val exportDocumentLauncher: ActivityResultLauncher<String> =
+        registerForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+            completeLogExport(uri)
+        }
+
+    private val installSettingsLauncher: ActivityResultLauncher<Intent> =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            val result = pendingInstallSettingsResult
+            pendingInstallSettingsResult = null
+            result?.success(canRequestApkInstalls())
+        }
+
+    private val apkInstallLauncher: ActivityResultLauncher<Intent> =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            val result = pendingApkInstallResult
+            pendingApkInstallResult = null
+            result?.success(true)
+        }
 
     private class PigeonMethodResult<T>(
         private val callback: (Result<T>) -> Unit,
@@ -169,23 +196,52 @@ class MainActivity : FlutterActivity() {
 
     private fun canRequestApkInstalls(): Boolean = packageManager.canRequestPackageInstalls()
 
-    private fun openApkInstallSettings() {
+    private fun launchVpnPermission(intent: Intent, result: MethodChannel.Result) {
+        if (pendingPrepareResult != null) {
+            result.error(
+                "vpn_permission_in_progress",
+                "A VPN permission request is already active.",
+                null,
+            )
+            return
+        }
+        pendingPrepareResult = result
+        runCatching { vpnPermissionLauncher.launch(intent) }
+            .onFailure { error ->
+                pendingPrepareResult = null
+                result.error("vpn_permission_launch_failed", error.message, null)
+            }
+    }
+
+    private fun openApkInstallSettings(result: MethodChannel.Result) {
+        if (pendingInstallSettingsResult != null) {
+            result.error(
+                "install_settings_in_progress",
+                "APK install settings are already open.",
+                null,
+            )
+            return
+        }
         val intent = Intent(
             Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
             Uri.parse("package:$packageName"),
         )
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        startActivity(intent)
+        pendingInstallSettingsResult = result
+        runCatching { installSettingsLauncher.launch(intent) }
+            .onFailure { error ->
+                pendingInstallSettingsResult = null
+                result.error("open_install_settings_failed", error.message, null)
+            }
     }
 
-    private fun installDownloadedApk(path: String) {
+    private fun installDownloadedApk(path: String, result: MethodChannel.Result) {
         val file = File(path)
         require(file.exists() && file.isFile) { "APK file does not exist." }
         require(file.name.lowercase().endsWith(".apk")) { "File is not an APK." }
         if (!canRequestApkInstalls()) {
-            openApkInstallSettings()
             throw IllegalStateException("APK install permission is not granted.")
         }
+        check(pendingApkInstallResult == null) { "An APK installation is already active." }
         val uri = FileProvider.getUriForFile(
             this,
             "$packageName.fileprovider",
@@ -193,11 +249,58 @@ class MainActivity : FlutterActivity() {
         )
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, "application/vnd.android.package-archive")
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
         }
-        startActivity(intent)
+        pendingApkInstallResult = result
+        runCatching { apkInstallLauncher.launch(intent) }
+            .onFailure { error ->
+                pendingApkInstallResult = null
+                throw error
+            }
+    }
+
+    private fun launchLogExport(
+        content: String,
+        suggestedName: String,
+        result: MethodChannel.Result,
+    ) {
+        if (pendingExportResult != null) {
+            result.error("export_in_progress", "A log export is already active.", null)
+            return
+        }
+        pendingExportResult = result
+        pendingExportContent = logsWithNativeDiagnostics(content)
+        runCatching {
+            exportDocumentLauncher.launch(
+                suggestedName.ifBlank { "meow-logs-${System.currentTimeMillis()}.txt" },
+            )
+        }.onFailure { error ->
+            pendingExportResult = null
+            pendingExportContent = null
+            result.error("export_logs_failed", error.message, null)
+        }
+    }
+
+    private fun completeLogExport(uri: Uri?) {
+        val result = pendingExportResult
+        val content = pendingExportContent
+        pendingExportResult = null
+        pendingExportContent = null
+        if (uri == null || content == null) {
+            result?.success(null)
+            return
+        }
+        runCatching {
+            contentResolver.openOutputStream(uri)?.use { stream ->
+                stream.write(content.toByteArray(Charsets.UTF_8))
+                stream.flush()
+            } ?: error("Failed to open output stream")
+        }.onSuccess {
+            result?.success(uri.toString())
+        }.onFailure {
+            result?.error("export_logs_failed", it.message, null)
+        }
     }
 
     private fun inspectDownloadedApk(path: String): Map<String, Any> {
@@ -1177,9 +1280,7 @@ class MainActivity : FlutterActivity() {
                     if (intent == null) {
                         callback(Result.success(true))
                     } else {
-                        pendingPrepareResult = boolResult(callback)
-                        @Suppress("DEPRECATION")
-                        startActivityForResult(intent, vpnPrepareRequestCode)
+                        launchVpnPermission(intent, boolResult(callback))
                     }
                 }
 
@@ -1424,18 +1525,11 @@ class MainActivity : FlutterActivity() {
                     suggestedName: String,
                     callback: (Result<String?>) -> Unit,
                 ) {
-                    pendingExportResult = nullableStringResult(callback)
-                    pendingExportContent = logsWithNativeDiagnostics(content)
-                    val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-                        addCategory(Intent.CATEGORY_OPENABLE)
-                        type = "text/plain"
-                        putExtra(
-                            Intent.EXTRA_TITLE,
-                            suggestedName.ifBlank { "meow-logs-${System.currentTimeMillis()}.txt" },
-                        )
-                    }
-                    @Suppress("DEPRECATION")
-                    startActivityForResult(intent, exportDocumentRequestCode)
+                    launchLogExport(
+                        content,
+                        suggestedName,
+                        nullableStringResult(callback),
+                    )
                 }
 
                 override fun getAndroidId(callback: (Result<String>) -> Unit) {
@@ -1613,9 +1707,7 @@ class MainActivity : FlutterActivity() {
                     if (intent == null) {
                         result.success(true)
                     } else {
-                        pendingPrepareResult = result
-                        @Suppress("DEPRECATION")
-                        startActivityForResult(intent, vpnPrepareRequestCode)
+                        launchVpnPermission(intent, result)
                     }
                 }
 
@@ -1902,15 +1994,7 @@ class MainActivity : FlutterActivity() {
                     val content = call.argument<String>("content") ?: ""
                     val suggestedName = call.argument<String>("suggestedName")
                         ?: "meow-logs-${System.currentTimeMillis()}.txt"
-                    pendingExportResult = result
-                    pendingExportContent = logsWithNativeDiagnostics(content)
-                    val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-                        addCategory(Intent.CATEGORY_OPENABLE)
-                        type = "text/plain"
-                        putExtra(Intent.EXTRA_TITLE, suggestedName)
-                    }
-                    @Suppress("DEPRECATION")
-                    startActivityForResult(intent, exportDocumentRequestCode)
+                    launchLogExport(content, suggestedName, result)
                 }
 
                 "canInstallApks" -> {
@@ -1918,9 +2002,7 @@ class MainActivity : FlutterActivity() {
                 }
 
                 "openApkInstallSettings" -> {
-                    runCatching { openApkInstallSettings() }
-                        .onSuccess { result.success(true) }
-                        .onFailure { result.error("open_install_settings_failed", it.message, null) }
+                    openApkInstallSettings(result)
                 }
 
                 "installDownloadedApk" -> {
@@ -1929,8 +2011,7 @@ class MainActivity : FlutterActivity() {
                         result.error("missing_apk_path", "APK path is empty", null)
                         return@setMethodCallHandler
                     }
-                    runCatching { installDownloadedApk(path) }
-                        .onSuccess { result.success(true) }
+                    runCatching { installDownloadedApk(path, result) }
                         .onFailure { result.error("install_apk_failed", it.message, null) }
                 }
 
@@ -2041,38 +2122,6 @@ class MainActivity : FlutterActivity() {
                     }
                 }
                 else -> result.notImplemented()
-            }
-        }
-    }
-
-    @Deprecated("Used for VPN permission callback")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == vpnPrepareRequestCode) {
-            val result = pendingPrepareResult
-            pendingPrepareResult = null
-            result?.success(VpnService.prepare(this) == null)
-            return
-        }
-        if (requestCode == exportDocumentRequestCode) {
-            val result = pendingExportResult
-            val content = pendingExportContent
-            pendingExportResult = null
-            pendingExportContent = null
-            if (resultCode != Activity.RESULT_OK || data?.data == null || content == null) {
-                result?.success(null)
-                return
-            }
-            val uri = data.data!!
-            runCatching {
-                contentResolver.openOutputStream(uri)?.use { stream ->
-                    stream.write(content.toByteArray(Charsets.UTF_8))
-                    stream.flush()
-                } ?: error("Failed to open output stream")
-            }.onSuccess {
-                result?.success(uri.toString())
-            }.onFailure {
-                result?.error("export_logs_failed", it.message, null)
             }
         }
     }

@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:jni/jni.dart';
 import 'package:jni_flutter/jni_flutter.dart';
+import 'package:meow_client/data/local/hive_storage_diagnostics.dart';
 import 'package:meow_client/logging/app_log_store.dart';
 
 import 'secure_hive_storage.dart';
@@ -353,6 +354,8 @@ class AppSettingsState {
 abstract class AppSettingsStore {
   static const boxName = 'app_state_secure_v1';
   static const legacyBoxName = 'app_state';
+  static const storageSchemaVersionKey = '__etonify_storage_schema_version__';
+  static const storageSchemaVersion = 1;
   static const exportFormatVersion = 1;
   static const exportMinClientVersion = '0.2.0';
 
@@ -839,15 +842,27 @@ class HiveAppSettingsStore extends AppSettingsStore {
     // If the box is already open, just reuse it.
     if (Hive.isBoxOpen(AppSettingsStore.boxName)) {
       final box = Hive.box<dynamic>(AppSettingsStore.boxName);
+      await HiveStorageDiagnostics.logBoxOnce(
+        label: AppSettingsStore.boxName,
+        box: box,
+        openElapsed: Duration.zero,
+      );
       return HiveAppSettingsStore._(box);
     }
 
     try {
+      final stopwatch = Stopwatch()..start();
       final box = await Hive.openBox<dynamic>(
         AppSettingsStore.boxName,
         encryptionCipher: SecureHiveStorage.cipher,
       );
       await _migrateLegacyBox(box);
+      stopwatch.stop();
+      await HiveStorageDiagnostics.logBoxOnce(
+        label: AppSettingsStore.boxName,
+        box: box,
+        openElapsed: stopwatch.elapsed,
+      );
       return HiveAppSettingsStore._(box);
     } catch (error, stackTrace) {
       AppLogStore.error(
@@ -859,7 +874,22 @@ class HiveAppSettingsStore extends AppSettingsStore {
   }
 
   static Future<void> _migrateLegacyBox(Box<dynamic> secureBox) async {
-    if (!await Hive.boxExists(AppSettingsStore.legacyBoxName)) return;
+    final storedVersion =
+        (secureBox.get(AppSettingsStore.storageSchemaVersionKey) as num?)
+            ?.toInt() ??
+        0;
+    if (storedVersion >= AppSettingsStore.storageSchemaVersion) {
+      return;
+    }
+
+    if (!await Hive.boxExists(AppSettingsStore.legacyBoxName)) {
+      await secureBox.put(
+        AppSettingsStore.storageSchemaVersionKey,
+        AppSettingsStore.storageSchemaVersion,
+      );
+      await secureBox.flush();
+      return;
+    }
 
     final legacyBox = Hive.isBoxOpen(AppSettingsStore.legacyBoxName)
         ? Hive.box<dynamic>(AppSettingsStore.legacyBoxName)
@@ -885,6 +915,11 @@ class HiveAppSettingsStore extends AppSettingsStore {
 
     // Removal happens only after the encrypted copy was flushed and verified.
     await Hive.deleteBoxFromDisk(AppSettingsStore.legacyBoxName);
+    await secureBox.put(
+      AppSettingsStore.storageSchemaVersionKey,
+      AppSettingsStore.storageSchemaVersion,
+    );
+    await secureBox.flush();
   }
 
   @override

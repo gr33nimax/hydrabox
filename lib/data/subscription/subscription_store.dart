@@ -5,6 +5,7 @@ import 'dart:isolate';
 import 'package:flutter/foundation.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:meow_client/core/lowest_proxy_groups.dart';
+import 'package:meow_client/data/local/hive_storage_diagnostics.dart';
 import 'package:meow_client/data/local/secure_hive_storage.dart';
 import 'package:meow_client/logging/app_log_store.dart';
 import 'package:meow_client/models/subscription.dart';
@@ -39,6 +40,8 @@ class SubscriptionStore {
   static const _legacyMetaBoxName = 'subscriptions';
   static const _legacyPayloadBoxName = 'subscription_payloads';
   static const _legacySummaryBoxName = 'subscription_summaries';
+  static const _storageSchemaVersionKey = '__etonify_storage_schema_version__';
+  static const _storageSchemaVersion = 1;
   static const _localFileImportScheme = 'meow-file';
   static Box? _metaBox;
   static Box? _payloadBox;
@@ -54,24 +57,43 @@ class SubscriptionStore {
     if (_metaBox != null) {
       return;
     }
+    final totalStopwatch = Stopwatch()..start();
     try {
       await SecureHiveStorage.init();
+      final metaStopwatch = Stopwatch()..start();
       _metaBox = Hive.isBoxOpen(_metaBoxName)
           ? Hive.box(_metaBoxName)
           : await Hive.openBox(
               _metaBoxName,
               encryptionCipher: SecureHiveStorage.cipher,
             );
+      metaStopwatch.stop();
+      final payloadStopwatch = Stopwatch()..start();
       _payloadBox = Hive.isBoxOpen(_payloadBoxName)
           ? Hive.box(_payloadBoxName)
           : await Hive.openBox(
               _payloadBoxName,
               encryptionCipher: SecureHiveStorage.cipher,
             );
-      await _migratePlaintextBox(_legacyMetaBoxName, _metaBox!);
-      await _migratePlaintextBox(_legacyPayloadBoxName, _payloadBox!);
-      await _migrateLegacyData();
-      await _cleanupLegacySummaryBox();
+      payloadStopwatch.stop();
+      await _runStorageMigrations();
+      await Future.wait<void>([
+        HiveStorageDiagnostics.logBoxOnce(
+          label: _metaBoxName,
+          box: _metaBox!,
+          openElapsed: metaStopwatch.elapsed,
+        ),
+        HiveStorageDiagnostics.logBoxOnce(
+          label: _payloadBoxName,
+          box: _payloadBox!,
+          openElapsed: payloadStopwatch.elapsed,
+        ),
+      ]);
+      totalStopwatch.stop();
+      AppLogStore.info(
+        'storage metrics',
+        'subscriptionStorageReadyMs=${totalStopwatch.elapsedMilliseconds}',
+      );
     } catch (error, stackTrace) {
       AppLogStore.error(
         'subscription storage',
@@ -80,6 +102,20 @@ class SubscriptionStore {
       );
       rethrow;
     }
+  }
+
+  static Future<void> _runStorageMigrations() async {
+    final storedVersion =
+        (_metaStore.get(_storageSchemaVersionKey) as num?)?.toInt() ?? 0;
+    if (storedVersion >= _storageSchemaVersion) {
+      return;
+    }
+    await _migratePlaintextBox(_legacyMetaBoxName, _metaStore);
+    await _migratePlaintextBox(_legacyPayloadBoxName, _payloadStore);
+    await _migrateLegacyData();
+    await _cleanupLegacySummaryBox();
+    await _metaStore.put(_storageSchemaVersionKey, _storageSchemaVersion);
+    await _metaStore.flush();
   }
 
   static Future<void> _migratePlaintextBox(
@@ -201,22 +237,48 @@ class SubscriptionStore {
 
   /// Returns metadata-only subscriptions without loading raw content/outbounds.
   static List<Subscription> getAllMetadata() {
-    final indexedResults = <({int index, Subscription subscription})>[];
-    var index = 0;
+    return _decodeMetadataSnapshot(_metadataJsonSnapshot());
+  }
+
+  /// Copies compact metadata strings from Hive and performs JSON/model decoding
+  /// outside the UI isolate.
+  static Future<List<Subscription>> getAllMetadataInBackground() async {
+    final snapshot = _metadataJsonSnapshot();
+    if (snapshot.isEmpty) {
+      return const <Subscription>[];
+    }
+    return Isolate.run(
+      () => _decodeMetadataSnapshot(snapshot),
+      debugName: 'meow-subscription-metadata',
+    );
+  }
+
+  static List<String> _metadataJsonSnapshot() {
+    final values = <String>[];
     for (final key in _metaStore.keys) {
+      if (key == _storageSchemaVersionKey) {
+        continue;
+      }
       final raw = _metaStore.get(key);
       if (raw is String) {
-        try {
-          final map = jsonDecode(raw) as Map<String, dynamic>;
-          indexedResults.add((
-            index: index,
-            subscription: Subscription.fromMetadataMap(map),
-          ));
-        } catch (_) {
-          // Skip corrupt entries
-        }
+        values.add(raw);
       }
-      index++;
+    }
+    return values;
+  }
+
+  static List<Subscription> _decodeMetadataSnapshot(List<String> snapshot) {
+    final indexedResults = <({int index, Subscription subscription})>[];
+    for (var index = 0; index < snapshot.length; index++) {
+      try {
+        final map = jsonDecode(snapshot[index]) as Map<String, dynamic>;
+        indexedResults.add((
+          index: index,
+          subscription: Subscription.fromMetadataMap(map),
+        ));
+      } catch (_) {
+        // Skip corrupt entries.
+      }
     }
     indexedResults.sort((a, b) {
       final left = a.subscription.sortOrder ?? (1 << 30) + a.index;
@@ -240,6 +302,28 @@ class SubscriptionStore {
     } catch (_) {
       return null;
     }
+  }
+
+  /// Loads one complete subscription without decoding its payload on the UI
+  /// isolate. Hive values are copied before the worker starts.
+  static Future<Subscription?> getInBackground(String id) async {
+    final metadataRaw = _metaStore.get(id);
+    if (metadataRaw is! String) {
+      return null;
+    }
+    final payloadRaw = _payloadStore.get(id);
+    return Isolate.run(() {
+      try {
+        final metadata = Subscription.fromMetadataMap(
+          jsonDecode(metadataRaw) as Map<String, dynamic>,
+        );
+        return payloadRaw is String
+            ? _withPayloadFromRaw(metadata, payloadRaw)
+            : metadata;
+      } catch (_) {
+        return null;
+      }
+    }, debugName: 'meow-subscription-single');
   }
 
   /// Hydrates raw content/outbounds for a metadata-only subscription.

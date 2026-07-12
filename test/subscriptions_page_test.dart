@@ -115,6 +115,7 @@ void main() {
         }
       });
       await _openSheet(tester, activeSubscriptionId: 'sub-0');
+      await _pumpUntilFound(tester, find.textContaining('2 proxies'));
 
       expect(find.text('Current profile'), findsNothing);
       expect(find.textContaining('2 proxies'), findsWidgets);
@@ -190,5 +191,22 @@ Future<void> _pumpUi(
   final frameCount = (duration.inMilliseconds / frame.inMilliseconds).ceil();
   for (var index = 0; index < frameCount; index++) {
     await tester.pump(frame);
+  }
+}
+
+Future<void> _pumpUntilFound(
+  WidgetTester tester,
+  Finder finder, {
+  Duration timeout = const Duration(seconds: 3),
+}) async {
+  final stopwatch = Stopwatch()..start();
+  while (finder.evaluate().isEmpty && stopwatch.elapsed < timeout) {
+    // Background subscription decoding runs in a real isolate, while widget
+    // test frame durations use the fake clock. Give the worker a short real
+    // scheduling window before pumping the result into the widget tree.
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 10)),
+    );
+    await tester.pump(const Duration(milliseconds: 16));
   }
 }
