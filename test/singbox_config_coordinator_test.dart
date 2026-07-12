@@ -192,6 +192,7 @@ class _BlockingRuntime implements RuntimeLifecycleRuntime {
   int maxConcurrentApplies = 0;
   int startCalls = 0;
   int stopCalls = 0;
+  bool running = true;
 
   @override
   Future<void> applyConfig({
@@ -242,6 +243,7 @@ class _BlockingRuntime implements RuntimeLifecycleRuntime {
   @override
   Future<void> start({required String config, required bool useVpn}) {
     startCalls++;
+    running = true;
     return _trackConfigApply(config);
   }
 
@@ -250,11 +252,12 @@ class _BlockingRuntime implements RuntimeLifecycleRuntime {
 
   @override
   Future<Map<String, dynamic>> status() async {
-    return const <String, dynamic>{'running': true, 'mode': 'vpn'};
+    return <String, dynamic>{'running': running, 'mode': 'vpn'};
   }
 
   @override
   Future<void> stop({required String reason}) async {
     stopCalls++;
+    running = false;
   }
 }

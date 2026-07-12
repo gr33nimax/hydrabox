@@ -26,12 +26,10 @@ class MeowQuickSettingsTileService : TileService() {
         private const val MAX_LABEL_LENGTH = 18
 
         fun requestRefresh(context: android.content.Context) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                requestListeningState(
-                    context,
-                    ComponentName(context, MeowQuickSettingsTileService::class.java),
-                )
-            }
+            requestListeningState(
+                context,
+                ComponentName(context, MeowQuickSettingsTileService::class.java),
+            )
         }
     }
 
@@ -130,11 +128,7 @@ class MeowQuickSettingsTileService : TileService() {
 
     private fun startRuntimeService(mode: String) {
         val intent = Intent(this, serviceClass(mode)).setAction(MeowBoxService.ACTION_START)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(intent)
-        } else {
-            startService(intent)
-        }
+        startForegroundService(intent)
     }
 
     private fun serviceClass(mode: String): Class<out android.app.Service> =
@@ -170,6 +164,7 @@ class MeowQuickSettingsTileService : TileService() {
     }
 
     @SuppressLint("StartActivityAndCollapseDeprecated")
+    @Suppress("DEPRECATION")
     private fun openIntent(intent: Intent) {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {

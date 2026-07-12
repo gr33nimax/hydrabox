@@ -19,6 +19,7 @@ class ProxySelectionController {
   static const defaultConfirmationTimeout = Duration(seconds: 12);
 
   int _generation = 0;
+  Future<void> _persistenceQueue = Future<void>.value();
   String? _pendingRuntimeSelectTag;
   String? _pendingRuntimeSelectPreviousTag;
   Timer? _pendingRuntimeSelectTimer;
@@ -46,6 +47,67 @@ class ProxySelectionController {
     Duration confirmationTimeout = defaultConfirmationTimeout,
   }) {
     final generation = ++_generation;
+    _setPendingRuntimeSelection(
+      generation: generation,
+      tag: tag,
+      previousTag: previousTag,
+      onTimeout: onTimeout,
+      confirmationTimeout: confirmationTimeout,
+    );
+    return generation;
+  }
+
+  int guardCurrentSelectionForRuntime({
+    required String tag,
+    required String previousTag,
+    required void Function(ProxySelectionTimeout timeout) onTimeout,
+    Duration confirmationTimeout = defaultConfirmationTimeout,
+  }) {
+    final generation = _generation;
+    _setPendingRuntimeSelection(
+      generation: generation,
+      tag: tag,
+      previousTag: previousTag,
+      onTimeout: onTimeout,
+      confirmationTimeout: confirmationTimeout,
+    );
+    return generation;
+  }
+
+  Future<void> enqueuePersistence({
+    required int generation,
+    required Future<void> Function() action,
+  }) {
+    final operation = _persistenceQueue.then((_) async {
+      if (!isCurrentGeneration(generation)) {
+        return;
+      }
+      await action();
+    });
+    _persistenceQueue = operation.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
+    );
+    return operation;
+  }
+
+  Future<void> waitForPersistence() async {
+    while (true) {
+      final pending = _persistenceQueue;
+      await pending;
+      if (identical(pending, _persistenceQueue)) {
+        return;
+      }
+    }
+  }
+
+  void _setPendingRuntimeSelection({
+    required int generation,
+    required String tag,
+    required String previousTag,
+    required void Function(ProxySelectionTimeout timeout) onTimeout,
+    required Duration confirmationTimeout,
+  }) {
     _pendingRuntimeSelectTag = tag;
     _pendingRuntimeSelectPreviousTag = previousTag;
     _pendingRuntimeSelectTimer?.cancel();
@@ -61,7 +123,6 @@ class ProxySelectionController {
         ),
       );
     });
-    return generation;
   }
 
   bool clearRuntimeSelection({int? generation}) {

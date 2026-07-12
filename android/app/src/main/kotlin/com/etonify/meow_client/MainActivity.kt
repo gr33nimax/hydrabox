@@ -167,22 +167,13 @@ class MainActivity : FlutterActivity() {
         )
     }
 
-    private fun canRequestApkInstalls(): Boolean =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            packageManager.canRequestPackageInstalls()
-        } else {
-            true
-        }
+    private fun canRequestApkInstalls(): Boolean = packageManager.canRequestPackageInstalls()
 
     private fun openApkInstallSettings() {
-        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Intent(
-                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                Uri.parse("package:$packageName"),
-            )
-        } else {
-            Intent(Settings.ACTION_SECURITY_SETTINGS)
-        }
+        val intent = Intent(
+            Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+            Uri.parse("package:$packageName"),
+        )
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         startActivity(intent)
     }
@@ -542,14 +533,6 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun startServiceCompat(intent: Intent) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(intent)
-        } else {
-            startService(intent)
-        }
-    }
-
     private fun currentRuntimeModeForStop(): String {
         val controllerMode = SingboxController.serviceMode.trim().lowercase()
         if (controllerMode == "vpn" || controllerMode == "proxy") {
@@ -606,7 +589,6 @@ class MainActivity : FlutterActivity() {
             )
             MeowBoxService.requestStopAll("force_cleanup:$reason:$source")
             MeowDefaultNetworkMonitor.stop()
-            SingboxController.forceMarkServiceStopped("force_cleanup:$reason:$source")
         }
         for (serviceClass in targets) {
             runCatching {
@@ -618,12 +600,15 @@ class MainActivity : FlutterActivity() {
         MeowApplication.clearServiceState()
         MeowApplication.clearRuntimeIntent()
         MeowQuickSettingsTileService.requestRefresh(this)
+        val stopped =
+            !SingboxController.running &&
+                !MeowBoxService.hasActiveRuntimeOwner()
         MeowDiagnostics.log(
             TAG,
             "cleanupStoppedRuntimeState completed reason=$reason source=$source force=$force " +
-                "targets=${targets.joinToString { it.simpleName }}",
+                "stopped=$stopped targets=${targets.joinToString { it.simpleName }}",
         )
-        return true
+        return stopped
     }
 
     private fun dispatchStopRuntime(reason: String, onComplete: (Boolean) -> Unit) {
@@ -688,14 +673,27 @@ class MainActivity : FlutterActivity() {
         }
         SingboxController.awaitStopped { stopped ->
             if (!stopped) {
-                val cleaned = cleanupStoppedRuntimeState(
+                cleanupStoppedRuntimeState(
                     reason = reason,
                     source = "await_timeout",
                     stopRequestedAtMillis = stopRequestedAtMillis,
                     targets = cleanupTargets,
                     force = true,
                 )
-                onComplete(cleaned || !SingboxController.running)
+                // Give Service.onDestroy() and the native cleanup worker a short
+                // final window, but never turn a timeout into a fake success.
+                mainHandler.postDelayed({
+                    val verifiedStopped =
+                        !SingboxController.running &&
+                            !MeowBoxService.hasActiveRuntimeOwner()
+                    MeowDiagnostics.log(
+                        TAG,
+                        "dispatchStopRuntime timeout verification reason=$reason " +
+                            "stopped=$verifiedStopped running=${SingboxController.running} " +
+                            "activeOwner=${MeowBoxService.hasActiveRuntimeOwner()}",
+                    )
+                    onComplete(verifiedStopped)
+                }, 750L)
                 return@awaitStopped
             }
             cleanupStoppedRuntimeState(
@@ -729,7 +727,7 @@ class MainActivity : FlutterActivity() {
             val serviceIntent = Intent(this, targetService).setAction(MeowBoxService.ACTION_START)
             Log.i(TAG, "start forwarding idempotent ACTION_START mode=$targetMode")
             MeowDiagnostics.log(TAG, "start forwarding idempotent ACTION_START mode=$targetMode")
-            startServiceCompat(serviceIntent)
+            startForegroundService(serviceIntent)
             result.success(true)
             return
         }
@@ -756,13 +754,25 @@ class MainActivity : FlutterActivity() {
             )
             SingboxController.awaitStopped { stopped ->
                 if (!stopped) {
-                    cleanupStoppedRuntimeState(
+                    val cleaned = cleanupStoppedRuntimeState(
                         reason = "mode_switch_to_$targetMode",
                         source = "await_timeout",
                         stopRequestedAtMillis = stopRequestedAtMillis,
                         targets = cleanupTargets,
                         force = true,
                     )
+                    if (!cleaned) {
+                        SingboxController.log(
+                            "error",
+                            "mode switch aborted: previous VPN stop was not confirmed target=$targetMode",
+                        )
+                        MeowDiagnostics.log(
+                            TAG,
+                            "mode switch start blocked target=$targetMode running=${SingboxController.running} " +
+                                "activeOwner=${MeowBoxService.hasActiveRuntimeOwner()}",
+                        )
+                        return@awaitStopped
+                    }
                 }
                 val serviceIntent = Intent(this, targetService).setAction(MeowBoxService.ACTION_START)
                 Log.i(TAG, "starting target service after mode switch target=${targetService.simpleName} stopped=$stopped")
@@ -770,13 +780,13 @@ class MainActivity : FlutterActivity() {
                     TAG,
                     "starting target service after mode switch target=${targetService.simpleName} stopped=$stopped",
                 )
-                startServiceCompat(serviceIntent)
+                startForegroundService(serviceIntent)
             }
         } else {
             val serviceIntent = Intent(this, targetService).setAction(MeowBoxService.ACTION_START)
             Log.i(TAG, "starting target service target=${targetService.simpleName}")
             MeowDiagnostics.log(TAG, "starting target service target=${targetService.simpleName}")
-            startServiceCompat(serviceIntent)
+            startForegroundService(serviceIntent)
         }
         result.success(true)
     }
@@ -816,7 +826,7 @@ class MainActivity : FlutterActivity() {
             }
         } else {
             val serviceIntent = Intent(this, serviceClass).setAction(MeowBoxService.ACTION_START)
-            startServiceCompat(serviceIntent)
+            startForegroundService(serviceIntent)
             result.success(true)
         }
     }
@@ -1419,8 +1429,12 @@ class MainActivity : FlutterActivity() {
                     val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
                         addCategory(Intent.CATEGORY_OPENABLE)
                         type = "text/plain"
-                        putExtra(Intent.EXTRA_TITLE, suggestedName.ifBlank { "meow-logs-${System.currentTimeMillis()}.txt" })
+                        putExtra(
+                            Intent.EXTRA_TITLE,
+                            suggestedName.ifBlank { "meow-logs-${System.currentTimeMillis()}.txt" },
+                        )
                     }
+                    @Suppress("DEPRECATION")
                     startActivityForResult(intent, exportDocumentRequestCode)
                 }
 
@@ -1895,6 +1909,7 @@ class MainActivity : FlutterActivity() {
                         type = "text/plain"
                         putExtra(Intent.EXTRA_TITLE, suggestedName)
                     }
+                    @Suppress("DEPRECATION")
                     startActivityForResult(intent, exportDocumentRequestCode)
                 }
 

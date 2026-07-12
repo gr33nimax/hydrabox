@@ -126,12 +126,16 @@ class RuntimeLifecycleController {
     RuntimeLifecycleRuntime? runtime,
     this.startTimeout = const Duration(seconds: 15),
     this.stopTimeout = const Duration(seconds: 7),
+    this.stopVerificationTimeout = const Duration(seconds: 2),
+    this.stopSettleDelay = const Duration(milliseconds: 200),
     this.healthCheckTimeout = const Duration(seconds: 6),
   }) : _runtime = runtime ?? SingboxRuntimeLifecycleRuntime();
 
   final RuntimeLifecycleRuntime _runtime;
   final Duration startTimeout;
   final Duration stopTimeout;
+  final Duration stopVerificationTimeout;
+  final Duration stopSettleDelay;
   final Duration healthCheckTimeout;
 
   Timer? _startWatchdogTimer;
@@ -363,6 +367,18 @@ class RuntimeLifecycleController {
     try {
       logCall('stop', 'reason=$reason before runtime restart useVpn=$useVpn');
       await _runtime.stop(reason: reason).timeout(stopTimeout);
+      final stopConfirmed = await _waitForStoppedRuntime();
+      if (!stopConfirmed) {
+        AppLogStore.error(
+          'runtime',
+          'runtime restart blocked because the previous service/TUN stop '
+              'was not confirmed reason=$reason useVpn=$useVpn',
+        );
+        return const RuntimeLifecycleResult.failure(
+          policy: RuntimeApplyPolicy.fullServiceRestart,
+          error: 'runtime_stop_unconfirmed',
+        );
+      }
       trimMemory('before_runtime_restart');
       final granted = await _runtime.prepareVpn(requiresVpn: useVpn);
       if (!granted) {
@@ -392,6 +408,36 @@ class RuntimeLifecycleController {
         error: error.toString(),
       );
     }
+  }
+
+  Future<bool> _waitForStoppedRuntime() async {
+    if (stopSettleDelay > Duration.zero) {
+      await Future<void>.delayed(stopSettleDelay);
+    }
+    final deadline = DateTime.now().add(stopVerificationTimeout);
+    do {
+      try {
+        final remaining = deadline.difference(DateTime.now());
+        final status = await _runtime.status().timeout(
+          remaining > Duration.zero
+              ? remaining
+              : const Duration(milliseconds: 1),
+        );
+        final stopped =
+            status['running'] != true &&
+            status['recordedServiceAlive'] != true &&
+            status['activeRuntimeOwner'] != true;
+        if (stopped) {
+          return true;
+        }
+      } catch (error) {
+        AppLogStore.warning('runtime', 'failed to verify native stop: $error');
+      }
+      if (DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+    } while (DateTime.now().isBefore(deadline));
+    return false;
   }
 
   Future<void> _applyBuild({

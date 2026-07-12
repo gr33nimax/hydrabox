@@ -47,6 +47,17 @@ internal fun requireAppliedIncludedPackages(
     }
 }
 
+internal fun ensureVpnOwnerExcluded(
+    excluded: List<String>,
+    ownerPackage: String,
+): List<String> {
+    val normalizedOwner = ownerPackage.trim()
+    if (excluded.isEmpty() || normalizedOwner.isEmpty() || normalizedOwner in excluded) {
+        return excluded
+    }
+    return excluded + normalizedOwner
+}
+
 private fun readBoundedPackageIterator(
     fieldName: String,
     iterator: StringIterator,

@@ -1914,6 +1914,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     _postConnectUrlTestTimer?.cancel();
     _networkRecoveryDecisionTimer?.cancel();
     _latencyFinalizeTimer?.cancel();
+    _configCoordinator.dispose();
     _runtimeLifecycle.dispose();
     _runtimeCommands.dispose();
     _activeProxyIpController.dispose();
@@ -3591,6 +3592,14 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         _setConnectionPhase(AppConnectionPhase.starting);
       });
     }
+    final selectedTagForStart = _selectedProxyTag.trim();
+    if (selectedTagForStart.isNotEmpty) {
+      _proxySelection.guardCurrentSelectionForRuntime(
+        tag: selectedTagForStart,
+        previousTag: selectedTagForStart,
+        onTimeout: _handleRuntimeProxySelectionTimeout,
+      );
+    }
     await _startRuntimeWithBuild(build, useVpn: _vpnInboundEnabled);
   }
 
@@ -3640,10 +3649,13 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     unawaited(_syncQuickSettingsTileLabel());
     _saveStateSoon();
     unawaited(
-      _persistSelectedProxySelection(
-        updatedSubscription,
+      _proxySelection.enqueuePersistence(
         generation: selectionGeneration,
-        prepareConfigSnapshot: !_connected,
+        action: () => _persistSelectedProxySelection(
+          updatedSubscription,
+          generation: selectionGeneration,
+          prepareConfigSnapshot: !_connected,
+        ),
       ),
     );
     if (_connected) {
@@ -3722,6 +3734,10 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   }
 
   Future<void> _synchronizeSelectedProxyBeforeStart() async {
+    await _proxySelection.waitForPersistence();
+    if (!mounted) {
+      return;
+    }
     final activeSubscription = _activeSubscription;
     if (activeSubscription == null) {
       return;
@@ -5193,6 +5209,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     if (result.success) {
       return;
     }
+    _clearRuntimeProxySelectionGuard();
     _runtimeDesiredByUser = false;
     setState(() {
       _setConnectionPhase(AppConnectionPhase.failed);

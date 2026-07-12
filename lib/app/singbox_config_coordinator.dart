@@ -159,6 +159,7 @@ class SingboxConfigCoordinator {
     required SingboxConfigPostConnectUrlTestScheduler
     schedulePostConnectSelectedProxyUrlTest,
     required Future<void> Function() syncRuntimeState,
+    this.fullServiceRestartDebounce = const Duration(milliseconds: 450),
   }) : _readSnapshot = readSnapshot,
        _isMounted = isMounted,
        _ensureActiveSubscriptionHydrated = ensureActiveSubscriptionHydrated,
@@ -174,6 +175,8 @@ class SingboxConfigCoordinator {
        _schedulePostConnectSelectedProxyUrlTest =
            schedulePostConnectSelectedProxyUrlTest,
        _syncRuntimeState = syncRuntimeState;
+
+  final Duration fullServiceRestartDebounce;
 
   final SingboxConfigCoordinatorSnapshotReader _readSnapshot;
   final bool Function() _isMounted;
@@ -195,12 +198,32 @@ class SingboxConfigCoordinator {
   int _singboxConfigBuildGeneration = 0;
   Future<String?>? _singboxConfigPathFuture;
   Future<void> _runtimeConfigApplyQueue = Future<void>.value();
+  Timer? _fullServiceRestartDebounceTimer;
+
+  void dispose() {
+    _fullServiceRestartDebounceTimer?.cancel();
+    _fullServiceRestartDebounceTimer = null;
+  }
 
   void emitCurrentConfigLog(
     String reason, {
     bool restartRuntime = true,
     bool forceFullServiceRestart = false,
   }) {
+    if (forceFullServiceRestart && fullServiceRestartDebounce > Duration.zero) {
+      _fullServiceRestartDebounceTimer?.cancel();
+      _fullServiceRestartDebounceTimer = Timer(fullServiceRestartDebounce, () {
+        _fullServiceRestartDebounceTimer = null;
+        unawaited(
+          emitCurrentConfigLogAsync(
+            reason,
+            restartRuntime: restartRuntime,
+            forceFullServiceRestart: true,
+          ),
+        );
+      });
+      return;
+    }
     unawaited(
       emitCurrentConfigLogAsync(
         reason,

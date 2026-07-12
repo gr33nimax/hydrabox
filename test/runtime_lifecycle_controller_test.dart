@@ -118,6 +118,35 @@ void main() {
       expect(runtime.stopCalls, 1);
     },
   );
+
+  test(
+    'full restart refuses to start over an unconfirmed native stop',
+    () async {
+      final runtime = _FakeRuntime(ignoreStop: true);
+      final controller = RuntimeLifecycleController(
+        runtime: runtime,
+        stopVerificationTimeout: const Duration(milliseconds: 20),
+        stopSettleDelay: Duration.zero,
+      );
+      addTearDown(controller.dispose);
+
+      final result = await controller.applyRuntimeBuild(
+        build: _build(),
+        useVpn: true,
+        policy: RuntimeApplyPolicy.fullServiceRestart,
+        promotePreparedConfig: (_) {},
+        cacheStartedBuild: (_) {},
+        logCall: (_, _) {},
+        trimMemory: (_) {},
+        onWatchdogTimeout: (_) {},
+      );
+
+      expect(result.success, isFalse);
+      expect(result.error, 'runtime_stop_unconfirmed');
+      expect(runtime.stopCalls, 1);
+      expect(runtime.startPreparedCalls, 0);
+    },
+  );
 }
 
 SingboxConfigBuildResult _build() {
@@ -146,6 +175,7 @@ class _FakeRuntime implements RuntimeLifecycleRuntime {
     this.interfaceUsable = true,
     this.startCompletes = true,
     this.failApplyAndStopRuntime = false,
+    this.ignoreStop = false,
   });
 
   bool running;
@@ -153,6 +183,7 @@ class _FakeRuntime implements RuntimeLifecycleRuntime {
   bool interfaceUsable;
   bool startCompletes;
   bool failApplyAndStopRuntime;
+  bool ignoreStop;
   int applyPreparedConfigCalls = 0;
   int applyConfigCalls = 0;
   int stopCalls = 0;
@@ -236,6 +267,8 @@ class _FakeRuntime implements RuntimeLifecycleRuntime {
   @override
   Future<void> stop({required String reason}) async {
     stopCalls++;
-    running = false;
+    if (!ignoreStop) {
+      running = false;
+    }
   }
 }

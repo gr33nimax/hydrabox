@@ -7,7 +7,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.Network
 import android.net.VpnService
-import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.os.SystemClock
@@ -165,13 +164,14 @@ class MeowVpnService : VpnService() {
         // Schedule restart via AlarmManager so the VPN survives app-swipe.
         val restartIntent = Intent(this, MeowVpnService::class.java)
             .setAction(MeowBoxService.ACTION_START)
-        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_ONE_SHOT or
-                PendingIntent.FLAG_IMMUTABLE
-        } else {
-            PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_ONE_SHOT
-        }
-        val pending = PendingIntent.getService(this, RESTART_REQUEST_CODE, restartIntent, flags)
+        val flags = PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_ONE_SHOT or
+            PendingIntent.FLAG_IMMUTABLE
+        val pending = PendingIntent.getService(
+            this,
+            RESTART_REQUEST_CODE,
+            restartIntent,
+            flags,
+        )
         val alarm = getSystemService(Context.ALARM_SERVICE) as AlarmManager
         alarm.set(
             AlarmManager.ELAPSED_REALTIME_WAKEUP,
@@ -181,11 +181,7 @@ class MeowVpnService : VpnService() {
     }
 
     private fun cancelScheduledRestart(reason: String) {
-        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
-        } else {
-            PendingIntent.FLAG_NO_CREATE
-        }
+        val flags = PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
         val restartIntent = Intent(this, MeowVpnService::class.java)
             .setAction(MeowBoxService.ACTION_START)
         val pending = PendingIntent.getService(

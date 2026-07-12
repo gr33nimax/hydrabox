@@ -213,11 +213,30 @@ void main() {
       expect(controller.runtimeLatencies['vless-1'], 73);
     },
   );
+
+  test('stale runtime selection cannot replace pending startup choice', () {
+    final controller = ProxyRuntimeController();
+    addTearDown(controller.dispose);
+
+    final result = controller.applyGroupUpdates(
+      _input(
+        selectedProxyTag: 'france',
+        pendingRuntimeSelectTag: 'france',
+        rawGroups: [
+          {'tag': 'select', 'selected': 'sweden', 'items': const <dynamic>[]},
+        ],
+      ),
+    );
+
+    expect(result.selectedProxyTagToApply, isNull);
+    expect(result.shouldClearRuntimeProxySelectionGuard, isFalse);
+  });
 }
 
 ProxyRuntimeGroupUpdateInput _input({
   required List<dynamic> rawGroups,
   String selectedProxyTag = 'vless-1',
+  String? pendingRuntimeSelectTag,
   bool runtimeSelectionUpdatesAllowed = true,
   bool latencySessionRunning = false,
 }) {
@@ -240,7 +259,7 @@ ProxyRuntimeGroupUpdateInput _input({
       ],
     ),
     selectedProxyTag: selectedProxyTag,
-    pendingRuntimeSelectTag: null,
+    pendingRuntimeSelectTag: pendingRuntimeSelectTag,
     runtimeSelectionUpdatesAllowed: runtimeSelectionUpdatesAllowed,
     currentResolvedActiveOutboundTag: 'vless-1',
     activeOutboundTags: const {'vless-1', 'vless-2'},

@@ -248,7 +248,14 @@ class MeowVpnPlatformInterface(
                 excludePackage = { options.excludePackage },
             )
             val includedPackages = splitPackages.included
-            val excludedPackages = splitPackages.excluded
+            // In exclude-package mode the VPN owner would otherwise route its
+            // own control-plane HTTP and native sockets back into its TUN. The
+            // core normally protects every socket, but one stale/unprotected FD
+            // is enough to black-hole subscription fetches and proxy dials.
+            val excludedPackages = ensureVpnOwnerExcluded(
+                splitPackages.excluded,
+                service.packageName,
+            )
             val dnsServerAddress = runCatching { options.dnsServerAddress }.getOrNull()
             while (dnsServerAddress?.hasNext() == true) {
                 val dnsAddress = dnsServerAddress.next()

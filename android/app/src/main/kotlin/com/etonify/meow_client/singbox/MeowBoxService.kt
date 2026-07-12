@@ -108,11 +108,7 @@ class MeowBoxService(
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
-                PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED -> {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                        updateDeviceIdleMode()
-                    }
-                }
+                PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED -> updateDeviceIdleMode()
             }
         }
     }
@@ -123,6 +119,10 @@ class MeowBoxService(
         if (action == null) {
             val mode = currentMode()
             if (shouldRestoreStickyStart(mode)) {
+                // A service started with startForegroundService() must enter the
+                // foreground before any queued native work. JNI cleanup/startup
+                // can legitimately take several seconds during a VPN restart.
+                showForeground("Starting")
                 Log.w(TAG, "restoring sticky restart mode=$mode")
                 SingboxController.log(
                     "warning",
@@ -148,6 +148,7 @@ class MeowBoxService(
         var sticky = false
         when (action) {
             ACTION_START -> {
+                showForeground("Starting")
                 sticky = true
                 val token = nextStartToken("action_start")
                 submitServiceTask("action_start") { startInternal("action_start", token) }
@@ -161,6 +162,7 @@ class MeowBoxService(
                 }
             }
             ACTION_RESTART_CORE -> {
+                showForeground("Restarting")
                 sticky = true
                 val token = nextStartToken("action_restart_core")
                 submitServiceTask("action_restart_core") {
@@ -168,6 +170,7 @@ class MeowBoxService(
                 }
             }
             ACTION_RELOAD -> {
+                showForeground("Reloading")
                 sticky = true
                 val token = nextStartToken("action_reload")
                 submitServiceTask("action_reload") { startOrReloadInternal(token) }
@@ -572,28 +575,29 @@ class MeowBoxService(
                 "network monitor stop skipped source=$source generation=$generation active=$activeGeneration",
             )
         }
+        var cleanupComplete = true
         if (server != null) {
-            runCleanupStep("closeService source=$source") {
+            cleanupComplete = runCleanupStep("closeService source=$source") {
                 server.closeService()
-            }
+            } && cleanupComplete
             if (shouldStopRuntimeState) {
-                runCleanupStep("disconnect command client source=$source") {
+                cleanupComplete = runCleanupStep("disconnect command client source=$source") {
                     SingboxController.disconnectClientBlocking()
-                }
+                } && cleanupComplete
             } else {
                 MeowDiagnostics.log(
                     TAG,
                     "command client disconnect skipped source=$source generation=$generation active=$activeGeneration",
                 )
             }
-            runCleanupStep("close command server source=$source") {
+            cleanupComplete = runCleanupStep("close command server source=$source") {
                 server.close()
-            }
+            } && cleanupComplete
         } else {
             if (shouldStopRuntimeState) {
-                runCleanupStep("disconnect command client source=$source") {
+                cleanupComplete = runCleanupStep("disconnect command client source=$source") {
                     SingboxController.disconnectClientBlocking()
-                }
+                } && cleanupComplete
             } else {
                 MeowDiagnostics.log(
                     TAG,
@@ -603,11 +607,25 @@ class MeowBoxService(
         }
         runningConfigHash = null
         serviceGeneration = 0L
-        if (shouldStopRuntimeState) {
+        if (shouldStopRuntimeState && cleanupComplete) {
             SingboxController.markServiceStopped(generation, source)
             MeowApplication.clearServiceState()
             MeowApplication.clearRuntimeIntent()
             MeowQuickSettingsTileService.requestRefresh(service)
+        } else if (shouldStopRuntimeState) {
+            // Do not report a successful stop while Go/JNI may still own the
+            // duplicated TUN descriptor. Starting another VPN in this state can
+            // leave Android UID routing attached to the stale interface and turn
+            // every outbound dial into an i/o timeout.
+            SingboxController.log(
+                "error",
+                "VPN service cleanup incomplete source=$source service=${service.javaClass.simpleName}",
+            )
+            MeowDiagnostics.log(
+                TAG,
+                "runtime stop not acknowledged source=$source generation=$generation " +
+                    "activeGeneration=$activeGeneration cleanupComplete=false",
+            )
         } else {
             MeowDiagnostics.log(
                 TAG,
@@ -615,16 +633,15 @@ class MeowBoxService(
             )
         }
         SingboxController.log(
-            "warning",
-            "VPN service stopped source=$source service=${service.javaClass.simpleName}",
+            if (cleanupComplete) "warning" else "error",
+            if (cleanupComplete) {
+                "VPN service stopped source=$source service=${service.javaClass.simpleName}"
+            } else {
+                "VPN service stop incomplete source=$source service=${service.javaClass.simpleName}"
+            },
         )
         runCatching {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                service.stopForeground(Service.STOP_FOREGROUND_REMOVE)
-            } else {
-                @Suppress("DEPRECATION")
-                service.stopForeground(true)
-            }
+            service.stopForeground(Service.STOP_FOREGROUND_REMOVE)
         }
         if (stopSelf) {
             if (startId != null) {
@@ -672,7 +689,7 @@ class MeowBoxService(
         }
     }
 
-    private fun runCleanupStep(label: String, block: () -> Unit) {
+    private fun runCleanupStep(label: String, block: () -> Unit): Boolean {
         var failure: Throwable? = null
         val threadName = "MeowBoxCleanup-${label.take(32).replace(' ', '_')}"
         val thread = Thread(
@@ -693,19 +710,22 @@ class MeowBoxService(
         } catch (error: InterruptedException) {
             Thread.currentThread().interrupt()
             MeowDiagnostics.log(TAG, "$label interrupted during cleanup", error)
-            return
+            return false
         }
         if (thread.isAlive) {
             MeowDiagnostics.log(
                 TAG,
-                "$label timed out after ${CLEANUP_STEP_TIMEOUT_MS}ms; continuing service stop",
+                "$label timed out after ${CLEANUP_STEP_TIMEOUT_MS}ms; stop remains unconfirmed",
             )
             thread.interrupt()
-            return
+            return false
         }
-        failure?.let {
-            MeowDiagnostics.log(TAG, "$label failed during cleanup", it)
+        val error = failure
+        if (error != null) {
+            MeowDiagnostics.log(TAG, "$label failed during cleanup", error)
+            return false
         }
+        return true
     }
 
     private fun fail(message: String) {
@@ -718,20 +738,15 @@ class MeowBoxService(
 
     private fun showForeground(status: String) {
         val manager = service.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            manager.createNotificationChannel(
-                NotificationChannel(
-                    NOTIFICATION_CHANNEL_ID,
-                    "Etonify sing-box",
-                    NotificationManager.IMPORTANCE_LOW,
-                ),
-            )
-        }
-        val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Notification.Builder(service, NOTIFICATION_CHANNEL_ID)
-        } else {
-            Notification.Builder(service)
-        }.setContentTitle("Etonify")
+        manager.createNotificationChannel(
+            NotificationChannel(
+                NOTIFICATION_CHANNEL_ID,
+                "Etonify sing-box",
+                NotificationManager.IMPORTANCE_LOW,
+            ),
+        )
+        val notification = Notification.Builder(service, NOTIFICATION_CHANNEL_ID)
+            .setContentTitle("Etonify")
             .setContentText(status)
             .setSmallIcon(R.drawable.ic_meow_status)
             .setOngoing(true)
@@ -874,14 +889,7 @@ class MeowBoxService(
         if (receiverRegistered) {
             return
         }
-        val filter = IntentFilter().apply {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                addAction(PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED)
-            }
-        }
-        if (filter.countActions() == 0) {
-            return
-        }
+        val filter = IntentFilter(PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED)
         runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 service.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
@@ -912,9 +920,6 @@ class MeowBoxService(
     }
 
     private fun updateDeviceIdleMode() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-            return
-        }
         val powerManager = service.getSystemService(Context.POWER_SERVICE) as PowerManager
         val idle = powerManager.isDeviceIdleMode
         MeowDiagnostics.log(TAG, "device idle mode changed idle=$idle")

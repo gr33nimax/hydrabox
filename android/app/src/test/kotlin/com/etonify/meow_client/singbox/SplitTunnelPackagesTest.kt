@@ -81,6 +81,35 @@ class SplitTunnelPackagesTest {
             applied = listOf("org.telegram.messenger"),
         )
     }
+
+    @Test
+    fun `exclude mode keeps the VPN owner outside its own tunnel`() {
+        assertEquals(
+            listOf("com.example.direct", "com.etonify.meow_client"),
+            ensureVpnOwnerExcluded(
+                excluded = listOf("com.example.direct"),
+                ownerPackage = "com.etonify.meow_client",
+            ),
+        )
+        assertEquals(
+            listOf("com.example.direct", "com.etonify.meow_client"),
+            ensureVpnOwnerExcluded(
+                excluded = listOf("com.example.direct", "com.etonify.meow_client"),
+                ownerPackage = "com.etonify.meow_client",
+            ),
+        )
+    }
+
+    @Test
+    fun `full tunnel mode does not implicitly exclude the VPN owner`() {
+        assertEquals(
+            emptyList<String>(),
+            ensureVpnOwnerExcluded(
+                excluded = emptyList(),
+                ownerPackage = "com.etonify.meow_client",
+            ),
+        )
+    }
 }
 
 private class ListStringIterator(

@@ -35,12 +35,6 @@ object MeowDefaultNetworkMonitor {
     private val request = NetworkRequest.Builder()
         .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
         .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
-        .apply {
-            if (Build.VERSION.SDK_INT == Build.VERSION_CODES.M) {
-                removeCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-                removeCapability(NetworkCapabilities.NET_CAPABILITY_CAPTIVE_PORTAL)
-            }
-        }
         .build()
 
     private var started = false
@@ -169,7 +163,6 @@ object MeowDefaultNetworkMonitor {
     private fun heartbeatTick() {
         val currentlyStarted = synchronized(lock) { started }
         if (!currentlyStarted) return
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
         val active = MeowApplication.connectivity.activeNetwork
         val cached = synchronized(lock) { currentNetwork }
         val best = resolveBestNetwork()
@@ -234,14 +227,10 @@ object MeowDefaultNetworkMonitor {
             MeowDiagnostics.log(TAG, "require late best ${describeNetwork(it)}")
             return it
         }
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            val active = MeowApplication.connectivity.activeNetwork
-            if (active != null && isSelectableNetwork(active)) {
-                MeowDiagnostics.log(TAG, "require fallback active ${describeNetwork(active)}")
-                active
-            } else {
-                error("missing default network")
-            }
+        val active = MeowApplication.connectivity.activeNetwork
+        return if (active != null && isSelectableNetwork(active)) {
+            MeowDiagnostics.log(TAG, "require fallback active ${describeNetwork(active)}")
+            active
         } else {
             error("missing default network")
         }
@@ -515,11 +504,7 @@ object MeowDefaultNetworkMonitor {
 
     private fun resolveBestNetwork(exclude: Network? = null): Network? {
         val connectivity = MeowApplication.connectivity
-        val active = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            connectivity.activeNetwork
-        } else {
-            null
-        }
+        val active = connectivity.activeNetwork
         val candidates = connectivity.allNetworks
             .mapNotNull { network ->
                 if (network == exclude) return@mapNotNull null
@@ -593,11 +578,7 @@ object MeowDefaultNetworkMonitor {
     private fun isSelectableNetwork(network: Network): Boolean {
         val capabilities = MeowApplication.connectivity.getNetworkCapabilities(network) ?: return false
         if (!isBaseUsableNetwork(capabilities)) return false
-        val active = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            MeowApplication.connectivity.activeNetwork == network
-        } else {
-            false
-        }
+        val active = MeowApplication.connectivity.activeNetwork == network
         val validated = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
         return validated || active || hasUsableNetworkInterface(network)
     }
@@ -655,11 +636,7 @@ object MeowDefaultNetworkMonitor {
         val connectivity = MeowApplication.connectivity
         val resolvedCapabilities = capabilities ?: connectivity.getNetworkCapabilities(network)
         val linkProperties = connectivity.getLinkProperties(network)
-        val active = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            connectivity.activeNetwork == network
-        } else {
-            false
-        }
+        val active = connectivity.activeNetwork == network
         val transports = resolvedCapabilities?.let(::describeTransports) ?: "unknown"
         val validated = resolvedCapabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
         val internet = resolvedCapabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
@@ -687,48 +664,35 @@ object MeowDefaultNetworkMonitor {
     }
 
     fun describeCurrentState(): String {
-        val active = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            MeowApplication.connectivity.activeNetwork
-        } else {
-            null
-        }
+        val active = MeowApplication.connectivity.activeNetwork
         val current = synchronized(lock) { currentNetwork }
         return "current=${describeNetwork(current)} active=${describeNetwork(active)}"
     }
 
     private fun register() {
-        when (Build.VERSION.SDK_INT) {
-            in 31..Int.MAX_VALUE ->
-                @TargetApi(31)
-                runCatching {
-                    MeowDiagnostics.log(TAG, "register method=registerBestMatchingNetworkCallback sdk=${Build.VERSION.SDK_INT}")
-                    MeowApplication.connectivity.registerBestMatchingNetworkCallback(
-                        request,
-                        callback,
-                        networkHandler,
-                    )
-                }.onFailure {
-                    SingboxController.log("error", "default network callback failed: ${it.message}")
-                }
-            in 26 until 31 ->
-                @TargetApi(26)
-                runCatching {
-                    MeowDiagnostics.log(TAG, "register method=registerNetworkCallback(networkHandler) sdk=${Build.VERSION.SDK_INT}")
-                    MeowApplication.connectivity.registerNetworkCallback(
-                        request,
-                        callback,
-                        networkHandler,
-                    )
-                }.onFailure {
-                    SingboxController.log("error", "default network callback failed: ${it.message}")
-                }
-            else ->
-                runCatching {
-                    MeowDiagnostics.log(TAG, "register method=registerNetworkCallback sdk=${Build.VERSION.SDK_INT}")
-                    MeowApplication.connectivity.registerNetworkCallback(request, callback)
-                }.onFailure {
-                    SingboxController.log("error", "default network callback failed: ${it.message}")
-                }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            @TargetApi(Build.VERSION_CODES.S)
+            runCatching {
+                MeowDiagnostics.log(TAG, "register method=registerBestMatchingNetworkCallback sdk=${Build.VERSION.SDK_INT}")
+                MeowApplication.connectivity.registerBestMatchingNetworkCallback(
+                    request,
+                    callback,
+                    networkHandler,
+                )
+            }.onFailure {
+                SingboxController.log("error", "default network callback failed: ${it.message}")
+            }
+        } else {
+            runCatching {
+                MeowDiagnostics.log(TAG, "register method=registerNetworkCallback(networkHandler) sdk=${Build.VERSION.SDK_INT}")
+                MeowApplication.connectivity.registerNetworkCallback(
+                    request,
+                    callback,
+                    networkHandler,
+                )
+            }.onFailure {
+                SingboxController.log("error", "default network callback failed: ${it.message}")
+            }
         }
     }
 }
