@@ -49,6 +49,7 @@ import 'package:meow_client/features/settings/settings_page.dart';
 import 'package:meow_client/features/settings/settings_routing_page.dart';
 import 'package:meow_client/features/settings/settings_subscriptions_page.dart';
 import 'package:meow_client/features/settings/settings_update_page.dart';
+import 'package:meow_client/features/subscriptions/subscription_error_message.dart';
 import 'package:meow_client/features/subscriptions/subscriptions_page.dart';
 import 'package:meow_client/features/welcome/welcome_page.dart';
 import 'package:meow_client/l10n/generated/app_localizations.dart';
@@ -2148,7 +2149,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       }
       _showAppSnackBar(
         createdResult.hasWarning
-            ? l10n.subscriptionSavedWithFetchWarning
+            ? subscriptionSavedWarningMessage(createdResult.warning, l10n)
             : copy.imported(created.name),
       );
       await _offerLikelyHwidFix(created);
@@ -2156,6 +2157,10 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       if (!mounted) {
         return;
       }
+      AppLogStore.warning(
+        'subscription',
+        'Deep-link subscription import failed: ${error.runtimeType}: $error',
+      );
       _showAppSnackBar(_userFacingSubscriptionError(error, l10n));
     }
   }
@@ -2367,13 +2372,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     if (error is _LocalizedSubscriptionError) {
       return error.message;
     }
-    if (error is TimeoutException) {
-      return l10n.subscriptionOperationTimeout;
-    }
-    if (error is UnsupportedHappCryptoLinkException) {
-      return l10n.happCryptUnsupportedMessage;
-    }
-    return error.toString();
+    return subscriptionErrorMessage(error, l10n);
   }
 
   Future<void> _refreshActiveSubscription() async {
@@ -2691,6 +2690,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         : await _resolveSubscriptionMetadata(
             activeSubscriptionId: state.activeProfileId,
             selectedProxyTag: state.selectedProxyTag,
+            preferSelectedProxyTag: state.selectedProxyTag.trim().isNotEmpty,
           );
     final subscriptions = resolvedSubscriptions.subscriptions;
     final normalized = resolvedSubscriptions.normalized;
@@ -2729,6 +2729,11 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         clearProxyCache: true,
       );
     });
+    if (!useInMemoryBootstrap && normalized.activeSubscriptionId.isNotEmpty) {
+      // Keep the first frame metadata-only, then hydrate just the active
+      // subscription so the collapsed proxy footer is restored after restart.
+      unawaited(_ensureActiveSubscriptionHydratedForRuntime());
+    }
     unawaited(_syncQuickSettingsTileLabel());
     AppLogStore.info('sing-box', 'startup');
     unawaited(_syncRuntimePerformanceFlags());
@@ -3603,6 +3608,10 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         tag: selectedTagForStart,
         previousTag: selectedTagForStart,
         onTimeout: _handleRuntimeProxySelectionTimeout,
+        confirmationTimeout:
+            _runtimeLifecycle.startTimeout +
+            _runtimeCommands.selectionTimeout +
+            const Duration(seconds: 2),
       );
     }
     await _startRuntimeWithBuild(build, useVpn: _vpnInboundEnabled);
@@ -3635,7 +3644,12 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     _postConnectUrlTestTimer?.cancel();
     _postConnectUrlTestTimer = null;
     _resetActiveProxyIpState(rebuild: false);
-    final selectionGeneration = _connected
+    final selectInRuntime = _proxySelection.runtimeSelectionUpdatesAllowed(
+      connected: _connected,
+      connectionStable: _connectionPhase == AppConnectionPhase.connected,
+      transitionInProgress: _runtimeTransitionInProgress,
+    );
+    final selectionGeneration = selectInRuntime
         ? _beginRuntimeProxySelectionGuard(tag, previousTag)
         : _beginLocalProxySelection();
     setState(() {
@@ -3659,11 +3673,11 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         action: () => _persistSelectedProxySelection(
           updatedSubscription,
           generation: selectionGeneration,
-          prepareConfigSnapshot: !_connected,
+          prepareConfigSnapshot: !selectInRuntime,
         ),
       ),
     );
-    if (_connected) {
+    if (selectInRuntime) {
       unawaited(() async {
         try {
           _logLibboxCall(
@@ -5233,6 +5247,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       return;
     }
     if (result.success) {
+      await _reassertPendingRuntimeProxySelectionAfterStart();
       return;
     }
     _clearRuntimeProxySelectionGuard();
@@ -5318,7 +5333,45 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
           'previous=${timeout.previousTag ?? '<none>'}; restart suppressed',
     );
     _clearRuntimeProxySelectionGuard(generation: timeout.generation);
-    _showAppSnackBar('Proxy switch was not confirmed. Try again.');
+    // A start guard uses the same value for tag and previousTag. Its job is to
+    // ignore a stale selector snapshot while the core starts; it is not a user
+    // switch and therefore must not surface a misleading failure snackbar.
+    if (timeout.previousTag != timeout.tag) {
+      _showAppSnackBar('Proxy switch was not confirmed. Try again.');
+    }
+  }
+
+  Future<void> _reassertPendingRuntimeProxySelectionAfterStart() async {
+    final tag = _proxySelection.pendingRuntimeSelectTag?.trim() ?? '';
+    if (tag.isEmpty) {
+      return;
+    }
+    final generation = _proxySelection.generation;
+    AppLogStore.info(
+      'proxy',
+      'reasserting selected outbound after runtime start tag=$tag',
+    );
+    final result = await _runtimeCommands.selectOutbound(tag);
+    if (!mounted ||
+        !_proxySelection.isCurrentGeneration(generation) ||
+        _proxySelection.pendingRuntimeSelectTag != tag ||
+        result.status == RuntimeSelectionStatus.stale) {
+      return;
+    }
+    if (!result.applied) {
+      AppLogStore.warning(
+        'proxy',
+        'failed to reassert selected outbound after runtime start tag=$tag '
+            'error=${result.error}',
+      );
+      return;
+    }
+    AppLogStore.info(
+      'libbox call',
+      'post-start selectOutbound done group=select outbound=$tag '
+          'elapsedMs=${result.elapsed.inMilliseconds}',
+    );
+    _clearRuntimeProxySelectionGuard(generation: generation);
   }
 
   void _clearRuntimeProxySelectionGuard({int? generation}) {

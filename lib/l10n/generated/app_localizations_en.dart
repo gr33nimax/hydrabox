@@ -1444,6 +1444,120 @@ class AppLocalizationsEn extends AppLocalizations {
       'The subscription was saved, but the server did not respond. You can change HWID or headers and refresh it later.';
 
   @override
+  String subscriptionSavedWithFetchWarningReason(String reason) {
+    return 'The subscription was saved without servers. Reason: $reason Fix the link, HWID, or headers, then refresh it.';
+  }
+
+  @override
+  String get subscriptionErrorInvalidUrl =>
+      'The subscription link is invalid. Copy it again and make sure it starts with http:// or https://.';
+
+  @override
+  String get subscriptionErrorHttpsRequired =>
+      'This subscription sends an HWID or credentials, so it can only be loaded over HTTPS.';
+
+  @override
+  String get subscriptionErrorUnsafeRedirect =>
+      'The subscription server tried to redirect from HTTPS to insecure HTTP. Etonify blocked the redirect.';
+
+  @override
+  String get subscriptionErrorRedirect =>
+      'The subscription link redirects incorrectly or too many times. Ask the provider for a direct link.';
+
+  @override
+  String get subscriptionErrorHttp400 =>
+      'The server rejected the request (HTTP 400). Check the link and its parameters.';
+
+  @override
+  String get subscriptionErrorHttp401 =>
+      'Authorization failed (HTTP 401). The token, login, or HWID may be invalid.';
+
+  @override
+  String get subscriptionErrorHttp402 =>
+      'Payment is required (HTTP 402). Renew the subscription or contact the provider.';
+
+  @override
+  String get subscriptionErrorHttp403 =>
+      'Access is denied (HTTP 403). The subscription may be expired, blocked, or require the correct HWID.';
+
+  @override
+  String get subscriptionErrorHttp404 =>
+      'Subscription not found (HTTP 404). The link may have been removed or copied incorrectly.';
+
+  @override
+  String get subscriptionErrorHttp408 =>
+      'The subscription server timed out (HTTP 408). Try again later.';
+
+  @override
+  String get subscriptionErrorHttp410 =>
+      'The subscription has expired or was removed (HTTP 410). Request a new link from the provider.';
+
+  @override
+  String get subscriptionErrorHttp429 =>
+      'Too many requests (HTTP 429). Wait a little before trying again.';
+
+  @override
+  String get subscriptionErrorHttp500 =>
+      'The subscription server has an internal error (HTTP 500). This is a provider-side problem.';
+
+  @override
+  String get subscriptionErrorHttp502 =>
+      'The subscription gateway is unavailable (HTTP 502). The provider cannot reach its upstream server right now.';
+
+  @override
+  String get subscriptionErrorHttp503 =>
+      'The subscription service is temporarily unavailable (HTTP 503), possibly due to maintenance.';
+
+  @override
+  String get subscriptionErrorHttp504 =>
+      'The provider\'s upstream server did not respond in time (HTTP 504). Try again later.';
+
+  @override
+  String subscriptionErrorHttpStatus(int status) {
+    return 'The subscription server returned HTTP $status. Check the provider status or ask for a new link.';
+  }
+
+  @override
+  String get subscriptionErrorDns =>
+      'The subscription host could not be found. Check the domain, DNS, and internet connection.';
+
+  @override
+  String get subscriptionErrorConnection =>
+      'Could not connect to the subscription server. Check your internet connection or try again later.';
+
+  @override
+  String get subscriptionErrorTls =>
+      'A secure connection to the subscription server failed. Its TLS certificate may be invalid or expired.';
+
+  @override
+  String get subscriptionErrorEmptyResponse =>
+      'The subscription server returned an empty response. The link may be expired or the provider may be having problems.';
+
+  @override
+  String get subscriptionErrorHtmlResponse =>
+      'The server returned a web page instead of a subscription. The link may open a login or error page.';
+
+  @override
+  String get subscriptionErrorResponseTooLarge =>
+      'The subscription response is too large and was blocked to protect the app.';
+
+  @override
+  String get subscriptionErrorNoUsableProxies =>
+      'No supported proxy servers were found in the subscription. It may be empty, expired, or use an unsupported format.';
+
+  @override
+  String get subscriptionErrorInvalidContent =>
+      'The server response is not a valid subscription. Check that the link points directly to a subscription file.';
+
+  @override
+  String get subscriptionErrorHappInvalid =>
+      'The Happ link could not be decrypted or contains an invalid subscription URL. Copy a fresh link and try again.';
+
+  @override
+  String get subscriptionErrorUnknown =>
+      'The subscription could not be processed. Check the link and open Diagnostics for the technical reason.';
+
+  @override
   String get sourceLabel => 'Source';
 
   @override

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:meow_client/app/subscription_runtime_controller.dart';
 import 'package:meow_client/core/lowest_proxy_groups.dart';
@@ -41,6 +43,33 @@ void main() {
     expect(selection.activeSubscriptionId, 'sub-1');
     expect(selection.selectedProxyTag, 'only');
   });
+
+  test(
+    'hydration keeps the preferred offline selection in the model and UI',
+    () async {
+      final controller = SubscriptionRuntimeController();
+      final stored = _subscription(
+        id: 'sub-1',
+        selectedProxyTag: 'sweden',
+        outbounds: [_outbound('sweden'), _outbound('france')],
+      );
+
+      final hydrated = await controller
+          .hydrateActiveSubscriptionAndBuildProxyCache(
+            metadata: stored.copyWith(outbounds: const []),
+            selectedProxyTag: 'france',
+            preferSelectedProxyTag: true,
+            preserveRuntimeState: false,
+            runtimeSnapshot: const SubscriptionRuntimeSnapshot(),
+            russiaRouteProxiesEnabled: false,
+            payloadJson: jsonEncode(stored.toPayloadMap()),
+          );
+
+      expect(hydrated.normalized.selectedProxyTag, 'france');
+      expect(hydrated.subscription.selectedProxyTag, 'france');
+      expect(hydrated.proxyCache.displayProxy?.tag, 'france');
+    },
+  );
 
   test('runtime fingerprint is stable for equivalent config map order', () {
     final controller = SubscriptionRuntimeController();

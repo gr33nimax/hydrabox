@@ -12,6 +12,7 @@ import 'package:meow_client/models/subscription.dart';
 
 import 'location_aliases.dart';
 import 'outbound_schema.dart';
+import 'subscription_failure.dart';
 import 'subscription_fetcher.dart';
 import 'subscription_parser.dart';
 
@@ -510,6 +511,11 @@ class SubscriptionStore {
         'subscription import',
       );
       final outbounds = payload.outbounds;
+      if (!_hasUsableOutbounds(outbounds)) {
+        throw const SubscriptionContentException(
+          SubscriptionContentFailureKind.noUsableProxies,
+        );
+      }
 
       final sub = Subscription(
         id: id,
@@ -606,8 +612,10 @@ class SubscriptionStore {
       'subscription file import',
     );
     final outbounds = payload.outbounds;
-    if (outbounds.isEmpty) {
-      throw StateError('No proxies found in imported file');
+    if (!_hasUsableOutbounds(outbounds)) {
+      throw const SubscriptionContentException(
+        SubscriptionContentFailureKind.noUsableProxies,
+      );
     }
 
     final normalizedSourceName = _normalizeName(sourceName) ?? 'subscription';
@@ -691,8 +699,8 @@ class SubscriptionStore {
     );
     final outbounds = payload.outbounds;
     if (!_hasUsableOutbounds(outbounds)) {
-      throw StateError(
-        'Subscription refresh returned no usable proxies; keeping existing subscription',
+      throw const SubscriptionContentException(
+        SubscriptionContentFailureKind.noUsableProxies,
       );
     }
 
@@ -757,12 +765,16 @@ class SubscriptionStore {
     }
     final rawContent = existingBeforeParse.rawContent.trim();
     if (rawContent.isEmpty) {
-      throw StateError('No saved raw data to reparse');
+      throw const SubscriptionContentException(
+        SubscriptionContentFailureKind.emptyResponse,
+      );
     }
 
     final parseResult = await SubscriptionParser.parseInBackground(rawContent);
     if (parseResult.outbounds.isEmpty) {
-      throw StateError('No proxies found in saved raw data');
+      throw const SubscriptionContentException(
+        SubscriptionContentFailureKind.noUsableProxies,
+      );
     }
 
     final payload = await _buildSubscriptionPayloadAsync(
@@ -774,7 +786,9 @@ class SubscriptionStore {
     );
     final reparsedOutbounds = payload.outbounds;
     if (!_hasUsableOutbounds(reparsedOutbounds)) {
-      throw StateError('No usable proxies found in saved raw data');
+      throw const SubscriptionContentException(
+        SubscriptionContentFailureKind.noUsableProxies,
+      );
     }
 
     return _withSubscriptionWriteLock(id, () async {

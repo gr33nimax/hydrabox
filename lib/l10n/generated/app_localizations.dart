@@ -2642,6 +2642,174 @@ abstract class AppLocalizations {
   /// **'The subscription was saved, but the server did not respond. You can change HWID or headers and refresh it later.'**
   String get subscriptionSavedWithFetchWarning;
 
+  /// No description provided for @subscriptionSavedWithFetchWarningReason.
+  ///
+  /// In en, this message translates to:
+  /// **'The subscription was saved without servers. Reason: {reason} Fix the link, HWID, or headers, then refresh it.'**
+  String subscriptionSavedWithFetchWarningReason(String reason);
+
+  /// No description provided for @subscriptionErrorInvalidUrl.
+  ///
+  /// In en, this message translates to:
+  /// **'The subscription link is invalid. Copy it again and make sure it starts with http:// or https://.'**
+  String get subscriptionErrorInvalidUrl;
+
+  /// No description provided for @subscriptionErrorHttpsRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'This subscription sends an HWID or credentials, so it can only be loaded over HTTPS.'**
+  String get subscriptionErrorHttpsRequired;
+
+  /// No description provided for @subscriptionErrorUnsafeRedirect.
+  ///
+  /// In en, this message translates to:
+  /// **'The subscription server tried to redirect from HTTPS to insecure HTTP. Etonify blocked the redirect.'**
+  String get subscriptionErrorUnsafeRedirect;
+
+  /// No description provided for @subscriptionErrorRedirect.
+  ///
+  /// In en, this message translates to:
+  /// **'The subscription link redirects incorrectly or too many times. Ask the provider for a direct link.'**
+  String get subscriptionErrorRedirect;
+
+  /// No description provided for @subscriptionErrorHttp400.
+  ///
+  /// In en, this message translates to:
+  /// **'The server rejected the request (HTTP 400). Check the link and its parameters.'**
+  String get subscriptionErrorHttp400;
+
+  /// No description provided for @subscriptionErrorHttp401.
+  ///
+  /// In en, this message translates to:
+  /// **'Authorization failed (HTTP 401). The token, login, or HWID may be invalid.'**
+  String get subscriptionErrorHttp401;
+
+  /// No description provided for @subscriptionErrorHttp402.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment is required (HTTP 402). Renew the subscription or contact the provider.'**
+  String get subscriptionErrorHttp402;
+
+  /// No description provided for @subscriptionErrorHttp403.
+  ///
+  /// In en, this message translates to:
+  /// **'Access is denied (HTTP 403). The subscription may be expired, blocked, or require the correct HWID.'**
+  String get subscriptionErrorHttp403;
+
+  /// No description provided for @subscriptionErrorHttp404.
+  ///
+  /// In en, this message translates to:
+  /// **'Subscription not found (HTTP 404). The link may have been removed or copied incorrectly.'**
+  String get subscriptionErrorHttp404;
+
+  /// No description provided for @subscriptionErrorHttp408.
+  ///
+  /// In en, this message translates to:
+  /// **'The subscription server timed out (HTTP 408). Try again later.'**
+  String get subscriptionErrorHttp408;
+
+  /// No description provided for @subscriptionErrorHttp410.
+  ///
+  /// In en, this message translates to:
+  /// **'The subscription has expired or was removed (HTTP 410). Request a new link from the provider.'**
+  String get subscriptionErrorHttp410;
+
+  /// No description provided for @subscriptionErrorHttp429.
+  ///
+  /// In en, this message translates to:
+  /// **'Too many requests (HTTP 429). Wait a little before trying again.'**
+  String get subscriptionErrorHttp429;
+
+  /// No description provided for @subscriptionErrorHttp500.
+  ///
+  /// In en, this message translates to:
+  /// **'The subscription server has an internal error (HTTP 500). This is a provider-side problem.'**
+  String get subscriptionErrorHttp500;
+
+  /// No description provided for @subscriptionErrorHttp502.
+  ///
+  /// In en, this message translates to:
+  /// **'The subscription gateway is unavailable (HTTP 502). The provider cannot reach its upstream server right now.'**
+  String get subscriptionErrorHttp502;
+
+  /// No description provided for @subscriptionErrorHttp503.
+  ///
+  /// In en, this message translates to:
+  /// **'The subscription service is temporarily unavailable (HTTP 503), possibly due to maintenance.'**
+  String get subscriptionErrorHttp503;
+
+  /// No description provided for @subscriptionErrorHttp504.
+  ///
+  /// In en, this message translates to:
+  /// **'The provider\'s upstream server did not respond in time (HTTP 504). Try again later.'**
+  String get subscriptionErrorHttp504;
+
+  /// No description provided for @subscriptionErrorHttpStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'The subscription server returned HTTP {status}. Check the provider status or ask for a new link.'**
+  String subscriptionErrorHttpStatus(int status);
+
+  /// No description provided for @subscriptionErrorDns.
+  ///
+  /// In en, this message translates to:
+  /// **'The subscription host could not be found. Check the domain, DNS, and internet connection.'**
+  String get subscriptionErrorDns;
+
+  /// No description provided for @subscriptionErrorConnection.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not connect to the subscription server. Check your internet connection or try again later.'**
+  String get subscriptionErrorConnection;
+
+  /// No description provided for @subscriptionErrorTls.
+  ///
+  /// In en, this message translates to:
+  /// **'A secure connection to the subscription server failed. Its TLS certificate may be invalid or expired.'**
+  String get subscriptionErrorTls;
+
+  /// No description provided for @subscriptionErrorEmptyResponse.
+  ///
+  /// In en, this message translates to:
+  /// **'The subscription server returned an empty response. The link may be expired or the provider may be having problems.'**
+  String get subscriptionErrorEmptyResponse;
+
+  /// No description provided for @subscriptionErrorHtmlResponse.
+  ///
+  /// In en, this message translates to:
+  /// **'The server returned a web page instead of a subscription. The link may open a login or error page.'**
+  String get subscriptionErrorHtmlResponse;
+
+  /// No description provided for @subscriptionErrorResponseTooLarge.
+  ///
+  /// In en, this message translates to:
+  /// **'The subscription response is too large and was blocked to protect the app.'**
+  String get subscriptionErrorResponseTooLarge;
+
+  /// No description provided for @subscriptionErrorNoUsableProxies.
+  ///
+  /// In en, this message translates to:
+  /// **'No supported proxy servers were found in the subscription. It may be empty, expired, or use an unsupported format.'**
+  String get subscriptionErrorNoUsableProxies;
+
+  /// No description provided for @subscriptionErrorInvalidContent.
+  ///
+  /// In en, this message translates to:
+  /// **'The server response is not a valid subscription. Check that the link points directly to a subscription file.'**
+  String get subscriptionErrorInvalidContent;
+
+  /// No description provided for @subscriptionErrorHappInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'The Happ link could not be decrypted or contains an invalid subscription URL. Copy a fresh link and try again.'**
+  String get subscriptionErrorHappInvalid;
+
+  /// No description provided for @subscriptionErrorUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'The subscription could not be processed. Check the link and open Diagnostics for the technical reason.'**
+  String get subscriptionErrorUnknown;
+
   /// No description provided for @sourceLabel.
   ///
   /// In en, this message translates to:

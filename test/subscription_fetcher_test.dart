@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:meow_client/data/subscription/subscription_fetcher.dart';
+import 'package:meow_client/data/subscription/subscription_failure.dart';
 import 'package:meow_client/data/subscription/subscription_store.dart';
 import 'package:meow_client/models/subscription.dart';
 
@@ -146,7 +147,86 @@ void main() {
         SubscriptionFetcher.fetch(
           'http://${server.address.host}:${server.port}/sub',
         ),
-        throwsA(isA<HttpException>()),
+        throwsA(
+          isA<SubscriptionContentException>().having(
+            (error) => error.kind,
+            'kind',
+            SubscriptionContentFailureKind.responseTooLarge,
+          ),
+        ),
+      );
+    });
+
+    test('preserves the HTTP status returned by the provider', () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(server.close);
+
+      server.listen((request) async {
+        request.response.statusCode = HttpStatus.badGateway;
+        await request.response.close();
+      });
+
+      await expectLater(
+        SubscriptionFetcher.fetch(
+          'http://${server.address.host}:${server.port}/sub',
+        ),
+        throwsA(
+          isA<SubscriptionHttpStatusException>().having(
+            (error) => error.statusCode,
+            'statusCode',
+            HttpStatus.badGateway,
+          ),
+        ),
+      );
+    });
+
+    test('rejects an empty successful response', () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(server.close);
+
+      server.listen((request) async {
+        request.response.statusCode = HttpStatus.ok;
+        await request.response.close();
+      });
+
+      await expectLater(
+        SubscriptionFetcher.fetch(
+          'http://${server.address.host}:${server.port}/sub',
+        ),
+        throwsA(
+          isA<SubscriptionContentException>().having(
+            (error) => error.kind,
+            'kind',
+            SubscriptionContentFailureKind.emptyResponse,
+          ),
+        ),
+      );
+    });
+
+    test('rejects an HTML error page returned with HTTP 200', () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(server.close);
+
+      server.listen((request) async {
+        request.response.statusCode = HttpStatus.ok;
+        request.response.headers.contentType = ContentType.html;
+        request.response.write(
+          '<!doctype html><html><body>Provider error</body></html>',
+        );
+        await request.response.close();
+      });
+
+      await expectLater(
+        SubscriptionFetcher.fetch(
+          'http://${server.address.host}:${server.port}/sub',
+        ),
+        throwsA(
+          isA<SubscriptionContentException>().having(
+            (error) => error.kind,
+            'kind',
+            SubscriptionContentFailureKind.htmlResponse,
+          ),
+        ),
       );
     });
 

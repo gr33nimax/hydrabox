@@ -304,9 +304,12 @@ class SubscriptionRuntimeController {
         selectedProxyTag: selectedProxyTag,
         preferSelectedProxyTag: preferSelectedProxyTag,
       );
+      final normalizedSubscription = subscription.copyWith(
+        selectedProxyTag: normalized.selectedProxyTag,
+      );
       final proxyCache = buildProxyCache(
         ProxyCacheBuildInput(
-          subscription: subscription,
+          subscription: normalizedSubscription,
           selectedProxyTag: normalized.selectedProxyTag,
           lowestLatency: lowestLatency,
           runtimeLowestOutboundTag: runtimeLowestOutboundTag,
@@ -321,7 +324,7 @@ class SubscriptionRuntimeController {
         ),
       );
       return HydratedActiveSubscription(
-        subscription: subscription,
+        subscription: normalizedSubscription,
         normalized: normalized,
         proxyCache: proxyCache,
       );

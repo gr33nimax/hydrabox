@@ -267,53 +267,70 @@ void main() {
     expect(find.text('panel:0.00'), findsOneWidget);
   });
 
-  testWidgets('embedded proxy sheet hides synthetic lowest rows', (
-    tester,
-  ) async {
-    final proxies = <AppProxySummary>[
-      _proxy(lowestProxyTag, 'lowest'),
-      _proxy(lowestOpenProxyTag, 'lowest open'),
-      _proxy(lowestFreeProxyTag, 'lowest free'),
-      for (var i = 0; i < 80; i++)
-        _proxy('proxy-$i', 'proxy $i', latency: i + 1),
-      _proxy('chain-test', 'chain · Germany', latency: 999),
-    ];
+  testWidgets(
+    'embedded proxy sheet shows lowest with secondary rows collapsed',
+    (tester) async {
+      String? selectedTag;
+      final proxies = <AppProxySummary>[
+        _proxy(lowestProxyTag, 'lowest'),
+        _proxy(lowestOpenProxyTag, 'lowest open'),
+        _proxy(lowestFreeProxyTag, 'lowest free'),
+        for (var i = 0; i < 80; i++)
+          _proxy('proxy-$i', 'proxy $i', latency: i + 1),
+        _proxy('chain-test', 'chain · Germany', latency: 999),
+      ];
 
-    await tester.pumpWidget(
-      MaterialApp(
-        supportedLocales: AppLocalizations.supportedLocales,
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
-        home: Scaffold(
-          body: SizedBox(
-            height: 720,
-            child: ProxiesPage(
-              proxies: proxies,
-              totalTopLevelProxies: proxies.length,
-              selectedTag: lowestProxyTag,
-              connected: false,
-              progressiveBlurEnabled: false,
-              onSelected: (_) {},
-              onUrlTest: () async {},
-              onAddProxyChain: (_, _) async {},
-              isProxyChainTag: (tag) => tag == 'chain-test',
-              embedded: true,
-              sheetAtMaxExtent: true,
-              sheetExtent: 1,
-              collapsedSheetExtent: 0,
-              expandedHeaderExtent: 1,
+      await tester.pumpWidget(
+        MaterialApp(
+          supportedLocales: AppLocalizations.supportedLocales,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          home: Scaffold(
+            body: SizedBox(
+              height: 720,
+              child: ProxiesPage(
+                proxies: proxies,
+                totalTopLevelProxies: proxies.length,
+                selectedTag: lowestProxyTag,
+                connected: false,
+                progressiveBlurEnabled: false,
+                onSelected: (tag) => selectedTag = tag,
+                onUrlTest: () async {},
+                onAddProxyChain: (_, _) async {},
+                isProxyChainTag: (tag) => tag == 'chain-test',
+                embedded: true,
+                sheetAtMaxExtent: true,
+                sheetExtent: 1,
+                collapsedSheetExtent: 0,
+                expandedHeaderExtent: 1,
+              ),
             ),
           ),
         ),
-      ),
-    );
+      );
 
-    expect(find.text('lowest'), findsNothing);
-    expect(find.text('lowest open'), findsNothing);
-    expect(find.text('lowest free'), findsNothing);
-    expect(find.byIcon(FluentIcons.more_horizontal_24_regular), findsNothing);
-    expect(find.text('chain · Germany'), findsOneWidget);
-    expect(find.text('+ add proxy chain'), findsNothing);
-  });
+      expect(find.text('lowest'), findsOneWidget);
+      expect(find.text('lowest open'), findsNothing);
+      expect(find.text('lowest free'), findsNothing);
+      expect(
+        find.byIcon(FluentIcons.more_horizontal_24_regular),
+        findsOneWidget,
+      );
+      expect(find.text('chain · Germany'), findsNothing);
+      expect(find.text('+ add proxy chain'), findsNothing);
+
+      await tester.tap(find.text('lowest'));
+      await tester.pump();
+      expect(selectedTag, lowestProxyTag);
+
+      await tester.tap(find.byIcon(FluentIcons.more_horizontal_24_regular));
+      await tester.pump();
+
+      expect(find.text('lowest open'), findsOneWidget);
+      expect(find.text('lowest free'), findsOneWidget);
+      expect(find.text('chain · Germany'), findsOneWidget);
+      expect(find.text('+ add proxy chain'), findsOneWidget);
+    },
+  );
 
   testWidgets('more proxies expands a virtualized large server list', (
     tester,

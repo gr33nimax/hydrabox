@@ -9,6 +9,7 @@ import 'package:meow_client/logging/app_log_store.dart';
 import 'package:meow_client/models/subscription.dart';
 import 'package:meow_client/singbox/singbox_runtime.dart';
 
+import 'subscription_failure.dart';
 import 'subscription_parser.dart';
 
 /// Result returned by [SubscriptionFetcher.fetch].
@@ -77,10 +78,7 @@ class SubscriptionFetcher {
           final statusCode =
               int.tryParse(native['statusCode']?.toString() ?? '') ?? 0;
           if (statusCode != HttpStatus.ok) {
-            throw HttpException(
-              'Subscription server returned $statusCode',
-              uri: uri,
-            );
+            throw SubscriptionHttpStatusException(statusCode, uri: uri);
           }
           final rawContent = native['body']?.toString() ?? '';
           final responseHeaders = <String, String>{
@@ -96,6 +94,8 @@ class SubscriptionFetcher {
             rawContent: rawContent,
             headerValue: (name) => responseHeaders[name.toLowerCase()],
           );
+        } on SubscriptionContentException {
+          rethrow;
         } on HttpException {
           rethrow;
         } catch (error) {
@@ -109,8 +109,10 @@ class SubscriptionFetcher {
       final client = HttpClient();
       client.connectionTimeout = const Duration(seconds: 15);
       Timer? operationTimeoutTimer;
+      var operationTimedOut = false;
       if (operationTimeout != null && operationTimeout > Duration.zero) {
         operationTimeoutTimer = Timer(operationTimeout, () {
+          operationTimedOut = true;
           client.close(force: true);
         });
       }
@@ -118,14 +120,11 @@ class SubscriptionFetcher {
         final response = await _openWithSafeRedirects(client, uri, headers);
 
         if (response.statusCode != 200) {
-          throw HttpException(
-            'Subscription server returned ${response.statusCode}',
-            uri: uri,
-          );
+          throw SubscriptionHttpStatusException(response.statusCode, uri: uri);
         }
 
         // Read body
-        final rawContent = await _readUtf8Body(response, uri);
+        final rawContent = await _readUtf8Body(response);
         return _buildResult(
           url: url,
           rawContent: rawContent,
@@ -134,6 +133,11 @@ class SubscriptionFetcher {
             return values == null || values.isEmpty ? null : values.first;
           },
         );
+      } catch (error) {
+        if (operationTimedOut) {
+          throw TimeoutException('Subscription request timed out');
+        }
+        rethrow;
       } finally {
         operationTimeoutTimer?.cancel();
         client.close(force: true);
@@ -294,6 +298,7 @@ class SubscriptionFetcher {
     required String rawContent,
     required String? Function(String name) headerValue,
   }) async {
+    _validateResponseContent(rawContent);
     final headerInfo = _parseHeaderValues(headerValue);
     final parseResult = await SubscriptionParser.parseInBackground(rawContent);
     return FetchResult(
@@ -302,6 +307,27 @@ class SubscriptionFetcher {
       parseResult: parseResult,
       url: url,
     );
+  }
+
+  static void _validateResponseContent(String rawContent) {
+    final trimmed = rawContent.trim();
+    if (trimmed.isEmpty) {
+      throw const SubscriptionContentException(
+        SubscriptionContentFailureKind.emptyResponse,
+      );
+    }
+    final prefix = trimmed
+        .substring(0, min(trimmed.length, 1024))
+        .toLowerCase();
+    final looksLikeHtml =
+        prefix.startsWith('<!doctype html') ||
+        prefix.startsWith('<html') ||
+        (prefix.contains('<html') && prefix.contains('<body'));
+    if (looksLikeHtml) {
+      throw const SubscriptionContentException(
+        SubscriptionContentFailureKind.htmlResponse,
+      );
+    }
   }
 
   static Uri parseRequestUri(String url) {
@@ -348,15 +374,11 @@ class SubscriptionFetcher {
     );
   }
 
-  static Future<String> _readUtf8Body(
-    HttpClientResponse response,
-    Uri uri,
-  ) async {
+  static Future<String> _readUtf8Body(HttpClientResponse response) async {
     final declaredLength = response.contentLength;
     if (declaredLength > _maxSubscriptionResponseBytes) {
-      throw HttpException(
-        'Subscription response is larger than $_maxSubscriptionResponseBytes bytes',
-        uri: uri,
+      throw const SubscriptionContentException(
+        SubscriptionContentFailureKind.responseTooLarge,
       );
     }
     final builder = BytesBuilder(copy: false);
@@ -364,9 +386,8 @@ class SubscriptionFetcher {
     await for (final chunk in response) {
       totalBytes += chunk.length;
       if (totalBytes > _maxSubscriptionResponseBytes) {
-        throw HttpException(
-          'Subscription response is larger than $_maxSubscriptionResponseBytes bytes',
-          uri: uri,
+        throw const SubscriptionContentException(
+          SubscriptionContentFailureKind.responseTooLarge,
         );
       }
       builder.add(chunk);

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:meow_client/data/subscription/subscription_parser.dart';
+import 'package:meow_client/data/subscription/subscription_failure.dart';
 import 'package:meow_client/data/subscription/subscription_store.dart';
 import 'package:meow_client/models/subscription.dart';
 
@@ -82,6 +83,32 @@ void main() {
     final metadata = SubscriptionStore.getAllMetadata().single;
     expect(metadata.cachedVisibleProxyCount, greaterThan(0));
     expect(metadata.hasRawPayload, isTrue);
+  });
+
+  test('addFromUrl reports a successful response without proxies', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(server.close);
+
+    server.listen((request) async {
+      request.response.statusCode = HttpStatus.ok;
+      request.response.write('{"message":"subscription expired"}');
+      await request.response.close();
+    });
+
+    final result = await SubscriptionStore.addFromUrl(
+      'http://${server.address.host}:${server.port}/sub',
+    );
+
+    expect(result.hasWarning, isTrue);
+    expect(
+      result.warning,
+      isA<SubscriptionContentException>().having(
+        (error) => error.kind,
+        'kind',
+        SubscriptionContentFailureKind.noUsableProxies,
+      ),
+    );
+    expect(result.subscription.outbounds, isEmpty);
   });
 
   test('coalesces concurrent refreshes of the same subscription', () async {

@@ -1440,6 +1440,120 @@ class AppLocalizationsRu extends AppLocalizations {
       'Подписка сохранена, но сервер не ответил. Можно поменять HWID или заголовки и обновить её позже.';
 
   @override
+  String subscriptionSavedWithFetchWarningReason(String reason) {
+    return 'Подписка сохранена без серверов. Причина: $reason Исправь ссылку, HWID или заголовки и обнови её.';
+  }
+
+  @override
+  String get subscriptionErrorInvalidUrl =>
+      'Ссылка подписки некорректна. Скопируй её заново и проверь, что она начинается с http:// или https://.';
+
+  @override
+  String get subscriptionErrorHttpsRequired =>
+      'Эта подписка отправляет HWID или секретные данные, поэтому её можно загружать только по HTTPS.';
+
+  @override
+  String get subscriptionErrorUnsafeRedirect =>
+      'Сервер попытался перенаправить подписку с HTTPS на небезопасный HTTP. Etonify заблокировал переход.';
+
+  @override
+  String get subscriptionErrorRedirect =>
+      'Ссылка перенаправляет неправильно или слишком много раз. Запроси у провайдера прямую ссылку.';
+
+  @override
+  String get subscriptionErrorHttp400 =>
+      'Сервер отклонил запрос (HTTP 400). Проверь ссылку и её параметры.';
+
+  @override
+  String get subscriptionErrorHttp401 =>
+      'Авторизация не пройдена (HTTP 401). Токен, логин или HWID могут быть неверными.';
+
+  @override
+  String get subscriptionErrorHttp402 =>
+      'Требуется оплата (HTTP 402). Продли подписку или обратись к провайдеру.';
+
+  @override
+  String get subscriptionErrorHttp403 =>
+      'Доступ запрещён (HTTP 403). Подписка могла истечь, быть заблокирована или требовать правильный HWID.';
+
+  @override
+  String get subscriptionErrorHttp404 =>
+      'Подписка не найдена (HTTP 404). Ссылку могли удалить или скопировать неправильно.';
+
+  @override
+  String get subscriptionErrorHttp408 =>
+      'Сервер подписки не ответил вовремя (HTTP 408). Попробуй позже.';
+
+  @override
+  String get subscriptionErrorHttp410 =>
+      'Подписка истекла или удалена (HTTP 410). Запроси у провайдера новую ссылку.';
+
+  @override
+  String get subscriptionErrorHttp429 =>
+      'Слишком много запросов (HTTP 429). Немного подожди перед повторной попыткой.';
+
+  @override
+  String get subscriptionErrorHttp500 =>
+      'Внутренняя ошибка сервера подписки (HTTP 500). Это проблема на стороне провайдера.';
+
+  @override
+  String get subscriptionErrorHttp502 =>
+      'Шлюз подписки недоступен (HTTP 502). Сейчас провайдер не может связаться со своим сервером.';
+
+  @override
+  String get subscriptionErrorHttp503 =>
+      'Сервис подписки временно недоступен (HTTP 503), возможно из-за технических работ.';
+
+  @override
+  String get subscriptionErrorHttp504 =>
+      'Сервер провайдера не ответил вовремя (HTTP 504). Попробуй позже.';
+
+  @override
+  String subscriptionErrorHttpStatus(int status) {
+    return 'Сервер подписки вернул HTTP $status. Проверь статус провайдера или запроси новую ссылку.';
+  }
+
+  @override
+  String get subscriptionErrorDns =>
+      'Не удалось найти сервер подписки. Проверь домен, DNS и подключение к интернету.';
+
+  @override
+  String get subscriptionErrorConnection =>
+      'Не удалось подключиться к серверу подписки. Проверь интернет или попробуй позже.';
+
+  @override
+  String get subscriptionErrorTls =>
+      'Не удалось установить защищённое соединение с сервером подписки. Его TLS-сертификат может быть неверным или просроченным.';
+
+  @override
+  String get subscriptionErrorEmptyResponse =>
+      'Сервер вернул пустой ответ. Ссылка могла истечь либо у провайдера возникли проблемы.';
+
+  @override
+  String get subscriptionErrorHtmlResponse =>
+      'Сервер вернул веб-страницу вместо подписки. Возможно, ссылка открывает страницу входа или ошибку.';
+
+  @override
+  String get subscriptionErrorResponseTooLarge =>
+      'Ответ подписки слишком большой и заблокирован для защиты приложения.';
+
+  @override
+  String get subscriptionErrorNoUsableProxies =>
+      'В подписке не найдено поддерживаемых прокси-серверов. Она может быть пустой, просроченной или иметь неподдерживаемый формат.';
+
+  @override
+  String get subscriptionErrorInvalidContent =>
+      'Ответ сервера не является корректной подпиской. Проверь, что ссылка ведёт прямо на файл подписки.';
+
+  @override
+  String get subscriptionErrorHappInvalid =>
+      'Не удалось расшифровать ссылку Happ либо внутри неё некорректный URL подписки. Скопируй свежую ссылку и попробуй снова.';
+
+  @override
+  String get subscriptionErrorUnknown =>
+      'Не удалось обработать подписку. Проверь ссылку и открой диагностику — там сохранена техническая причина.';
+
+  @override
   String get sourceLabel => 'Источник';
 
   @override

@@ -215,4 +215,34 @@ void main() {
       );
     },
   );
+
+  test('runtime selection is used only for a stable connected core', () {
+    final controller = ProxySelectionController();
+    addTearDown(controller.dispose);
+
+    expect(
+      controller.runtimeSelectionUpdatesAllowed(
+        connected: true,
+        connectionStable: true,
+        transitionInProgress: false,
+      ),
+      isTrue,
+    );
+    expect(
+      controller.runtimeSelectionUpdatesAllowed(
+        connected: true,
+        connectionStable: false,
+        transitionInProgress: false,
+      ),
+      isFalse,
+    );
+    expect(
+      controller.runtimeSelectionUpdatesAllowed(
+        connected: false,
+        connectionStable: false,
+        transitionInProgress: false,
+      ),
+      isFalse,
+    );
+  });
 }

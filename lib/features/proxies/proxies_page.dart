@@ -20,6 +20,7 @@ import 'package:meow_client/widgets/country_flag_badge.dart';
 import 'package:meow_client/widgets/ip_refresh_dots.dart';
 import 'package:meow_client/widgets/progressive_blur_scaffold.dart';
 
+import 'proxy_list_ordering.dart';
 import 'proxy_panel_shell.dart';
 
 const _kProxyListPreviewLimit = 50;
@@ -494,10 +495,6 @@ class _ProxiesPageState extends State<ProxiesPage> {
       if (parentTag != null && parentTag.isNotEmpty) {
         continue;
       }
-      if (widget.embedded &&
-          (isLowestProxyTag(proxy.tag) || isMixedProxyTag(proxy.tag))) {
-        continue;
-      }
       topLevelCount++;
       if (_isPinnedHeaderProxy(proxy)) {
         pinnedItems.add(proxy);
@@ -512,9 +509,7 @@ class _ProxiesPageState extends State<ProxiesPage> {
         : visibleItems.take(_kProxyListPreviewLimit).toList(growable: false);
 
     _visibleItems = [...pinnedItems, ...displayedItems];
-    final effectiveTopLevelCount = widget.embedded
-        ? topLevelCount
-        : widget.totalTopLevelProxies == null
+    final effectiveTopLevelCount = widget.totalTopLevelProxies == null
         ? topLevelCount
         : widget.totalTopLevelProxies!.clamp(topLevelCount, 1 << 30).toInt();
     _hiddenCount = effectiveTopLevelCount - _visibleItems.length;
@@ -581,11 +576,8 @@ class _ProxiesPageState extends State<ProxiesPage> {
     primary.sort(byPinnedOrder);
     extraLowests.sort(byPinnedOrder);
     final hasPinnedOverflow =
-        !widget.embedded &&
-        (extraLowests.isNotEmpty || widget.onAddProxyChain != null);
-    final visibleChains = widget.embedded
-        ? chains
-        : _showExtraLowests
+        extraLowests.isNotEmpty || widget.onAddProxyChain != null;
+    final visibleChains = _showExtraLowests
         ? chains
         : const <AppProxySummary>[];
     final hasPinnedHeader =
@@ -747,63 +739,7 @@ class _ProxiesPageState extends State<ProxiesPage> {
   }
 
   void _sortItems(List<AppProxySummary> items, {bool keepLowestFirst = true}) {
-    if (_sort == ProxySort.source) {
-      return;
-    }
-    items.sort(
-      (a, b) => _compareProxyItems(a, b, keepLowestFirst: keepLowestFirst),
-    );
-  }
-
-  int _compareProxyItems(
-    AppProxySummary a,
-    AppProxySummary b, {
-    required bool keepLowestFirst,
-  }) {
-    switch (_sort) {
-      case ProxySort.source:
-        return 0;
-      case ProxySort.name:
-        final lowestOrder = _compareLowest(a, b, keepLowestFirst);
-        if (lowestOrder != null) return lowestOrder;
-        return a.displayName.compareTo(b.displayName);
-      case ProxySort.country:
-        final lowestOrder = _compareLowest(a, b, keepLowestFirst);
-        if (lowestOrder != null) return lowestOrder;
-        return a.countryCode.compareTo(b.countryCode);
-      case ProxySort.latency:
-        final lowestOrder = _compareLowest(a, b, keepLowestFirst);
-        if (lowestOrder != null) return lowestOrder;
-        final aRank = _latencyRank(a);
-        final bRank = _latencyRank(b);
-        if (aRank != bRank) {
-          return aRank.compareTo(bRank);
-        }
-        final aLatency = a.latency ?? 1 << 30;
-        final bLatency = b.latency ?? 1 << 30;
-        if (aLatency != bLatency) {
-          return aLatency.compareTo(bLatency);
-        }
-        return a.displayName.compareTo(b.displayName);
-    }
-  }
-
-  int? _compareLowest(
-    AppProxySummary a,
-    AppProxySummary b,
-    bool keepLowestFirst,
-  ) {
-    if (!keepLowestFirst) {
-      return null;
-    }
-    final aPinned = isPinnedProxyTag(a.tag);
-    final bPinned = isPinnedProxyTag(b.tag);
-    if (aPinned && bPinned) {
-      return pinnedProxyTagOrder(a.tag).compareTo(pinnedProxyTagOrder(b.tag));
-    }
-    if (aPinned) return -1;
-    if (bPinned) return 1;
-    return null;
+    sortProxySummaries(items, _sort, keepPinnedFirst: keepLowestFirst);
   }
 
   @override
@@ -1259,8 +1195,9 @@ class _ProxiesPageState extends State<ProxiesPage> {
     switch (entry.type) {
       case _ProxyListEntryType.tile:
         final proxy = entry.proxy!;
-        final tile = ProxyTile(
+        Widget buildTile(ProxyRuntimeVisualState? state) => ProxyTile(
           proxy: proxy,
+          runtimeState: state,
           selected: proxy.tag == widget.selectedTag,
           highlighted: proxy.highlighted,
           animate: !widget.embedded,
@@ -1276,28 +1213,11 @@ class _ProxiesPageState extends State<ProxiesPage> {
         );
         final runtimeStates = widget.runtimeStates;
         if (!widget.embedded || runtimeStates == null) {
-          return tile;
+          return buildTile(null);
         }
         return ValueListenableBuilder<ProxyRuntimeVisualState?>(
           valueListenable: runtimeStates.listenableFor(proxy.tag),
-          builder: (context, state, _) {
-            return ProxyTile(
-              proxy: proxy,
-              runtimeState: state,
-              selected: proxy.tag == widget.selectedTag,
-              highlighted: proxy.highlighted,
-              animate: false,
-              onTap: () => widget.onSelected(proxy.tag),
-              onLongPress: proxy.isGroup
-                  ? null
-                  : _isProxyChain(proxy)
-                  ? () => _openProxyChainActionSheet(proxy)
-                  : () => _openProxyShareSheet(proxy),
-              onOpenGroup: proxy.isGroup
-                  ? (rect) => _openGroupOutbounds(proxy, rect)
-                  : null,
-            );
-          },
+          builder: (context, state, _) => buildTile(state),
         );
       case _ProxyListEntryType.moreLowests:
         return _MoreLowestsTile(onTap: _toggleExtraLowests);
@@ -2471,22 +2391,6 @@ class _ProxyListDivider extends StatelessWidget {
   }
 }
 
-int _latencyRank(AppProxySummary proxy) {
-  if (proxy.latencyFresh && proxy.latency != null) {
-    return 0;
-  }
-  if (proxy.latencyChecking) {
-    return 1;
-  }
-  if (!proxy.latencyUnavailable && proxy.latency != null) {
-    return 2;
-  }
-  if (!proxy.latencyUnavailable) {
-    return 3;
-  }
-  return 4;
-}
-
 class _GroupOutboundsSheet extends StatelessWidget {
   const _GroupOutboundsSheet({
     required this.group,
@@ -2782,63 +2686,7 @@ class _GroupOutboundsSheetBodyState extends State<_GroupOutboundsSheetBody>
   }
 
   void _sortItems(List<AppProxySummary> items, {bool keepLowestFirst = true}) {
-    if (_sort == ProxySort.source) {
-      return;
-    }
-    items.sort(
-      (a, b) => _compareProxyItems(a, b, keepLowestFirst: keepLowestFirst),
-    );
-  }
-
-  int _compareProxyItems(
-    AppProxySummary a,
-    AppProxySummary b, {
-    required bool keepLowestFirst,
-  }) {
-    switch (_sort) {
-      case ProxySort.source:
-        return 0;
-      case ProxySort.name:
-        final lowestOrder = _compareLowest(a, b, keepLowestFirst);
-        if (lowestOrder != null) return lowestOrder;
-        return a.displayName.compareTo(b.displayName);
-      case ProxySort.country:
-        final lowestOrder = _compareLowest(a, b, keepLowestFirst);
-        if (lowestOrder != null) return lowestOrder;
-        return a.countryCode.compareTo(b.countryCode);
-      case ProxySort.latency:
-        final lowestOrder = _compareLowest(a, b, keepLowestFirst);
-        if (lowestOrder != null) return lowestOrder;
-        final aRank = _latencyRank(a);
-        final bRank = _latencyRank(b);
-        if (aRank != bRank) {
-          return aRank.compareTo(bRank);
-        }
-        final aLatency = a.latency ?? 1 << 30;
-        final bLatency = b.latency ?? 1 << 30;
-        if (aLatency != bLatency) {
-          return aLatency.compareTo(bLatency);
-        }
-        return a.displayName.compareTo(b.displayName);
-    }
-  }
-
-  int? _compareLowest(
-    AppProxySummary a,
-    AppProxySummary b,
-    bool keepLowestFirst,
-  ) {
-    if (!keepLowestFirst) {
-      return null;
-    }
-    final aPinned = isPinnedProxyTag(a.tag);
-    final bPinned = isPinnedProxyTag(b.tag);
-    if (aPinned && bPinned) {
-      return pinnedProxyTagOrder(a.tag).compareTo(pinnedProxyTagOrder(b.tag));
-    }
-    if (aPinned) return -1;
-    if (bPinned) return 1;
-    return null;
+    sortProxySummaries(items, _sort, keepPinnedFirst: keepLowestFirst);
   }
 
   void _select(String tag) {

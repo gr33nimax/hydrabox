@@ -13,7 +13,9 @@ import 'package:meow_client/data/subscription/happ_crypto_link.dart';
 import 'package:meow_client/data/subscription/subscription_fetcher.dart';
 import 'package:meow_client/data/subscription/subscription_store.dart';
 import 'package:meow_client/features/settings/settings_ui.dart';
+import 'package:meow_client/features/subscriptions/subscription_error_message.dart';
 import 'package:meow_client/l10n/generated/app_localizations.dart';
+import 'package:meow_client/logging/app_log_store.dart';
 import 'package:meow_client/models/subscription.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -238,13 +240,7 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
     if (error is _LocalizedSubscriptionPageError) {
       return error.message;
     }
-    if (error is TimeoutException) {
-      return AppLocalizations.of(context).subscriptionOperationTimeout;
-    }
-    if (error is UnsupportedHappCryptoLinkException) {
-      return AppLocalizations.of(context).happCryptUnsupportedMessage;
-    }
-    return error.toString();
+    return subscriptionErrorMessage(error, AppLocalizations.of(context));
   }
 
   Future<Subscription> _maybeHandleMovedSubscription(Subscription sub) async {
@@ -468,7 +464,7 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
         if (createdResult.hasWarning) {
           AppNotice.show(
             context,
-            l10n.subscriptionSavedWithFetchWarning,
+            subscriptionSavedWarningMessage(createdResult.warning, l10n),
             tone: AppNoticeTone.warning,
           );
         }
@@ -489,6 +485,10 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
       }
       return true;
     } catch (e) {
+      AppLogStore.warning(
+        'subscription',
+        'Subscription import failed: ${e.runtimeType}: $e',
+      );
       throw _LocalizedSubscriptionPageError(_userFacingSubscriptionError(e));
     }
   }
@@ -3289,7 +3289,7 @@ class _AddSubscriptionSheetState extends State<_AddSubscriptionSheet> {
       }
     } catch (e) {
       if (mounted) {
-        _setError(e.toString());
+        _setError(subscriptionErrorMessage(e, l10n));
       }
     }
   }
