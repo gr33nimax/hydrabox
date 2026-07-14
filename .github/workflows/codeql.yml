@@ -1,0 +1,128 @@
+name: CodeQL
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - ".github/workflows/**"
+      - "android/**/*.java"
+      - "android/**/*.kt"
+      - "android/**/*.kts"
+      - "android/gradle/**"
+      - "android/gradle.properties"
+      - "android/gradlew"
+      - "pigeons/**"
+      - "pubspec.yaml"
+      - "pubspec.lock"
+  pull_request:
+    branches:
+      - master
+    paths:
+      - ".github/workflows/**"
+      - "android/**/*.java"
+      - "android/**/*.kt"
+      - "android/**/*.kts"
+      - "android/gradle/**"
+      - "android/gradle.properties"
+      - "android/gradlew"
+      - "pigeons/**"
+      - "pubspec.yaml"
+      - "pubspec.lock"
+  schedule:
+    - cron: "23 3 * * 2"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  packages: read
+  security-events: write
+
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: "3.44.6"
+  JAVA_VERSION: "21"
+
+jobs:
+  actions:
+    name: GitHub Actions
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: actions
+          build-mode: none
+          queries: security-extended
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:actions"
+
+  android:
+    name: Android Java/Kotlin
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Verify pinned libbox binary
+        working-directory: android/app/libs
+        run: sha256sum --check libbox.sha256
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: gradle
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate localization
+        run: flutter gen-l10n
+
+      - name: Generate Pigeon bindings
+        shell: bash
+        run: |
+          if [ -f pigeons/singbox_api.dart ]; then
+            dart run pigeon --input pigeons/singbox_api.dart
+          else
+            echo "No Pigeon schema found; skipping."
+          fi
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: java-kotlin
+          build-mode: manual
+          queries: security-extended
+
+      - name: Build Android debug sources
+        working-directory: android
+        run: bash ./gradlew --no-daemon :app:assembleDebug
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:java-kotlin"
