@@ -1238,6 +1238,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         ),
         detailText: 'URLTest · ${selectedSummary.displayName}',
         protocolLabel: 'URLTest · ${selectedSummary.protocolLabel}',
+        selectedChildTag: selectedSummary.tag,
+        selectedChildName: selectedSummary.displayName,
         highlighted: true,
       );
     }
@@ -1307,7 +1309,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       detailText: '$protocolLabel · $endpointLabel',
       ip: outbound.info.externalIp?.trim() ?? '',
       latency: runtimeLatency ?? outbound.info.latestPing,
-      latencyFresh: runtimeLatency != null || outbound.info.latestPing != null,
+      latencyFresh: runtimeLatency != null,
       latencyChecking: _urlTestInFlight,
       latencyUnavailable: latencyUnavailable,
       latencyError: _latencyErrors[outbound.tag],
@@ -1392,8 +1394,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       port: 0,
       detailText: 'AI -> lowest · free · TG/RU blocked -> lowest · open',
       ip: selectedSummary?.ip ?? '',
-      latency: selectedSummary?.latency ?? _lowestLatency,
-      latencyFresh: selectedSummary?.latencyFresh ?? (_lowestLatency != null),
+      latency: null,
+      latencyFresh: false,
       latencyChecking: _urlTestInFlight,
       latencyUnavailable: selectedSummary?.latencyUnavailable ?? false,
       latencyError: selectedSummary?.latencyError,
@@ -1416,9 +1418,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
           summariesByTag[lowestProxyTag] ?? _displaySummaryForMixedProxy();
       if (selectedLowest == null) {
         return proxy.copyWith(
-          latency: _lowestLatency,
-          clearLatency: _lowestLatency == null,
-          latencyFresh: _lowestLatency != null,
+          clearLatency: true,
+          latencyFresh: false,
           latencyChecking: _urlTestInFlight,
           highlighted: proxy.tag == _selectedProxyTag,
         );
@@ -1427,9 +1428,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         countryCode: selectedLowest.countryCode,
         ip: selectedLowest.ip,
         ipChecking: selectedLowest.ipChecking,
-        latency: selectedLowest.latency ?? _lowestLatency,
-        clearLatency: selectedLowest.latency == null && _lowestLatency == null,
-        latencyFresh: selectedLowest.latencyFresh || _lowestLatency != null,
+        clearLatency: true,
+        latencyFresh: false,
         latencyChecking: _urlTestInFlight || selectedLowest.latencyChecking,
         latencyUnavailable: selectedLowest.latencyUnavailable,
         latencyError: selectedLowest.latencyError,
@@ -1445,15 +1445,10 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       final highlightedByMixed = mixedLowestTags.contains(proxy.tag);
       if (selected == null) {
         return proxy.copyWith(
-          displayName: lowestProxyBaseLabel(proxy.tag),
-          latency: _lowestLatency,
-          clearLatency: _lowestLatency == null,
-          latencyFresh: _lowestLatency != null,
+          latencyFresh: false,
           latencyChecking: _urlTestInFlight,
           latencyUnavailable:
-              _lowestLatency == null &&
-              !_urlTestInFlight &&
-              _unavailableLatencyTags.isNotEmpty,
+              !_urlTestInFlight && _unavailableLatencyTags.isNotEmpty,
           highlighted: proxy.tag == _selectedProxyTag || highlightedByMixed,
         );
       }
@@ -1471,11 +1466,9 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         detailText: 'URLTest · ${selectedWithRuntime.displayName}',
         ip: selectedWithRuntime.ip,
         ipChecking: selectedWithRuntime.ipChecking,
-        latency: selectedWithRuntime.latency ?? _lowestLatency,
-        clearLatency:
-            selectedWithRuntime.latency == null && _lowestLatency == null,
-        latencyFresh:
-            selectedWithRuntime.latencyFresh || _lowestLatency != null,
+        latency: selectedWithRuntime.latency,
+        clearLatency: selectedWithRuntime.latency == null,
+        latencyFresh: selectedWithRuntime.latencyFresh,
         latencyChecking:
             _urlTestInFlight || selectedWithRuntime.latencyChecking,
         latencyUnavailable: selectedWithRuntime.latencyUnavailable,
@@ -3854,12 +3847,13 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
             'selected=$_selectedProxyTag ignoreCooldown=$ignoreCooldown',
       );
       if (reason == 'runtime_running') {
-        // URLTest groups have native auto-check disabled. Probe only the
-        // selected leaf after startup; full-list checks remain explicit.
+        // URLTest groups have native auto-check disabled. The bundled core
+        // cannot probe one leaf honestly, so the coordinator runs a real
+        // group HTTP test only for reasonably small subscriptions.
         _latencyCoordinator.configureAuto(null);
         AppLogStore.debug(
           'latency',
-          'startup test limited to selected outbound',
+          'startup active refresh delegated to safe HTTP URLTest fallback',
         );
         unawaited(_latencyCoordinator.runActive(reason: reason));
       } else {

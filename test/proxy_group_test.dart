@@ -1230,6 +1230,65 @@ void main() {
     expect(child.highlighted, isTrue);
   });
 
+  test('lowest never borrows another child latency', () {
+    const subscription = Subscription(
+      id: 'sub',
+      name: 'Sub',
+      url: 'file:///sub.json',
+      selectedProxyTag: lowestProxyTag,
+      outbounds: [
+        Outbound(
+          tag: 'leaf-fi',
+          name: 'Finland',
+          config: {
+            'type': 'vless',
+            'tag': 'leaf-fi',
+            'server': 'fi.example.com',
+            'server_port': 443,
+            'uuid': 'uuid-fi',
+          },
+          info: OutboundInfo(country: 'FI'),
+        ),
+        Outbound(
+          tag: 'leaf-fr',
+          name: 'France',
+          config: {
+            'type': 'vless',
+            'tag': 'leaf-fr',
+            'server': 'fr.example.com',
+            'server_port': 443,
+            'uuid': 'uuid-fr',
+          },
+          info: OutboundInfo(country: 'FR'),
+        ),
+      ],
+    );
+
+    final cache = buildProxyCache(
+      const ProxyCacheBuildInput(
+        subscription: subscription,
+        selectedProxyTag: lowestProxyTag,
+        lowestLatency: 42,
+        runtimeLowestOutboundTag: 'leaf-fr',
+        runtimeLowestSelections: <String, String>{lowestProxyTag: 'leaf-fr'},
+        urlTestInFlight: false,
+        runtimeLatencies: <String, int>{'leaf-fi': 42},
+        unavailableLatencyTags: <String>{},
+        latencyErrors: <String, String>{},
+        runtimeGroupSelections: <String, String>{},
+        russiaRouteProxiesEnabled: false,
+        markAllServersRussia: false,
+      ),
+    );
+    final lowest = cache.activeProxies.firstWhere(
+      (proxy) => proxy.tag == lowestProxyTag,
+    );
+
+    expect(lowest.selectedChildTag, 'leaf-fr');
+    expect(lowest.latency, isNull);
+    expect(lowest.latencyFresh, isFalse);
+  });
+
   test('normalizes stored reality uTLS fingerprint before startup', () {
     const subscription = Subscription(
       id: 'sub',

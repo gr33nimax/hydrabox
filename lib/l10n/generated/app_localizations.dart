@@ -140,6 +140,120 @@ abstract class AppLocalizations {
   /// **'Selector'**
   String get proxySelectorTitle;
 
+  /// No description provided for @proxyFastestName.
+  ///
+  /// In en, this message translates to:
+  /// **'Fastest'**
+  String get proxyFastestName;
+
+  /// No description provided for @proxyFastestOpenName.
+  ///
+  /// In en, this message translates to:
+  /// **'Fastest · open access'**
+  String get proxyFastestOpenName;
+
+  /// No description provided for @proxyFastestFreeName.
+  ///
+  /// In en, this message translates to:
+  /// **'Fastest · unrestricted'**
+  String get proxyFastestFreeName;
+
+  /// No description provided for @proxyAutomaticSelectionLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Automatic selection'**
+  String get proxyAutomaticSelectionLabel;
+
+  /// No description provided for @proxySmartRoutingName.
+  ///
+  /// In en, this message translates to:
+  /// **'Smart routing'**
+  String get proxySmartRoutingName;
+
+  /// No description provided for @proxySmartRoutingSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Routing by destination'**
+  String get proxySmartRoutingSubtitle;
+
+  /// No description provided for @proxySmartRoutingLatencyLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'auto'**
+  String get proxySmartRoutingLatencyLabel;
+
+  /// No description provided for @proxyChainLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Chain'**
+  String get proxyChainLabel;
+
+  /// No description provided for @proxyChainAddTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Add proxy chain'**
+  String get proxyChainAddTitle;
+
+  /// No description provided for @proxyChainAddTile.
+  ///
+  /// In en, this message translates to:
+  /// **'Add proxy chain'**
+  String get proxyChainAddTile;
+
+  /// No description provided for @proxyChainChangeFirstHop.
+  ///
+  /// In en, this message translates to:
+  /// **'Change first proxy'**
+  String get proxyChainChangeFirstHop;
+
+  /// No description provided for @proxyChainRenameAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Rename'**
+  String get proxyChainRenameAction;
+
+  /// No description provided for @proxyChainRenameTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Rename proxy chain'**
+  String get proxyChainRenameTitle;
+
+  /// No description provided for @proxyChainRemoveAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove proxy chain'**
+  String get proxyChainRemoveAction;
+
+  /// No description provided for @proxyChainNameLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Name'**
+  String get proxyChainNameLabel;
+
+  /// No description provided for @proxyChainFirstHopLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'First proxy'**
+  String get proxyChainFirstHopLabel;
+
+  /// No description provided for @proxyChainExitLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Exit proxy'**
+  String get proxyChainExitLabel;
+
+  /// No description provided for @proxyChainNothingFound.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing found'**
+  String get proxyChainNothingFound;
+
+  /// No description provided for @proxyChainSaveAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get proxyChainSaveAction;
+
   /// No description provided for @shareProxyTitle.
   ///
   /// In en, this message translates to:
@@ -269,7 +383,7 @@ abstract class AppLocalizations {
   /// No description provided for @urlTestSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Latency check and lowest selection'**
+  /// **'Latency checks and automatic server selection'**
   String get urlTestSubtitle;
 
   /// No description provided for @vpnInTitle.
@@ -1871,7 +1985,7 @@ abstract class AppLocalizations {
   /// No description provided for @urlTestIntervalSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'How often proxies are checked for lowest'**
+  /// **'How often proxies are checked for automatic selection'**
   String get urlTestIntervalSubtitle;
 
   /// No description provided for @urlTestTimeoutTitle.

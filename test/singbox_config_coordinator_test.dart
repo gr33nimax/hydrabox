@@ -88,10 +88,50 @@ void main() {
     expect(runtime.startCalls, 1);
     expect(runtime.appliedConfigs, ['split-routing']);
   });
+
+  test(
+    'rapid split routing changes collapse into one full service restart',
+    () async {
+      final runtime = _BlockingRuntime();
+      final lifecycle = RuntimeLifecycleController(
+        runtime: runtime,
+        healthCheckTimeout: const Duration(milliseconds: 20),
+      );
+      addTearDown(lifecycle.dispose);
+      final coordinator = _coordinator(
+        runtimeLifecycle: lifecycle,
+        fullServiceRestartDebounce: const Duration(milliseconds: 30),
+      );
+      addTearDown(coordinator.dispose);
+
+      coordinator.emitCurrentConfigLog(
+        'split routing mode changed',
+        forceFullServiceRestart: true,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      coordinator.emitCurrentConfigLog(
+        'split routing packages changed',
+        forceFullServiceRestart: true,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      coordinator.emitCurrentConfigLog(
+        'split routing mode changed again',
+        forceFullServiceRestart: true,
+      );
+
+      await runtime.firstStart.future.timeout(const Duration(seconds: 5));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+
+      expect(runtime.stopCalls, 1);
+      expect(runtime.startCalls, 1);
+      expect(runtime.maxConcurrentApplies, 1);
+    },
+  );
 }
 
 SingboxConfigCoordinator _coordinator({
   required RuntimeLifecycleController runtimeLifecycle,
+  Duration fullServiceRestartDebounce = const Duration(milliseconds: 450),
 }) {
   return SingboxConfigCoordinator(
     readSnapshot: _snapshot,
@@ -109,6 +149,7 @@ SingboxConfigCoordinator _coordinator({
     schedulePostConnectSelectedProxyUrlTest:
         ({required String reason, required Duration delay}) {},
     syncRuntimeState: () async {},
+    fullServiceRestartDebounce: fullServiceRestartDebounce,
   );
 }
 
@@ -187,6 +228,7 @@ SingboxConfigBuildResult _build(String config) {
 class _BlockingRuntime implements RuntimeLifecycleRuntime {
   final Completer<void> firstApplyStarted = Completer<void>();
   final Completer<void> releaseFirstApply = Completer<void>();
+  final Completer<void> firstStart = Completer<void>();
   final List<String> appliedConfigs = <String>[];
   int _concurrentApplies = 0;
   int maxConcurrentApplies = 0;
@@ -244,6 +286,9 @@ class _BlockingRuntime implements RuntimeLifecycleRuntime {
   Future<void> start({required String config, required bool useVpn}) {
     startCalls++;
     running = true;
+    if (!firstStart.isCompleted) {
+      firstStart.complete();
+    }
     return _trackConfigApply(config);
   }
 

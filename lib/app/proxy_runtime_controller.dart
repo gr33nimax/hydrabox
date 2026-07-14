@@ -80,6 +80,7 @@ class ProxyRuntimeController {
   String? runtimeLowestOutboundTag;
   final Map<String, String> runtimeLowestSelections = <String, String>{};
   final Map<String, int> runtimeLatencies = <String, int>{};
+  final Map<String, int> runtimeLatencyTimes = <String, int>{};
   final Set<String> unavailableLatencyTags = <String>{};
   final Map<String, String> latencyErrors = <String, String>{};
   final Map<String, int> latencyFailureCounts = <String, int>{};
@@ -95,22 +96,46 @@ class ProxyRuntimeController {
     _latencySessionStartedAtSeconds =
         DateTime.now().millisecondsSinceEpoch ~/ 1000;
     _latencySessionTouchedTags.clear();
-    unavailableLatencyTags.clear();
-    latencyErrors.clear();
-    latencyFailureCounts.clear();
   }
 
   bool finishLatencySession(Iterable<String> expectedTags) {
     var changed = false;
+    final sessionStartedAt = _latencySessionStartedAtSeconds;
     for (final rawTag in expectedTags) {
       final tag = rawTag.trim();
       if (tag.isEmpty || _latencySessionTouchedTags.contains(tag)) {
         continue;
       }
+      if (runtimeLatencies.remove(tag) != null) {
+        changed = true;
+      }
+      if (unavailableLatencyTags.add(tag)) {
+        changed = true;
+      }
       if (latencyErrors[tag] != 'timeout') {
         latencyErrors[tag] = 'timeout';
         changed = true;
       }
+      final failureCount = (latencyFailureCounts[tag] ?? 0) + 1;
+      if (latencyFailureCounts[tag] != failureCount) {
+        latencyFailureCounts[tag] = failureCount;
+        changed = true;
+      }
+      if (sessionStartedAt != null &&
+          (runtimeLatencyTimes[tag] ?? 0) < sessionStartedAt) {
+        // Reject snapshots from before this session, while still allowing a
+        // late result produced by the current native URLTest.
+        runtimeLatencyTimes[tag] = sessionStartedAt;
+        changed = true;
+      }
+    }
+    final nextLowestLatency = _computeLowestLatency(
+      runtimeLatencies,
+      unavailableLatencyTags,
+    );
+    if (lowestLatency != nextLowestLatency) {
+      lowestLatency = nextLowestLatency;
+      changed = true;
     }
     _latencySessionStartedAtSeconds = null;
     _latencySessionTouchedTags.clear();
@@ -144,6 +169,7 @@ class ProxyRuntimeController {
   void reset() {
     _updatesFrozen = false;
     runtimeLatencies.clear();
+    runtimeLatencyTimes.clear();
     unavailableLatencyTags.clear();
     latencyErrors.clear();
     latencyFailureCounts.clear();
@@ -185,7 +211,7 @@ class ProxyRuntimeController {
     final delays = <String, int?>{};
     final statuses = <String, String>{};
     final errors = <String, String>{};
-    final times = <String, int>{};
+    final times = Map<String, int>.from(runtimeLatencyTimes);
     String? runtimeSelected;
     final subscriptionGroupTags = input.activeSubscription.groups
         .map((group) => group.tag)
@@ -238,6 +264,10 @@ class ProxyRuntimeController {
         final time = (item['time'] as num?)?.toInt();
         final currentTime = times[itemTag];
         final nextTime = time != null && time > 0 ? time : null;
+        final positiveDelay = delay != null && delay > 0;
+        final terminalFailure =
+            status == urlTestStatusUnavailable ||
+            (error.isNotEmpty && !positiveDelay);
         final sessionStartedAt = _latencySessionStartedAtSeconds;
         if (input.latencySessionRunning &&
             sessionStartedAt != null &&
@@ -245,9 +275,9 @@ class ProxyRuntimeController {
             nextTime < sessionStartedAt) {
           continue;
         }
-        final shouldReplace =
-            currentTime == null ||
-            (nextTime != null && nextTime >= currentTime);
+        final shouldReplace = currentTime == null
+            ? true
+            : nextTime != null && nextTime >= currentTime;
         if (!shouldReplace) {
           continue;
         }
@@ -261,7 +291,7 @@ class ProxyRuntimeController {
         } else {
           errors.remove(itemTag);
         }
-        if (nextTime != null) {
+        if (nextTime != null && (positiveDelay || terminalFailure)) {
           times[itemTag] = nextTime;
           if (sessionStartedAt != null && nextTime >= sessionStartedAt) {
             _latencySessionTouchedTags.add(itemTag);
@@ -290,6 +320,7 @@ class ProxyRuntimeController {
     }
 
     final nextRuntimeLatencies = Map<String, int>.from(runtimeLatencies);
+    final nextRuntimeLatencyTimes = Map<String, int>.from(runtimeLatencyTimes);
     final nextUnavailableLatencyTags = Set<String>.from(unavailableLatencyTags);
     final nextLatencyErrors = Map<String, String>.from(latencyErrors);
     final nextLatencyFailureCounts = Map<String, int>.from(
@@ -302,41 +333,40 @@ class ProxyRuntimeController {
     };
     for (final tag in touchedTags) {
       final status = statuses[tag];
-      if (status == urlTestStatusUnavailable) {
+      final delay = delays[tag];
+      final hasPositiveDelay = delay != null && delay > 0;
+      final error = errors[tag]?.trim() ?? '';
+      final terminalFailure =
+          status == urlTestStatusUnavailable ||
+          (error.isNotEmpty && !hasPositiveDelay);
+      if (terminalFailure) {
         final failureCount = (nextLatencyFailureCounts[tag] ?? 0) + 1;
         nextLatencyFailureCounts[tag] = failureCount;
-        nextUnavailableLatencyTags.remove(tag);
-        nextLatencyErrors[tag] = errors[tag]?.trim().isNotEmpty == true
-            ? errors[tag]!
-            : 'URL test failed';
+        nextRuntimeLatencies.remove(tag);
+        nextUnavailableLatencyTags.add(tag);
+        nextLatencyErrors[tag] = error.isNotEmpty ? error : 'URL test failed';
+        final time = times[tag];
+        if (time != null) {
+          nextRuntimeLatencyTimes[tag] = time;
+        }
         continue;
       }
-      if (statuses.containsKey(tag)) {
+      if (hasPositiveDelay) {
+        nextRuntimeLatencies[tag] = delay;
         nextUnavailableLatencyTags.remove(tag);
         nextLatencyErrors.remove(tag);
         nextLatencyFailureCounts.remove(tag);
-      }
-      if (delays.containsKey(tag)) {
-        final delay = delays[tag];
-        if (delay != null && delay > 0) {
-          nextRuntimeLatencies[tag] = delay;
-          nextUnavailableLatencyTags.remove(tag);
-          nextLatencyErrors.remove(tag);
-          nextLatencyFailureCounts.remove(tag);
+        final time = times[tag];
+        if (time != null) {
+          nextRuntimeLatencyTimes[tag] = time;
         }
       }
     }
 
-    int? nextLowestLatency;
-    for (final entry in nextRuntimeLatencies.entries) {
-      if (nextUnavailableLatencyTags.contains(entry.key)) {
-        continue;
-      }
-      final delay = entry.value;
-      if (nextLowestLatency == null || delay < nextLowestLatency) {
-        nextLowestLatency = delay;
-      }
-    }
+    final nextLowestLatency = _computeLowestLatency(
+      nextRuntimeLatencies,
+      nextUnavailableLatencyTags,
+    );
 
     final pendingRuntimeSelectTag = input.pendingRuntimeSelectTag;
     final runtimeSelectionConfirmsPending =
@@ -368,6 +398,7 @@ class ProxyRuntimeController {
         lowestLatency != nextLowestLatency ||
         input.latencySessionRunning ||
         !mapEquals(runtimeLatencies, nextRuntimeLatencies) ||
+        !mapEquals(runtimeLatencyTimes, nextRuntimeLatencyTimes) ||
         !setEquals(unavailableLatencyTags, nextUnavailableLatencyTags) ||
         !mapEquals(latencyErrors, nextLatencyErrors) ||
         !mapEquals(latencyFailureCounts, nextLatencyFailureCounts) ||
@@ -414,6 +445,9 @@ class ProxyRuntimeController {
     runtimeLatencies
       ..clear()
       ..addAll(nextRuntimeLatencies);
+    runtimeLatencyTimes
+      ..clear()
+      ..addAll(nextRuntimeLatencyTimes);
     unavailableLatencyTags
       ..clear()
       ..addAll(nextUnavailableLatencyTags);
@@ -439,6 +473,22 @@ class ProxyRuntimeController {
       realOutboundRuntimeStateChanged: realOutboundRuntimeStateChanged,
       selectedProxyTagToApply: runtimeSelectionChanged ? runtimeSelected : null,
     );
+  }
+
+  static int? _computeLowestLatency(
+    Map<String, int> latencies,
+    Set<String> unavailableTags,
+  ) {
+    int? result;
+    for (final entry in latencies.entries) {
+      if (unavailableTags.contains(entry.key)) {
+        continue;
+      }
+      if (result == null || entry.value < result) {
+        result = entry.value;
+      }
+    }
+    return result;
   }
 
   void _logUrlTestGroupUpdateSummary({

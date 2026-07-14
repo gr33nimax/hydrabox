@@ -34,7 +34,11 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+
+      - name: Verify pinned libbox binary
+        working-directory: android/app/libs
+        run: sha256sum --check libbox.sha256
 
       - name: Resolve release version
         shell: bash
@@ -88,7 +92,7 @@ jobs:
           fi
 
       - name: Set up JDK
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}

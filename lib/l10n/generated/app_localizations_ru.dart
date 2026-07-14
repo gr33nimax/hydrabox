@@ -30,6 +30,63 @@ class AppLocalizationsRu extends AppLocalizations {
   String get proxySelectorTitle => 'Выбор';
 
   @override
+  String get proxyFastestName => 'Самый быстрый';
+
+  @override
+  String get proxyFastestOpenName => 'Самый быстрый · открытый доступ';
+
+  @override
+  String get proxyFastestFreeName => 'Самый быстрый · без ограничений';
+
+  @override
+  String get proxyAutomaticSelectionLabel => 'Автовыбор';
+
+  @override
+  String get proxySmartRoutingName => 'Умная маршрутизация';
+
+  @override
+  String get proxySmartRoutingSubtitle => 'Маршрут зависит от назначения';
+
+  @override
+  String get proxySmartRoutingLatencyLabel => 'авто';
+
+  @override
+  String get proxyChainLabel => 'Цепочка';
+
+  @override
+  String get proxyChainAddTitle => 'Добавить цепочку прокси';
+
+  @override
+  String get proxyChainAddTile => 'Добавить цепочку прокси';
+
+  @override
+  String get proxyChainChangeFirstHop => 'Изменить первый прокси';
+
+  @override
+  String get proxyChainRenameAction => 'Переименовать';
+
+  @override
+  String get proxyChainRenameTitle => 'Переименовать цепочку прокси';
+
+  @override
+  String get proxyChainRemoveAction => 'Удалить цепочку прокси';
+
+  @override
+  String get proxyChainNameLabel => 'Название';
+
+  @override
+  String get proxyChainFirstHopLabel => 'Первый прокси';
+
+  @override
+  String get proxyChainExitLabel => 'Выходной прокси';
+
+  @override
+  String get proxyChainNothingFound => 'Ничего не найдено';
+
+  @override
+  String get proxyChainSaveAction => 'Сохранить';
+
+  @override
   String get shareProxyTitle => 'Поделиться';
 
   @override
@@ -96,7 +153,8 @@ class AppLocalizationsRu extends AppLocalizations {
   String get urlTestTitle => 'Проверка серверов';
 
   @override
-  String get urlTestSubtitle => 'Проверка задержки и выбор lowest';
+  String get urlTestSubtitle =>
+      'Проверка задержки и автоматический выбор сервера';
 
   @override
   String get vpnInTitle => 'VPN TUN';
@@ -1007,7 +1065,8 @@ class AppLocalizationsRu extends AppLocalizations {
   String get urlTestIntervalTitle => 'Интервал, сек.';
 
   @override
-  String get urlTestIntervalSubtitle => 'Частота проверки прокси для lowest';
+  String get urlTestIntervalSubtitle =>
+      'Частота проверки прокси для автоматического выбора';
 
   @override
   String get urlTestTimeoutTitle => 'Таймаут проверки, сек.';

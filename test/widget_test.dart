@@ -268,7 +268,7 @@ void main() {
   });
 
   testWidgets(
-    'embedded proxy sheet shows lowest with secondary rows collapsed',
+    'embedded proxy sheet localizes automatic groups and collapses extras',
     (tester) async {
       String? selectedTag;
       final proxies = <AppProxySummary>[
@@ -308,29 +308,67 @@ void main() {
         ),
       );
 
-      expect(find.text('lowest'), findsOneWidget);
-      expect(find.text('lowest open'), findsNothing);
-      expect(find.text('lowest free'), findsNothing);
+      expect(find.text('Fastest'), findsOneWidget);
+      expect(find.text('Fastest · open access'), findsNothing);
+      expect(find.text('Fastest · unrestricted'), findsNothing);
       expect(
         find.byIcon(FluentIcons.more_horizontal_24_regular),
         findsOneWidget,
       );
       expect(find.text('chain · Germany'), findsNothing);
-      expect(find.text('+ add proxy chain'), findsNothing);
+      expect(find.text('+ Add proxy chain'), findsNothing);
 
-      await tester.tap(find.text('lowest'));
+      await tester.tap(find.text('Fastest'));
       await tester.pump();
       expect(selectedTag, lowestProxyTag);
 
       await tester.tap(find.byIcon(FluentIcons.more_horizontal_24_regular));
       await tester.pump();
 
-      expect(find.text('lowest open'), findsOneWidget);
-      expect(find.text('lowest free'), findsOneWidget);
+      expect(find.text('Fastest · open access'), findsOneWidget);
+      expect(find.text('Fastest · unrestricted'), findsOneWidget);
       expect(find.text('chain · Germany'), findsOneWidget);
-      expect(find.text('+ add proxy chain'), findsOneWidget);
+      expect(find.text('+ Add proxy chain'), findsOneWidget);
     },
   );
+
+  testWidgets('Russian proxy labels hide internal routing names', (
+    tester,
+  ) async {
+    final fastest = _proxy(lowestProxyTag, 'lowest · Finland', latency: 73)
+        .copyWith(
+          selectedChildName: 'Финляндия',
+          protocolLabel: 'URLTest · VLESS · TLS',
+        );
+    final smartRouting = _proxy(
+      mixedProxyTag,
+      'mixed',
+      latency: 999,
+    ).copyWith(protocolLabel: 'Routing');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('ru'),
+        supportedLocales: AppLocalizations.supportedLocales,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        home: Scaffold(
+          body: Column(
+            children: [
+              ProxyTile(proxy: fastest, selected: false, onTap: () {}),
+              ProxyTile(proxy: smartRouting, selected: false, onTap: () {}),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Самый быстрый · Финляндия'), findsOneWidget);
+    expect(find.text('Автовыбор · VLESS · TLS'), findsOneWidget);
+    expect(find.text('Умная маршрутизация'), findsOneWidget);
+    expect(find.text('Маршрут зависит от назначения'), findsOneWidget);
+    expect(find.text('авто'), findsOneWidget);
+    expect(find.text('999 ms'), findsNothing);
+  });
 
   testWidgets('more proxies expands a virtualized large server list', (
     tester,
@@ -861,7 +899,7 @@ void main() {
     expect(find.text('57.128.200.35'), findsNothing);
   });
 
-  testWidgets('active proxy delay keeps a stable value while rechecking', (
+  testWidgets('active proxy delay shows progress instead of a stale value', (
     tester,
   ) async {
     var refreshCount = 0;
@@ -897,8 +935,9 @@ void main() {
       ),
     );
 
-    expect(find.byType(CircularProgressIndicator), findsNothing);
-    final latencyText = find.text('42 ms', findRichText: true);
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(find.text('42 ms', findRichText: true), findsNothing);
+    final latencyText = find.text('Checking…', findRichText: true);
     expect(latencyText, findsOneWidget);
 
     await tester.tap(latencyText);

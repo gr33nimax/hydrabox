@@ -46,6 +46,80 @@ String _proxySortLabel(AppLocalizations l10n, ProxySort sort) => switch (sort) {
   ProxySort.country => l10n.sortByCountry,
 };
 
+String _localizedLowestBaseLabel(AppLocalizations l10n, String tag) =>
+    switch (tag) {
+      lowestOpenProxyTag => l10n.proxyFastestOpenName,
+      lowestFreeProxyTag => l10n.proxyFastestFreeName,
+      _ => l10n.proxyFastestName,
+    };
+
+String? _lowestSelectedDisplayName(AppProxySummary proxy) {
+  final selected = proxy.selectedChildName?.trim() ?? '';
+  if (selected.isNotEmpty) {
+    return selected;
+  }
+  final technicalBase = lowestProxyBaseLabel(proxy.tag);
+  final prefix = '$technicalBase · ';
+  return proxy.displayName.startsWith(prefix)
+      ? proxy.displayName.substring(prefix.length).trim()
+      : null;
+}
+
+String _localizedProxyTitle(AppLocalizations l10n, AppProxySummary proxy) {
+  if (isMixedProxyTag(proxy.tag)) {
+    return l10n.proxySmartRoutingName;
+  }
+  if (!isLowestProxyTag(proxy.tag)) {
+    return proxy.displayName;
+  }
+  final base = _localizedLowestBaseLabel(l10n, proxy.tag);
+  final selected = _lowestSelectedDisplayName(proxy);
+  return selected == null || selected.isEmpty ? base : '$base · $selected';
+}
+
+String _localizedProxySubtitle(AppLocalizations l10n, AppProxySummary proxy) {
+  if (isMixedProxyTag(proxy.tag)) {
+    return l10n.proxySmartRoutingSubtitle;
+  }
+  return _localizedProxyTechnicalText(l10n, proxy, proxy.protocolLabel.trim());
+}
+
+String _localizedProxyDetail(AppLocalizations l10n, AppProxySummary proxy) {
+  if (isMixedProxyTag(proxy.tag)) {
+    return l10n.proxySmartRoutingSubtitle;
+  }
+  return _localizedProxyTechnicalText(l10n, proxy, proxy.detailText.trim());
+}
+
+String _localizedProxyTechnicalText(
+  AppLocalizations l10n,
+  AppProxySummary proxy,
+  String value,
+) {
+  const urlTestPrefix = 'URLTest · ';
+  if (value == 'URLTest' || value == 'URLTest · auto') {
+    return l10n.proxyAutomaticSelectionLabel;
+  }
+  if (value.startsWith(urlTestPrefix)) {
+    final detail = value.substring(urlTestPrefix.length).trim();
+    return detail.isEmpty
+        ? l10n.proxyAutomaticSelectionLabel
+        : '${l10n.proxyAutomaticSelectionLabel} · $detail';
+  }
+  const chainPrefix = 'Chain · ';
+  if (value == 'Chain') {
+    return l10n.proxyChainLabel;
+  }
+  if (value.startsWith(chainPrefix)) {
+    return '${l10n.proxyChainLabel} · ${value.substring(chainPrefix.length)}';
+  }
+  if (proxy.isGroup && proxy.childCount > 0 && value.isEmpty) {
+    return '${l10n.proxyAutomaticSelectionLabel} · '
+        '${l10n.subscriptionServersCount(proxy.childCount)}';
+  }
+  return value;
+}
+
 IconData _proxySortIcon(ProxySort sort) => switch (sort) {
   ProxySort.source => FluentIcons.list_24_regular,
   ProxySort.latency => FluentIcons.timer_24_regular,
@@ -1306,6 +1380,7 @@ class _ProxiesPageState extends State<ProxiesPage> {
         widget.onRenameProxyChain == null) {
       return;
     }
+    final l10n = AppLocalizations.of(context);
     final action = await showModalBottomSheet<_ProxyChainAction>(
       context: context,
       useSafeArea: true,
@@ -1316,25 +1391,25 @@ class _ProxiesPageState extends State<ProxiesPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              title: Text(proxy.displayName),
-              subtitle: Text(proxy.detailText),
+              title: Text(_localizedProxyTitle(l10n, proxy)),
+              subtitle: Text(_localizedProxyDetail(l10n, proxy)),
             ),
             if (widget.onChangeProxyChainDetour != null)
               ListTile(
                 leading: const Icon(FluentIcons.arrow_routing_24_regular),
-                title: const Text('Change first hop'),
+                title: Text(l10n.proxyChainChangeFirstHop),
                 onTap: () => Navigator.of(context).pop(_ProxyChainAction.edit),
               ),
             if (widget.onRenameProxyChain != null)
               ListTile(
                 leading: const Icon(FluentIcons.edit_24_regular),
-                title: const Text('Rename'),
+                title: Text(l10n.proxyChainRenameAction),
                 onTap: () =>
                     Navigator.of(context).pop(_ProxyChainAction.rename),
               ),
             ListTile(
               leading: const Icon(FluentIcons.delete_24_regular),
-              title: const Text('Remove proxy chain'),
+              title: Text(l10n.proxyChainRemoveAction),
               onTap: () => Navigator.of(context).pop(_ProxyChainAction.remove),
             ),
           ],
@@ -1355,6 +1430,7 @@ class _ProxiesPageState extends State<ProxiesPage> {
     if (callback == null) {
       return;
     }
+    final l10n = AppLocalizations.of(context);
     final controller = TextEditingController(text: proxy.displayName);
     final name = await showModalBottomSheet<String>(
       context: context,
@@ -1373,7 +1449,7 @@ class _ProxiesPageState extends State<ProxiesPage> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Rename proxy chain',
+              l10n.proxyChainRenameTitle,
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 16),
@@ -1381,13 +1457,13 @@ class _ProxiesPageState extends State<ProxiesPage> {
               controller: controller,
               autofocus: true,
               textInputAction: TextInputAction.done,
-              decoration: const InputDecoration(labelText: 'Name'),
+              decoration: InputDecoration(labelText: l10n.proxyChainNameLabel),
               onSubmitted: (value) => Navigator.of(context).pop(value),
             ),
             const SizedBox(height: 16),
             FilledButton(
               onPressed: () => Navigator.of(context).pop(controller.text),
-              child: const Text('Save'),
+              child: Text(l10n.proxyChainSaveAction),
             ),
           ],
         ),
@@ -1443,6 +1519,7 @@ class _ChangeProxyChainDetourSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return SafeArea(
       top: false,
       child: ListView(
@@ -1452,15 +1529,21 @@ class _ChangeProxyChainDetourSheet extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
             child: Text(
-              'Change first hop',
+              l10n.proxyChainChangeFirstHop,
               style: Theme.of(context).textTheme.titleLarge,
             ),
           ),
           for (final proxy in detours)
             ListTile(
               leading: CountryFlagBadge(countryCode: proxy.countryCode),
-              title: Text(proxy.displayName, overflow: TextOverflow.ellipsis),
-              subtitle: Text(proxy.detailText, overflow: TextOverflow.ellipsis),
+              title: Text(
+                _localizedProxyTitle(l10n, proxy),
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: Text(
+                _localizedProxyDetail(l10n, proxy),
+                overflow: TextOverflow.ellipsis,
+              ),
               onTap: () => Navigator.of(context).pop(proxy.tag),
             ),
         ],
@@ -1566,6 +1649,7 @@ class _AddProxyChainSheetState extends State<_AddProxyChainSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
     final visibleTargets = _visibleTargets();
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
     return SafeArea(
@@ -1580,17 +1664,19 @@ class _AddProxyChainSheetState extends State<_AddProxyChainSheet> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('Add proxy chain', style: theme.textTheme.titleLarge),
+              Text(l10n.proxyChainAddTitle, style: theme.textTheme.titleLarge),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 initialValue: _detourTag,
-                decoration: const InputDecoration(labelText: 'First hop'),
+                decoration: InputDecoration(
+                  labelText: l10n.proxyChainFirstHopLabel,
+                ),
                 items: widget.detours
                     .map(
                       (proxy) => DropdownMenuItem(
                         value: proxy.tag,
                         child: Text(
-                          proxy.displayName,
+                          _localizedProxyTitle(l10n, proxy),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
@@ -1606,7 +1692,9 @@ class _AddProxyChainSheetState extends State<_AddProxyChainSheet> {
                 const SizedBox(height: 10),
                 DropdownButtonFormField<String>(
                   initialValue: _sourceId,
-                  decoration: const InputDecoration(labelText: 'Subscription'),
+                  decoration: InputDecoration(
+                    labelText: l10n.subscriptionsTitle,
+                  ),
                   items: widget.sources
                       .map(
                         (source) => DropdownMenuItem(
@@ -1633,9 +1721,9 @@ class _AddProxyChainSheetState extends State<_AddProxyChainSheet> {
               const SizedBox(height: 10),
               TextField(
                 controller: _searchController,
-                decoration: const InputDecoration(
-                  labelText: 'Exit proxy',
-                  prefixIcon: Icon(FluentIcons.search_24_regular),
+                decoration: InputDecoration(
+                  labelText: l10n.proxyChainExitLabel,
+                  prefixIcon: const Icon(FluentIcons.search_24_regular),
                 ),
                 onChanged: (_) => setState(() {}),
               ),
@@ -1646,7 +1734,7 @@ class _AddProxyChainSheetState extends State<_AddProxyChainSheet> {
                     : visibleTargets.isEmpty
                     ? Center(
                         child: Text(
-                          'Nothing found',
+                          l10n.proxyChainNothingFound,
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant,
                           ),
@@ -1664,11 +1752,11 @@ class _AddProxyChainSheetState extends State<_AddProxyChainSheet> {
                               countryCode: proxy.countryCode,
                             ),
                             title: Text(
-                              proxy.displayName,
+                              _localizedProxyTitle(l10n, proxy),
                               overflow: TextOverflow.ellipsis,
                             ),
                             subtitle: Text(
-                              proxy.detailText,
+                              _localizedProxyDetail(l10n, proxy),
                               overflow: TextOverflow.ellipsis,
                             ),
                             trailing: selected
@@ -1691,7 +1779,7 @@ class _AddProxyChainSheetState extends State<_AddProxyChainSheet> {
                           targetTag: _targetTag!,
                         ),
                       ),
-                child: const Text('Add'),
+                child: Text(l10n.add),
               ),
             ],
           ),
@@ -2128,6 +2216,7 @@ class _ActiveProxyLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
     final speedText = formatSpeed(connected ? speedBytesPerSecond : 0);
     final trafficText = formatBytes(connected ? trafficBytes : 0);
     return ConstrainedBox(
@@ -2173,8 +2262,8 @@ class _ActiveProxyLabel extends StatelessWidget {
                           );
                         },
                         child: Text(
-                          proxy.displayName,
-                          key: ValueKey(proxy.displayName),
+                          _localizedProxyTitle(l10n, proxy),
+                          key: ValueKey(_localizedProxyTitle(l10n, proxy)),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.titleSmall?.copyWith(
@@ -2341,6 +2430,7 @@ class _AddProxyChainTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(6, 2, 6, 8),
       child: InkWell(
@@ -2357,7 +2447,7 @@ class _AddProxyChainTile extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  '+ add proxy chain',
+                  '+ ${l10n.proxyChainAddTile}',
                   style: theme.textTheme.bodyLarge?.copyWith(
                     color: theme.colorScheme.primary,
                     fontWeight: FontWeight.w700,
@@ -3177,12 +3267,20 @@ class _GroupOutboundsSheetBodyState extends State<_GroupOutboundsSheetBody>
     }
     const headerHeight = _kProxySheetHeaderHeight;
     final sheetTitle = l10n.proxySelectorTitle;
+    final groupBaseTitle = isLowestProxyTag(widget.group.tag)
+        ? _localizedLowestBaseLabel(l10n, widget.group.tag)
+        : isMixedProxyTag(widget.group.tag)
+        ? l10n.proxySmartRoutingName
+        : widget.group.displayName;
     final groupTitle = activeChild == null
-        ? 'lowest'
-        : 'lowest · ${activeChild.displayName}';
-    final groupSubtitle = activeChild == null
-        ? 'URLTest'
-        : 'URLTest · ${activeChild.protocolLabel}';
+        ? groupBaseTitle
+        : '$groupBaseTitle · ${_localizedProxyTitle(l10n, activeChild)}';
+    final groupSubtitle = isMixedProxyTag(widget.group.tag)
+        ? l10n.proxySmartRoutingSubtitle
+        : activeChild == null
+        ? l10n.proxyAutomaticSelectionLabel
+        : '${l10n.proxyAutomaticSelectionLabel} · '
+              '${_localizedProxySubtitle(l10n, activeChild)}';
     final viewportHeight = MediaQuery.sizeOf(context).height;
     final maxSheetSize = _sheetMaxSize(viewportHeight);
     final effectiveSheetSize = _sheetSize
@@ -4041,10 +4139,14 @@ class _ProxyShareSummary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
+    final isSmartRouting = isMixedProxyTag(proxy.tag);
     final latencyText = proxy.latencyChecking
         ? '... ms'
         : proxy.latencyUnavailable
         ? '—'
+        : isSmartRouting
+        ? l10n.proxySmartRoutingLatencyLabel
         : proxy.latency == null
         ? '—'
         : '${proxy.latency} ms';
@@ -4062,7 +4164,7 @@ class _ProxyShareSummary extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    proxy.displayName,
+                    _localizedProxyTitle(l10n, proxy),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.titleMedium?.copyWith(
@@ -4071,7 +4173,7 @@ class _ProxyShareSummary extends StatelessWidget {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    proxy.protocolLabel,
+                    _localizedProxySubtitle(l10n, proxy),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodyMedium?.copyWith(
@@ -4172,18 +4274,23 @@ class ProxyTile extends StatelessWidget {
     final hasLatencyError = latencyError?.trim().isNotEmpty == true;
     final highlighted = state?.highlighted ?? this.highlighted;
     final selecting = state?.selecting ?? false;
+    final isSmartRouting = isMixedProxyTag(proxy.tag);
     final latencyText = selecting
         ? l10n.proxySwitching
-        : latencyChecking && latency == null
+        : latencyChecking
         ? '... ms'
         : latencyUnavailable
         ? _latencyErrorLabel(latencyError)
+        : isSmartRouting
+        ? l10n.proxySmartRoutingLatencyLabel
         : latency == null && hasLatencyError
         ? _latencyErrorLabel(latencyError)
         : latency == null
         ? '—'
         : '$latency ms';
     final delayColor = selecting
+        ? theme.colorScheme.primary
+        : latencyChecking
         ? theme.colorScheme.primary
         : latencyUnavailable
         ? theme.colorScheme.error
@@ -4203,7 +4310,7 @@ class ProxyTile extends StatelessWidget {
     final latencyLabel = _ProxyLatencyLabel(
       text: latencyText,
       color: delayColor,
-      checking: latencyChecking && latency == null && !selecting,
+      checking: latencyChecking && !selecting,
       emphasized:
           selecting || latencyFresh || latencyUnavailable || hasLatencyError,
       tooltip: hasLatencyError ? _latencyErrorTooltip(latencyError) : null,
@@ -4261,7 +4368,7 @@ class ProxyTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  titleOverride ?? proxy.displayName,
+                  titleOverride ?? _localizedProxyTitle(l10n, proxy),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.titleSmall?.copyWith(
@@ -4270,7 +4377,7 @@ class ProxyTile extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  subtitleOverride ?? proxy.protocolLabel,
+                  subtitleOverride ?? _localizedProxySubtitle(l10n, proxy),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodySmall?.copyWith(
@@ -4308,7 +4415,7 @@ class ProxyTile extends StatelessWidget {
                             alignment: Alignment.bottomRight,
                             child: animate
                                 ? Tooltip(
-                                    message: proxy.displayName,
+                                    message: _localizedProxyTitle(l10n, proxy),
                                     child: AnimatedContainer(
                                       duration: animationDuration,
                                       width: 28,

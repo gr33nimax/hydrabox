@@ -25,7 +25,7 @@ void main() {
     expect(requests.single.deadlineMillis, inInclusiveRange(14900, 15000));
   });
 
-  test('active refresh targets only the selected outbound', () async {
+  test('active refresh uses a real selector-wide HTTP URLTest', () async {
     final requests = <LatencyTestRequest>[];
     final coordinator = LatencyCoordinator(
       runTest: (request) async => requests.add(request),
@@ -40,10 +40,10 @@ void main() {
 
     expect(await coordinator.runActive(reason: 'selection'), isTrue);
     expect(requests, hasLength(1));
-    expect(requests.single.targetOutboundTag, 'proxy-1');
+    expect(requests.single.targetOutboundTag, isEmpty);
     expect(requests.single.priorityOutboundTag, 'proxy-1');
-    expect(requests.single.concurrency, 1);
-    expect(requests.single.timeoutMillis, inInclusiveRange(6900, 7000));
+    expect(requests.single.concurrency, 0);
+    expect(requests.single.timeoutMillis, inInclusiveRange(14900, 15000));
   });
 
   test('repeated requests do not create parallel sessions', () async {
@@ -109,6 +109,7 @@ void main() {
     addTearDown(coordinator.dispose);
 
     expect(await coordinator.runStartup(reason: 'startup'), isFalse);
+    expect(await coordinator.runActive(reason: 'selection'), isFalse);
     expect(await coordinator.runFull(reason: 'auto_interval'), isFalse);
     expect(await coordinator.runFull(reason: 'manual'), isTrue);
     expect(calls, 1);

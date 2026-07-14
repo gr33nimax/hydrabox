@@ -61,9 +61,7 @@ flutter_*.log
 diagnostics/
 .diagnostics/
 .lazyweb/
-.mimocode/
-CODE_REVIEW.md
-REVIEW_REPORT.md
+.codebase-memory/
 *.hprof
 *.trace
 

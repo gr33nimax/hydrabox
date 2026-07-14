@@ -738,7 +738,6 @@ AppProxySummary _buildLowestProxySummary(
       (selectedSummary == null
           ? 'URLTest · auto'
           : 'URLTest · ${selectedSummary.displayName}');
-  final selectedLatency = selectedSummary?.latency;
   return AppProxySummary(
     tag: lowestTag,
     displayName: lowestProxyDisplayName(lowestTag, selectedName),
@@ -748,9 +747,11 @@ AppProxySummary _buildLowestProxySummary(
     port: 0,
     detailText: detailText,
     ip: selectedSummary?.ip ?? '',
-    latency: selectedLatency ?? input.lowestLatency,
-    latencyFresh:
-        selectedSummary?.latencyFresh ?? (input.lowestLatency != null),
+    // A lowest group must display the measurement of the child actually
+    // selected by sing-box. A global minimum may belong to another child and
+    // must never be presented as this selection's latency.
+    latency: selectedSummary?.latency,
+    latencyFresh: selectedSummary?.latencyFresh ?? false,
     latencyChecking: input.urlTestInFlight,
     latencyUnavailable: selectedSummary != null
         ? selectedSummary.latencyUnavailable
@@ -760,6 +761,8 @@ AppProxySummary _buildLowestProxySummary(
     latencyError: selectedSummary?.latencyError,
     protocolLabel: protocolLabel,
     endpointLabel: selectedSummary?.endpointLabel ?? '',
+    selectedChildTag: selectedSummary?.tag,
+    selectedChildName: selectedName,
     highlighted:
         input.selectedProxyTag == lowestTag ||
         mixedLowestTags.contains(lowestTag),
@@ -805,8 +808,11 @@ AppProxySummary? _buildMixedProxySummary(
     port: 0,
     detailText: 'AI -> lowest · free · TG/RU blocked -> lowest · open',
     ip: fallback?.ip ?? '',
-    latency: fallback?.latency,
-    latencyFresh: fallback?.latencyFresh ?? false,
+    // `mixed` chooses different branches by destination. Copying the default
+    // branch delay presents one server's result as if it described the whole
+    // routing policy, which is not a meaningful measurement.
+    latency: null,
+    latencyFresh: false,
     latencyChecking: checking,
     latencyUnavailable: unavailable,
     latencyError: fallback?.latencyError,
@@ -1053,7 +1059,9 @@ AppProxySummary _buildProxySummary(
     detailText: '$protocolLabel · $endpointLabel',
     ip: outbound.info.externalIp?.trim() ?? '',
     latency: runtimeLatency ?? outbound.info.latestPing,
-    latencyFresh: runtimeLatency != null || outbound.info.latestPing != null,
+    // Persisted subscription pings are useful history, not a measurement from
+    // the current runtime session.
+    latencyFresh: runtimeLatency != null,
     latencyChecking: input.urlTestInFlight,
     latencyUnavailable: latencyUnavailable,
     latencyError: input.latencyErrors[outbound.tag],

@@ -1049,9 +1049,11 @@ class ActiveProxyDelayIndicator extends StatelessWidget {
     final latencyChecking = proxy?.latencyChecking == true;
     final latencyUnavailable = proxy?.latencyUnavailable == true;
     final latencyUnknown = !latencyUnavailable && latency == null;
-    final showCheckingIndicator = latencyChecking && latency == null;
+    final showCheckingIndicator = latencyChecking;
     final hidden = !connected || proxy == null;
-    final color = latencyUnavailable
+    final color = latencyChecking
+        ? theme.colorScheme.primary
+        : latencyUnavailable
         ? theme.colorScheme.onSurfaceVariant
         : !latencyFresh || latency == null
         ? theme.colorScheme.onSurfaceVariant
@@ -1060,12 +1062,12 @@ class ActiveProxyDelayIndicator extends StatelessWidget {
         : latency < 900
         ? theme.colorScheme.tertiary
         : theme.colorScheme.error;
-    final valueText = latency != null
-        ? '$latency'
-        : latencyChecking
+    final valueText = latencyChecking
         ? l10n.checkingLatencyShort
         : latencyUnavailable
         ? '—'
+        : latency != null
+        ? '$latency'
         : '—';
     final icon = showCheckingIndicator
         ? SizedBox(
@@ -1081,7 +1083,9 @@ class ActiveProxyDelayIndicator extends StatelessWidget {
         : !latencyFresh || latencyUnknown
         ? Icon(FluentIcons.history_24_regular, color: color)
         : Icon(FluentIcons.wifi_1_24_regular, color: color);
-    final unitText = latency == null ? '' : l10n.millisecondsUnit;
+    final unitText = latencyChecking || latencyUnavailable || latency == null
+        ? ''
+        : l10n.millisecondsUnit;
     final tooltip = latencyChecking
         ? l10n.checkingLatency
         : l10n.refreshLatency;

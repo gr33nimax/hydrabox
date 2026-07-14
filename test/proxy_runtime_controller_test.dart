@@ -34,62 +34,59 @@ void main() {
     expect(controller.unavailableLatencyTags, isNot(contains('vless-1')));
   });
 
-  test(
-    'URLTest failures keep the last latency and never mark proxy unavailable',
-    () {
-      final controller = ProxyRuntimeController();
-      addTearDown(controller.dispose);
-      controller.runtimeLatencies['vless-1'] = 82;
+  test('URLTest failures clear stale latency and mark proxy unavailable', () {
+    final controller = ProxyRuntimeController();
+    addTearDown(controller.dispose);
+    controller.runtimeLatencies['vless-1'] = 82;
 
-      final first = controller.applyGroupUpdates(
-        _input(
-          rawGroups: [
-            {
-              'tag': 'select',
-              'items': [
-                {
-                  'tag': 'vless-1',
-                  'status': 'unavailable',
-                  'error': 'context deadline exceeded',
-                  'time': 1,
-                },
-              ],
-            },
-          ],
-        ),
-      );
+    final first = controller.applyGroupUpdates(
+      _input(
+        rawGroups: [
+          {
+            'tag': 'select',
+            'items': [
+              {
+                'tag': 'vless-1',
+                'status': 'unavailable',
+                'error': 'context deadline exceeded',
+                'time': 1,
+              },
+            ],
+          },
+        ],
+      ),
+    );
 
-      expect(first.changed, isTrue);
-      expect(controller.unavailableLatencyTags, isNot(contains('vless-1')));
-      expect(controller.runtimeLatencies['vless-1'], 82);
-      expect(controller.latencyErrors['vless-1'], 'context deadline exceeded');
-      expect(controller.latencyFailureCounts['vless-1'], 1);
+    expect(first.changed, isTrue);
+    expect(controller.unavailableLatencyTags, contains('vless-1'));
+    expect(controller.runtimeLatencies['vless-1'], isNull);
+    expect(controller.latencyErrors['vless-1'], 'context deadline exceeded');
+    expect(controller.latencyFailureCounts['vless-1'], 1);
 
-      final second = controller.applyGroupUpdates(
-        _input(
-          rawGroups: [
-            {
-              'tag': 'select',
-              'items': [
-                {
-                  'tag': 'vless-1',
-                  'status': 'unavailable',
-                  'error': 'context deadline exceeded',
-                  'time': 2,
-                },
-              ],
-            },
-          ],
-        ),
-      );
+    final second = controller.applyGroupUpdates(
+      _input(
+        rawGroups: [
+          {
+            'tag': 'select',
+            'items': [
+              {
+                'tag': 'vless-1',
+                'status': 'unavailable',
+                'error': 'context deadline exceeded',
+                'time': 2,
+              },
+            ],
+          },
+        ],
+      ),
+    );
 
-      expect(second.changed, isTrue);
-      expect(controller.unavailableLatencyTags, isNot(contains('vless-1')));
-      expect(controller.runtimeLatencies['vless-1'], 82);
-      expect(controller.latencyErrors['vless-1'], 'context deadline exceeded');
-      expect(controller.latencyFailureCounts['vless-1'], 2);
-    },
-  );
+    expect(second.changed, isTrue);
+    expect(controller.unavailableLatencyTags, contains('vless-1'));
+    expect(controller.runtimeLatencies['vless-1'], isNull);
+    expect(controller.latencyErrors['vless-1'], 'context deadline exceeded');
+    expect(controller.latencyFailureCounts['vless-1'], 2);
+  });
 
   test('frozen transition keeps existing latency and ignores failures', () {
     final controller = ProxyRuntimeController();
@@ -142,7 +139,7 @@ void main() {
     expect(controller.lowestLatency, 91);
   });
 
-  test('unfinished session entries become timeout without losing latency', () {
+  test('unfinished session entries clear stale latency and become timeout', () {
     final controller = ProxyRuntimeController();
     addTearDown(controller.dispose);
     controller.runtimeLatencies['vless-1'] = 73;
@@ -151,9 +148,78 @@ void main() {
     final changed = controller.finishLatencySession(const ['vless-1']);
 
     expect(changed, isTrue);
-    expect(controller.runtimeLatencies['vless-1'], 73);
+    expect(controller.runtimeLatencies['vless-1'], isNull);
     expect(controller.latencyErrors['vless-1'], 'timeout');
-    expect(controller.unavailableLatencyTags, isEmpty);
+    expect(controller.unavailableLatencyTags, contains('vless-1'));
+    expect(controller.latencyFailureCounts['vless-1'], 1);
+  });
+
+  test('older URLTest snapshots cannot overwrite a newer result', () {
+    final controller = ProxyRuntimeController();
+    addTearDown(controller.dispose);
+
+    final newer = controller.applyGroupUpdates(
+      _input(
+        rawGroups: [
+          {
+            'tag': 'select',
+            'items': [
+              {
+                'tag': 'vless-1',
+                'status': 'available',
+                'delay': 73,
+                'time': 20,
+              },
+            ],
+          },
+        ],
+      ),
+    );
+    final older = controller.applyGroupUpdates(
+      _input(
+        rawGroups: [
+          {
+            'tag': 'select',
+            'items': [
+              {
+                'tag': 'vless-1',
+                'status': 'available',
+                'delay': 999,
+                'time': 19,
+              },
+            ],
+          },
+        ],
+      ),
+    );
+
+    expect(newer.changed, isTrue);
+    expect(older.changed, isFalse);
+    expect(controller.runtimeLatencies['vless-1'], 73);
+    expect(controller.runtimeLatencyTimes['vless-1'], 20);
+  });
+
+  test('an error without an unavailable status is still a failed URLTest', () {
+    final controller = ProxyRuntimeController();
+    addTearDown(controller.dispose);
+    controller.runtimeLatencies['vless-1'] = 73;
+
+    controller.applyGroupUpdates(
+      _input(
+        rawGroups: [
+          {
+            'tag': 'select',
+            'items': [
+              {'tag': 'vless-1', 'error': 'TLS handshake failed', 'time': 30},
+            ],
+          },
+        ],
+      ),
+    );
+
+    expect(controller.runtimeLatencies['vless-1'], isNull);
+    expect(controller.unavailableLatencyTags, contains('vless-1'));
+    expect(controller.latencyErrors['vless-1'], 'TLS handshake failed');
   });
 
   test('reachable endpoint fallback does not override URLTest failure', () {

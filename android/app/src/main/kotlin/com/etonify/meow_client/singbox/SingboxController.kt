@@ -684,13 +684,13 @@ object SingboxController {
                     "stale runtime before URL test"
                 }
                 if (targetOutboundTag.isNotBlank()) {
-                    // The stable 0.2.1 libbox can only execute a real HTTP
-                    // URLTest for the whole group. Do not replace it with a
-                    // misleading TCP/ICMP endpoint probe and do not turn an
-                    // automatic selected-outbound check into a 1000-server run.
-                    log(
-                        "debug",
-                        "targeted HTTP URLTest skipped: bundled core only supports group URLTest " +
+                    // The stable 0.2.x libbox has no per-outbound HTTP URLTest.
+                    // Never report this as success: the caller would treat a
+                    // cached latency as a fresh measurement. A raw TCP/ICMP
+                    // fallback is deliberately not used because it cannot
+                    // validate VLESS/Reality/WebSocket proxy traffic.
+                    throw UnsupportedOperationException(
+                        "Targeted HTTP URLTest is not supported by the bundled core: " +
                             "group=$groupTag target=$targetOutboundTag",
                     )
                 } else {

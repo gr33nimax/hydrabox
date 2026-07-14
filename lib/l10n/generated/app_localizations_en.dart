@@ -30,6 +30,63 @@ class AppLocalizationsEn extends AppLocalizations {
   String get proxySelectorTitle => 'Selector';
 
   @override
+  String get proxyFastestName => 'Fastest';
+
+  @override
+  String get proxyFastestOpenName => 'Fastest · open access';
+
+  @override
+  String get proxyFastestFreeName => 'Fastest · unrestricted';
+
+  @override
+  String get proxyAutomaticSelectionLabel => 'Automatic selection';
+
+  @override
+  String get proxySmartRoutingName => 'Smart routing';
+
+  @override
+  String get proxySmartRoutingSubtitle => 'Routing by destination';
+
+  @override
+  String get proxySmartRoutingLatencyLabel => 'auto';
+
+  @override
+  String get proxyChainLabel => 'Chain';
+
+  @override
+  String get proxyChainAddTitle => 'Add proxy chain';
+
+  @override
+  String get proxyChainAddTile => 'Add proxy chain';
+
+  @override
+  String get proxyChainChangeFirstHop => 'Change first proxy';
+
+  @override
+  String get proxyChainRenameAction => 'Rename';
+
+  @override
+  String get proxyChainRenameTitle => 'Rename proxy chain';
+
+  @override
+  String get proxyChainRemoveAction => 'Remove proxy chain';
+
+  @override
+  String get proxyChainNameLabel => 'Name';
+
+  @override
+  String get proxyChainFirstHopLabel => 'First proxy';
+
+  @override
+  String get proxyChainExitLabel => 'Exit proxy';
+
+  @override
+  String get proxyChainNothingFound => 'Nothing found';
+
+  @override
+  String get proxyChainSaveAction => 'Save';
+
+  @override
   String get shareProxyTitle => 'Share';
 
   @override
@@ -96,7 +153,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get urlTestTitle => 'Server checks';
 
   @override
-  String get urlTestSubtitle => 'Latency check and lowest selection';
+  String get urlTestSubtitle => 'Latency checks and automatic server selection';
 
   @override
   String get vpnInTitle => 'VPN In';
@@ -1011,7 +1068,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get urlTestIntervalSubtitle =>
-      'How often proxies are checked for lowest';
+      'How often proxies are checked for automatic selection';
 
   @override
   String get urlTestTimeoutTitle => 'Timeout, sec.';

@@ -21,6 +21,11 @@ void main() {
       );
       expect(workflow, contains(r'etonify-v${RELEASE_VERSION}-x86_64.apk'));
       expect(workflow, contains('--draft'));
+      expect(workflow, contains('uses: actions/checkout@v5'));
+      expect(workflow, contains('uses: actions/setup-java@v5'));
+      expect(workflow, contains('sha256sum --check libbox.sha256'));
+      expect(workflow, isNot(contains('uses: actions/checkout@v4')));
+      expect(workflow, isNot(contains('uses: actions/setup-java@v4')));
     },
   );
 }

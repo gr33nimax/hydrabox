@@ -70,14 +70,18 @@ class LatencyCoordinator {
        _canRunDiagnostics = canRunDiagnostics ?? _alwaysReady,
        _operationGeneration = operationGeneration ?? _zeroGeneration;
 
-  // A VLESS/Reality/WebSocket probe can legitimately need several seconds on
-  // a freshly changed mobile network. Three seconds produced false timeouts
-  // for an actively carrying outbound on real devices. Keep the probe under
-  // the ten-second UI budget, but leave enough room for DNS, TCP and TLS.
+  // A real HTTP URLTest can legitimately need several seconds on a freshly
+  // changed mobile network. Three seconds produced false timeouts while DNS,
+  // TCP, TLS and the proxy handshake were still in progress.
   static const perOutboundTimeoutMillis = 15000;
   static const activeDeadlineMillis = 7000;
   static const fullDeadlineMillis = 15000;
   static const automaticFullTestMaxOutbounds = 250;
+  // The bundled 0.2.x core cannot test one selector child in isolation. For a
+  // small subscription an automatic active refresh therefore runs the real
+  // selector-wide HTTP URLTest; for a large one it is skipped to avoid an
+  // unexpected battery/thermal spike. A manual full test is still available.
+  static const automaticActiveFallbackMaxOutbounds = 50;
   static const rpcDeadlineGrace = Duration(milliseconds: 500);
   static const activeDedupWindow = Duration(seconds: 5);
 
@@ -142,11 +146,11 @@ class LatencyCoordinator {
     );
   }
 
-  Future<bool> runActive({required String reason}) {
+  Future<bool> runActive({required String reason}) async {
     final activeTag = _activeOutboundTag().trim();
     if (activeTag.isEmpty) {
       AppLogStore.debug('latency', 'active test skipped: no active outbound');
-      return Future<bool>.value(false);
+      return false;
     }
     final lastFinishedAt = _lastActiveFinishedAt;
     if (_lastActiveTag == activeTag &&
@@ -156,17 +160,32 @@ class LatencyCoordinator {
         'latency',
         'active test skipped: deduplicated tag=$activeTag reason=$reason',
       );
-      return Future<bool>.value(false);
+      return false;
     }
-    return _runSession(
+    final outboundCount = _outboundCount();
+    if (outboundCount > automaticActiveFallbackMaxOutbounds) {
+      AppLogStore.info(
+        'latency',
+        'active HTTP test skipped: bundled core has no targeted URLTest; '
+            'outbounds=$outboundCount '
+            'limit=$automaticActiveFallbackMaxOutbounds reason=$reason',
+      );
+      return false;
+    }
+    final completed = await _runSession(
       kind: LatencySessionKind.active,
       reason: reason,
-      targetTag: activeTag,
-      // Keep the HTTP URLTest semantics, but constrain the native session to
-      // the selected leaf. Merely prioritizing the leaf still tests every
-      // member of the selector and can overload large subscriptions.
-      requests: [_activeRequest(activeTag)],
+      // An empty target is intentional: the stable core only exposes a real
+      // HTTP URLTest for the whole selector. Pretending that a targeted call
+      // succeeded would merely redisplay a cached value.
+      targetTag: '',
+      requests: [_fullRequest(priorityTag: activeTag)],
     );
+    if (completed) {
+      _lastActiveTag = activeTag;
+      _lastActiveFinishedAt = DateTime.now();
+    }
+    return completed;
   }
 
   Future<bool> runFull({required String reason}) {
@@ -232,15 +251,6 @@ class LatencyCoordinator {
     deadlineMillis: fullDeadlineMillis,
   );
 
-  LatencyTestRequest _activeRequest(String targetTag) => LatencyTestRequest(
-    targetOutboundTag: targetTag,
-    priorityOutboundTag: targetTag,
-    url: _testUrl(),
-    timeoutMillis: perOutboundTimeoutMillis,
-    concurrency: 1,
-    deadlineMillis: activeDeadlineMillis,
-  );
-
   Future<bool> _runSession({
     required LatencySessionKind kind,
     required String reason,
@@ -285,11 +295,10 @@ class LatencyCoordinator {
             !_canRunDiagnostics()) {
           break;
         }
-        final sessionDeadlineMillis = switch (kind) {
-          LatencySessionKind.active => activeDeadlineMillis,
-          LatencySessionKind.full ||
-          LatencySessionKind.startup => fullDeadlineMillis,
-        };
+        final sessionDeadlineMillis =
+            kind == LatencySessionKind.active && targetTag.isNotEmpty
+            ? activeDeadlineMillis
+            : fullDeadlineMillis;
         final elapsedMillis = DateTime.now()
             .difference(startedAt)
             .inMilliseconds;
@@ -348,12 +357,6 @@ class LatencyCoordinator {
         _nativeSessionFinished = null;
       }
       if (generation == _generation) {
-        if (operationGeneration == _operationGeneration() &&
-            kind == LatencySessionKind.active &&
-            targetTag.isNotEmpty) {
-          _lastActiveTag = targetTag;
-          _lastActiveFinishedAt = DateTime.now();
-        }
         _running = false;
         _kind = null;
         _targetTag = '';
