@@ -234,8 +234,8 @@ class MainActivity : FlutterFragmentActivity() {
             }
     }
 
-    private fun installDownloadedApk(fileName: String, result: MethodChannel.Result) {
-        val file = UpdateApkLocator.resolveExisting(filesDir, fileName)
+    private fun installDownloadedApk(result: MethodChannel.Result) {
+        val file = UpdateApkLocator.resolveSingleExisting(filesDir)
         requireTrustedUpdateIdentity(file)
         if (!canRequestApkInstalls()) {
             throw IllegalStateException("APK install permission is not granted.")
@@ -2028,12 +2028,7 @@ class MainActivity : FlutterFragmentActivity() {
                 }
 
                 "installDownloadedApk" -> {
-                    val fileName = call.argument<String>("fileName")?.trim().orEmpty()
-                    if (fileName.isEmpty()) {
-                        result.error("missing_apk_name", "APK file name is empty", null)
-                        return@setMethodCallHandler
-                    }
-                    runCatching { installDownloadedApk(fileName, result) }
+                    runCatching { installDownloadedApk(result) }
                         .onFailure { result.error("install_apk_failed", it.message, null) }
                 }
 

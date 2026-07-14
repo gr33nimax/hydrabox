@@ -547,23 +547,13 @@ class SingboxRuntime {
     }
   }
 
-  Future<void> installDownloadedApk(String path) async {
+  Future<void> installDownloadedApk() async {
     if (!Platform.isAndroid) {
       return;
     }
-    final normalizedPath = path.trim();
-    if (normalizedPath.isEmpty) {
-      throw ArgumentError.value(path, 'path', 'APK path is empty');
-    }
-    final pathSegments = File(normalizedPath).uri.pathSegments;
-    if (pathSegments.isEmpty || pathSegments.last.trim().isEmpty) {
-      throw ArgumentError.value(path, 'path', 'APK file name is empty');
-    }
-    await _methods.invokeMethod<void>('installDownloadedApk', {
-      // Native code deliberately resolves this name inside files/updates.
-      // Never expose an arbitrary filesystem path to the package installer.
-      'fileName': pathSegments.last,
-    });
+    // Native code deliberately selects the sole APK from private files/updates.
+    // The package installer never receives a path controlled by MethodChannel.
+    await _methods.invokeMethod<void>('installDownloadedApk');
   }
 
   Future<Map<String, dynamic>> inspectDownloadedApk(String path) async {

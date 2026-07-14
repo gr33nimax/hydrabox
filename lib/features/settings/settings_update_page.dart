@@ -334,7 +334,7 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage>
         setState(() => _installing = false);
         return;
       }
-      await SingboxRuntime.instance.installDownloadedApk(path);
+      await SingboxRuntime.instance.installDownloadedApk();
     } catch (error) {
       if (!mounted) return;
       setState(() {

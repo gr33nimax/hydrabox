@@ -14,19 +14,19 @@ class UpdateApkLocatorTest {
 
             assertEquals(
                 apk.canonicalFile,
-                UpdateApkLocator.resolveExisting(filesDir, apk.name),
+                UpdateApkLocator.resolveSingleExisting(filesDir),
             )
         }
     }
 
     @Test
-    fun `rejects traversal and files outside the update directory`() {
+    fun `does not select an apk outside the update directory`() {
         withFilesDirectory { filesDir ->
             filesDir.resolve("updates").mkdirs()
             filesDir.resolve("outside.apk").writeText("apk")
 
             assertThrows(IllegalArgumentException::class.java) {
-                UpdateApkLocator.resolveExisting(filesDir, "../outside.apk")
+                UpdateApkLocator.resolveSingleExisting(filesDir)
             }
         }
     }
@@ -40,7 +40,22 @@ class UpdateApkLocatorTest {
             }
 
             assertThrows(IllegalArgumentException::class.java) {
-                UpdateApkLocator.resolveExisting(filesDir, "notes.txt")
+                UpdateApkLocator.resolveSingleExisting(filesDir)
+            }
+        }
+    }
+
+    @Test
+    fun `rejects an ambiguous update directory`() {
+        withFilesDirectory { filesDir ->
+            filesDir.resolve("updates").apply {
+                mkdirs()
+                resolve("etonify-arm64.apk").writeText("apk")
+                resolve("etonify-universal.apk").writeText("apk")
+            }
+
+            assertThrows(IllegalArgumentException::class.java) {
+                UpdateApkLocator.resolveSingleExisting(filesDir)
             }
         }
     }
