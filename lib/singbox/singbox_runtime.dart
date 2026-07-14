@@ -555,8 +555,14 @@ class SingboxRuntime {
     if (normalizedPath.isEmpty) {
       throw ArgumentError.value(path, 'path', 'APK path is empty');
     }
+    final pathSegments = File(normalizedPath).uri.pathSegments;
+    if (pathSegments.isEmpty || pathSegments.last.trim().isEmpty) {
+      throw ArgumentError.value(path, 'path', 'APK file name is empty');
+    }
     await _methods.invokeMethod<void>('installDownloadedApk', {
-      'path': normalizedPath,
+      // Native code deliberately resolves this name inside files/updates.
+      // Never expose an arbitrary filesystem path to the package installer.
+      'fileName': pathSegments.last,
     });
   }
 

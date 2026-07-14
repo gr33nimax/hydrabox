@@ -234,10 +234,9 @@ class MainActivity : FlutterFragmentActivity() {
             }
     }
 
-    private fun installDownloadedApk(path: String, result: MethodChannel.Result) {
-        val file = File(path)
-        require(file.exists() && file.isFile) { "APK file does not exist." }
-        require(file.name.lowercase().endsWith(".apk")) { "File is not an APK." }
+    private fun installDownloadedApk(fileName: String, result: MethodChannel.Result) {
+        val file = UpdateApkLocator.resolveExisting(filesDir, fileName)
+        requireTrustedUpdateIdentity(file)
         if (!canRequestApkInstalls()) {
             throw IllegalStateException("APK install permission is not granted.")
         }
@@ -259,6 +258,29 @@ class MainActivity : FlutterFragmentActivity() {
                 throw error
             }
     }
+
+    private fun requireTrustedUpdateIdentity(file: File) {
+        val inspection = inspectDownloadedApk(file.absolutePath)
+        require(inspection["valid"] == true) { "Android could not read the update APK." }
+        require(inspection["packageName"] == packageName) {
+            "Update APK package does not match Etonify."
+        }
+        val archiveCertificates = digestSet(inspection["signingCertificateSha256"])
+        val installedCertificates = digestSet(inspection["installedCertificateSha256"])
+        require(
+            archiveCertificates.isNotEmpty() &&
+                installedCertificates.isNotEmpty() &&
+                archiveCertificates.any(installedCertificates::contains),
+        ) { "Update APK signature does not match installed Etonify." }
+    }
+
+    private fun digestSet(value: Any?): Set<String> =
+        (value as? Iterable<*>)
+            ?.mapNotNull { digest ->
+                digest?.toString()?.trim()?.lowercase()?.takeIf(String::isNotEmpty)
+            }
+            ?.toSet()
+            .orEmpty()
 
     private fun launchLogExport(
         content: String,
@@ -2006,12 +2028,12 @@ class MainActivity : FlutterFragmentActivity() {
                 }
 
                 "installDownloadedApk" -> {
-                    val path = call.argument<String>("path")?.trim().orEmpty()
-                    if (path.isEmpty()) {
-                        result.error("missing_apk_path", "APK path is empty", null)
+                    val fileName = call.argument<String>("fileName")?.trim().orEmpty()
+                    if (fileName.isEmpty()) {
+                        result.error("missing_apk_name", "APK file name is empty", null)
                         return@setMethodCallHandler
                     }
-                    runCatching { installDownloadedApk(path, result) }
+                    runCatching { installDownloadedApk(fileName, result) }
                         .onFailure { result.error("install_apk_failed", it.message, null) }
                 }
 
