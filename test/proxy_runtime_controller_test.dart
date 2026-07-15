@@ -4,7 +4,8 @@ import 'package:meow_client/models/subscription.dart';
 
 void main() {
   test('URLTest group delay updates runtime latency', () {
-    final controller = ProxyRuntimeController()..beginLatencySession();
+    final controller = ProxyRuntimeController()
+      ..beginLatencySession(const ['vless-1']);
     addTearDown(controller.dispose);
 
     final result = controller.applyGroupUpdates(
@@ -139,18 +140,110 @@ void main() {
     expect(controller.lowestLatency, 91);
   });
 
-  test('unfinished session entries clear stale latency and become timeout', () {
+  test('session finalization preserves unanswered proxy state', () {
     final controller = ProxyRuntimeController();
     addTearDown(controller.dispose);
     controller.runtimeLatencies['vless-1'] = 73;
+    controller.lowestLatency = 73;
 
-    controller.beginLatencySession();
-    final changed = controller.finishLatencySession(const ['vless-1']);
+    controller.beginLatencySession(const ['vless-1']);
+    final changed = controller.finishLatencySession();
 
-    expect(changed, isTrue);
-    expect(controller.runtimeLatencies['vless-1'], isNull);
-    expect(controller.latencyErrors['vless-1'], 'timeout');
-    expect(controller.unavailableLatencyTags, contains('vless-1'));
+    expect(changed, isFalse);
+    expect(controller.runtimeLatencies['vless-1'], 73);
+    expect(controller.latencyErrors['vless-1'], isNull);
+    expect(controller.unavailableLatencyTags, isNot(contains('vless-1')));
+    expect(controller.latencyFailureCounts['vless-1'], isNull);
+    expect(controller.latencySessionActive, isFalse);
+  });
+
+  test('each proxy leaves checking state only after its own fresh result', () {
+    final controller = ProxyRuntimeController();
+    addTearDown(controller.dispose);
+    controller.runtimeLatencies.addAll({'vless-1': 42, 'vless-2': 51});
+    controller.runtimeLatencyTimes.addAll({'vless-1': 100, 'vless-2': 100});
+    controller.beginLatencySession(const ['vless-1', 'vless-2']);
+
+    expect(controller.latencySessionPendingCount, 2);
+    expect(controller.isLatencySessionTagPending('vless-1'), isTrue);
+    expect(controller.isLatencySessionTagPending('vless-2'), isTrue);
+
+    final cachedSnapshot = controller.applyGroupUpdates(
+      _input(
+        rawGroups: [
+          {
+            'tag': 'select',
+            'items': [
+              {
+                'tag': 'vless-1',
+                'status': 'available',
+                'delay': 42,
+                'time': 100,
+              },
+            ],
+          },
+        ],
+      ),
+    );
+
+    expect(cachedSnapshot.changed, isFalse);
+    expect(controller.latencySessionPendingCount, 2);
+
+    final freshSnapshot = controller.applyGroupUpdates(
+      _input(
+        rawGroups: [
+          {
+            'tag': 'select',
+            'items': [
+              {
+                'tag': 'vless-1',
+                'status': 'available',
+                'delay': 73,
+                'time': 101,
+              },
+            ],
+          },
+        ],
+      ),
+    );
+
+    expect(freshSnapshot.changed, isTrue);
+    expect(controller.runtimeLatencies['vless-1'], 73);
+    expect(controller.isLatencySessionTagPending('vless-1'), isFalse);
+    expect(controller.isLatencySessionTagPending('vless-2'), isTrue);
+    expect(controller.latencySessionPendingCount, 1);
+    expect(controller.latencySessionComplete, isFalse);
+
+    controller.finishLatencySession();
+
+    expect(controller.runtimeLatencies['vless-1'], 73);
+    expect(controller.runtimeLatencies['vless-2'], 51);
+    expect(controller.latencyErrors['vless-2'], isNull);
+    expect(controller.latencySessionActive, isFalse);
+  });
+
+  test('duplicate failure timestamp is applied only once', () {
+    final controller = ProxyRuntimeController();
+    addTearDown(controller.dispose);
+    final snapshot = [
+      {
+        'tag': 'select',
+        'items': [
+          {
+            'tag': 'vless-1',
+            'status': 'unavailable',
+            'error': 'timeout',
+            'time': 50,
+          },
+        ],
+      },
+    ];
+
+    final first = controller.applyGroupUpdates(_input(rawGroups: snapshot));
+    final duplicate = controller.applyGroupUpdates(_input(rawGroups: snapshot));
+
+    expect(first.changed, isTrue);
+    expect(duplicate.changed, isFalse);
     expect(controller.latencyFailureCounts['vless-1'], 1);
   });
 
