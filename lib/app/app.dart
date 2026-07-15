@@ -103,13 +103,9 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   static const _coolNetworkHeartbeatIntervalSeconds = 240;
   static const _economyNetworkHeartbeatIntervalSeconds = 300;
   static const _trafficUiUpdateInterval = Duration(seconds: 1);
-  static const _networkRecoveryDecisionDelay = Duration(seconds: 18);
   static const _networkRecoveryRestartCooldown = Duration(seconds: 60);
   static const _networkRecoveryWindow = Duration(minutes: 10);
   static const _networkRecoveryMaxRestartsPerWindow = 2;
-  static const _runtimeInterfaceIssueWindow = Duration(seconds: 8);
-  static const _runtimeInterfaceIssueThreshold = 4;
-  static const _runtimeInterfaceIssueRecoveryCooldown = Duration(seconds: 12);
   static const _runtimeRecoveryStatusLogInterval = Duration(seconds: 5);
   static const _subscriptionOperationSoftWarningDelay = Duration(seconds: 15);
   static const _subscriptionOperationTimeout = Duration(seconds: 30);
@@ -710,16 +706,17 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     _runtimeInterfaceIssueTimes.addLast(now);
     while (_runtimeInterfaceIssueTimes.isNotEmpty &&
         now.difference(_runtimeInterfaceIssueTimes.first) >
-            _runtimeInterfaceIssueWindow) {
+            runtimeInterfaceRecoveryPolicy.issueWindow) {
       _runtimeInterfaceIssueTimes.removeFirst();
     }
     final issueCount = _runtimeInterfaceIssueTimes.length;
-    if (issueCount < _runtimeInterfaceIssueThreshold) {
-      return;
-    }
-    if (_lastRuntimeInterfaceIssueRecoveryAt != null &&
-        now.difference(_lastRuntimeInterfaceIssueRecoveryAt!) <
-            _runtimeInterfaceIssueRecoveryCooldown) {
+    final lastRecoveryAt = _lastRuntimeInterfaceIssueRecoveryAt;
+    if (!runtimeInterfaceRecoveryPolicy.shouldSchedule(
+      issueCount: issueCount,
+      elapsedSinceLastRecovery: lastRecoveryAt == null
+          ? null
+          : now.difference(lastRecoveryAt),
+    )) {
       return;
     }
     _lastRuntimeInterfaceIssueRecoveryAt = now;
@@ -760,15 +757,18 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       );
       return;
     }
-    _networkRecoveryDecisionTimer = Timer(_networkRecoveryDecisionDelay, () {
-      unawaited(
-        _decideNetworkRecovery(
-          reason: reason,
-          generation: generation,
-          networkGeneration: networkGeneration,
-        ),
-      );
-    });
+    _networkRecoveryDecisionTimer = Timer(
+      runtimeInterfaceRecoveryPolicy.decisionDelay,
+      () {
+        unawaited(
+          _decideNetworkRecovery(
+            reason: reason,
+            generation: generation,
+            networkGeneration: networkGeneration,
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _decideNetworkRecovery({
