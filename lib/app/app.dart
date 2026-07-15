@@ -1791,6 +1791,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       },
       canRunDiagnostics: () => _runtimeOperations.diagnosticsReady,
       operationGeneration: () => _runtimeOperations.diagnosticGeneration,
+      eventBaselineTimes: () => _proxyRuntime.runtimeLatencyTimes,
       onSessionChanged: (running, kind, targetTag) {
         if (!mounted) return;
         if (running) {
@@ -6262,6 +6263,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         : null;
     _ensureActiveLookupCaches();
 
+    _forwardLatencyGroupEvents(rawGroups);
     final result = _proxyRuntime.applyGroupUpdates(
       ProxyRuntimeGroupUpdateInput(
         rawGroups: rawGroups,
@@ -6325,6 +6327,36 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     }
     if (diagnosticsBecameReady) {
       _onRuntimeDiagnosticsReady();
+    }
+  }
+
+  void _forwardLatencyGroupEvents(List<dynamic> rawGroups) {
+    if (!_latencyCoordinator.isRunning) {
+      return;
+    }
+    for (final rawGroup in rawGroups) {
+      if (rawGroup is! Map) continue;
+      final items = rawGroup['items'];
+      if (items is! List) continue;
+      for (final rawItem in items) {
+        if (rawItem is! Map) continue;
+        final tag = rawItem['tag']?.toString().trim() ?? '';
+        final time = (rawItem['time'] as num?)?.toInt() ?? 0;
+        final delay = (rawItem['delay'] as num?)?.toInt() ?? 0;
+        final status =
+            rawItem['status']?.toString().trim().toLowerCase() ?? '';
+        final error = rawItem['error']?.toString().trim() ?? '';
+        final terminalResult =
+            delay > 0 ||
+            status == ProxyRuntimeController.urlTestStatusUnavailable ||
+            error.isNotEmpty;
+        if (terminalResult) {
+          _latencyCoordinator.handleGroupEvent(
+            tag: tag,
+            timeSeconds: time,
+          );
+        }
+      }
     }
   }
 

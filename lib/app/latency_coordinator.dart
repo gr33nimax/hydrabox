@@ -1,8 +1,25 @@
 import 'dart:async';
 
 import 'package:meow_client/logging/app_log_store.dart';
+import 'package:meow_client/singbox/libbox_capabilities.dart';
 
 enum LatencySessionKind { active, full, startup }
+
+enum LatencySessionPhase { idle, startingRpc, collectingEvents, settled }
+
+class LatencyUiPolicy {
+  const LatencyUiPolicy({
+    this.nativeCommandTimeout = const Duration(seconds: 5),
+    this.firstEventGrace = const Duration(seconds: 4),
+    this.eventSettleDelay = const Duration(milliseconds: 1800),
+    this.hardWatchdog = const Duration(seconds: 30),
+  });
+
+  final Duration nativeCommandTimeout;
+  final Duration firstEventGrace;
+  final Duration eventSettleDelay;
+  final Duration hardWatchdog;
+}
 
 class LatencyTestRequest {
   const LatencyTestRequest({
@@ -26,26 +43,13 @@ class LatencyTestRequest {
   final int concurrency;
   final int deadlineMillis;
   final bool force;
-
-  LatencyTestRequest copyWith({int? timeoutMillis, int? deadlineMillis}) {
-    return LatencyTestRequest(
-      groupTag: groupTag,
-      targetOutboundTag: targetOutboundTag,
-      priorityOutboundTag: priorityOutboundTag,
-      excludeOutboundTag: excludeOutboundTag,
-      url: url,
-      timeoutMillis: timeoutMillis ?? this.timeoutMillis,
-      concurrency: concurrency,
-      deadlineMillis: deadlineMillis ?? this.deadlineMillis,
-      force: force,
-    );
-  }
 }
 
 typedef LatencyTestRunner = Future<void> Function(LatencyTestRequest request);
 typedef LatencyBoolReader = bool Function();
 typedef LatencyStringReader = String Function();
 typedef LatencyIntReader = int Function();
+typedef LatencyEventTimesReader = Map<String, int> Function();
 typedef LatencySessionChanged =
     void Function(bool running, LatencySessionKind? kind, String targetTag);
 
@@ -60,6 +64,9 @@ class LatencyCoordinator {
     required LatencySessionChanged onSessionChanged,
     LatencyBoolReader? canRunDiagnostics,
     LatencyIntReader? operationGeneration,
+    LatencyEventTimesReader? eventBaselineTimes,
+    this.capabilities = LibboxCapabilities.bundledLegacy,
+    this.uiPolicy = const LatencyUiPolicy(),
   }) : _runTest = runTest,
        _isConnected = isConnected,
        _isForeground = isForeground,
@@ -68,21 +75,13 @@ class LatencyCoordinator {
        _outboundCount = outboundCount,
        _onSessionChanged = onSessionChanged,
        _canRunDiagnostics = canRunDiagnostics ?? _alwaysReady,
-       _operationGeneration = operationGeneration ?? _zeroGeneration;
+       _operationGeneration = operationGeneration ?? _zeroGeneration,
+       _eventBaselineTimes = eventBaselineTimes ?? _emptyEventTimes;
 
-  // A real HTTP URLTest can legitimately need several seconds on a freshly
-  // changed mobile network. Three seconds produced false timeouts while DNS,
-  // TCP, TLS and the proxy handshake were still in progress.
   static const perOutboundTimeoutMillis = 15000;
-  static const activeDeadlineMillis = 7000;
-  static const fullDeadlineMillis = 15000;
+  static const fullDeadlineMillis = 60000;
   static const automaticFullTestMaxOutbounds = 250;
-  // The bundled 0.2.x core cannot test one selector child in isolation. For a
-  // small subscription an automatic active refresh therefore runs the real
-  // selector-wide HTTP URLTest; for a large one it is skipped to avoid an
-  // unexpected battery/thermal spike. A manual full test is still available.
   static const automaticActiveFallbackMaxOutbounds = 50;
-  static const rpcDeadlineGrace = Duration(milliseconds: 500);
   static const activeDedupWindow = Duration(seconds: 5);
 
   final LatencyTestRunner _runTest;
@@ -94,25 +93,43 @@ class LatencyCoordinator {
   final LatencySessionChanged _onSessionChanged;
   final LatencyBoolReader _canRunDiagnostics;
   final LatencyIntReader _operationGeneration;
+  final LatencyEventTimesReader _eventBaselineTimes;
+  final LibboxCapabilities capabilities;
+  final LatencyUiPolicy uiPolicy;
 
   static bool _alwaysReady() => true;
   static int _zeroGeneration() => 0;
+  static Map<String, int> _emptyEventTimes() => const <String, int>{};
 
   Timer? _autoTimer;
-  bool _running = false;
+  Timer? _firstEventTimer;
+  Timer? _settleTimer;
+  Timer? _watchdogTimer;
   bool _disposed = false;
   int _generation = 0;
+  int _sessionOperationGeneration = 0;
+  int _sessionStartedAtSeconds = 0;
+  LatencySessionPhase _phase = LatencySessionPhase.idle;
   LatencySessionKind? _kind;
   String _targetTag = '';
   String _lastActiveTag = '';
   DateTime? _lastActiveFinishedAt;
+  Map<String, int> _baselineEventTimes = const <String, int>{};
+  final Map<String, int> _acceptedEventTimes = <String, int>{};
+  Completer<bool>? _sessionResult;
   Completer<void>? _nativeSessionFinished;
+  bool _rpcAccepted = false;
+  bool _receivedFreshEvent = false;
 
-  bool get isRunning => _running;
-  LatencySessionKind? get kind => _kind;
+  bool get isRunning =>
+      _phase == LatencySessionPhase.startingRpc ||
+      _phase == LatencySessionPhase.collectingEvents;
+  LatencySessionKind? get kind => isRunning ? _kind : null;
+  LatencySessionPhase get phase => _phase;
+  int get sessionStartedAtSeconds => _sessionStartedAtSeconds;
 
   bool isChecking(String tag) {
-    if (!_running) return false;
+    if (!isRunning) return false;
     return _targetTag.isEmpty || _targetTag == tag;
   }
 
@@ -128,58 +145,54 @@ class LatencyCoordinator {
     });
   }
 
-  Future<bool> runStartup({required String reason}) async {
+  Future<bool> runStartup({required String reason}) {
     if (_outboundCount() > automaticFullTestMaxOutbounds) {
       AppLogStore.info(
         'latency',
-        'startup full test skipped: outbounds=${_outboundCount()} '
+        'startup group test skipped: outbounds=${_outboundCount()} '
             'limit=$automaticFullTestMaxOutbounds',
       );
-      return false;
+      return Future<bool>.value(false);
     }
-    final activeTag = _activeOutboundTag().trim();
-    return _runSession(
-      kind: LatencySessionKind.startup,
-      reason: reason,
-      targetTag: '',
-      requests: [_fullRequest(priorityTag: activeTag)],
-    );
+    return _runGroupSession(kind: LatencySessionKind.startup, reason: reason);
   }
 
-  Future<bool> runActive({required String reason}) async {
+  /// Transitional compatibility for callers that have not been migrated yet.
+  /// The bundled core cannot target one outbound, so this always starts the
+  /// same selector-wide HTTP URLTest as [runFull].
+  Future<bool> runActive({
+    required String reason,
+    bool ignoreCooldown = false,
+  }) async {
     final activeTag = _activeOutboundTag().trim();
     if (activeTag.isEmpty) {
-      AppLogStore.debug('latency', 'active test skipped: no active outbound');
+      AppLogStore.debug('latency', 'group test skipped: no active outbound');
       return false;
     }
     final lastFinishedAt = _lastActiveFinishedAt;
-    if (_lastActiveTag == activeTag &&
+    if (!ignoreCooldown &&
+        _lastActiveTag == activeTag &&
         lastFinishedAt != null &&
         DateTime.now().difference(lastFinishedAt) < activeDedupWindow) {
       AppLogStore.debug(
         'latency',
-        'active test skipped: deduplicated tag=$activeTag reason=$reason',
+        'legacy active trigger skipped: deduplicated tag=$activeTag '
+            'reason=$reason',
       );
       return false;
     }
-    final outboundCount = _outboundCount();
-    if (outboundCount > automaticActiveFallbackMaxOutbounds) {
+    if (_outboundCount() > automaticActiveFallbackMaxOutbounds) {
       AppLogStore.info(
         'latency',
-        'active HTTP test skipped: bundled core has no targeted URLTest; '
-            'outbounds=$outboundCount '
+        'legacy active trigger skipped: targeted URLTest unsupported; '
+            'outbounds=${_outboundCount()} '
             'limit=$automaticActiveFallbackMaxOutbounds reason=$reason',
       );
       return false;
     }
-    final completed = await _runSession(
+    final completed = await _runGroupSession(
       kind: LatencySessionKind.active,
       reason: reason,
-      // An empty target is intentional: the stable core only exposes a real
-      // HTTP URLTest for the whole selector. Pretending that a targeted call
-      // succeeded would merely redisplay a cached value.
-      targetTag: '',
-      requests: [_fullRequest(priorityTag: activeTag)],
     );
     if (completed) {
       _lastActiveTag = activeTag;
@@ -193,27 +206,66 @@ class LatencyCoordinator {
         _outboundCount() > automaticFullTestMaxOutbounds) {
       AppLogStore.info(
         'latency',
-        'automatic full test skipped: outbounds=${_outboundCount()} '
+        'automatic group test skipped: outbounds=${_outboundCount()} '
             'limit=$automaticFullTestMaxOutbounds',
       );
       return Future<bool>.value(false);
     }
-    final activeTag = _activeOutboundTag().trim();
-    return _runSession(
-      kind: LatencySessionKind.full,
-      reason: reason,
-      targetTag: '',
-      requests: [_fullRequest(priorityTag: activeTag)],
-    );
+    return _runGroupSession(kind: LatencySessionKind.full, reason: reason);
+  }
+
+  /// Records one timestamped result from the command client's group stream.
+  /// Cached snapshots from before this session and duplicate events are
+  /// ignored, so they cannot keep the progress UI alive indefinitely.
+  bool handleGroupEvent({required String tag, required int timeSeconds}) {
+    final normalizedTag = tag.trim();
+    if (!isRunning || normalizedTag.isEmpty || timeSeconds <= 0) {
+      return false;
+    }
+    if (_operationGeneration() != _sessionOperationGeneration ||
+        !_isConnected() ||
+        !_canRunDiagnostics()) {
+      _settleCurrent(success: false, reason: 'stale_runtime');
+      return false;
+    }
+    final baseline = _baselineEventTimes[normalizedTag] ?? 0;
+    if (timeSeconds < _sessionStartedAtSeconds ||
+        (baseline > 0 && timeSeconds <= baseline) ||
+        timeSeconds <= (_acceptedEventTimes[normalizedTag] ?? 0)) {
+      return false;
+    }
+    _acceptedEventTimes[normalizedTag] = timeSeconds;
+    _receivedFreshEvent = true;
+    _phase = LatencySessionPhase.collectingEvents;
+    _firstEventTimer?.cancel();
+    _firstEventTimer = null;
+    _settleTimer?.cancel();
+    final generation = _generation;
+    _settleTimer = Timer(uiPolicy.eventSettleDelay, () {
+      if (generation != _generation) return;
+      _settleCurrent(success: true, reason: 'event_stream_settled');
+    });
+    return true;
   }
 
   void cancel() {
     _generation++;
-    if (_running) {
-      _running = false;
-      _kind = null;
-      _targetTag = '';
-      _onSessionChanged(false, null, '');
+    final wasRunning = isRunning;
+    final previousKind = _kind;
+    final previousTarget = _targetTag;
+    _cancelSessionTimers();
+    _phase = LatencySessionPhase.idle;
+    _kind = null;
+    _targetTag = '';
+    _baselineEventTimes = const <String, int>{};
+    _acceptedEventTimes.clear();
+    final result = _sessionResult;
+    _sessionResult = null;
+    if (result != null && !result.isCompleted) {
+      result.complete(false);
+    }
+    if (wasRunning) {
+      _onSessionChanged(false, previousKind, previousTarget);
     }
   }
 
@@ -228,7 +280,7 @@ class LatencyCoordinator {
     try {
       await pending.timeout(maxWait);
     } on TimeoutException {
-      // Its generation is stale already; a late result cannot update state.
+      // The UI generation is already stale; a late completion cannot revive it.
     }
   }
 
@@ -239,134 +291,173 @@ class LatencyCoordinator {
     cancel();
   }
 
-  LatencyTestRequest _fullRequest({
-    required String priorityTag,
-    String excludeTag = '',
-  }) => LatencyTestRequest(
-    priorityOutboundTag: priorityTag,
-    excludeOutboundTag: excludeTag,
+  LatencyTestRequest _groupRequest() => LatencyTestRequest(
+    priorityOutboundTag: _activeOutboundTag().trim(),
     url: _testUrl(),
     timeoutMillis: perOutboundTimeoutMillis,
     concurrency: 0,
     deadlineMillis: fullDeadlineMillis,
   );
 
-  Future<bool> _runSession({
+  Future<bool> _runGroupSession({
     required LatencySessionKind kind,
     required String reason,
-    required String targetTag,
-    required List<LatencyTestRequest> requests,
-  }) async {
+  }) {
     if (_disposed ||
         !_isConnected() ||
         !_isForeground() ||
         !_canRunDiagnostics()) {
-      return false;
+      return Future<bool>.value(false);
     }
-    if (_running) {
+    if (isRunning || _nativeSessionFinished != null) {
       AppLogStore.info(
         'latency',
-        'session skipped reason=$reason running=${_kind?.name ?? 'unknown'}',
+        'group session skipped reason=$reason phase=${_phase.name} '
+            'nativeCommandPending=${_nativeSessionFinished != null}',
       );
-      return false;
+      return Future<bool>.value(false);
     }
+
     final generation = ++_generation;
-    final operationGeneration = _operationGeneration();
-    final nativeSessionFinished = Completer<void>();
-    _nativeSessionFinished = nativeSessionFinished;
-    final startedAt = DateTime.now();
-    _running = true;
+    _sessionOperationGeneration = _operationGeneration();
+    _sessionStartedAtSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    _baselineEventTimes = Map<String, int>.from(_eventBaselineTimes());
+    _acceptedEventTimes.clear();
+    _rpcAccepted = false;
+    _receivedFreshEvent = false;
+    _phase = LatencySessionPhase.startingRpc;
     _kind = kind;
-    _targetTag = targetTag;
-    _onSessionChanged(true, kind, targetTag);
+    _targetTag = '';
+    final result = Completer<bool>();
+    _sessionResult = result;
+    _onSessionChanged(true, kind, '');
     AppLogStore.info(
       'latency',
-      'session start kind=${kind.name} reason=$reason '
-          'outbounds=${_outboundCount()} target=$targetTag requests=${requests.length}',
+      'group session start kind=${kind.name} reason=$reason '
+          'outbounds=${_outboundCount()} completion='
+          '${capabilities.urlTestCompletionModel.name}',
     );
-    var completed = false;
-    var completedRequests = 0;
-    try {
-      for (final request in requests) {
-        if (_disposed ||
-            generation != _generation ||
-            operationGeneration != _operationGeneration() ||
-            !_isConnected() ||
-            !_canRunDiagnostics()) {
-          break;
-        }
-        final sessionDeadlineMillis =
-            kind == LatencySessionKind.active && targetTag.isNotEmpty
-            ? activeDeadlineMillis
-            : fullDeadlineMillis;
-        final elapsedMillis = DateTime.now()
-            .difference(startedAt)
-            .inMilliseconds;
-        final remainingMillis = sessionDeadlineMillis - elapsedMillis;
-        if (remainingMillis <= 0) {
-          throw TimeoutException(
-            'latency ${kind.name} session exceeded ${sessionDeadlineMillis}ms',
-          );
-        }
-        final requestDeadline = request.deadlineMillis
-            .clamp(1, remainingMillis)
-            .toInt();
-        final requestTimeout = request.timeoutMillis
-            .clamp(1, requestDeadline)
-            .toInt();
-        final boundedRequest = request.copyWith(
-          timeoutMillis: requestTimeout,
-          deadlineMillis: requestDeadline,
-        );
-        await _runTest(
-          boundedRequest,
-        ).timeout(Duration(milliseconds: requestDeadline) + rpcDeadlineGrace);
-        if (operationGeneration != _operationGeneration()) {
-          break;
-        }
-        completedRequests++;
-      }
-      completed =
-          !_disposed &&
-          generation == _generation &&
-          operationGeneration == _operationGeneration() &&
-          completedRequests == requests.length;
-      return completed;
-    } catch (error, stackTrace) {
-      final stale =
-          generation != _generation ||
-          operationGeneration != _operationGeneration();
-      if (stale) {
-        AppLogStore.debug(
-          'latency',
-          'discarded stale session result kind=${kind.name} reason=$reason '
-              'error=$error',
-        );
-      } else {
-        AppLogStore.warning(
-          'latency',
-          'session failed kind=${kind.name} reason=$reason error=$error\n$stackTrace',
-        );
-      }
-      return false;
-    } finally {
-      if (!nativeSessionFinished.isCompleted) {
-        nativeSessionFinished.complete();
-      }
-      if (identical(_nativeSessionFinished, nativeSessionFinished)) {
-        _nativeSessionFinished = null;
-      }
-      if (generation == _generation) {
-        _running = false;
-        _kind = null;
-        _targetTag = '';
-        _onSessionChanged(false, kind, targetTag);
-      }
-      AppLogStore.info(
-        'latency',
-        'session finish kind=${kind.name} reason=$reason completed=$completed '
-            'elapsedMs=${DateTime.now().difference(startedAt).inMilliseconds}',
+
+    _watchdogTimer = Timer(uiPolicy.hardWatchdog, () {
+      if (generation != _generation) return;
+      _settleCurrent(
+        success: _rpcAccepted || _receivedFreshEvent,
+        reason: 'hard_watchdog',
       );
+    });
+    unawaited(
+      _invokeNativeGroupTest(
+        generation: generation,
+        kind: kind,
+        reason: reason,
+        request: _groupRequest(),
+      ),
+    );
+    return result.future;
+  }
+
+  Future<void> _invokeNativeGroupTest({
+    required int generation,
+    required LatencySessionKind kind,
+    required String reason,
+    required LatencyTestRequest request,
+  }) async {
+    final nativeFinished = Completer<void>();
+    _nativeSessionFinished = nativeFinished;
+    late final Future<void> nativeCall;
+    try {
+      nativeCall = _runTest(request);
+    } catch (error, stackTrace) {
+      nativeCall = Future<void>.error(error, stackTrace);
     }
+    unawaited(
+      nativeCall.then<void>(
+        (_) => _markNativeFinished(nativeFinished),
+        onError: (Object _, StackTrace _) =>
+            _markNativeFinished(nativeFinished),
+      ),
+    );
+
+    try {
+      await nativeCall.timeout(uiPolicy.nativeCommandTimeout);
+      if (!_isActiveGeneration(generation)) return;
+      if (_sessionOperationGeneration != _operationGeneration() ||
+          !_isConnected() ||
+          !_canRunDiagnostics()) {
+        _settleCurrent(success: false, reason: 'stale_runtime');
+        return;
+      }
+      _rpcAccepted = true;
+      _phase = LatencySessionPhase.collectingEvents;
+      if (_receivedFreshEvent) {
+        return;
+      }
+      _firstEventTimer?.cancel();
+      _firstEventTimer = Timer(uiPolicy.firstEventGrace, () {
+        if (generation != _generation) return;
+        _settleCurrent(success: true, reason: 'first_event_grace');
+      });
+    } on TimeoutException {
+      if (!_isActiveGeneration(generation)) return;
+      AppLogStore.warning(
+        'latency',
+        'native group command timed out kind=${kind.name} reason=$reason '
+            'uiTimeoutMs=${uiPolicy.nativeCommandTimeout.inMilliseconds}',
+      );
+      _settleCurrent(success: false, reason: 'native_command_timeout');
+    } catch (error, stackTrace) {
+      if (!_isActiveGeneration(generation)) return;
+      AppLogStore.warning(
+        'latency',
+        'native group command failed kind=${kind.name} reason=$reason '
+            'error=$error\n$stackTrace',
+      );
+      _settleCurrent(success: false, reason: 'native_command_error');
+    }
+  }
+
+  void _markNativeFinished(Completer<void> nativeFinished) {
+    if (!nativeFinished.isCompleted) {
+      nativeFinished.complete();
+    }
+    if (identical(_nativeSessionFinished, nativeFinished)) {
+      _nativeSessionFinished = null;
+    }
+  }
+
+  bool _isActiveGeneration(int generation) {
+    return !_disposed && generation == _generation && isRunning;
+  }
+
+  void _settleCurrent({required bool success, required String reason}) {
+    if (!isRunning) return;
+    final previousKind = _kind;
+    final previousTarget = _targetTag;
+    final result = _sessionResult;
+    _cancelSessionTimers();
+    _phase = LatencySessionPhase.settled;
+    _kind = null;
+    _targetTag = '';
+    _baselineEventTimes = const <String, int>{};
+    _acceptedEventTimes.clear();
+    _sessionResult = null;
+    _onSessionChanged(false, previousKind, previousTarget);
+    if (result != null && !result.isCompleted) {
+      result.complete(success);
+    }
+    AppLogStore.info(
+      'latency',
+      'group session settled kind=${previousKind?.name ?? 'unknown'} '
+          'reason=$reason success=$success',
+    );
+  }
+
+  void _cancelSessionTimers() {
+    _firstEventTimer?.cancel();
+    _firstEventTimer = null;
+    _settleTimer?.cancel();
+    _settleTimer = null;
+    _watchdogTimer?.cancel();
+    _watchdogTimer = null;
   }
 }
