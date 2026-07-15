@@ -216,6 +216,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   final ProxyRuntimeController _proxyRuntime = ProxyRuntimeController();
   late final LatencyCoordinator _latencyCoordinator;
   final GroupUrlTestScheduler _groupUrlTestScheduler = GroupUrlTestScheduler();
+  final RuntimeStartupUrlTestGate _runtimeStartupUrlTestGate =
+      RuntimeStartupUrlTestGate();
   final SubscriptionRuntimeController _subscriptionRuntime =
       SubscriptionRuntimeController(
         autoRefreshMinDelay: _subscriptionAutoRefreshMinDelay,
@@ -239,7 +241,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   String? _lastQuickSettingsTileLabel;
   ColorScheme? _dynamicLightScheme;
   ColorScheme? _dynamicDarkScheme;
-  int _lastStartupUrlTestRuntimeGeneration = 0;
   int _groupsEventsSinceLastDiagnosticsLog = 0;
   DateTime? _lastGroupsDiagnosticsLogAt;
   DateTime? _lastRuntimeRecoveryStatusLogAt;
@@ -800,6 +801,11 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       return;
     }
     _recordNetworkRecoveryRestart();
+    _groupUrlTestScheduler.cancel();
+    _latencyCoordinator.cancel();
+    _runtimeStartupUrlTestGate.markRecoveryRestart(
+      currentGeneration: _runtimeOperations.nativeRuntimeGeneration,
+    );
     AppLogStore.warning(
       'network',
       'recovery_restart reason=$reason '
@@ -3397,7 +3403,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         _unavailableLatencyTags.clear();
         _latencyErrors.clear();
         _latencyFailureCounts.clear();
-        _lastStartupUrlTestRuntimeGeneration = 0;
+        _runtimeStartupUrlTestGate.reset();
         _networkRecoveryDecisionTimer?.cancel();
         _networkRecoveryDecisionTimer = null;
         _applyRuntimeStateToDerivedCaches();
@@ -5408,7 +5414,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         _latencyErrors.clear();
         _latencyFailureCounts.clear();
         _groupUrlTestScheduler.cancel();
-        _lastStartupUrlTestRuntimeGeneration = 0;
+        _runtimeStartupUrlTestGate.reset();
         _networkRecoveryDecisionTimer?.cancel();
         _networkRecoveryDecisionTimer = null;
         _applyRuntimeStateToDerivedCaches();
@@ -5602,7 +5608,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         } else if (!nativeRecoveryPending) {
           _resetTrafficDashboardData();
           _groupUrlTestScheduler.cancel();
-          _lastStartupUrlTestRuntimeGeneration = 0;
+          _runtimeStartupUrlTestGate.reset();
         }
       });
       _publishTrafficDashboardSnapshot();
@@ -6208,11 +6214,19 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     // use the newly established TUN before opening probe/provider connections.
     _scheduleActiveOutboundIpRefresh(delay: const Duration(seconds: 5));
     final nativeRuntimeGeneration = _runtimeOperations.nativeRuntimeGeneration;
-    if (nativeRuntimeGeneration <= 0 ||
-        nativeRuntimeGeneration == _lastStartupUrlTestRuntimeGeneration) {
-      return;
+    switch (_runtimeStartupUrlTestGate.decide(nativeRuntimeGeneration)) {
+      case RuntimeStartupUrlTestDecision.ignore:
+        return;
+      case RuntimeStartupUrlTestDecision.skipAfterRecovery:
+        AppLogStore.info(
+          'latency',
+          'startup group URLTest skipped after network recovery '
+              'nativeGeneration=$nativeRuntimeGeneration',
+        );
+        return;
+      case RuntimeStartupUrlTestDecision.run:
+        break;
     }
-    _lastStartupUrlTestRuntimeGeneration = nativeRuntimeGeneration;
     _scheduleGroupUrlTest(
       reason: 'runtime_started',
       delay: const Duration(milliseconds: 2500),
