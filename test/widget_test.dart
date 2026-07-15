@@ -11,6 +11,7 @@ import 'package:meow_client/features/proxies/proxy_panel_shell.dart';
 import 'package:meow_client/features/settings/settings_about_page.dart';
 import 'package:meow_client/l10n/generated/app_localizations.dart';
 import 'package:meow_client/models/app_view_models.dart';
+import 'package:meow_client/models/proxy_runtime_visual_state.dart';
 import 'package:meow_client/widgets/country_flag_badge.dart';
 
 void main() {
@@ -813,6 +814,62 @@ void main() {
     await tester.pump();
 
     expect(refreshCount, 0);
+  });
+
+  testWidgets('home latency updates through the runtime visual store', (
+    tester,
+  ) async {
+    final runtimeStates = ProxyRuntimeVisualStore();
+    addTearDown(runtimeStates.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        supportedLocales: AppLocalizations.supportedLocales,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        home: HomePage(
+          connected: true,
+          connecting: false,
+          resolvingProxy: false,
+          activeProfile: const AppProfileSummary(
+            id: 'sub-1',
+            name: 'Main subscription',
+            consumed: 0,
+            total: 0,
+            remainingDays: null,
+            outboundsCount: 1,
+            sourceLabel: '',
+          ),
+          activeProxy: _proxy('proxy-1', 'proxy 1', latency: 42),
+          runtimeStates: runtimeStates,
+          hideServerIp: false,
+          hapticEnabled: false,
+          speedBytesPerSecond: 0,
+          trafficBytes: 0,
+          onToggleConnection: () {},
+          onRefreshLatency: () {},
+          onHideServerIpChanged: (_) {},
+          onOpenSubscriptions: () {},
+          onAddSubscription: () {},
+          onOpenSettings: () {},
+          onOpenChangelog: () {},
+          brandName: 'Etonify',
+          versionLabel: '0.2.2',
+          bottomInset: 0,
+          showActiveProxyFooter: false,
+        ),
+      ),
+    );
+
+    expect(find.text('42 ms', findRichText: true), findsOneWidget);
+
+    runtimeStates.replaceAll(const <String, ProxyRuntimeVisualState>{
+      'proxy-1': ProxyRuntimeVisualState(latency: 73, latencyFresh: true),
+    });
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.text('42 ms', findRichText: true), findsNothing);
+    expect(find.text('73 ms', findRichText: true), findsOneWidget);
   });
 
   testWidgets('active proxy footer hides IP and traffic when disconnected', (

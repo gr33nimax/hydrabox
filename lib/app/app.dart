@@ -56,6 +56,7 @@ import 'package:meow_client/features/welcome/welcome_page.dart';
 import 'package:meow_client/l10n/generated/app_localizations.dart';
 import 'package:meow_client/logging/app_log_store.dart';
 import 'package:meow_client/models/app_view_models.dart';
+import 'package:meow_client/models/proxy_runtime_visual_state.dart';
 import 'package:meow_client/models/subscription.dart';
 import 'package:meow_client/singbox/runtime_start_error.dart';
 import 'package:meow_client/singbox/singbox_config_builder.dart';
@@ -6969,6 +6970,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
                 connectionStatusLabel: _connectionButtonStatusLabel(context),
                 activeProfile: _activeProfile,
                 activeProxy: _displayProxy,
+                runtimeStates: _proxyRuntimeVisualStates,
                 hideServerIp: _hideServerIp,
                 hapticEnabled: _hapticEnabled,
                 speedBytesPerSecond: _connected && _trafficAvailable

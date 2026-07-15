@@ -12,6 +12,7 @@ import 'package:gap/gap.dart';
 import 'package:meow_client/core/demo_utils.dart';
 import 'package:meow_client/l10n/generated/app_localizations.dart';
 import 'package:meow_client/models/app_view_models.dart';
+import 'package:meow_client/models/proxy_runtime_visual_state.dart';
 import 'package:meow_client/theme/demo_app_theme.dart';
 import 'package:meow_client/widgets/country_flag_badge.dart';
 import 'package:meow_client/widgets/ip_refresh_dots.dart';
@@ -31,6 +32,7 @@ class HomePage extends StatelessWidget {
     required this.resolvingProxy,
     required this.activeProfile,
     required this.activeProxy,
+    this.runtimeStates,
     required this.hideServerIp,
     required this.hapticEnabled,
     required this.speedBytesPerSecond,
@@ -64,6 +66,7 @@ class HomePage extends StatelessWidget {
   final String connectionStatusLabel;
   final AppProfileSummary? activeProfile;
   final AppProxySummary? activeProxy;
+  final ProxyRuntimeVisualStore? runtimeStates;
   final bool hideServerIp;
   final bool hapticEnabled;
   final double speedBytesPerSecond;
@@ -281,14 +284,31 @@ class HomePage extends StatelessWidget {
               onTap: onToggleConnection,
             ),
             const Gap(8),
-            ActiveProxyDelayIndicator(
-              connected: connected,
-              proxy: proxy,
-              onRefresh: onRefreshLatency,
-            ),
+            _buildActiveProxyDelayIndicator(proxy),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildActiveProxyDelayIndicator(AppProxySummary? proxy) {
+    Widget buildIndicator(ProxyRuntimeVisualState? state) {
+      return ActiveProxyDelayIndicator(
+        connected: connected,
+        proxy: proxy == null
+            ? null
+            : applyProxyRuntimeVisualState(proxy, state),
+        onRefresh: onRefreshLatency,
+      );
+    }
+
+    final states = runtimeStates;
+    if (proxy == null || states == null) {
+      return buildIndicator(null);
+    }
+    return ValueListenableBuilder<ProxyRuntimeVisualState?>(
+      valueListenable: states.listenableFor(proxy.tag),
+      builder: (context, state, _) => buildIndicator(state),
     );
   }
 

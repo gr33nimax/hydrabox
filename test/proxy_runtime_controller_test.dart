@@ -29,7 +29,7 @@ void main() {
     );
 
     expect(result.changed, isTrue);
-    expect(result.requiresRootRebuild, isTrue);
+    expect(result.requiresRootRebuild, isFalse);
     expect(controller.runtimeLatencies['vless-1'], 73);
     expect(controller.lowestLatency, 73);
     expect(controller.unavailableLatencyTags, isNot(contains('vless-1')));
@@ -368,10 +368,45 @@ void main() {
 
       expect(result.changed, isTrue);
       expect(result.selectedProxyTagToApply, isNull);
-      expect(result.requiresRootRebuild, isTrue);
+      expect(result.requiresRootRebuild, isFalse);
       expect(controller.runtimeLatencies['vless-1'], 73);
     },
   );
+
+  test('session activity without new telemetry does not rebuild UI', () {
+    final controller = ProxyRuntimeController();
+    addTearDown(controller.dispose);
+
+    final result = controller.applyGroupUpdates(
+      _input(
+        latencySessionRunning: true,
+        rawGroups: [
+          {'tag': 'select', 'selected': 'vless-1', 'items': const <dynamic>[]},
+        ],
+      ),
+    );
+
+    expect(result.changed, isFalse);
+    expect(result.requiresRootRebuild, isFalse);
+  });
+
+  test('confirmed runtime selection still requires a root rebuild', () {
+    final controller = ProxyRuntimeController();
+    addTearDown(controller.dispose);
+
+    final result = controller.applyGroupUpdates(
+      _input(
+        selectedProxyTag: 'vless-2',
+        rawGroups: [
+          {'tag': 'select', 'selected': 'vless-1', 'items': const <dynamic>[]},
+        ],
+      ),
+    );
+
+    expect(result.changed, isTrue);
+    expect(result.selectedProxyTagToApply, 'vless-1');
+    expect(result.requiresRootRebuild, isTrue);
+  });
 
   test('stale runtime selection cannot replace pending startup choice', () {
     final controller = ProxyRuntimeController();

@@ -413,7 +413,6 @@ class ProxyRuntimeController {
         input.selectedProxyTag != runtimeSelected;
     final latencyStateChanged =
         lowestLatency != nextLowestLatency ||
-        input.latencySessionRunning ||
         !mapEquals(runtimeLatencies, nextRuntimeLatencies) ||
         !mapEquals(runtimeLatencyTimes, nextRuntimeLatencyTimes) ||
         !setEquals(unavailableLatencyTags, nextUnavailableLatencyTags) ||
@@ -449,15 +448,10 @@ class ProxyRuntimeController {
       runtimeGroupSelections,
       groupSelections,
     );
-    final activeProxyTouched =
-        input.currentResolvedActiveOutboundTag != null &&
-        touchedTags.contains(input.currentResolvedActiveOutboundTag);
     final requiresRootRebuild =
         runtimeSelectionChanged ||
         lowestSelectionsChanged ||
-        groupSelectionsChanged ||
-        activeProxyTouched ||
-        input.latencySessionRunning;
+        groupSelectionsChanged;
 
     runtimeLatencies
       ..clear()
