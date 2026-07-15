@@ -208,8 +208,19 @@ class RuntimeLifecycleController {
     required int watchdogGeneration,
     required bool useVpn,
   }) async {
+    final deadline = DateTime.now().add(startTimeout);
     try {
       await startFuture.timeout(startTimeout);
+      final startConfirmed = await _waitForStartedRuntime(
+        useVpn: useVpn,
+        deadline: deadline,
+      );
+      if (!startConfirmed) {
+        throw TimeoutException(
+          'Native runtime start was not confirmed',
+          startTimeout,
+        );
+      }
       cancelStartWatchdog();
       return const RuntimeLifecycleResult.success(
         policy: RuntimeApplyPolicy.fullServiceRestart,
@@ -232,6 +243,69 @@ class RuntimeLifecycleController {
         error: error.toString(),
       );
     }
+  }
+
+  Future<bool> _waitForStartedRuntime({
+    required bool useVpn,
+    required DateTime deadline,
+  }) async {
+    var lastStatus = const <String, dynamic>{};
+    do {
+      final remaining = deadline.difference(DateTime.now());
+      if (remaining <= Duration.zero) {
+        break;
+      }
+      final statusTimeout = remaining < const Duration(seconds: 2)
+          ? remaining
+          : const Duration(seconds: 2);
+      try {
+        lastStatus = await _runtime.status().timeout(statusTimeout);
+        if (_isStartedRuntimeStatus(lastStatus, useVpn: useVpn)) {
+          AppLogStore.info(
+            'runtime',
+            'runtime start confirmed mode=${lastStatus['mode']} '
+                'generation=${lastStatus['runtimeGeneration']}',
+          );
+          return true;
+        }
+      } catch (error) {
+        AppLogStore.warning(
+          'runtime',
+          'failed to verify native start useVpn=$useVpn: $error',
+        );
+      }
+      final delayRemaining = deadline.difference(DateTime.now());
+      if (delayRemaining > Duration.zero) {
+        await Future<void>.delayed(
+          delayRemaining < const Duration(milliseconds: 100)
+              ? delayRemaining
+              : const Duration(milliseconds: 100),
+        );
+      }
+    } while (DateTime.now().isBefore(deadline));
+    AppLogStore.warning(
+      'runtime',
+      'runtime start was not confirmed useVpn=$useVpn '
+          'running=${lastStatus['running']} mode=${lastStatus['mode']} '
+          'generation=${lastStatus['runtimeGeneration']} '
+          'recordedServiceAlive=${lastStatus['recordedServiceAlive']} '
+          'activeRuntimeOwner=${lastStatus['activeRuntimeOwner']}',
+    );
+    return false;
+  }
+
+  bool _isStartedRuntimeStatus(
+    Map<String, dynamic> status, {
+    required bool useVpn,
+  }) {
+    final expectedMode = useVpn ? 'vpn' : 'proxy';
+    final runtimeGeneration =
+        (status['runtimeGeneration'] as num?)?.toInt() ?? 0;
+    return status['running'] == true &&
+        status['mode'] == expectedMode &&
+        status['recordedServiceAlive'] == true &&
+        status['activeRuntimeOwner'] == true &&
+        runtimeGeneration > 0;
   }
 
   Future<RuntimeLifecycleResult> applyRuntimeBuild({
@@ -526,7 +600,7 @@ class RuntimeLifecycleController {
     if (generation != _startWatchdogGeneration) {
       return;
     }
-    if (status['running'] == true) {
+    if (_isStartedRuntimeStatus(status, useVpn: useVpn)) {
       cancelStartWatchdog();
       return;
     }
@@ -569,7 +643,7 @@ class RuntimeLifecycleController {
             onTimeout: () => const <String, dynamic>{'running': false},
           )
           .catchError((_) => const <String, dynamic>{'running': false});
-      if (status['running'] == true) {
+      if (_isStartedRuntimeStatus(status, useVpn: useVpn)) {
         return const RuntimeLifecycleResult.success(
           policy: RuntimeApplyPolicy.fullServiceRestart,
         );
@@ -593,7 +667,7 @@ class RuntimeLifecycleController {
           onTimeout: () => const <String, dynamic>{'running': false},
         )
         .catchError((_) => const <String, dynamic>{'running': false});
-    if (status['running'] == true) {
+    if (_isStartedRuntimeStatus(status, useVpn: useVpn)) {
       return const RuntimeLifecycleResult.success(
         policy: RuntimeApplyPolicy.fullServiceRestart,
       );

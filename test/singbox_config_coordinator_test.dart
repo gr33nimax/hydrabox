@@ -235,6 +235,10 @@ class _BlockingRuntime implements RuntimeLifecycleRuntime {
   int startCalls = 0;
   int stopCalls = 0;
   bool running = true;
+  String mode = 'vpn';
+  bool recordedServiceAlive = true;
+  bool activeRuntimeOwner = true;
+  int runtimeGeneration = 1;
 
   @override
   Future<void> applyConfig({
@@ -286,6 +290,10 @@ class _BlockingRuntime implements RuntimeLifecycleRuntime {
   Future<void> start({required String config, required bool useVpn}) {
     startCalls++;
     running = true;
+    mode = useVpn ? 'vpn' : 'proxy';
+    recordedServiceAlive = true;
+    activeRuntimeOwner = true;
+    runtimeGeneration++;
     if (!firstStart.isCompleted) {
       firstStart.complete();
     }
@@ -293,16 +301,35 @@ class _BlockingRuntime implements RuntimeLifecycleRuntime {
   }
 
   @override
-  Future<void> startPrepared({required bool useVpn}) async {}
+  Future<void> startPrepared({required bool useVpn}) async {
+    startCalls++;
+    running = true;
+    mode = useVpn ? 'vpn' : 'proxy';
+    recordedServiceAlive = true;
+    activeRuntimeOwner = true;
+    runtimeGeneration++;
+    if (!firstStart.isCompleted) {
+      firstStart.complete();
+    }
+  }
 
   @override
   Future<Map<String, dynamic>> status() async {
-    return <String, dynamic>{'running': running, 'mode': 'vpn'};
+    return <String, dynamic>{
+      'running': running,
+      'mode': mode,
+      'runtimeGeneration': runtimeGeneration,
+      'recordedServiceAlive': recordedServiceAlive,
+      'activeRuntimeOwner': activeRuntimeOwner,
+    };
   }
 
   @override
   Future<void> stop({required String reason}) async {
     stopCalls++;
     running = false;
+    recordedServiceAlive = false;
+    activeRuntimeOwner = false;
+    runtimeGeneration = 0;
   }
 }

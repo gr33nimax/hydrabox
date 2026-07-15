@@ -119,6 +119,73 @@ void main() {
     },
   );
 
+  test('start waits for the native runtime owner before succeeding', () async {
+    final runtime = _FakeRuntime(
+      running: false,
+      confirmStartImmediately: false,
+    );
+    final controller = RuntimeLifecycleController(
+      runtime: runtime,
+      startTimeout: const Duration(milliseconds: 500),
+    );
+    addTearDown(controller.dispose);
+
+    var completed = false;
+    final resultFuture = controller
+        .startRuntimeWithBuild(
+          build: _build(),
+          useVpn: true,
+          promotePreparedConfig: (_) {},
+          cacheStartedBuild: (_) {},
+          logCall: (_, _) {},
+          trimMemory: (_) {},
+          onWatchdogTimeout: (_) {},
+        )
+        .then((result) {
+          completed = true;
+          return result;
+        });
+
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(completed, isFalse);
+
+    runtime.confirmStarted(useVpn: true);
+    final result = await resultFuture;
+
+    expect(result.success, isTrue);
+    expect(runtime.statusCalls, greaterThanOrEqualTo(1));
+  });
+
+  test(
+    'running without a native runtime owner is not a successful start',
+    () async {
+      final runtime = _FakeRuntime(
+        running: false,
+        confirmStartImmediately: false,
+      );
+      final controller = RuntimeLifecycleController(
+        runtime: runtime,
+        startTimeout: const Duration(milliseconds: 30),
+      );
+      addTearDown(controller.dispose);
+
+      runtime.running = true;
+      final result = await controller.startRuntimeWithBuild(
+        build: _build(),
+        useVpn: true,
+        promotePreparedConfig: (_) {},
+        cacheStartedBuild: (_) {},
+        logCall: (_, _) {},
+        trimMemory: (_) {},
+        onWatchdogTimeout: (_) {},
+      );
+
+      expect(result.success, isFalse);
+      expect(result.timedOut, isTrue);
+      expect(runtime.stopCalls, 1);
+    },
+  );
+
   test(
     'full restart refuses to start over an unconfirmed native stop',
     () async {
@@ -176,7 +243,10 @@ class _FakeRuntime implements RuntimeLifecycleRuntime {
     this.startCompletes = true,
     this.failApplyAndStopRuntime = false,
     this.ignoreStop = false,
-  });
+    this.confirmStartImmediately = true,
+  }) : recordedServiceAlive = running,
+       activeRuntimeOwner = running,
+       runtimeGeneration = running ? 1 : 0;
 
   bool running;
   String mode = 'vpn';
@@ -184,11 +254,16 @@ class _FakeRuntime implements RuntimeLifecycleRuntime {
   bool startCompletes;
   bool failApplyAndStopRuntime;
   bool ignoreStop;
+  bool confirmStartImmediately;
+  bool recordedServiceAlive;
+  bool activeRuntimeOwner;
+  int runtimeGeneration;
   int applyPreparedConfigCalls = 0;
   int applyConfigCalls = 0;
   int stopCalls = 0;
   int prepareVpnCalls = 0;
   int startPreparedCalls = 0;
+  int statusCalls = 0;
   bool? lastRestartCore;
 
   @override
@@ -245,8 +320,10 @@ class _FakeRuntime implements RuntimeLifecycleRuntime {
     if (!startCompletes) {
       await Future<void>.delayed(const Duration(minutes: 1));
     }
-    running = true;
     mode = useVpn ? 'vpn' : 'proxy';
+    if (confirmStartImmediately) {
+      confirmStarted(useVpn: useVpn);
+    }
   }
 
   @override
@@ -255,13 +332,22 @@ class _FakeRuntime implements RuntimeLifecycleRuntime {
     if (!startCompletes) {
       await Future<void>.delayed(const Duration(minutes: 1));
     }
-    running = true;
     mode = useVpn ? 'vpn' : 'proxy';
+    if (confirmStartImmediately) {
+      confirmStarted(useVpn: useVpn);
+    }
   }
 
   @override
   Future<Map<String, dynamic>> status() async {
-    return <String, dynamic>{'running': running, 'mode': mode};
+    statusCalls++;
+    return <String, dynamic>{
+      'running': running,
+      'mode': mode,
+      'runtimeGeneration': runtimeGeneration,
+      'recordedServiceAlive': recordedServiceAlive,
+      'activeRuntimeOwner': activeRuntimeOwner,
+    };
   }
 
   @override
@@ -269,6 +355,17 @@ class _FakeRuntime implements RuntimeLifecycleRuntime {
     stopCalls++;
     if (!ignoreStop) {
       running = false;
+      recordedServiceAlive = false;
+      activeRuntimeOwner = false;
+      runtimeGeneration = 0;
     }
+  }
+
+  void confirmStarted({required bool useVpn}) {
+    running = true;
+    mode = useVpn ? 'vpn' : 'proxy';
+    recordedServiceAlive = true;
+    activeRuntimeOwner = true;
+    runtimeGeneration++;
   }
 }

@@ -1041,33 +1041,7 @@ class MainActivity : FlutterFragmentActivity() {
         )
     }
 
-    private fun cleanupStaleRuntimeStateIfNeeded(reason: String): Boolean {
-        if (!SingboxController.running) {
-            return false
-        }
-        val mode = currentRuntimeModeForStop()
-        if (MeowBoxService.hasActiveRuntimeOwner(mode)) {
-            return false
-        }
-        MeowDiagnostics.log(
-            TAG,
-            "cleanupStaleRuntimeStateIfNeeded reason=$reason mode=$mode " +
-                "controllerMode=${SingboxController.serviceMode} " +
-                "service=${MeowApplication.describeRecordedServiceState()} " +
-                "intent=${MeowApplication.describeRuntimeIntent()}",
-        )
-        val primary = runtimeStopTargetForMode(mode)
-        return cleanupStoppedRuntimeState(
-            reason = "stale_runtime_$reason",
-            source = "status",
-            stopRequestedAtMillis = System.currentTimeMillis(),
-            targets = runtimeCleanupTargets(primary),
-            force = true,
-        )
-    }
-
     private fun runtimeStatusMap(): Map<String?, Any?> {
-        val staleRuntimeStateCleaned = cleanupStaleRuntimeStateIfNeeded("status")
         val recordedState = MeowApplication.readServiceState()
         val runtimeIntent = MeowApplication.readRuntimeIntent()
         val recordedServiceAlive = MeowApplication.isRecordedServiceAlive()
@@ -1091,7 +1065,9 @@ class MainActivity : FlutterFragmentActivity() {
             "recordedServiceState" to MeowApplication.describeRecordedServiceState(),
             "activeRuntimeOwner" to activeRuntimeOwner,
             "nativeRecoveryPending" to nativeRecoveryPending,
-            "staleRuntimeStateCleaned" to staleRuntimeStateCleaned,
+            // Status is intentionally read-only. Recovery belongs to explicit
+            // stop/timeout paths so polling cannot interrupt a normal restart.
+            "staleRuntimeStateCleaned" to false,
             "runtimeIntentFresh" to MeowApplication.isRuntimeIntentFresh(),
             "runtimeIntentMode" to runtimeIntent?.mode,
             "runtimeIntentReason" to runtimeIntent?.reason,
