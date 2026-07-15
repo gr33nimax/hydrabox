@@ -114,27 +114,30 @@ object SingboxController {
     @Volatile
     private var trafficAvailable: Boolean = false
 
+    @Volatile
     private var commandClient: CommandClient? = null
-    private val clientHandler = object : CommandClientHandler {
+    private val commandClientLifecycle = CommandClientLifecycle()
+    private val commandReconnectLock = Any()
+    private var commandReconnectRunnable: Runnable? = null
+
+    private fun createCommandClientHandler(epoch: Long) = object : CommandClientHandler {
         override fun connected() {
-            Log.i(TAG, "command client connected")
-            MeowDiagnostics.log(TAG, "command client connected")
-            emit(mapOf("type" to "client", "connected" to true))
+            handleCommandClientConnected(epoch)
         }
 
         override fun disconnected(message: String?) {
-            Log.w(TAG, "command client disconnected message=$message")
-            MeowDiagnostics.log(TAG, "command client disconnected message=$message")
-            emit(mapOf("type" to "client", "connected" to false, "message" to message))
+            handleCommandClientDisconnected(epoch, message)
         }
 
         override fun clearLogs() {
+            if (!commandClientLifecycle.acceptsEvents(epoch)) return
             emit(mapOf("type" to "clearLogs"))
         }
 
         override fun initializeClashMode(modeList: StringIterator?, currentMode: String?) = Unit
 
         override fun setDefaultLogLevel(level: Int) {
+            if (!commandClientLifecycle.acceptsEvents(epoch)) return
             emit(mapOf("type" to "logLevel", "level" to level))
         }
 
@@ -143,7 +146,7 @@ object SingboxController {
         override fun writeConnectionEvents(events: io.nekohasekai.libbox.ConnectionEvents?) = Unit
 
         override fun writeGroups(message: OutboundGroupIterator?) {
-            if (message == null) return
+            if (message == null || !commandClientLifecycle.acceptsEvents(epoch)) return
             val now = SystemClock.uptimeMillis()
             val parseThrottleMs = when (MeowApplication.performanceMode) {
                 "performance" -> 1_000L
@@ -236,7 +239,7 @@ object SingboxController {
         override fun writeOutbounds(message: io.nekohasekai.libbox.OutboundGroupItemIterator?) = Unit
 
         override fun writeLogs(messageList: LogIterator?) {
-            if (messageList == null) return
+            if (messageList == null || !commandClientLifecycle.acceptsEvents(epoch)) return
             val logs = mutableListOf<Map<String, Any?>>()
             while (messageList.hasNext()) {
                 val entry: LogEntry = messageList.next()
@@ -257,7 +260,7 @@ object SingboxController {
         }
 
         override fun writeStatus(message: StatusMessage?) {
-            if (message == null) return
+            if (message == null || !commandClientLifecycle.acceptsEvents(epoch)) return
             uplink = message.uplink
             downlink = message.downlink
             uplinkTotal = message.uplinkTotal
@@ -528,39 +531,192 @@ object SingboxController {
         }
     }
 
+    private fun shouldCommandClientBeConnected(): Boolean =
+        running && uiForeground && eventSink != null
+
+    private fun handleCommandClientConnected(epoch: Long) {
+        if (!commandClientLifecycle.onConnected(epoch)) {
+            MeowDiagnostics.log(
+                TAG,
+                "command_stream_connected stale=true epoch=$epoch " +
+                    "current=${commandClientLifecycle.currentEpoch()}",
+            )
+            return
+        }
+        if (!shouldCommandClientBeConnected()) {
+            MeowDiagnostics.log(
+                TAG,
+                "command_stream_connected expected=false epoch=$epoch reason=not_desired",
+            )
+            disconnectClient()
+            return
+        }
+        Log.i(TAG, "command client connected epoch=$epoch")
+        MeowDiagnostics.log(TAG, "command_stream_connected epoch=$epoch")
+        emit(mapOf("type" to "client", "connected" to true))
+    }
+
+    private fun handleCommandClientDisconnected(epoch: Long, message: String?) {
+        val decision = commandClientLifecycle.onDisconnected(
+            callbackEpoch = epoch,
+            shouldConnect = shouldCommandClientBeConnected(),
+        )
+        when (decision.kind) {
+            CommandDisconnectKind.STALE -> {
+                MeowDiagnostics.log(
+                    TAG,
+                    "command_stream_disconnect stale=true epoch=$epoch " +
+                        "current=${commandClientLifecycle.currentEpoch()}",
+                )
+            }
+            CommandDisconnectKind.DUPLICATE -> {
+                MeowDiagnostics.log(
+                    TAG,
+                    "command_stream_disconnect duplicate=true epoch=$epoch",
+                )
+            }
+            CommandDisconnectKind.EXPECTED -> {
+                if (commandClientLifecycle.isCurrent(epoch)) {
+                    commandClient = null
+                }
+                Log.i(TAG, "command client disconnected expected=true epoch=$epoch")
+                MeowDiagnostics.log(
+                    TAG,
+                    "command_stream_disconnect expected=true epoch=$epoch",
+                )
+                emit(
+                    mapOf(
+                        "type" to "client",
+                        "connected" to false,
+                        "expected" to true,
+                    ),
+                )
+            }
+            CommandDisconnectKind.UNEXPECTED -> {
+                if (commandClientLifecycle.isCurrent(epoch)) {
+                    commandClient = null
+                }
+                Log.w(TAG, "command client disconnected unexpected=true epoch=$epoch message=$message")
+                MeowDiagnostics.log(
+                    TAG,
+                    "command_stream_disconnect unexpected=true epoch=$epoch error=${message.orEmpty()}",
+                )
+                // Do not forward EOF as a user-facing error. Flutter only needs
+                // to know that diagnostics are recovering in the background.
+                emit(
+                    mapOf(
+                        "type" to "client",
+                        "connected" to false,
+                        "recovering" to true,
+                    ),
+                )
+                scheduleCommandClientReconnect(decision)
+            }
+        }
+    }
+
+    private fun scheduleCommandClientReconnect(decision: CommandDisconnectDecision) {
+        if (!decision.scheduleReconnect) return
+        lateinit var reconnect: Runnable
+        reconnect = Runnable {
+            val claimed = synchronized(commandReconnectLock) {
+                if (commandReconnectRunnable !== reconnect) {
+                    false
+                } else {
+                    commandReconnectRunnable = null
+                    true
+                }
+            }
+            if (!claimed) return@Runnable
+            if (!commandClientLifecycle.claimReconnect(
+                    callbackEpoch = decision.epoch,
+                    shouldConnect = shouldCommandClientBeConnected(),
+                )
+            ) {
+                MeowDiagnostics.log(
+                    TAG,
+                    "command_stream_reconnect cancelled=true epoch=${decision.epoch}",
+                )
+                return@Runnable
+            }
+            connectClient()
+        }
+        synchronized(commandReconnectLock) {
+            commandReconnectRunnable?.let(mainHandler::removeCallbacks)
+            commandReconnectRunnable = reconnect
+        }
+        MeowDiagnostics.log(
+            TAG,
+            "command_stream_reconnect attempt=${decision.reconnectAttempt} " +
+                "delayMs=${decision.reconnectDelayMs} epoch=${decision.epoch}",
+        )
+        mainHandler.postDelayed(reconnect, decision.reconnectDelayMs)
+    }
+
+    private fun cancelCommandClientReconnect(reason: String) {
+        val reconnect = synchronized(commandReconnectLock) {
+            commandReconnectRunnable.also { commandReconnectRunnable = null }
+        }
+        if (reconnect != null) {
+            mainHandler.removeCallbacks(reconnect)
+            MeowDiagnostics.log(TAG, "command_stream_reconnect cancelled=true reason=$reason")
+        }
+        commandClientLifecycle.cancelReconnect()
+    }
+
     fun connectClient() {
         commandExecutor.execute {
-            disconnectClientOnExecutor("reconnect")
-            runCatching {
-                if (!running || eventSink == null || !uiForeground) {
-                    return@runCatching
-                }
+            val epoch = commandClientLifecycle.beginConnect(
+                shouldConnect = shouldCommandClientBeConnected(),
+            ) ?: return@execute
+            var client: CommandClient? = null
+            try {
                 MeowApplication.ensureLibboxSetup()
-                Log.i(TAG, "connecting command client")
-                MeowDiagnostics.log(TAG, "connecting command client")
+                Log.i(TAG, "connecting command client epoch=$epoch")
+                MeowDiagnostics.log(TAG, "command_stream_connecting epoch=$epoch")
                 val options = CommandClientOptions().apply {
                     addCommand(Libbox.CommandGroup)
                     addCommand(Libbox.CommandLog)
                     addCommand(Libbox.CommandStatus)
                     statusInterval = if (MeowApplication.performanceMode == "economy") 2_000L else 1_000L
                 }
-                val client = Libbox.newCommandClient(clientHandler, options)
-                client.connect()
+                client = Libbox.newCommandClient(createCommandClientHandler(epoch), options)
                 commandClient = client
-            }.onFailure {
-                MeowDiagnostics.log(TAG, "command client connect failed", it)
-                log("error", "command client connect failed: ${it.message}")
+                client.connect()
+            } catch (error: Throwable) {
+                if (commandClientLifecycle.isCurrent(epoch) && commandClient === client) {
+                    commandClient = null
+                }
+                val decision = commandClientLifecycle.onDisconnected(
+                    callbackEpoch = epoch,
+                    shouldConnect = shouldCommandClientBeConnected(),
+                )
+                Log.w(TAG, "command client connect failed epoch=$epoch", error)
+                MeowDiagnostics.log(TAG, "command_stream_connect_failed epoch=$epoch", error)
+                runCatching { client?.disconnect() }
+                if (decision.kind == CommandDisconnectKind.UNEXPECTED) {
+                    emit(
+                        mapOf(
+                            "type" to "client",
+                            "connected" to false,
+                            "recovering" to true,
+                        ),
+                    )
+                    scheduleCommandClientReconnect(decision)
+                }
             }
         }
     }
 
     fun disconnectClient() {
+        cancelCommandClientReconnect("async_disconnect")
         commandExecutor.execute {
             disconnectClientOnExecutor("async")
         }
     }
 
     fun disconnectClientBlocking(timeoutMs: Long = 1_500L): Boolean {
+        cancelCommandClientReconnect("blocking_disconnect")
         val latch = CountDownLatch(1)
         commandExecutor.execute {
             try {
@@ -574,20 +730,35 @@ object SingboxController {
     }
 
     private fun disconnectClientOnExecutor(reason: String) {
-        val client = commandClient ?: return
+        cancelCommandClientReconnect(reason)
+        val disconnectEpoch = commandClientLifecycle.beginExpectedDisconnect()
+        val client = commandClient
+        commandClient = null
+        if (client == null) {
+            commandClientLifecycle.finishExpectedDisconnect(disconnectEpoch)
+            return
+        }
         Log.i(TAG, "disconnecting command client reason=$reason")
         MeowDiagnostics.log(TAG, "disconnecting command client reason=$reason")
-        runCatching { client.disconnect() }
-            .onSuccess {
-                if (commandClient === client) {
-                    commandClient = null
-                }
-                MeowDiagnostics.log(TAG, "command client disconnected reason=$reason")
-            }
-            .onFailure {
-                Log.w(TAG, "command client disconnect failed reason=$reason", it)
-                MeowDiagnostics.log(TAG, "command client disconnect failed reason=$reason", it)
-            }
+        try {
+            client.disconnect()
+            MeowDiagnostics.log(
+                TAG,
+                "command_stream_disconnect expected=true reason=$reason epoch=$disconnectEpoch",
+            )
+        } catch (error: Throwable) {
+            Log.w(TAG, "command client disconnect failed reason=$reason", error)
+            MeowDiagnostics.log(TAG, "command client disconnect failed reason=$reason", error)
+        } finally {
+            commandClientLifecycle.finishExpectedDisconnect(disconnectEpoch)
+            emit(
+                mapOf(
+                    "type" to "client",
+                    "connected" to false,
+                    "expected" to true,
+                ),
+            )
+        }
     }
 
     private fun <T> withStandaloneCommandClient(block: (CommandClient) -> T): T {
