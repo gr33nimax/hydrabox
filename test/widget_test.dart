@@ -548,49 +548,70 @@ void main() {
     expect(find.text('proxy 2'), findsNothing);
   });
 
-  testWidgets('embedded proxy row updates latency from runtime notifier', (
-    tester,
-  ) async {
-    final proxies = <AppProxySummary>[
-      _proxy('proxy-1', 'proxy 1', latency: 42),
-    ];
-    final runtimeStates = ProxyRuntimeVisualStore();
-    addTearDown(runtimeStates.dispose);
+  testWidgets(
+    'embedded proxy row keeps checking feedback until latency arrives',
+    (tester) async {
+      final proxies = <AppProxySummary>[
+        _proxy('proxy-1', 'proxy 1', latency: 42),
+      ];
+      final runtimeStates = ProxyRuntimeVisualStore();
+      addTearDown(runtimeStates.dispose);
 
-    await tester.pumpWidget(
-      MaterialApp(
-        supportedLocales: AppLocalizations.supportedLocales,
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
-        home: Scaffold(
-          body: SizedBox(
-            height: 720,
-            child: ProxiesPage(
-              proxies: proxies,
-              totalTopLevelProxies: proxies.length,
-              selectedTag: 'proxy-1',
-              connected: false,
-              progressiveBlurEnabled: false,
-              onSelected: (_) {},
-              onUrlTest: () async {},
-              embedded: true,
-              sheetAtMaxExtent: true,
-              sheetExtent: 1,
-              runtimeStates: runtimeStates,
+      await tester.pumpWidget(
+        MaterialApp(
+          supportedLocales: AppLocalizations.supportedLocales,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          home: Scaffold(
+            body: SizedBox(
+              height: 720,
+              child: ProxiesPage(
+                proxies: proxies,
+                totalTopLevelProxies: proxies.length,
+                selectedTag: 'proxy-1',
+                connected: false,
+                progressiveBlurEnabled: false,
+                onSelected: (_) {},
+                onUrlTest: () async {},
+                embedded: true,
+                sheetAtMaxExtent: true,
+                sheetExtent: 1,
+                runtimeStates: runtimeStates,
+              ),
             ),
           ),
         ),
-      ),
-    );
+      );
 
-    expect(find.text('42 ms'), findsOneWidget);
+      expect(find.text('42 ms'), findsOneWidget);
 
-    runtimeStates.replaceAll(const <String, ProxyRuntimeVisualState>{
-      'proxy-1': ProxyRuntimeVisualState(latency: 7, latencyFresh: true),
-    });
-    await tester.pump();
+      runtimeStates.replaceAll(const <String, ProxyRuntimeVisualState>{
+        'proxy-1': ProxyRuntimeVisualState(latency: 7, latencyFresh: true),
+      });
+      await tester.pump();
 
-    expect(find.text('7 ms'), findsOneWidget);
-  });
+      expect(find.text('7 ms'), findsOneWidget);
+
+      runtimeStates.replaceAll(const <String, ProxyRuntimeVisualState>{
+        'proxy-1': ProxyRuntimeVisualState(
+          latency: 7,
+          latencyFresh: true,
+          latencyChecking: true,
+        ),
+      });
+      await tester.pump();
+
+      expect(find.text('7 ms'), findsNothing);
+      expect(find.text('—'), findsNothing);
+      expect(find.text('.'), findsOneWidget);
+
+      runtimeStates.replaceAll(const <String, ProxyRuntimeVisualState>{
+        'proxy-1': ProxyRuntimeVisualState(latency: 9, latencyFresh: true),
+      });
+      await tester.pump();
+
+      expect(find.text('9 ms'), findsOneWidget);
+    },
+  );
 
   testWidgets(
     'embedded proxy row shows URLTest error without marking it dead',
@@ -865,7 +886,7 @@ void main() {
     expect(refreshCount, 1);
   });
 
-  testWidgets('active proxy footer shows IP refresh dots while checking', (
+  testWidgets('active proxy footer keeps cached IP visible while refreshing', (
     tester,
   ) async {
     final proxy = _proxy(
@@ -895,8 +916,8 @@ void main() {
       ),
     );
 
-    expect(find.byKey(const ValueKey('ip-refresh-checking')), findsOneWidget);
-    expect(find.text('57.128.200.35'), findsNothing);
+    expect(find.byKey(const ValueKey('ip-refresh-checking')), findsNothing);
+    expect(find.text('57.128.200.35'), findsOneWidget);
   });
 
   testWidgets('active proxy delay shows progress instead of a stale value', (

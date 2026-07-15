@@ -13,6 +13,7 @@ import 'package:meow_client/app/active_proxy_ip_controller.dart';
 import 'package:meow_client/app/app_background_tasks.dart';
 import 'package:meow_client/app/app_settings_controller.dart';
 import 'package:meow_client/app/deep_link_import.dart';
+import 'package:meow_client/app/group_url_test_scheduler.dart';
 import 'package:meow_client/app/latency_coordinator.dart';
 import 'package:meow_client/app/proxy_runtime_controller.dart';
 import 'package:meow_client/app/proxy_selection_controller.dart';
@@ -101,10 +102,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   static const _coolNetworkHeartbeatIntervalSeconds = 240;
   static const _economyNetworkHeartbeatIntervalSeconds = 300;
   static const _trafficUiUpdateInterval = Duration(seconds: 1);
-  static const _networkRecoveryProbeDelay = Duration(seconds: 1);
   static const _networkRecoveryDecisionDelay = Duration(seconds: 18);
-  static const _networkRecoveryDecisionRetryDelay = Duration(seconds: 4);
-  static const _networkRecoveryMaxUrlTestWait = Duration(seconds: 45);
   static const _networkRecoveryRestartCooldown = Duration(seconds: 60);
   static const _networkRecoveryWindow = Duration(minutes: 10);
   static const _networkRecoveryMaxRestartsPerWindow = 2;
@@ -131,10 +129,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   Timer? _derivedCacheBuildTimer;
   Timer? _trafficUiUpdateTimer;
   Timer? _resumeForegroundSyncTimer;
-  Timer? _networkReconnectWatchdogTimer;
-  Timer? _postConnectUrlTestTimer;
   Timer? _networkRecoveryDecisionTimer;
-  Timer? _latencyFinalizeTimer;
   bool _autoRefreshInFlight = false;
   bool _ownsStore = false;
   bool _ready = false;
@@ -146,7 +141,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   bool _noValidOutboundsDialogVisible = false;
   bool _trafficAvailable = false;
   bool _activeProfileRefreshInFlight = false;
-  bool _singleOutboundPingRefreshScheduled = false;
   bool _starting = false;
   bool _runtimeTransitionInProgress = false;
   bool _startAfterStopRequested = false;
@@ -157,7 +151,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   bool _proxyPanelInteractionActive = false;
   bool _retryRuntimeOnResume = false;
   int _invalidOutboundRetryGeneration = 0;
-  int _latencySessionGeneration = 0;
   String _activeProfileId = '';
   String _selectedProxyTag = '';
   String _clientVersionLabel = _fallbackClientVersionLabel;
@@ -171,6 +164,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   int _locationLookupGeneration = 0;
   bool _locationLookupRefreshRequested = false;
   String _lastLocationLookupSignature = '';
+  final Map<String, Future<Map<String, dynamic>>> _externalInfoLookups =
+      <String, Future<Map<String, dynamic>>>{};
   final Queue<Completer<bool>> _locationLookupWaiters =
       Queue<Completer<bool>>();
   AdBlockRuleSetStatus _adBlockStatus =
@@ -194,7 +189,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       ValueNotifier<TrafficUiSnapshot>(TrafficUiSnapshot.zero);
   Map<String, dynamic>? _pendingTrafficStatusEvent;
   DateTime _lastTrafficUiUpdateAt = DateTime.fromMillisecondsSinceEpoch(0);
-  DateTime? _lastRuntimeStatusEventAt;
   int _networkReconnectGeneration = 0;
   int _networkInterfaceGeneration = 0;
   DateTime? _lastRecoveryRestartAt;
@@ -224,6 +218,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   late final RuntimeEventController _runtimeEvents;
   final ProxyRuntimeController _proxyRuntime = ProxyRuntimeController();
   late final LatencyCoordinator _latencyCoordinator;
+  final GroupUrlTestScheduler _groupUrlTestScheduler = GroupUrlTestScheduler();
   final SubscriptionRuntimeController _subscriptionRuntime =
       SubscriptionRuntimeController(
         autoRefreshMinDelay: _subscriptionAutoRefreshMinDelay,
@@ -247,7 +242,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   String? _lastQuickSettingsTileLabel;
   ColorScheme? _dynamicLightScheme;
   ColorScheme? _dynamicDarkScheme;
-  int _postConnectUrlTestGeneration = 0;
+  int _lastStartupUrlTestRuntimeGeneration = 0;
   int _groupsEventsSinceLastDiagnosticsLog = 0;
   DateTime? _lastGroupsDiagnosticsLogAt;
   DateTime? _lastRuntimeRecoveryStatusLogAt;
@@ -334,10 +329,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   bool get _experimentalUrlTestStrictTolerance =>
       _settings.experimentalUrlTestStrictTolerance;
 
-  bool get _urlTestInFlight => _latencyCoordinator.isRunning;
-  bool get _urlTestMethodInFlight => _latencyCoordinator.isRunning;
-  bool get _manualUrlTestInFlight =>
-      _latencyCoordinator.kind == LatencySessionKind.full;
+  bool get _urlTestInFlight =>
+      _proxyRuntime.latencySessionActive || _latencyCoordinator.isRunning;
 
   int? get _lowestLatency => _proxyRuntime.lowestLatency;
   set _lowestLatency(int? value) => _proxyRuntime.lowestLatency = value;
@@ -741,7 +734,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     _scheduleNetworkRecovery(
       reason: reason,
       networkGeneration: _networkInterfaceGeneration,
-      changedAt: now,
       forceRestartOnDecision: true,
     );
   }
@@ -749,7 +741,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   void _scheduleNetworkRecovery({
     required String reason,
     required int networkGeneration,
-    DateTime? changedAt,
     bool forceRestartOnDecision = false,
   }) {
     if (!mounted ||
@@ -758,28 +749,22 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         _runtimeTransitionInProgress) {
       return;
     }
-    final startedAt = changedAt ?? DateTime.now();
     final generation = ++_networkReconnectGeneration;
-    _networkReconnectWatchdogTimer?.cancel();
     _networkRecoveryDecisionTimer?.cancel();
-    _networkReconnectWatchdogTimer = Timer(_networkRecoveryProbeDelay, () {
-      if (!mounted ||
-          generation != _networkReconnectGeneration ||
-          !_connected ||
-          !_foregroundLifecycleActive ||
-          _runtimeTransitionInProgress) {
-        return;
-      }
-      _triggerSelectedProxyUrlTest(showChecking: false, ignoreCooldown: true);
-    });
+    if (!forceRestartOnDecision) {
+      AppLogStore.debug(
+        'network',
+        'network change observed without forced recovery reason=$reason '
+            'networkGeneration=$networkGeneration',
+      );
+      return;
+    }
     _networkRecoveryDecisionTimer = Timer(_networkRecoveryDecisionDelay, () {
       unawaited(
         _decideNetworkRecovery(
           reason: reason,
           generation: generation,
           networkGeneration: networkGeneration,
-          changedAt: startedAt,
-          forceRestartOnDecision: forceRestartOnDecision,
         ),
       );
     });
@@ -789,47 +774,12 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     required String reason,
     required int generation,
     required int networkGeneration,
-    required DateTime changedAt,
-    bool forceRestartOnDecision = false,
   }) async {
     if (!mounted ||
         generation != _networkReconnectGeneration ||
         !_connected ||
         !_foregroundLifecycleActive ||
         _runtimeTransitionInProgress) {
-      return;
-    }
-    final statusFresh =
-        _lastRuntimeStatusEventAt != null &&
-        !_lastRuntimeStatusEventAt!.isBefore(changedAt);
-    if (!forceRestartOnDecision && statusFresh && _trafficAvailable) {
-      return;
-    }
-    final urlTestRunning = _urlTestMethodInFlight || _urlTestInFlight;
-    if (urlTestRunning &&
-        DateTime.now().difference(changedAt) < _networkRecoveryMaxUrlTestWait) {
-      AppLogStore.info(
-        'network',
-        'recovery decision delayed reason=$reason '
-            'networkGeneration=$networkGeneration selected=$_selectedProxyTag '
-            'urlTestInFlight=$_urlTestInFlight '
-            'urlTestMethodInFlight=$_urlTestMethodInFlight',
-      );
-      _networkRecoveryDecisionTimer?.cancel();
-      _networkRecoveryDecisionTimer = Timer(
-        _networkRecoveryDecisionRetryDelay,
-        () {
-          unawaited(
-            _decideNetworkRecovery(
-              reason: reason,
-              generation: generation,
-              networkGeneration: networkGeneration,
-              changedAt: changedAt,
-              forceRestartOnDecision: forceRestartOnDecision,
-            ),
-          );
-        },
-      );
       return;
     }
     if (!await _networkInterfaceUsable(reason: 'network_recovery_decision')) {
@@ -840,30 +790,11 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       );
       return;
     }
-    final selectedTag = _currentResolvedActiveOutboundTag();
-    final selectedRuntimeLatency = selectedTag == null
-        ? null
-        : _runtimeLatencies[selectedTag];
-    final selectedRuntimeUnavailable =
-        selectedTag != null && _unavailableLatencyTags.contains(selectedTag);
-    if (!forceRestartOnDecision &&
-        selectedRuntimeLatency != null &&
-        !selectedRuntimeUnavailable) {
-      return;
-    }
-    final selectedBad =
-        forceRestartOnDecision ||
-        selectedTag == null ||
-        selectedRuntimeUnavailable ||
-        selectedRuntimeLatency == null;
-    if (!selectedBad && statusFresh) {
-      return;
-    }
     if (!_canRunNetworkRecoveryRestart()) {
       AppLogStore.warning(
         'network',
         'recovery restart suppressed reason=$reason '
-            'networkGeneration=$networkGeneration selected=$selectedTag',
+            'networkGeneration=$networkGeneration selected=$_selectedProxyTag',
       );
       return;
     }
@@ -871,8 +802,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     AppLogStore.warning(
       'network',
       'recovery_restart reason=$reason '
-          'networkGeneration=$networkGeneration selected=$selectedTag '
-          'force=$forceRestartOnDecision',
+          'networkGeneration=$networkGeneration selected=$_selectedProxyTag '
+          'source=runtime_interface_errors',
     );
     await _configCoordinator.emitCurrentConfigLogAsync(
       'network recovery restart ($reason)',
@@ -1286,7 +1217,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
           targetSummary.latency == null &&
           latencyUnavailable,
       latencyFresh: runtimeLatency != null || targetSummary.latencyFresh,
-      latencyChecking: _urlTestInFlight,
+      latencyChecking: _proxyRuntime.isLatencySessionTagPending(tag),
       latencyUnavailable: latencyUnavailable,
       latencyError: latencyError,
       clearLatencyError: latencyError == null,
@@ -1310,7 +1241,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       ip: outbound.info.externalIp?.trim() ?? '',
       latency: runtimeLatency ?? outbound.info.latestPing,
       latencyFresh: runtimeLatency != null,
-      latencyChecking: _urlTestInFlight,
+      latencyChecking: _proxyRuntime.isLatencySessionTagPending(outbound.tag),
       latencyUnavailable: latencyUnavailable,
       latencyError: _latencyErrors[outbound.tag],
       protocolLabel: protocolLabel,
@@ -1352,7 +1283,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       latency: selectedSummary?.latency,
       latencyFresh: selectedSummary?.latencyFresh ?? false,
       latencyChecking:
-          _urlTestInFlight || (selectedSummary?.latencyChecking ?? false),
+          selectedSummary?.latencyChecking ??
+          (_urlTestInFlight && selectedChild == null),
       latencyUnavailable: selectedSummary?.latencyUnavailable ?? false,
       latencyError: selectedSummary?.latencyError,
       protocolLabel: hasSelectedChild
@@ -1469,8 +1401,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         latency: selectedWithRuntime.latency,
         clearLatency: selectedWithRuntime.latency == null,
         latencyFresh: selectedWithRuntime.latencyFresh,
-        latencyChecking:
-            _urlTestInFlight || selectedWithRuntime.latencyChecking,
+        latencyChecking: selectedWithRuntime.latencyChecking,
         latencyUnavailable: selectedWithRuntime.latencyUnavailable,
         latencyError: selectedWithRuntime.latencyError,
         clearLatencyError: selectedWithRuntime.latencyError == null,
@@ -1536,8 +1467,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         clearLatency: selectedChildWithRuntime?.latency == null,
         latencyFresh: selectedChildWithRuntime?.latencyFresh ?? false,
         latencyChecking:
-            _urlTestInFlight ||
-            (selectedChildWithRuntime?.latencyChecking ?? false),
+            selectedChildWithRuntime?.latencyChecking ??
+            (_urlTestInFlight && selectedChildTag == null),
         latencyUnavailable: unavailable,
         latencyError: selectedChildWithRuntime?.latencyError,
         clearLatencyError: selectedChildWithRuntime?.latencyError == null,
@@ -1570,9 +1501,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     AppProxySummary proxy, {
     Set<String> mixedOutboundTags = const <String>{},
   }) {
-    final selectedRuntimeUrlTestChecking = _latencyCoordinator.isChecking(
-      proxy.tag,
-    );
+    final latencyChecking = _proxyRuntime.isLatencySessionTagPending(proxy.tag);
     final runtimeLatency = _runtimeLatencies[proxy.tag];
     final latencyUnavailable =
         ProxyRuntimeController.effectiveLatencyUnavailable(
@@ -1605,7 +1534,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       latency: runtimeLatency,
       clearLatency: shouldClearLatency,
       latencyFresh: runtimeLatency != null && latencyError == null,
-      latencyChecking: _manualUrlTestInFlight || selectedRuntimeUrlTestChecking,
+      latencyChecking: latencyChecking,
       latencyUnavailable: latencyUnavailable,
       latencyError: latencyError,
       clearLatencyError: latencyError == null,
@@ -1795,28 +1724,13 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       onSessionChanged: (running, kind, targetTag) {
         if (!mounted) return;
         if (running) {
-          _latencyFinalizeTimer?.cancel();
-          _latencySessionGeneration++;
-          _proxyRuntime.beginLatencySession();
+          _proxyRuntime.beginLatencySession(
+            _expectedLatencyTagsForSession(targetTag),
+          );
         } else if (kind != null) {
-          final generation = _latencySessionGeneration;
-          _latencyFinalizeTimer?.cancel();
-          _latencyFinalizeTimer = Timer(const Duration(milliseconds: 180), () {
-            if (!mounted ||
-                generation != _latencySessionGeneration ||
-                _latencyCoordinator.isRunning) {
-              return;
-            }
-            _ensureActiveLookupCaches();
-            final changed = _proxyRuntime.finishLatencySession(
-              kind == LatencySessionKind.active && targetTag.isNotEmpty
-                  ? <String>[targetTag]
-                  : _activeOutboundByTagLookup.keys,
-            );
-            if (changed) {
-              setState(_applyRuntimeStateToDerivedCaches);
-            }
-          });
+          _proxyRuntime.finishLatencySession();
+        } else {
+          _proxyRuntime.cancelLatencySession();
         }
         setState(_applyRuntimeStateToDerivedCaches);
         unawaited(_syncQuickSettingsTileLabel());
@@ -1836,8 +1750,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       trimRuntimeStartMemory: _trimRuntimeStartMemory,
       onRuntimeLifecycleTimeout: _handleRuntimeLifecycleTimeout,
       cacheStartedBuild: _cacheLastStartedBuild,
-      schedulePostConnectSelectedProxyUrlTest:
-          _schedulePostConnectSelectedProxyUrlTest,
       syncRuntimeState: _syncRuntimeState,
     );
     _runtimeEvents = RuntimeEventController(
@@ -1906,10 +1818,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     _invalidOutboundRetryTimer?.cancel();
     _locationLookupTimer?.cancel();
     _resumeForegroundSyncTimer?.cancel();
-    _networkReconnectWatchdogTimer?.cancel();
-    _postConnectUrlTestTimer?.cancel();
+    _groupUrlTestScheduler.dispose();
     _networkRecoveryDecisionTimer?.cancel();
-    _latencyFinalizeTimer?.cancel();
     _configCoordinator.dispose();
     _runtimeLifecycle.dispose();
     _runtimeCommands.dispose();
@@ -1922,6 +1832,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       }
     }
     _locationLookupWaiters.clear();
+    _externalInfoLookups.clear();
     _derivedCacheBuildTimer?.cancel();
     _trafficUiUpdateTimer?.cancel();
     unawaited(_runtimeEvents.dispose());
@@ -3101,12 +3012,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     _trafficUiUpdateTimer?.cancel();
     _trafficUiUpdateTimer = null;
     _pendingTrafficStatusEvent = null;
-    _postConnectUrlTestGeneration++;
-    _postConnectUrlTestTimer?.cancel();
-    _postConnectUrlTestTimer = null;
+    _groupUrlTestScheduler.cancel();
     _latencyCoordinator.cancel();
-    _networkReconnectWatchdogTimer?.cancel();
-    _networkReconnectWatchdogTimer = null;
     _networkRecoveryDecisionTimer?.cancel();
     _networkRecoveryDecisionTimer = null;
     if (_invalidOutboundRetryScheduled && _runtimeDesiredByUser) {
@@ -3185,14 +3092,9 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       );
       return;
     }
-    _scheduleNetworkRecovery(
-      reason: 'resume_reconcile',
-      networkGeneration: _networkInterfaceGeneration,
-    );
-    _schedulePostConnectSelectedProxyUrlTest(
-      reason: 'resume_reconcile',
-      delay: const Duration(milliseconds: 450),
-      ignoreCooldown: true,
+    AppLogStore.debug(
+      'runtime',
+      'resume reconcile completed without scheduling URLTest',
     );
   }
 
@@ -3473,8 +3375,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       }
       final startAfterStop = _startAfterStopRequested;
       _startAfterStopRequested = false;
-      _latencyCoordinator.configureAuto(null);
       _latencyCoordinator.cancel();
+      _groupUrlTestScheduler.cancel();
       setState(() {
         _setConnectionPhase(AppConnectionPhase.idle);
         _resetActiveProxyIpState();
@@ -3494,11 +3396,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         _unavailableLatencyTags.clear();
         _latencyErrors.clear();
         _latencyFailureCounts.clear();
-        _singleOutboundPingRefreshScheduled = false;
-        _postConnectUrlTestGeneration++;
-        _postConnectUrlTestTimer?.cancel();
-        _networkReconnectWatchdogTimer?.cancel();
-        _networkReconnectWatchdogTimer = null;
+        _lastStartupUrlTestRuntimeGeneration = 0;
         _networkRecoveryDecisionTimer?.cancel();
         _networkRecoveryDecisionTimer = null;
         _applyRuntimeStateToDerivedCaches();
@@ -3633,10 +3531,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     _haptic();
     final updatedSubscription = _withSelectedOutbound(activeSubscription, tag);
     _runtimeOperations.beginSelection(tag);
-    _latencyCoordinator.cancel();
-    _postConnectUrlTestGeneration++;
-    _postConnectUrlTestTimer?.cancel();
-    _postConnectUrlTestTimer = null;
     _resetActiveProxyIpState(rebuild: false);
     final selectInRuntime = _proxySelection.runtimeSelectionUpdatesAllowed(
       connected: _connected,
@@ -3700,10 +3594,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
           );
           _clearRuntimeProxySelectionGuard(generation: selectionGeneration);
           _scheduleActiveOutboundIpRefresh();
-          _schedulePostConnectSelectedProxyUrlTest(
-            reason: 'proxy_selected',
-            delay: const Duration(milliseconds: 1200),
-          );
         } catch (error) {
           if (!mounted ||
               !_proxySelection.isCurrentGeneration(selectionGeneration)) {
@@ -3802,65 +3692,69 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     ]);
   }
 
-  void _triggerSelectedProxyUrlTest({
-    bool showChecking = true,
-    bool ignoreCooldown = false,
-  }) {
-    if (!_connected ||
-        !_foregroundLifecycleActive ||
-        !_runtimeOperations.diagnosticsReady) {
-      return;
+  Set<String> _expectedLatencyTagsForSession(String targetTag) {
+    final normalizedTarget = targetTag.trim();
+    if (normalizedTarget.isNotEmpty) {
+      return <String>{normalizedTarget};
     }
-    unawaited(_latencyCoordinator.runActive(reason: 'selected_proxy'));
+    _ensureActiveLookupCaches();
+    final expectedTags = <String>{
+      for (final tag in _activeOutboundByTagLookup.keys)
+        if (!_excludedRuntimeOutboundTags.contains(tag)) tag,
+    };
+    final activeSubscription = _activeSubscription;
+    if (activeSubscription != null) {
+      for (final chain in activeSubscription.proxyChains) {
+        final tag = chain.tag.trim();
+        if (tag.isNotEmpty && !_excludedRuntimeOutboundTags.contains(tag)) {
+          expectedTags.add(tag);
+        }
+      }
+    }
+    return expectedTags;
   }
 
-  void _schedulePostConnectSelectedProxyUrlTest({
+  void _scheduleGroupUrlTest({
     required String reason,
     Duration delay = const Duration(milliseconds: 2500),
-    bool ignoreCooldown = false,
+    bool startup = false,
   }) {
-    if (!mounted ||
-        !_foregroundLifecycleActive ||
-        _selectedProxyTag.trim().isEmpty) {
+    if (!mounted || !_foregroundLifecycleActive) {
       return;
     }
-    final generation = ++_postConnectUrlTestGeneration;
-    _postConnectUrlTestTimer?.cancel();
-    _postConnectUrlTestTimer = Timer(delay, () {
-      if (!mounted ||
-          generation != _postConnectUrlTestGeneration ||
-          !_connected ||
-          !_foregroundLifecycleActive ||
-          _runtimeTransitionInProgress ||
-          !_runtimeOperations.diagnosticsReady) {
-        return;
-      }
-      if (reason == 'resume_reconcile' || reason == 'runtime_sync_running') {
-        AppLogStore.debug(
+    AppLogStore.debug(
+      'latency',
+      'automatic group URLTest scheduled reason=$reason '
+          'delayMs=${delay.inMilliseconds} startup=$startup',
+    );
+    _groupUrlTestScheduler.schedule(
+      delay: delay,
+      canRun: () {
+        final ready =
+            mounted &&
+            _connected &&
+            _foregroundLifecycleActive &&
+            !_runtimeTransitionInProgress &&
+            _runtimeOperations.diagnosticsReady &&
+            !_urlTestInFlight;
+        if (!ready) {
+          AppLogStore.debug(
+            'latency',
+            'automatic group URLTest discarded reason=$reason',
+          );
+        }
+        return ready;
+      },
+      run: () {
+        AppLogStore.info(
           'latency',
-          'automatic test skipped on foreground reconciliation reason=$reason',
+          'automatic group URLTest start reason=$reason startup=$startup',
         );
-        return;
-      }
-      AppLogStore.info(
-        'proxy',
-        'post-connect selected proxy URLTest reason=$reason '
-            'selected=$_selectedProxyTag ignoreCooldown=$ignoreCooldown',
-      );
-      if (reason == 'runtime_running') {
-        // URLTest groups have native auto-check disabled. The bundled core
-        // cannot probe one leaf honestly, so the coordinator runs a real
-        // group HTTP test only for reasonably small subscriptions.
-        _latencyCoordinator.configureAuto(null);
-        AppLogStore.debug(
-          'latency',
-          'startup active refresh delegated to safe HTTP URLTest fallback',
-        );
-        unawaited(_latencyCoordinator.runActive(reason: reason));
-      } else {
-        unawaited(_latencyCoordinator.runActive(reason: reason));
-      }
-    });
+        return startup
+            ? _latencyCoordinator.runStartup(reason: reason)
+            : _latencyCoordinator.runFull(reason: reason);
+      },
+    );
   }
 
   Future<void> _addProxyChain(String detourTag, String targetRef) async {
@@ -3985,12 +3879,16 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         'proxy chain removed; applying runtime config tag=$normalizedTag '
             'selected=$nextSelectedTag',
       );
-      unawaited(
-        _configCoordinator.emitCurrentConfigLogAsync(
-          'proxy_chain_removed',
-          restartRuntime: false,
-        ),
+      await _configCoordinator.emitCurrentConfigLogAsync(
+        'proxy_chain_removed',
+        restartRuntime: false,
       );
+      if (mounted && _connected) {
+        _scheduleGroupUrlTest(
+          reason: 'proxy_chain_composition_changed',
+          delay: const Duration(milliseconds: 2500),
+        );
+      }
     }
   }
 
@@ -4047,15 +3945,16 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         'proxy chain upserted; applying runtime config tag=${chain.tag} '
             'detour=${chain.detourTag} target=${chain.targetTag}',
       );
-      unawaited(
-        _configCoordinator.emitCurrentConfigLogAsync(
-          'proxy_chain_upserted',
-          restartRuntime: false,
-        ),
+      await _configCoordinator.emitCurrentConfigLogAsync(
+        'proxy_chain_upserted',
+        restartRuntime: false,
       );
-    }
-    if (selectAfterApply) {
-      _triggerSelectedProxyUrlTest(showChecking: false);
+      if (mounted && _connected) {
+        _scheduleGroupUrlTest(
+          reason: 'proxy_chain_composition_changed',
+          delay: const Duration(milliseconds: 2500),
+        );
+      }
     }
   }
 
@@ -4321,7 +4220,9 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       _applyMetadataActiveProfile(
         subscriptions,
         normalized.activeSubscriptionId,
-        clearProxyCache: shouldResetRuntimeState || _activeProfileCache == null,
+        clearProxyCache:
+            (shouldResetRuntimeState && !preserveLatencyDuringReload) ||
+            _activeProfileCache == null,
       );
     });
     unawaited(_syncQuickSettingsTileLabel());
@@ -4428,7 +4329,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
           _applyMetadataActiveProfile(
             resolved.subscriptions,
             normalized.activeSubscriptionId,
-            clearProxyCache: shouldResetRuntimeState,
+            clearProxyCache:
+                shouldResetRuntimeState && !preserveLatencyDuringReload,
           );
         }
       });
@@ -4442,7 +4344,10 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
           restartRuntime: restartRuntimeOnApply,
         );
         if (urlTestAfterApply && mounted && _connected) {
-          _triggerSelectedProxyUrlTest(showChecking: true);
+          _scheduleGroupUrlTest(
+            reason: 'subscription_composition_changed',
+            delay: const Duration(milliseconds: 2500),
+          );
         }
       } else {
         unawaited(
@@ -5164,58 +5069,17 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     if (!_connected || !_foregroundLifecycleActive) {
       return;
     }
-    if (_latencyCoordinator.isRunning) {
-      await _latencyCoordinator.cancelAndWait();
-      if (!mounted || !_connected || !_foregroundLifecycleActive) return;
+    if (_urlTestInFlight) {
+      AppLogStore.debug(
+        'latency',
+        'full URLTest skipped: native session is still producing results',
+      );
+      return;
     }
     if (haptic) {
       _haptic();
     }
     await _latencyCoordinator.runFull(reason: 'manual');
-  }
-
-  void _scheduleSingleOutboundPingRefresh() {
-    if (!_foregroundLifecycleActive) {
-      return;
-    }
-    _ensureActiveLookupCaches();
-    final activeSubscription = _activeSubscription;
-    if (activeSubscription == null ||
-        activeSubscription.proxyChains.isNotEmpty) {
-      return;
-    }
-    final visibleOutbounds = _activeVisibleOutboundsLookup;
-    if (visibleOutbounds.length != 1) {
-      return;
-    }
-    final outboundTag = visibleOutbounds.single.tag;
-    if (_runtimeLatencies.containsKey(outboundTag)) {
-      return;
-    }
-    if (_singleOutboundPingRefreshScheduled) {
-      return;
-    }
-    _singleOutboundPingRefreshScheduled = true;
-    unawaited(() async {
-      try {
-        await Future<void>.delayed(const Duration(milliseconds: 700));
-        if (!mounted || !_connected) {
-          return;
-        }
-        _ensureActiveLookupCaches();
-        if (_activeVisibleOutboundsLookup.length != 1 ||
-            _activeVisibleOutboundsLookup.single.tag != outboundTag) {
-          return;
-        }
-        _schedulePostConnectSelectedProxyUrlTest(
-          reason: 'single_outbound_ping',
-          delay: const Duration(milliseconds: 900),
-        );
-      } catch (_) {
-      } finally {
-        _singleOutboundPingRefreshScheduled = false;
-      }
-    }());
   }
 
   Future<void> _handleRuntimeLifecycleTimeout(
@@ -5263,9 +5127,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         phase == SingboxConfigCoordinatorPhase.stopping) {
       _latencyCoordinator.cancel();
       _activeProxyIpController.cancelPending();
-      _postConnectUrlTestGeneration++;
-      _postConnectUrlTestTimer?.cancel();
-      _postConnectUrlTestTimer = null;
+      _groupUrlTestScheduler.cancel();
     }
     setState(() {
       _setConnectionPhase(switch (phase) {
@@ -5544,18 +5406,14 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         _unavailableLatencyTags.clear();
         _latencyErrors.clear();
         _latencyFailureCounts.clear();
-        _singleOutboundPingRefreshScheduled = false;
-        _postConnectUrlTestGeneration++;
-        _postConnectUrlTestTimer?.cancel();
-        _networkReconnectWatchdogTimer?.cancel();
-        _networkReconnectWatchdogTimer = null;
+        _groupUrlTestScheduler.cancel();
+        _lastStartupUrlTestRuntimeGeneration = 0;
         _networkRecoveryDecisionTimer?.cancel();
         _networkRecoveryDecisionTimer = null;
         _applyRuntimeStateToDerivedCaches();
       }
     });
     if (shouldCancelLatency) {
-      _latencyCoordinator.configureAuto(null);
       _latencyCoordinator.cancel();
     }
     _publishTrafficDashboardSnapshot();
@@ -5567,7 +5425,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     } else if (running) {
       unawaited(_refreshRuntimeDiagnosticsNetworkState());
       _scheduleActiveOutboundIpRefresh();
-      _schedulePostConnectSelectedProxyUrlTest(reason: 'runtime_running');
       if (!_coolMode) {
         _scheduleBestOutboundLocationRefresh(
           delay: _balancedMode
@@ -5575,7 +5432,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
               : const Duration(seconds: 3),
         );
       }
-      _scheduleSingleOutboundPingRefresh();
     }
   }
 
@@ -5612,7 +5468,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   void _applyTrafficStatusEvent(Map<String, dynamic> event) {
     if (!mounted) return;
     final now = DateTime.now();
-    _lastRuntimeStatusEventAt = now;
     final uplink = (event['uplink'] as num?)?.toInt() ?? 0;
     final downlink = (event['downlink'] as num?)?.toInt() ?? 0;
     final uplinkTotal = (event['uplinkTotal'] as num?)?.toInt() ?? 0;
@@ -5636,7 +5491,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   }
 
   void _handleRuntimeNetworkEvent(Map<String, dynamic> event) {
-    final now = DateTime.now();
     final reason = event['reason']?.toString() ?? 'network';
     final interfaceName = event['interfaceName']?.toString();
     final interfaceIndex = (event['interfaceIndex'] as num?)?.toInt() ?? 0;
@@ -5663,9 +5517,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     _runtimeCommands.invalidate();
     _latencyCoordinator.cancel();
     _activeProxyIpController.cancelPending();
-    _postConnectUrlTestGeneration++;
-    _postConnectUrlTestTimer?.cancel();
-    _postConnectUrlTestTimer = null;
+    _groupUrlTestScheduler.cancel();
     if (!usable) {
       AppLogStore.warning(
         'network',
@@ -5687,16 +5539,9 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       _scheduleNetworkRecovery(
         reason: 'default_interface_changed',
         networkGeneration: networkGeneration,
-        changedAt: now,
-      );
-      _schedulePostConnectSelectedProxyUrlTest(
-        reason: 'default_interface_changed',
-        delay: const Duration(milliseconds: 2500),
       );
       return;
     }
-    _networkReconnectWatchdogTimer?.cancel();
-    _networkReconnectWatchdogTimer = null;
     _networkRecoveryDecisionTimer?.cancel();
     _networkRecoveryDecisionTimer = null;
   }
@@ -5755,20 +5600,14 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
           _recordTrafficSample(now);
         } else if (!nativeRecoveryPending) {
           _resetTrafficDashboardData();
-          _postConnectUrlTestGeneration++;
-          _postConnectUrlTestTimer?.cancel();
-          _postConnectUrlTestTimer = null;
+          _groupUrlTestScheduler.cancel();
+          _lastStartupUrlTestRuntimeGeneration = 0;
         }
       });
       _publishTrafficDashboardSnapshot();
       if (running &&
           await _networkInterfaceUsable(reason: 'runtime_sync_running')) {
         _scheduleActiveOutboundIpRefresh();
-        _schedulePostConnectSelectedProxyUrlTest(
-          reason: 'runtime_sync_running',
-          delay: const Duration(milliseconds: 600),
-          ignoreCooldown: true,
-        );
       } else if (running) {
         AppLogStore.warning(
           'runtime',
@@ -6343,18 +6182,14 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         final tag = rawItem['tag']?.toString().trim() ?? '';
         final time = (rawItem['time'] as num?)?.toInt() ?? 0;
         final delay = (rawItem['delay'] as num?)?.toInt() ?? 0;
-        final status =
-            rawItem['status']?.toString().trim().toLowerCase() ?? '';
+        final status = rawItem['status']?.toString().trim().toLowerCase() ?? '';
         final error = rawItem['error']?.toString().trim() ?? '';
         final terminalResult =
             delay > 0 ||
             status == ProxyRuntimeController.urlTestStatusUnavailable ||
             error.isNotEmpty;
         if (terminalResult) {
-          _latencyCoordinator.handleGroupEvent(
-            tag: tag,
-            timeSeconds: time,
-          );
+          _latencyCoordinator.handleGroupEvent(tag: tag, timeSeconds: time);
         }
       }
     }
@@ -6371,9 +6206,16 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     // Diagnostics are not a startup requirement. Let real application traffic
     // use the newly established TUN before opening probe/provider connections.
     _scheduleActiveOutboundIpRefresh(delay: const Duration(seconds: 5));
-    _schedulePostConnectSelectedProxyUrlTest(
-      reason: 'runtime_ready',
+    final nativeRuntimeGeneration = _runtimeOperations.nativeRuntimeGeneration;
+    if (nativeRuntimeGeneration <= 0 ||
+        nativeRuntimeGeneration == _lastStartupUrlTestRuntimeGeneration) {
+      return;
+    }
+    _lastStartupUrlTestRuntimeGeneration = nativeRuntimeGeneration;
+    _scheduleGroupUrlTest(
+      reason: 'runtime_started',
       delay: const Duration(milliseconds: 2500),
+      startup: true,
     );
   }
 
@@ -6561,7 +6403,10 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   Future<ActiveProxyIpResolveResult?> _resolveActiveProxyIp(
     String outboundTag,
   ) async {
-    final resolved = await _fetchExternalIpInfo(outboundTag: outboundTag);
+    final resolved = await _fetchExternalIpInfo(
+      outboundTag: outboundTag,
+      highPriority: true,
+    );
     if (resolved == null) {
       return null;
     }
@@ -6596,17 +6441,21 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
 
   Future<_ResolvedExternalIpInfo?> _fetchExternalIpInfo({
     required String outboundTag,
+    bool highPriority = false,
   }) async {
-    final slot = await _acquireLocationLookupSlot();
-    if (slot == null) {
-      return null;
+    _LocationLookupSlot? slot;
+    if (!highPriority) {
+      slot = await _acquireLocationLookupSlot();
+      if (slot == null) {
+        return null;
+      }
     }
-    final lookup = SingboxRuntime.instance.lookupOutboundExternalInfo(
-      outboundTag: outboundTag,
-    );
-    unawaited(
-      lookup.whenComplete(slot.release).then<void>((_) {}, onError: (_) {}),
-    );
+    final lookup = _sharedExternalInfoLookup(outboundTag);
+    if (slot != null) {
+      unawaited(
+        lookup.whenComplete(slot.release).then<void>((_) {}, onError: (_) {}),
+      );
+    }
     try {
       final response = await lookup.timeout(
         Duration(seconds: _locationLookupTimeoutSeconds),
@@ -6629,6 +6478,29 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       );
       return null;
     }
+  }
+
+  Future<Map<String, dynamic>> _sharedExternalInfoLookup(String outboundTag) {
+    final normalizedTag = outboundTag.trim();
+    final key = '${_runtimeOperations.diagnosticGeneration}\n$normalizedTag';
+    final existing = _externalInfoLookups[key];
+    if (existing != null) {
+      return existing;
+    }
+    final lookup = SingboxRuntime.instance.lookupOutboundExternalInfo(
+      outboundTag: normalizedTag,
+    );
+    _externalInfoLookups[key] = lookup;
+    unawaited(
+      lookup
+          .whenComplete(() {
+            if (identical(_externalInfoLookups[key], lookup)) {
+              _externalInfoLookups.remove(key);
+            }
+          })
+          .then<void>((_) {}, onError: (_) {}),
+    );
+    return lookup;
   }
 
   Future<_LocationLookupSlot?> _acquireLocationLookupSlot() async {

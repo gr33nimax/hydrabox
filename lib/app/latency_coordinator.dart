@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:meow_client/logging/app_log_store.dart';
 import 'package:meow_client/singbox/libbox_capabilities.dart';
 
-enum LatencySessionKind { active, full, startup }
+enum LatencySessionKind { full, startup }
 
 enum LatencySessionPhase { idle, startingRpc, collectingEvents, settled }
 
@@ -81,8 +81,6 @@ class LatencyCoordinator {
   static const perOutboundTimeoutMillis = 15000;
   static const fullDeadlineMillis = 60000;
   static const automaticFullTestMaxOutbounds = 250;
-  static const automaticActiveFallbackMaxOutbounds = 50;
-  static const activeDedupWindow = Duration(seconds: 5);
 
   final LatencyTestRunner _runTest;
   final LatencyBoolReader _isConnected;
@@ -101,7 +99,6 @@ class LatencyCoordinator {
   static int _zeroGeneration() => 0;
   static Map<String, int> _emptyEventTimes() => const <String, int>{};
 
-  Timer? _autoTimer;
   Timer? _firstEventTimer;
   Timer? _settleTimer;
   Timer? _watchdogTimer;
@@ -112,8 +109,6 @@ class LatencyCoordinator {
   LatencySessionPhase _phase = LatencySessionPhase.idle;
   LatencySessionKind? _kind;
   String _targetTag = '';
-  String _lastActiveTag = '';
-  DateTime? _lastActiveFinishedAt;
   Map<String, int> _baselineEventTimes = const <String, int>{};
   final Map<String, int> _acceptedEventTimes = <String, int>{};
   Completer<bool>? _sessionResult;
@@ -133,18 +128,6 @@ class LatencyCoordinator {
     return _targetTag.isEmpty || _targetTag == tag;
   }
 
-  void configureAuto(Duration? interval) {
-    _autoTimer?.cancel();
-    _autoTimer = null;
-    if (_disposed || interval == null || interval <= Duration.zero) {
-      return;
-    }
-    _autoTimer = Timer.periodic(interval, (_) {
-      if (!_isConnected() || !_isForeground()) return;
-      unawaited(runFull(reason: 'auto_interval'));
-    });
-  }
-
   Future<bool> runStartup({required String reason}) {
     if (_outboundCount() > automaticFullTestMaxOutbounds) {
       AppLogStore.info(
@@ -157,60 +140,7 @@ class LatencyCoordinator {
     return _runGroupSession(kind: LatencySessionKind.startup, reason: reason);
   }
 
-  /// Transitional compatibility for callers that have not been migrated yet.
-  /// The bundled core cannot target one outbound, so this always starts the
-  /// same selector-wide HTTP URLTest as [runFull].
-  Future<bool> runActive({
-    required String reason,
-    bool ignoreCooldown = false,
-  }) async {
-    final activeTag = _activeOutboundTag().trim();
-    if (activeTag.isEmpty) {
-      AppLogStore.debug('latency', 'group test skipped: no active outbound');
-      return false;
-    }
-    final lastFinishedAt = _lastActiveFinishedAt;
-    if (!ignoreCooldown &&
-        _lastActiveTag == activeTag &&
-        lastFinishedAt != null &&
-        DateTime.now().difference(lastFinishedAt) < activeDedupWindow) {
-      AppLogStore.debug(
-        'latency',
-        'legacy active trigger skipped: deduplicated tag=$activeTag '
-            'reason=$reason',
-      );
-      return false;
-    }
-    if (_outboundCount() > automaticActiveFallbackMaxOutbounds) {
-      AppLogStore.info(
-        'latency',
-        'legacy active trigger skipped: targeted URLTest unsupported; '
-            'outbounds=${_outboundCount()} '
-            'limit=$automaticActiveFallbackMaxOutbounds reason=$reason',
-      );
-      return false;
-    }
-    final completed = await _runGroupSession(
-      kind: LatencySessionKind.active,
-      reason: reason,
-    );
-    if (completed) {
-      _lastActiveTag = activeTag;
-      _lastActiveFinishedAt = DateTime.now();
-    }
-    return completed;
-  }
-
   Future<bool> runFull({required String reason}) {
-    if (reason == 'auto_interval' &&
-        _outboundCount() > automaticFullTestMaxOutbounds) {
-      AppLogStore.info(
-        'latency',
-        'automatic group test skipped: outbounds=${_outboundCount()} '
-            'limit=$automaticFullTestMaxOutbounds',
-      );
-      return Future<bool>.value(false);
-    }
     return _runGroupSession(kind: LatencySessionKind.full, reason: reason);
   }
 
@@ -286,8 +216,6 @@ class LatencyCoordinator {
 
   void dispose() {
     _disposed = true;
-    _autoTimer?.cancel();
-    _autoTimer = null;
     cancel();
   }
 

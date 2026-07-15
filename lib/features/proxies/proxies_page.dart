@@ -2198,7 +2198,7 @@ class _ActiveProxyLabel extends StatelessWidget {
   Widget _ipDisplay(BuildContext context) {
     final theme = Theme.of(context);
     final color = theme.colorScheme.onSurfaceVariant;
-    if (connected && proxy.ipChecking) {
+    if (connected && proxy.ipChecking && proxy.ip.trim().isEmpty) {
       return IpRefreshDots(
         key: const ValueKey('ip-refresh-checking'),
         color: color,

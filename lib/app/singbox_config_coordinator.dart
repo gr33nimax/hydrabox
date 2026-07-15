@@ -139,8 +139,6 @@ typedef SingboxConfigPhaseSetter =
     void Function(SingboxConfigCoordinatorPhase phase);
 typedef SingboxConfigRuntimeFailureNotifier =
     void Function({required bool timedOut});
-typedef SingboxConfigPostConnectUrlTestScheduler =
-    void Function({required String reason, required Duration delay});
 
 class SingboxConfigCoordinator {
   SingboxConfigCoordinator({
@@ -156,8 +154,6 @@ class SingboxConfigCoordinator {
     required void Function(String reason) trimRuntimeStartMemory,
     required RuntimeTimeoutHook onRuntimeLifecycleTimeout,
     required RuntimeVoidHook cacheStartedBuild,
-    required SingboxConfigPostConnectUrlTestScheduler
-    schedulePostConnectSelectedProxyUrlTest,
     required Future<void> Function() syncRuntimeState,
     this.fullServiceRestartDebounce = const Duration(milliseconds: 450),
   }) : _readSnapshot = readSnapshot,
@@ -172,8 +168,6 @@ class SingboxConfigCoordinator {
        _trimRuntimeStartMemory = trimRuntimeStartMemory,
        _onRuntimeLifecycleTimeout = onRuntimeLifecycleTimeout,
        _cacheStartedBuild = cacheStartedBuild,
-       _schedulePostConnectSelectedProxyUrlTest =
-           schedulePostConnectSelectedProxyUrlTest,
        _syncRuntimeState = syncRuntimeState;
 
   final Duration fullServiceRestartDebounce;
@@ -190,8 +184,6 @@ class SingboxConfigCoordinator {
   final void Function(String reason) _trimRuntimeStartMemory;
   final RuntimeTimeoutHook _onRuntimeLifecycleTimeout;
   final RuntimeVoidHook _cacheStartedBuild;
-  final SingboxConfigPostConnectUrlTestScheduler
-  _schedulePostConnectSelectedProxyUrlTest;
   final Future<void> Function() _syncRuntimeState;
 
   int _runtimeConfigApplyGeneration = 0;
@@ -369,11 +361,6 @@ class SingboxConfigCoordinator {
             'safe core restart recovered with one full service restart',
           );
         }
-        _schedulePostConnectSelectedProxyUrlTest(
-          reason:
-              'config_apply_${result.recovered ? 'recovered' : 'safe_core_restart'}',
-          delay: const Duration(milliseconds: 900),
-        );
       }
       unawaited(
         Future<void>.delayed(

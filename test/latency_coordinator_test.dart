@@ -186,25 +186,26 @@ void main() {
     expect(coordinator.isRunning, isFalse);
   });
 
-  test('large subscriptions skip automatic and startup group tests', () async {
-    var calls = 0;
-    final coordinator = _coordinator(
-      runTest: (_) async => calls++,
-      outboundCount: () => 1000,
-    );
-    addTearDown(coordinator.dispose);
+  test(
+    'large subscriptions skip startup but allow manual group tests',
+    () async {
+      var calls = 0;
+      final coordinator = _coordinator(
+        runTest: (_) async => calls++,
+        outboundCount: () => 1000,
+      );
+      addTearDown(coordinator.dispose);
 
-    expect(await coordinator.runStartup(reason: 'startup'), isFalse);
-    expect(await coordinator.runActive(reason: 'selection'), isFalse);
-    expect(await coordinator.runFull(reason: 'auto_interval'), isFalse);
+      expect(await coordinator.runStartup(reason: 'startup'), isFalse);
 
-    final manual = coordinator.runFull(reason: 'manual');
-    await Future<void>.delayed(Duration.zero);
-    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-    coordinator.handleGroupEvent(tag: 'proxy-1', timeSeconds: now);
-    expect(await manual, isTrue);
-    expect(calls, 1);
-  });
+      final manual = coordinator.runFull(reason: 'manual');
+      await Future<void>.delayed(Duration.zero);
+      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      coordinator.handleGroupEvent(tag: 'proxy-1', timeSeconds: now);
+      expect(await manual, isTrue);
+      expect(calls, 1);
+    },
+  );
 
   test('manual cancellation waits for the native command lane', () async {
     final blocker = Completer<void>();

@@ -164,6 +164,8 @@ void main() {
       persistResult: (_, _) async {},
       onSnapshot: snapshots.add,
     );
+    expect(snapshots.last.state, ActiveProxyIpState.known);
+    expect(snapshots.last.ip, '203.0.113.11');
     await _waitUntil(
       () =>
           snapshots.isNotEmpty &&
@@ -259,8 +261,53 @@ void main() {
 
     expect(snapshots.map((snapshot) => snapshot.state), [
       ActiveProxyIpState.checking,
+      ActiveProxyIpState.idle,
     ]);
-    expect(controller.snapshot.state, ActiveProxyIpState.checking);
+    expect(controller.snapshot.state, ActiveProxyIpState.idle);
+    expect(controller.snapshot.errorCode, isNull);
+  });
+
+  test('repeated refreshes share one in-flight lookup', () async {
+    final controller = ActiveProxyIpController();
+    addTearDown(controller.dispose);
+
+    final snapshots = <ActiveProxyIpSnapshot>[];
+    final lookup = Completer<ActiveProxyIpResolveResult?>();
+    var resolveCalls = 0;
+    var persistCalls = 0;
+
+    void schedule() {
+      controller.schedule(
+        delay: Duration.zero,
+        forceRefresh: true,
+        isConnected: () => true,
+        isForegroundActive: () => true,
+        currentTarget: () => _target(cachedIp: '203.0.113.10'),
+        networkUsable: (_) async => true,
+        resolveExternalIp: (_) {
+          resolveCalls++;
+          return lookup.future;
+        },
+        persistResult: (_, _) async {
+          persistCalls++;
+        },
+        onSnapshot: snapshots.add,
+      );
+    }
+
+    schedule();
+    await Future<void>.delayed(Duration.zero);
+    schedule();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(resolveCalls, 1);
+    expect(controller.snapshot.ip, '203.0.113.10');
+
+    lookup.complete(const ActiveProxyIpResolveResult(ip: '203.0.113.20'));
+    await _waitUntil(() => controller.snapshot.ip == '203.0.113.20');
+
+    expect(resolveCalls, 1);
+    expect(persistCalls, 1);
   });
 
   test(
@@ -296,6 +343,7 @@ void main() {
 
       expect(snapshots.map((snapshot) => snapshot.state), [
         ActiveProxyIpState.checking,
+        ActiveProxyIpState.idle,
       ]);
 
       controller.schedule(

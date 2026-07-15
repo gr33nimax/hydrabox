@@ -77,6 +77,8 @@ class ActiveProxyIpController {
   final Map<String, DateTime> _attempts = <String, DateTime>{};
   final Map<String, int> _failureCounts = <String, int>{};
   final Map<String, DateTime> _suppressedUntil = <String, DateTime>{};
+  final Map<String, Future<ActiveProxyIpResolveResult?>> _inFlightLookups =
+      <String, Future<ActiveProxyIpResolveResult?>>{};
 
   Timer? _timer;
   Timer? _retryTimer;
@@ -87,6 +89,7 @@ class ActiveProxyIpController {
   void dispose() {
     _disposed = true;
     cancelPending();
+    _inFlightLookups.clear();
   }
 
   void cancelPending() {
@@ -154,7 +157,9 @@ class ActiveProxyIpController {
       _suppressedUntil.remove(target.key);
     }
     final suppressedUntil = _suppressedUntil[target.key];
-    final showCachedImmediately = !forceRefresh && target.hasCachedIp;
+    // Refreshing must never hide a value that is already known. The lookup
+    // continues in the background and replaces this snapshot when it finishes.
+    final showCachedImmediately = target.hasCachedIp;
     if (!forceRefresh &&
         suppressedUntil != null &&
         now.isBefore(suppressedUntil)) {
@@ -237,6 +242,7 @@ class ActiveProxyIpController {
       isForegroundActive,
       currentTarget,
     )) {
+      _clearOwnedCheckingSnapshot(token, target, onSnapshot);
       return;
     }
     if (!await networkUsable('active_ip_lookup')) {
@@ -262,6 +268,7 @@ class ActiveProxyIpController {
         'proxy',
         'active_ip_lookup_result tag=${target.outboundTag} error=no_interface',
       );
+      _clearOwnedCheckingSnapshot(token, target, onSnapshot);
       return;
     }
     if (!_isCurrent(
@@ -271,6 +278,7 @@ class ActiveProxyIpController {
       isForegroundActive,
       currentTarget,
     )) {
+      _clearOwnedCheckingSnapshot(token, target, onSnapshot);
       return;
     }
 
@@ -302,7 +310,7 @@ class ActiveProxyIpController {
     }
     _attempts[target.key] = now;
 
-    final resolved = await resolveExternalIp(target.outboundTag);
+    final resolved = await _resolveCoalesced(target, resolveExternalIp);
     if (resolved == null) {
       if (!_isCurrent(
         token,
@@ -316,6 +324,7 @@ class ActiveProxyIpController {
           'discarded stale active IP failure tag=${target.outboundTag} '
               'generation=${target.operationGeneration}',
         );
+        _clearOwnedCheckingSnapshot(token, target, onSnapshot);
         return;
       }
       _markLookupFailed(
@@ -340,6 +349,7 @@ class ActiveProxyIpController {
       isForegroundActive,
       currentTarget,
     )) {
+      _clearOwnedCheckingSnapshot(token, target, onSnapshot);
       return;
     }
 
@@ -360,6 +370,31 @@ class ActiveProxyIpController {
       'active_ip_lookup_result tag=${target.outboundTag} status=known',
     );
     await persistResult(target, resolved);
+  }
+
+  Future<ActiveProxyIpResolveResult?> _resolveCoalesced(
+    ActiveProxyIpTarget target,
+    Future<ActiveProxyIpResolveResult?> Function(String outboundTag)
+    resolveExternalIp,
+  ) {
+    final existing = _inFlightLookups[target.key];
+    if (existing != null) {
+      return existing;
+    }
+    final lookup = Future<ActiveProxyIpResolveResult?>.sync(
+      () => resolveExternalIp(target.outboundTag),
+    );
+    _inFlightLookups[target.key] = lookup;
+    unawaited(
+      lookup
+          .whenComplete(() {
+            if (identical(_inFlightLookups[target.key], lookup)) {
+              _inFlightLookups.remove(target.key);
+            }
+          })
+          .then<void>((_) {}, onError: (_) {}),
+    );
+    return lookup;
   }
 
   void _markLookupFailed({
@@ -467,6 +502,31 @@ class ActiveProxyIpController {
     }
     snapshot = next;
     onSnapshot(next);
+  }
+
+  void _clearOwnedCheckingSnapshot(
+    int token,
+    ActiveProxyIpTarget target,
+    void Function(ActiveProxyIpSnapshot snapshot) onSnapshot,
+  ) {
+    if (_disposed ||
+        token != _token ||
+        snapshot.state != ActiveProxyIpState.checking ||
+        snapshot.outboundTag != target.outboundTag) {
+      return;
+    }
+    if (target.hasCachedIp) {
+      _setSnapshot(_cachedSnapshot(target, DateTime.now()), onSnapshot);
+      return;
+    }
+    _setSnapshot(
+      ActiveProxyIpSnapshot(
+        state: ActiveProxyIpState.idle,
+        outboundTag: target.outboundTag,
+        updatedAt: DateTime.now(),
+      ),
+      onSnapshot,
+    );
   }
 
   ActiveProxyIpSnapshot _cachedSnapshot(

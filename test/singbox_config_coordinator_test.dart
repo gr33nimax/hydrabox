@@ -146,8 +146,6 @@ SingboxConfigCoordinator _coordinator({
     trimRuntimeStartMemory: (_) {},
     onRuntimeLifecycleTimeout: (_) {},
     cacheStartedBuild: (_) {},
-    schedulePostConnectSelectedProxyUrlTest:
-        ({required String reason, required Duration delay}) {},
     syncRuntimeState: () async {},
     fullServiceRestartDebounce: fullServiceRestartDebounce,
   );
