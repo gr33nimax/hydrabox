@@ -6,8 +6,8 @@ import 'package:meow_client/singbox/libbox_capabilities.dart';
 
 const _testPolicy = LatencyUiPolicy(
   nativeCommandTimeout: Duration(milliseconds: 80),
-  firstEventGrace: Duration(milliseconds: 60),
-  eventSettleDelay: Duration(milliseconds: 25),
+  initialEventTimeout: Duration(milliseconds: 60),
+  eventInactivityTimeout: Duration(milliseconds: 25),
   hardWatchdog: Duration(milliseconds: 500),
 );
 
@@ -53,7 +53,7 @@ void main() {
   });
 
   test(
-    'RPC completion is acceptance, not completion of URLTest results',
+    'RPC acceptance without fresh events does not fabricate success',
     () async {
       var completed = false;
       final coordinator = _coordinator(runTest: (_) async {});
@@ -71,7 +71,7 @@ void main() {
 
       await Future<void>.delayed(const Duration(milliseconds: 15));
       expect(completed, isFalse);
-      expect(await result, isTrue);
+      expect(await result, isFalse);
       expect(coordinator.isRunning, isFalse);
     },
   );
@@ -103,6 +103,35 @@ void main() {
       isFalse,
     );
     expect(await result, isTrue);
+  });
+
+  test('all expected terminal results settle immediately', () async {
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final coordinator = _coordinator(
+      runTest: (_) async {},
+      expectedTags: () => const <String>{'proxy-1', 'proxy-2'},
+    );
+    addTearDown(coordinator.dispose);
+
+    var completed = false;
+    final result = coordinator.runFull(reason: 'manual').then((value) {
+      completed = true;
+      return value;
+    });
+    await Future<void>.delayed(Duration.zero);
+
+    expect(
+      coordinator.handleGroupEvent(tag: 'proxy-1', timeSeconds: now),
+      isTrue,
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    expect(completed, isFalse);
+    expect(
+      coordinator.handleGroupEvent(tag: 'proxy-2', timeSeconds: now),
+      isTrue,
+    );
+    expect(await result, isTrue);
+    expect(completed, isTrue);
   });
 
   test(
@@ -233,6 +262,7 @@ LatencyCoordinator _coordinator({
   LatencyIntReader? outboundCount,
   LatencyEventTimesReader? eventBaselineTimes,
   LatencyIntReader? operationGeneration,
+  LatencyExpectedTagsReader? expectedTags,
 }) {
   return LatencyCoordinator(
     runTest: runTest,
@@ -242,6 +272,7 @@ LatencyCoordinator _coordinator({
     testUrl: () => 'https://example.com/generate_204',
     outboundCount: outboundCount ?? () => 12,
     eventBaselineTimes: eventBaselineTimes,
+    expectedTags: expectedTags,
     operationGeneration: operationGeneration,
     onSessionChanged: (_, _, _) {},
     uiPolicy: _testPolicy,

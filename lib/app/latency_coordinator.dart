@@ -10,14 +10,16 @@ enum LatencySessionPhase { idle, startingRpc, collectingEvents, settled }
 class LatencyUiPolicy {
   const LatencyUiPolicy({
     this.nativeCommandTimeout = const Duration(seconds: 5),
-    this.firstEventGrace = const Duration(seconds: 4),
-    this.eventSettleDelay = const Duration(milliseconds: 1800),
-    this.hardWatchdog = const Duration(seconds: 30),
+    this.initialEventTimeout = const Duration(seconds: 12),
+    this.eventInactivityTimeout = const Duration(seconds: 12),
+    this.hardWatchdog = const Duration(seconds: 45),
   });
 
+  /// These values bound UI state only. They never delay command dispatch or
+  /// fresh native results.
   final Duration nativeCommandTimeout;
-  final Duration firstEventGrace;
-  final Duration eventSettleDelay;
+  final Duration initialEventTimeout;
+  final Duration eventInactivityTimeout;
   final Duration hardWatchdog;
 }
 
@@ -50,6 +52,7 @@ typedef LatencyBoolReader = bool Function();
 typedef LatencyStringReader = String Function();
 typedef LatencyIntReader = int Function();
 typedef LatencyEventTimesReader = Map<String, int> Function();
+typedef LatencyExpectedTagsReader = Iterable<String> Function();
 typedef LatencySessionChanged =
     void Function(bool running, LatencySessionKind? kind, String targetTag);
 
@@ -65,6 +68,7 @@ class LatencyCoordinator {
     LatencyBoolReader? canRunDiagnostics,
     LatencyIntReader? operationGeneration,
     LatencyEventTimesReader? eventBaselineTimes,
+    LatencyExpectedTagsReader? expectedTags,
     this.capabilities = LibboxCapabilities.bundledLegacy,
     this.uiPolicy = const LatencyUiPolicy(),
   }) : _runTest = runTest,
@@ -76,7 +80,8 @@ class LatencyCoordinator {
        _onSessionChanged = onSessionChanged,
        _canRunDiagnostics = canRunDiagnostics ?? _alwaysReady,
        _operationGeneration = operationGeneration ?? _zeroGeneration,
-       _eventBaselineTimes = eventBaselineTimes ?? _emptyEventTimes;
+       _eventBaselineTimes = eventBaselineTimes ?? _emptyEventTimes,
+       _expectedTags = expectedTags ?? _emptyExpectedTags;
 
   static const perOutboundTimeoutMillis = 15000;
   static const fullDeadlineMillis = 60000;
@@ -92,12 +97,14 @@ class LatencyCoordinator {
   final LatencyBoolReader _canRunDiagnostics;
   final LatencyIntReader _operationGeneration;
   final LatencyEventTimesReader _eventBaselineTimes;
+  final LatencyExpectedTagsReader _expectedTags;
   final LibboxCapabilities capabilities;
   final LatencyUiPolicy uiPolicy;
 
   static bool _alwaysReady() => true;
   static int _zeroGeneration() => 0;
   static Map<String, int> _emptyEventTimes() => const <String, int>{};
+  static Iterable<String> _emptyExpectedTags() => const <String>[];
 
   Timer? _firstEventTimer;
   Timer? _settleTimer;
@@ -110,6 +117,7 @@ class LatencyCoordinator {
   LatencySessionKind? _kind;
   String _targetTag = '';
   Map<String, int> _baselineEventTimes = const <String, int>{};
+  Set<String> _sessionExpectedTags = const <String>{};
   final Map<String, int> _acceptedEventTimes = <String, int>{};
   Completer<bool>? _sessionResult;
   Completer<void>? _nativeSessionFinished;
@@ -169,9 +177,14 @@ class LatencyCoordinator {
     _phase = LatencySessionPhase.collectingEvents;
     _firstEventTimer?.cancel();
     _firstEventTimer = null;
+    if (_sessionExpectedTags.isNotEmpty &&
+        _sessionExpectedTags.every(_acceptedEventTimes.containsKey)) {
+      _settleCurrent(success: true, reason: 'all_expected_results');
+      return true;
+    }
     _settleTimer?.cancel();
     final generation = _generation;
-    _settleTimer = Timer(uiPolicy.eventSettleDelay, () {
+    _settleTimer = Timer(uiPolicy.eventInactivityTimeout, () {
       if (generation != _generation) return;
       _settleCurrent(success: true, reason: 'event_stream_settled');
     });
@@ -188,6 +201,7 @@ class LatencyCoordinator {
     _kind = null;
     _targetTag = '';
     _baselineEventTimes = const <String, int>{};
+    _sessionExpectedTags = const <String>{};
     _acceptedEventTimes.clear();
     final result = _sessionResult;
     _sessionResult = null;
@@ -250,6 +264,10 @@ class LatencyCoordinator {
     _sessionOperationGeneration = _operationGeneration();
     _sessionStartedAtSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     _baselineEventTimes = Map<String, int>.from(_eventBaselineTimes());
+    _sessionExpectedTags = _expectedTags()
+        .map((tag) => tag.trim())
+        .where((tag) => tag.isNotEmpty)
+        .toSet();
     _acceptedEventTimes.clear();
     _rpcAccepted = false;
     _receivedFreshEvent = false;
@@ -262,7 +280,8 @@ class LatencyCoordinator {
     AppLogStore.info(
       'latency',
       'group session start kind=${kind.name} reason=$reason '
-          'outbounds=${_outboundCount()} completion='
+          'outbounds=${_outboundCount()} expected=${_sessionExpectedTags.length} '
+          'completion='
           '${capabilities.urlTestCompletionModel.name}',
     );
 
@@ -321,9 +340,9 @@ class LatencyCoordinator {
         return;
       }
       _firstEventTimer?.cancel();
-      _firstEventTimer = Timer(uiPolicy.firstEventGrace, () {
+      _firstEventTimer = Timer(uiPolicy.initialEventTimeout, () {
         if (generation != _generation) return;
-        _settleCurrent(success: true, reason: 'first_event_grace');
+        _settleCurrent(success: false, reason: 'no_fresh_events');
       });
     } on TimeoutException {
       if (!_isActiveGeneration(generation)) return;
@@ -362,11 +381,16 @@ class LatencyCoordinator {
     final previousKind = _kind;
     final previousTarget = _targetTag;
     final result = _sessionResult;
+    final expectedCount = _sessionExpectedTags.length;
+    final receivedCount = _acceptedEventTimes.keys
+        .where(_sessionExpectedTags.contains)
+        .length;
     _cancelSessionTimers();
     _phase = LatencySessionPhase.settled;
     _kind = null;
     _targetTag = '';
     _baselineEventTimes = const <String, int>{};
+    _sessionExpectedTags = const <String>{};
     _acceptedEventTimes.clear();
     _sessionResult = null;
     _onSessionChanged(false, previousKind, previousTarget);
@@ -376,7 +400,8 @@ class LatencyCoordinator {
     AppLogStore.info(
       'latency',
       'group session settled kind=${previousKind?.name ?? 'unknown'} '
-          'reason=$reason success=$success',
+          'reason=$reason success=$success '
+          'received=$receivedCount expected=$expectedCount',
     );
   }
 

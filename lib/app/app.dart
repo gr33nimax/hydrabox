@@ -1728,6 +1728,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       canRunDiagnostics: () => _runtimeOperations.diagnosticsReady,
       operationGeneration: () => _runtimeOperations.diagnosticGeneration,
       eventBaselineTimes: () => _proxyRuntime.runtimeLatencyTimes,
+      expectedTags: () => _expectedLatencyTagsForSession(''),
       onSessionChanged: (running, kind, targetTag) {
         if (!mounted) return;
         if (running) {
