@@ -327,8 +327,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   bool get _experimentalUrlTestStrictTolerance =>
       _settings.experimentalUrlTestStrictTolerance;
 
-  bool get _urlTestInFlight =>
-      _proxyRuntime.latencySessionActive || _latencyCoordinator.isRunning;
+  bool get _urlTestInFlight => _latencyCoordinator.isRunning;
 
   int? get _lowestLatency => _proxyRuntime.lowestLatency;
   set _lowestLatency(int? value) => _proxyRuntime.lowestLatency = value;
@@ -1224,7 +1223,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
           targetSummary.latency == null &&
           latencyUnavailable,
       latencyFresh: runtimeLatency != null || targetSummary.latencyFresh,
-      latencyChecking: _proxyRuntime.isLatencySessionTagPending(tag),
+      latencyChecking: _latencyCoordinator.isChecking(tag),
       latencyUnavailable: latencyUnavailable,
       latencyError: latencyError,
       clearLatencyError: latencyError == null,
@@ -1248,7 +1247,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       ip: outbound.info.externalIp?.trim() ?? '',
       latency: runtimeLatency ?? outbound.info.latestPing,
       latencyFresh: runtimeLatency != null,
-      latencyChecking: _proxyRuntime.isLatencySessionTagPending(outbound.tag),
+      latencyChecking: _latencyCoordinator.isChecking(outbound.tag),
       latencyUnavailable: latencyUnavailable,
       latencyError: _latencyErrors[outbound.tag],
       protocolLabel: protocolLabel,
@@ -1508,7 +1507,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     AppProxySummary proxy, {
     Set<String> mixedOutboundTags = const <String>{},
   }) {
-    final latencyChecking = _proxyRuntime.isLatencySessionTagPending(proxy.tag);
+    final latencyChecking = _latencyCoordinator.isChecking(proxy.tag);
     final runtimeLatency = _runtimeLatencies[proxy.tag];
     final latencyUnavailable =
         ProxyRuntimeController.effectiveLatencyUnavailable(
@@ -1729,17 +1728,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       operationGeneration: () => _runtimeOperations.diagnosticGeneration,
       eventBaselineTimes: () => _proxyRuntime.runtimeLatencyTimes,
       expectedTags: () => _expectedLatencyTagsForSession(''),
-      onSessionChanged: (running, kind, targetTag) {
+      onSessionChanged: (_, _, _) {
         if (!mounted) return;
-        if (running) {
-          _proxyRuntime.beginLatencySession(
-            _expectedLatencyTagsForSession(targetTag),
-          );
-        } else if (kind != null) {
-          _proxyRuntime.finishLatencySession();
-        } else {
-          _proxyRuntime.cancelLatencySession();
-        }
         setState(_applyRuntimeStateToDerivedCaches);
         unawaited(_syncQuickSettingsTileLabel());
       },
@@ -6110,7 +6100,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         : null;
     _ensureActiveLookupCaches();
 
-    _forwardLatencyGroupEvents(rawGroups);
     final result = _proxyRuntime.applyGroupUpdates(
       ProxyRuntimeGroupUpdateInput(
         rawGroups: rawGroups,
@@ -6127,10 +6116,12 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         currentResolvedActiveOutboundTag: previousActiveOutboundTag,
         activeOutboundTags: _activeOutboundByTagLookup.keys.toSet(),
         latencySessionRunning: _latencyCoordinator.isRunning,
+        shouldIgnoreLatencyResult: _latencyCoordinator.shouldIgnoreGroupResult,
         proxyCacheContainsTag: _proxyCacheContainsTag,
         visibleGroupProxyCacheMissingChild: _visibleGroupProxyCacheMissingChild,
       ),
     );
+    _forwardLatencyGroupEvents(rawGroups);
     if (!result.changed) {
       if (diagnosticsBecameReady) {
         _onRuntimeDiagnosticsReady();

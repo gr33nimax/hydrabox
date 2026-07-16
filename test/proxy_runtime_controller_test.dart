@@ -4,8 +4,7 @@ import 'package:meow_client/models/subscription.dart';
 
 void main() {
   test('URLTest group delay updates runtime latency', () {
-    final controller = ProxyRuntimeController()
-      ..beginLatencySession(const ['vless-1']);
+    final controller = ProxyRuntimeController();
     addTearDown(controller.dispose);
 
     final result = controller.applyGroupUpdates(
@@ -140,36 +139,15 @@ void main() {
     expect(controller.lowestLatency, 91);
   });
 
-  test('session finalization preserves unanswered proxy state', () {
-    final controller = ProxyRuntimeController();
-    addTearDown(controller.dispose);
-    controller.runtimeLatencies['vless-1'] = 73;
-    controller.lowestLatency = 73;
-
-    controller.beginLatencySession(const ['vless-1']);
-    final changed = controller.finishLatencySession();
-
-    expect(changed, isFalse);
-    expect(controller.runtimeLatencies['vless-1'], 73);
-    expect(controller.latencyErrors['vless-1'], isNull);
-    expect(controller.unavailableLatencyTags, isNot(contains('vless-1')));
-    expect(controller.latencyFailureCounts['vless-1'], isNull);
-    expect(controller.latencySessionActive, isFalse);
-  });
-
-  test('each proxy leaves checking state only after its own fresh result', () {
+  test('session owner filters cached values before applying fresh result', () {
     final controller = ProxyRuntimeController();
     addTearDown(controller.dispose);
     controller.runtimeLatencies.addAll({'vless-1': 42, 'vless-2': 51});
     controller.runtimeLatencyTimes.addAll({'vless-1': 100, 'vless-2': 100});
-    controller.beginLatencySession(const ['vless-1', 'vless-2']);
-
-    expect(controller.latencySessionPendingCount, 2);
-    expect(controller.isLatencySessionTagPending('vless-1'), isTrue);
-    expect(controller.isLatencySessionTagPending('vless-2'), isTrue);
 
     final cachedSnapshot = controller.applyGroupUpdates(
       _input(
+        shouldIgnoreLatencyResult: (_, timeSeconds) => timeSeconds <= 100,
         rawGroups: [
           {
             'tag': 'select',
@@ -187,10 +165,10 @@ void main() {
     );
 
     expect(cachedSnapshot.changed, isFalse);
-    expect(controller.latencySessionPendingCount, 2);
 
     final freshSnapshot = controller.applyGroupUpdates(
       _input(
+        shouldIgnoreLatencyResult: (_, timeSeconds) => timeSeconds <= 100,
         rawGroups: [
           {
             'tag': 'select',
@@ -209,17 +187,8 @@ void main() {
 
     expect(freshSnapshot.changed, isTrue);
     expect(controller.runtimeLatencies['vless-1'], 73);
-    expect(controller.isLatencySessionTagPending('vless-1'), isFalse);
-    expect(controller.isLatencySessionTagPending('vless-2'), isTrue);
-    expect(controller.latencySessionPendingCount, 1);
-    expect(controller.latencySessionComplete, isFalse);
-
-    controller.finishLatencySession();
-
-    expect(controller.runtimeLatencies['vless-1'], 73);
     expect(controller.runtimeLatencies['vless-2'], 51);
     expect(controller.latencyErrors['vless-2'], isNull);
-    expect(controller.latencySessionActive, isFalse);
   });
 
   test('duplicate failure timestamp is applied only once', () {
@@ -433,6 +402,7 @@ ProxyRuntimeGroupUpdateInput _input({
   String? pendingRuntimeSelectTag,
   bool runtimeSelectionUpdatesAllowed = true,
   bool latencySessionRunning = false,
+  StaleLatencyResultFilter? shouldIgnoreLatencyResult,
 }) {
   return ProxyRuntimeGroupUpdateInput(
     rawGroups: rawGroups,
@@ -458,6 +428,7 @@ ProxyRuntimeGroupUpdateInput _input({
     currentResolvedActiveOutboundTag: 'vless-1',
     activeOutboundTags: const {'vless-1', 'vless-2'},
     latencySessionRunning: latencySessionRunning,
+    shouldIgnoreLatencyResult: shouldIgnoreLatencyResult ?? (_, _) => false,
     proxyCacheContainsTag: (tag) => tag == 'vless-1',
     visibleGroupProxyCacheMissingChild: (_, _) => false,
   );

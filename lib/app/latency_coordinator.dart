@@ -122,7 +122,6 @@ class LatencyCoordinator {
   Completer<bool>? _sessionResult;
   Completer<void>? _nativeSessionFinished;
   bool _rpcAccepted = false;
-  bool _receivedFreshEvent = false;
 
   bool get isRunning =>
       _phase == LatencySessionPhase.startingRpc ||
@@ -131,9 +130,31 @@ class LatencyCoordinator {
   LatencySessionPhase get phase => _phase;
   int get sessionStartedAtSeconds => _sessionStartedAtSeconds;
 
-  bool isChecking(String tag) {
-    if (!isRunning) return false;
-    return _targetTag.isEmpty || _targetTag == tag;
+  bool isChecking(String rawTag) {
+    final tag = rawTag.trim();
+    if (!isRunning || tag.isEmpty) return false;
+    if (_targetTag.isNotEmpty) {
+      return _targetTag == tag;
+    }
+    if (_sessionExpectedTags.isEmpty) {
+      return true;
+    }
+    return _sessionExpectedTags.contains(tag) &&
+        !_acceptedEventTimes.containsKey(tag);
+  }
+
+  bool shouldIgnoreGroupResult(String rawTag, int timeSeconds) {
+    final tag = rawTag.trim();
+    if (!isRunning ||
+        tag.isEmpty ||
+        timeSeconds <= 0 ||
+        !_sessionExpectedTags.contains(tag)) {
+      return false;
+    }
+    final baseline = _baselineEventTimes[tag] ?? 0;
+    return timeSeconds < _sessionStartedAtSeconds ||
+        (baseline > 0 && timeSeconds <= baseline) ||
+        timeSeconds <= (_acceptedEventTimes[tag] ?? 0);
   }
 
   Future<bool> runStartup({required String reason}) {
@@ -173,7 +194,6 @@ class LatencyCoordinator {
       return false;
     }
     _acceptedEventTimes[normalizedTag] = timeSeconds;
-    _receivedFreshEvent = true;
     _phase = LatencySessionPhase.collectingEvents;
     _firstEventTimer?.cancel();
     _firstEventTimer = null;
@@ -270,7 +290,6 @@ class LatencyCoordinator {
         .toSet();
     _acceptedEventTimes.clear();
     _rpcAccepted = false;
-    _receivedFreshEvent = false;
     _phase = LatencySessionPhase.startingRpc;
     _kind = kind;
     _targetTag = '';
@@ -288,7 +307,7 @@ class LatencyCoordinator {
     _watchdogTimer = Timer(uiPolicy.hardWatchdog, () {
       if (generation != _generation) return;
       _settleCurrent(
-        success: _rpcAccepted || _receivedFreshEvent,
+        success: _rpcAccepted || _acceptedEventTimes.isNotEmpty,
         reason: 'hard_watchdog',
       );
     });
@@ -336,7 +355,7 @@ class LatencyCoordinator {
       }
       _rpcAccepted = true;
       _phase = LatencySessionPhase.collectingEvents;
-      if (_receivedFreshEvent) {
+      if (_acceptedEventTimes.isNotEmpty) {
         return;
       }
       _firstEventTimer?.cancel();

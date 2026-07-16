@@ -3,6 +3,8 @@ import 'package:meow_client/core/lowest_proxy_groups.dart';
 import 'package:meow_client/logging/app_log_store.dart';
 import 'package:meow_client/models/subscription.dart';
 
+typedef StaleLatencyResultFilter = bool Function(String tag, int timeSeconds);
+
 class ProxyRuntimeGroupUpdateInput {
   const ProxyRuntimeGroupUpdateInput({
     required this.rawGroups,
@@ -13,6 +15,7 @@ class ProxyRuntimeGroupUpdateInput {
     required this.currentResolvedActiveOutboundTag,
     required this.activeOutboundTags,
     required this.latencySessionRunning,
+    required this.shouldIgnoreLatencyResult,
     required this.proxyCacheContainsTag,
     required this.visibleGroupProxyCacheMissingChild,
   });
@@ -25,6 +28,7 @@ class ProxyRuntimeGroupUpdateInput {
   final String? currentResolvedActiveOutboundTag;
   final Set<String> activeOutboundTags;
   final bool latencySessionRunning;
+  final StaleLatencyResultFilter shouldIgnoreLatencyResult;
   final bool Function(String? tag) proxyCacheContainsTag;
   final bool Function(String groupTag, String childTag)
   visibleGroupProxyCacheMissingChild;
@@ -87,58 +91,8 @@ class ProxyRuntimeController {
   final Map<String, String> runtimeGroupSelections = <String, String>{};
 
   bool _updatesFrozen = false;
-  int? _latencySessionStartedAtSeconds;
-  final Set<String> _latencySessionExpectedTags = <String>{};
-  final Set<String> _latencySessionTouchedTags = <String>{};
-  final Map<String, int> _latencySessionBaselineTimes = <String, int>{};
 
   bool get updatesFrozen => _updatesFrozen;
-  bool get latencySessionActive => _latencySessionStartedAtSeconds != null;
-  int get latencySessionPendingCount => _latencySessionExpectedTags
-      .where((tag) => !_latencySessionTouchedTags.contains(tag))
-      .length;
-  bool get latencySessionComplete =>
-      latencySessionActive && latencySessionPendingCount == 0;
-
-  bool isLatencySessionTagPending(String rawTag) {
-    final tag = rawTag.trim();
-    return latencySessionActive &&
-        _latencySessionExpectedTags.contains(tag) &&
-        !_latencySessionTouchedTags.contains(tag);
-  }
-
-  void beginLatencySession([Iterable<String> expectedTags = const <String>[]]) {
-    _latencySessionStartedAtSeconds =
-        DateTime.now().millisecondsSinceEpoch ~/ 1000;
-    _latencySessionExpectedTags
-      ..clear()
-      ..addAll(
-        expectedTags.map((tag) => tag.trim()).where((tag) => tag.isNotEmpty),
-      );
-    _latencySessionTouchedTags.clear();
-    _latencySessionBaselineTimes
-      ..clear()
-      ..addEntries(
-        _latencySessionExpectedTags.map(
-          (tag) => MapEntry(tag, runtimeLatencyTimes[tag] ?? 0),
-        ),
-      );
-  }
-
-  bool finishLatencySession([Iterable<String>? ignoredExpectedTags]) {
-    // Silence is not a URLTest failure. The current libbox RPC only accepts
-    // the command; individual results arrive later through group events. Keep
-    // the last known state for children that did not emit a fresh event.
-    cancelLatencySession();
-    return false;
-  }
-
-  void cancelLatencySession() {
-    _latencySessionStartedAtSeconds = null;
-    _latencySessionExpectedTags.clear();
-    _latencySessionTouchedTags.clear();
-    _latencySessionBaselineTimes.clear();
-  }
 
   void dispose() {}
 
@@ -175,7 +129,6 @@ class ProxyRuntimeController {
     runtimeLowestSelections.clear();
     lowestLatency = null;
     runtimeLowestOutboundTag = null;
-    cancelLatencySession();
   }
 
   String? runtimeLowestOutboundTagFor(String lowestTag) {
@@ -265,23 +218,10 @@ class ProxyRuntimeController {
         final terminalFailure =
             status == urlTestStatusUnavailable ||
             (error.isNotEmpty && !positiveDelay);
-        final sessionStartedAt = _latencySessionStartedAtSeconds;
-        final expectedInCurrentSession =
-            sessionStartedAt != null &&
-            _latencySessionExpectedTags.contains(itemTag);
-        if (expectedInCurrentSession &&
-            nextTime != null &&
-            (positiveDelay || terminalFailure)) {
-          final baselineTime = _latencySessionBaselineTimes[itemTag] ?? 0;
-          final isFreshSessionResult = baselineTime > 0
-              ? nextTime > baselineTime
-              : nextTime >= sessionStartedAt;
-          if (!isFreshSessionResult) {
-            // Native group snapshots also contain the last cached URLTest
-            // values. Keep the row in its checking state until this session
-            // produces a newer result for that exact proxy.
-            continue;
-          }
+        if (nextTime != null &&
+            (positiveDelay || terminalFailure) &&
+            input.shouldIgnoreLatencyResult(itemTag, nextTime)) {
+          continue;
         }
         final hasTerminalTelemetry = positiveDelay || terminalFailure;
         final stateChangedWithoutTimestamp =
@@ -310,9 +250,6 @@ class ProxyRuntimeController {
         }
         if (nextTime != null && (positiveDelay || terminalFailure)) {
           times[itemTag] = nextTime;
-          if (expectedInCurrentSession) {
-            _latencySessionTouchedTags.add(itemTag);
-          }
         }
         delays[itemTag] = delay != null && delay > 0 ? delay : null;
       }

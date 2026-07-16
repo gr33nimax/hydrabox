@@ -120,10 +120,22 @@ void main() {
     });
     await Future<void>.delayed(Duration.zero);
 
+    expect(coordinator.isChecking('proxy-1'), isTrue);
+    expect(coordinator.isChecking('proxy-2'), isTrue);
+    expect(coordinator.isChecking('not-expected'), isFalse);
+    expect(coordinator.shouldIgnoreGroupResult('proxy-1', now - 1), isTrue);
+    expect(
+      coordinator.shouldIgnoreGroupResult('not-expected', now - 1),
+      isFalse,
+    );
+
     expect(
       coordinator.handleGroupEvent(tag: 'proxy-1', timeSeconds: now),
       isTrue,
     );
+    expect(coordinator.isChecking('proxy-1'), isFalse);
+    expect(coordinator.isChecking('proxy-2'), isTrue);
+    expect(coordinator.shouldIgnoreGroupResult('proxy-1', now), isTrue);
     await Future<void>.delayed(const Duration(milliseconds: 10));
     expect(completed, isFalse);
     expect(
@@ -132,6 +144,7 @@ void main() {
     );
     expect(await result, isTrue);
     expect(completed, isTrue);
+    expect(coordinator.isChecking('proxy-2'), isFalse);
   });
 
   test(
