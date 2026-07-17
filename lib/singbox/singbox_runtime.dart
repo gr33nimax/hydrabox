@@ -701,6 +701,16 @@ class SingboxRuntime {
     }
   }
 
+  Future<void> checkConfig(String config) {
+    if (!Platform.isAndroid) {
+      return Future<void>.value();
+    }
+    return _withMethodChannelFallback(
+      () => _hostApi.checkConfig(config),
+      () => _methods.invokeMethod<void>('checkConfig', {'config': config}),
+    );
+  }
+
   Future<Map<String, dynamic>> getPerformanceSnapshot() async {
     if (!Platform.isAndroid) {
       return const {};

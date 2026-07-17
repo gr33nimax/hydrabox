@@ -834,6 +834,24 @@ class SingboxHostApi {
     return pigeonVar_replyValue! as String;
   }
 
+  Future<void> checkConfig(String config) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.meow_client.SingboxHostApi.checkConfig$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[config]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: true,
+    )
+    ;
+  }
+
   Future<Map<String?, Object?>> getPerformanceSnapshot() async {
     final pigeonVar_channelName = 'dev.flutter.pigeon.meow_client.SingboxHostApi.getPerformanceSnapshot$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(

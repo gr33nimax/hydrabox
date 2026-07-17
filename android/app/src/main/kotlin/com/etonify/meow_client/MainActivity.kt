@@ -1596,6 +1596,20 @@ class MainActivity : FlutterFragmentActivity() {
                     callback(Result.success(getEtonifyCoreCapabilities()))
                 }
 
+                override fun checkConfig(config: String, callback: (Result<Unit>) -> Unit) {
+                    ioExecutor.execute {
+                        runCatching { Libbox.checkConfig(config) }
+                            .onSuccess {
+                                mainHandler.post { callback(Result.success(Unit)) }
+                            }
+                            .onFailure { error ->
+                                mainHandler.post {
+                                    callback(errorResult("config_check_failed", error.message ?: error.toString()))
+                                }
+                            }
+                    }
+                }
+
                 override fun getPerformanceSnapshot(callback: (Result<Map<String?, Any?>>) -> Unit) {
                     callback(Result.success(pigeonMap(buildPerformanceSnapshot())))
                 }
@@ -1756,6 +1770,19 @@ class MainActivity : FlutterFragmentActivity() {
 
                 "getCoreCapabilities" -> {
                     result.success(getEtonifyCoreCapabilities())
+                }
+
+                "checkConfig" -> {
+                    val config = call.argument<String>("config").orEmpty()
+                    ioExecutor.execute {
+                        runCatching { Libbox.checkConfig(config) }
+                            .onSuccess { mainHandler.post { result.success(null) } }
+                            .onFailure { error ->
+                                mainHandler.post {
+                                    result.error("config_check_failed", error.message, null)
+                                }
+                            }
+                    }
                 }
 
                 "getConfigPath" -> {

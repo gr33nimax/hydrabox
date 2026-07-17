@@ -430,6 +430,11 @@ class SingboxConfigCoordinator {
     late final SingboxConfigBuildResult result;
     try {
       result = await buildSingboxConfigInBackground(input);
+      if (input.capabilities.supportsConfigCheck) {
+        await SingboxRuntime.instance.checkConfig(
+          await _configContentForValidation(result),
+        );
+      }
     } catch (_) {
       _deletePreparedConfigCandidate(stagedConfigPath);
       rethrow;
@@ -443,6 +448,19 @@ class SingboxConfigCoordinator {
       return null;
     }
     return result;
+  }
+
+  Future<String> _configContentForValidation(
+    SingboxConfigBuildResult result,
+  ) async {
+    if (result.configJson.isNotEmpty) {
+      return result.configJson;
+    }
+    final path = result.configPath?.trim() ?? '';
+    if (path.isEmpty) {
+      throw StateError('Generated config is unavailable for validation.');
+    }
+    return File(path).readAsString();
   }
 
   Future<void> promotePreparedConfigBuild(

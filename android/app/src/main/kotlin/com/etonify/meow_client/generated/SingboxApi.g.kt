@@ -430,6 +430,7 @@ interface SingboxHostApi {
   fun getAppVersionInfo(callback: (Result<Map<String?, Any?>>) -> Unit)
   fun getCoreVersion(callback: (Result<String>) -> Unit)
   fun getCoreCapabilities(callback: (Result<String>) -> Unit)
+  fun checkConfig(config: String, callback: (Result<Unit>) -> Unit)
   fun getPerformanceSnapshot(callback: (Result<Map<String?, Any?>>) -> Unit)
   fun getHappCrypt5Support(callback: (Result<Map<String?, Any?>>) -> Unit)
   fun getInstalledApps(callback: (Result<List<Map<String?, Any?>?>>) -> Unit)
@@ -930,6 +931,25 @@ interface SingboxHostApi {
               } else {
                 val data = result.getOrNull()
                 reply.reply(SingboxApiPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.meow_client.SingboxHostApi.checkConfig$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val configArg = args[0] as String
+            api.checkConfig(configArg) { result: Result<Unit> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(SingboxApiPigeonUtils.wrapError(error))
+              } else {
+                reply.reply(SingboxApiPigeonUtils.wrapResult(null))
               }
             }
           }

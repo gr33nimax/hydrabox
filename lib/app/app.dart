@@ -58,6 +58,7 @@ import 'package:meow_client/logging/app_log_store.dart';
 import 'package:meow_client/models/app_view_models.dart';
 import 'package:meow_client/models/proxy_runtime_visual_state.dart';
 import 'package:meow_client/models/subscription.dart';
+import 'package:meow_client/singbox/core_config_migration.dart';
 import 'package:meow_client/singbox/runtime_start_error.dart';
 import 'package:meow_client/singbox/singbox_config_builder.dart';
 import 'package:meow_client/singbox/singbox_runtime.dart';
@@ -216,6 +217,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   late final RuntimeEventController _runtimeEvents;
   final ProxyRuntimeController _proxyRuntime = ProxyRuntimeController();
   late final LatencyCoordinator _latencyCoordinator;
+  CoreConfigMigrationResult? _pendingCoreConfigMigration;
   final GroupUrlTestScheduler _groupUrlTestScheduler = GroupUrlTestScheduler();
   final RuntimeStartupUrlTestGate _runtimeStartupUrlTestGate =
       RuntimeStartupUrlTestGate();
@@ -2615,6 +2617,32 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       'core capabilities api=${coreCapabilities.apiVersion} '
           'version=${coreCapabilities.coreVersion.isEmpty ? 'legacy' : coreCapabilities.coreVersion}',
     );
+    final coreConfigMigration = CoreConfigMigration.plan(
+      state: state,
+      capabilities: coreCapabilities,
+    );
+    CoreConfigMigrationResult? pendingCoreConfigMigration;
+    if (coreConfigMigration.requiresValidation) {
+      pendingCoreConfigMigration = coreConfigMigration;
+      final persistedSchemaVersion = state.coreConfigSchemaVersion;
+      state = coreConfigMigration.state.copyWith(
+        coreConfigSchemaVersion: persistedSchemaVersion,
+      );
+      AppLogStore.info(
+        'sing-box',
+        'core config migration prepared '
+            'from=$persistedSchemaVersion '
+            'to=${coreConfigMigration.state.coreConfigSchemaVersion} '
+            'changes=${coreConfigMigration.changes.join(',')}',
+      );
+    } else if (coreConfigMigration.status ==
+        CoreConfigMigrationStatus.blocked) {
+      AppLogStore.warning(
+        'sing-box',
+        'core config migration blocked: '
+            '${coreConfigMigration.blockReason}',
+      );
+    }
 
     const progressiveBlurEnabled = false;
 
@@ -2642,6 +2670,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     }
 
     setState(() {
+      _pendingCoreConfigMigration = pendingCoreConfigMigration;
       _store = store;
       _ownsStore = ownsStore;
       _clientVersionLabel = appVersionInfo.displayVersion;
@@ -5355,6 +5384,18 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       build.plan.proxyOutboundTagsByIndex,
     );
     _lastStartedConfig = build.plan.config.isEmpty ? null : build.plan.config;
+    final migration = _pendingCoreConfigMigration;
+    if (migration != null) {
+      _settings.coreConfigSchemaVersion =
+          migration.state.coreConfigSchemaVersion;
+      _pendingCoreConfigMigration = null;
+      _saveStateSoon();
+      AppLogStore.info(
+        'sing-box',
+        'core config migration committed '
+            'schema=${migration.state.coreConfigSchemaVersion}',
+      );
+    }
   }
 
   void _clearLastStartedBuildCache() {
