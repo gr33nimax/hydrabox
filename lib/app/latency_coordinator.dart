@@ -69,7 +69,7 @@ class LatencyCoordinator {
     LatencyIntReader? operationGeneration,
     LatencyEventTimesReader? eventBaselineTimes,
     LatencyExpectedTagsReader? expectedTags,
-    this.capabilities = LibboxCapabilities.bundledLegacy,
+    LibboxCapabilities capabilities = LibboxCapabilities.bundledLegacy,
     this.uiPolicy = const LatencyUiPolicy(),
   }) : _runTest = runTest,
        _isConnected = isConnected,
@@ -81,7 +81,8 @@ class LatencyCoordinator {
        _canRunDiagnostics = canRunDiagnostics ?? _alwaysReady,
        _operationGeneration = operationGeneration ?? _zeroGeneration,
        _eventBaselineTimes = eventBaselineTimes ?? _emptyEventTimes,
-       _expectedTags = expectedTags ?? _emptyExpectedTags;
+       _expectedTags = expectedTags ?? _emptyExpectedTags,
+       _capabilities = capabilities;
 
   static const perOutboundTimeoutMillis = 15000;
   static const fullDeadlineMillis = 60000;
@@ -98,7 +99,7 @@ class LatencyCoordinator {
   final LatencyIntReader _operationGeneration;
   final LatencyEventTimesReader _eventBaselineTimes;
   final LatencyExpectedTagsReader _expectedTags;
-  final LibboxCapabilities capabilities;
+  LibboxCapabilities _capabilities;
   final LatencyUiPolicy uiPolicy;
 
   static bool _alwaysReady() => true;
@@ -129,6 +130,15 @@ class LatencyCoordinator {
   LatencySessionKind? get kind => isRunning ? _kind : null;
   LatencySessionPhase get phase => _phase;
   int get sessionStartedAtSeconds => _sessionStartedAtSeconds;
+  LibboxCapabilities get capabilities => _capabilities;
+
+  void updateCapabilities(LibboxCapabilities value) {
+    if (identical(_capabilities, value)) return;
+    if (isRunning) {
+      cancel();
+    }
+    _capabilities = value;
+  }
 
   bool isChecking(String rawTag) {
     final tag = rawTag.trim();

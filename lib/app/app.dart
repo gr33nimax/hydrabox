@@ -2520,6 +2520,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     var adBlockStatus = const AdBlockRuleSetStatus.unavailable();
     var russiaRouteDataStatus = const RussiaRouteDataStatus.unavailable();
     final appVersionInfoFuture = _readAppVersionInfo();
+    final coreCapabilitiesFuture = SingboxRuntime.instance
+        .getCoreCapabilities();
     final useInMemoryBootstrap = widget.store is MemoryAppSettingsStore;
     try {
       if (useInMemoryBootstrap) {
@@ -2606,6 +2608,13 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     }
 
     final appVersionInfo = await appVersionInfoFuture;
+    final coreCapabilities = await coreCapabilitiesFuture;
+    _latencyCoordinator.updateCapabilities(coreCapabilities);
+    AppLogStore.info(
+      'sing-box',
+      'core capabilities api=${coreCapabilities.apiVersion} '
+          'version=${coreCapabilities.coreVersion.isEmpty ? 'legacy' : coreCapabilities.coreVersion}',
+    );
 
     const progressiveBlurEnabled = false;
 

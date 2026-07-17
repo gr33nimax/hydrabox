@@ -194,6 +194,17 @@ class MainActivity : FlutterFragmentActivity() {
         )
     }
 
+    private fun getEtonifyCoreCapabilities(): String =
+        runCatching {
+            val capabilityMethod = Libbox::class.java.methods.firstOrNull { method ->
+                method.parameterCount == 0 &&
+                    method.name.equals("etonifyCapabilities", ignoreCase = true)
+            }
+            capabilityMethod?.invoke(null) as? String ?: ""
+        }.onFailure { error ->
+            Log.w(TAG, "Core capability handshake is unavailable", error)
+        }.getOrDefault("")
+
     private fun canRequestApkInstalls(): Boolean = packageManager.canRequestPackageInstalls()
 
     private fun launchVpnPermission(intent: Intent, result: MethodChannel.Result) {
@@ -1581,6 +1592,10 @@ class MainActivity : FlutterFragmentActivity() {
                     callback(Result.success(Libbox.version()))
                 }
 
+                override fun getCoreCapabilities(callback: (Result<String>) -> Unit) {
+                    callback(Result.success(getEtonifyCoreCapabilities()))
+                }
+
                 override fun getPerformanceSnapshot(callback: (Result<Map<String?, Any?>>) -> Unit) {
                     callback(Result.success(pigeonMap(buildPerformanceSnapshot())))
                 }
@@ -1737,6 +1752,10 @@ class MainActivity : FlutterFragmentActivity() {
 
                 "getCoreVersion" -> {
                     result.success(Libbox.version())
+                }
+
+                "getCoreCapabilities" -> {
+                    result.success(getEtonifyCoreCapabilities())
                 }
 
                 "getConfigPath" -> {

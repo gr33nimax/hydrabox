@@ -145,6 +145,9 @@ abstract class SingboxHostApi {
   String getCoreVersion();
 
   @async
+  String getCoreCapabilities();
+
+  @async
   Map<String?, Object?> getPerformanceSnapshot();
 
   @async

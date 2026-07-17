@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:meow_client/singbox/libbox_capabilities.dart';
 import 'package:meow_client/singbox/singbox_api.g.dart' as pigeon;
 
 @visibleForTesting
@@ -678,6 +679,25 @@ class SingboxRuntime {
       return normalized.isEmpty ? null : normalized;
     } on MissingPluginException {
       return null;
+    }
+  }
+
+  Future<LibboxCapabilities> getCoreCapabilities() async {
+    if (!Platform.isAndroid) {
+      return LibboxCapabilities.bundledLegacy;
+    }
+    try {
+      final value = await _withMethodChannelFallback<String?>(
+        () => _hostApi.getCoreCapabilities(),
+        () => _methods.invokeMethod<String>('getCoreCapabilities'),
+      ).timeout(const Duration(seconds: 2));
+      return LibboxCapabilities.parseOrLegacy(value);
+    } on TimeoutException {
+      return LibboxCapabilities.bundledLegacy;
+    } on MissingPluginException {
+      return LibboxCapabilities.bundledLegacy;
+    } on PlatformException {
+      return LibboxCapabilities.bundledLegacy;
     }
   }
 
