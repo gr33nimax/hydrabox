@@ -9,6 +9,7 @@ import 'package:meow_client/data/subscription/subscription_parser.dart';
 import 'package:meow_client/data/subscription/subscription_store.dart';
 import 'package:meow_client/models/subscription.dart';
 import 'package:meow_client/singbox/singbox_config_builder.dart';
+import 'package:meow_client/singbox/libbox_capabilities.dart';
 
 void main() {
   test('parses Xray balancer as a proxy group', () {
@@ -393,6 +394,42 @@ void main() {
     expect(groupUrltest['tolerance'], 1);
     expect(groupUrltest['interrupt_exist_connections'], isFalse);
     expect(groupUrltest['interrupt_delay_threshold'], 300);
+
+    final stableConfig = _defaultBuilder(
+      subscription,
+      capabilities: LibboxCapabilities.parseOrLegacy(
+        '{"api_version":1,"core_version":"1.13.14-etonify",'
+        '"supports_config_check":true,'
+        '"tun_stacks":["system","gvisor","mixed"]}',
+      ),
+    ).build();
+    expect(stableConfig, isNot(contains('global')));
+    final stableOutbounds = (stableConfig['outbounds'] as List)
+        .cast<Map<String, dynamic>>();
+    expect(
+      stableOutbounds.any((entry) => entry['tag'] == mixedProxyTag),
+      isFalse,
+    );
+    final stableLowest = stableOutbounds.firstWhere(
+      (entry) => entry['tag'] == lowestProxyTag,
+    );
+    final stableGroup = stableOutbounds.firstWhere(
+      (entry) => entry['tag'] == 'group-auto',
+    );
+    for (final legacyKey in const <String>[
+      'timeout',
+      'concurrency',
+      'unavailable_check_interval',
+      'interrupt_delay_threshold',
+    ]) {
+      expect(stableLowest, isNot(contains(legacyKey)));
+      expect(stableGroup, isNot(contains(legacyKey)));
+    }
+    expect(stableGroup, isNot(contains('method')));
+    expect(stableLowest['url'], isNotEmpty);
+    expect(stableLowest['interval'], isNotEmpty);
+    expect(stableLowest['idle_timeout'], isNotEmpty);
+    expect(stableLowest['tolerance'], 1);
   });
 
   test('keeps group-only detour clone out of top-level selector', () {
@@ -2271,6 +2308,7 @@ SingboxConfigBuilder _defaultBuilder(
   String dnsDirectResolver = 'udp://1.1.1.1',
   String dnsProxyResolver = 'https://dns.cloudflare.com/dns-query',
   String russiaDnsDirectResolver = defaultRussiaDnsDirectResolver,
+  LibboxCapabilities capabilities = LibboxCapabilities.bundledLegacy,
 }) {
   return SingboxConfigBuilder(
     activeSubscription: subscription,
@@ -2332,6 +2370,7 @@ SingboxConfigBuilder _defaultBuilder(
     interruptExistingConnections: true,
     urlTestStrictTolerance: urlTestStrictTolerance,
     markAllServersRussia: markAllServersRussia,
+    capabilities: capabilities,
   );
 }
 

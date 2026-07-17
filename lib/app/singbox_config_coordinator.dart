@@ -7,6 +7,7 @@ import 'package:meow_client/app/runtime_lifecycle_controller.dart';
 import 'package:meow_client/data/local/app_settings_store.dart';
 import 'package:meow_client/logging/app_log_store.dart';
 import 'package:meow_client/models/subscription.dart';
+import 'package:meow_client/singbox/libbox_capabilities.dart';
 import 'package:meow_client/singbox/singbox_runtime.dart';
 
 enum SingboxConfigCoordinatorPhase {
@@ -66,6 +67,7 @@ class SingboxConfigCoordinatorSnapshot {
     required this.interruptExistingConnections,
     required this.urlTestStrictTolerance,
     required this.markAllServersRussia,
+    this.capabilities = LibboxCapabilities.bundledLegacy,
     this.snowtunBinaryPath,
     this.snowtunProtectPath,
   });
@@ -118,6 +120,7 @@ class SingboxConfigCoordinatorSnapshot {
   final bool interruptExistingConnections;
   final bool urlTestStrictTolerance;
   final bool markAllServersRussia;
+  final LibboxCapabilities capabilities;
   final String? snowtunBinaryPath;
   final String? snowtunProtectPath;
 
@@ -622,6 +625,7 @@ class SingboxConfigCoordinator {
       interruptExistingConnections: snapshot.interruptExistingConnections,
       urlTestStrictTolerance: snapshot.urlTestStrictTolerance,
       markAllServersRussia: snapshot.markAllServersRussia,
+      capabilities: snapshot.capabilities,
       snowtunBinaryPath: snapshot.snowtunBinaryPath,
       snowtunProtectPath: snapshot.snowtunProtectPath,
       outputConfigPath: outputConfigPath,

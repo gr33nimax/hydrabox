@@ -5416,6 +5416,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       interruptExistingConnections: _experimentalInterruptExistingConnections,
       urlTestStrictTolerance: _experimentalUrlTestStrictTolerance,
       markAllServersRussia: _activeSubscription?.markAllServersRussia ?? false,
+      capabilities: _latencyCoordinator.capabilities,
     );
   }
 

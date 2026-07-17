@@ -27,6 +27,7 @@ void main() {
           "supports_group_url_test_sessions": true,
           "supports_structured_probe_errors": true,
           "supports_outbound_external_info": true,
+          "supports_mixed_routing_outbound": true,
           "supports_url_test_timeout": true,
           "supports_url_test_concurrency": true,
           "supports_url_test_deadline": true,
@@ -49,6 +50,7 @@ void main() {
       expect(capabilities.supportsGroupUrlTestSessions, isTrue);
       expect(capabilities.supportsStructuredProbeErrors, isTrue);
       expect(capabilities.supportsOutboundExternalInfo, isTrue);
+      expect(capabilities.supportsMixedRoutingOutbound, isTrue);
       expect(capabilities.supportsUrlTestTimeout, isTrue);
       expect(capabilities.supportsUrlTestConcurrency, isTrue);
       expect(capabilities.supportsUrlTestDeadline, isTrue);

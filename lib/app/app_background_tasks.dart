@@ -8,6 +8,7 @@ import 'package:meow_client/data/subscription/outbound_schema.dart';
 import 'package:meow_client/models/app_view_models.dart';
 import 'package:meow_client/models/subscription.dart';
 import 'package:meow_client/singbox/singbox_config_builder.dart';
+import 'package:meow_client/singbox/libbox_capabilities.dart';
 
 const int _proxyPreviewLimit = 50;
 const int _groupChildPreviewLimit = 160;
@@ -103,6 +104,7 @@ class SingboxConfigBuildInput {
     required this.interruptExistingConnections,
     required this.urlTestStrictTolerance,
     required this.markAllServersRussia,
+    this.capabilities = LibboxCapabilities.bundledLegacy,
     required this.snowtunBinaryPath,
     required this.snowtunProtectPath,
     this.outputConfigPath,
@@ -152,6 +154,7 @@ class SingboxConfigBuildInput {
   final bool interruptExistingConnections;
   final bool urlTestStrictTolerance;
   final bool markAllServersRussia;
+  final LibboxCapabilities capabilities;
   final String? snowtunBinaryPath;
   final String? snowtunProtectPath;
   final String? outputConfigPath;
@@ -488,6 +491,7 @@ SingboxConfigBuildResult buildSingboxConfig(SingboxConfigBuildInput input) {
     interruptExistingConnections: input.interruptExistingConnections,
     urlTestStrictTolerance: input.urlTestStrictTolerance,
     markAllServersRussia: input.markAllServersRussia,
+    capabilities: input.capabilities,
     snowtunBinaryPath: input.snowtunBinaryPath,
     snowtunProtectPath: input.snowtunProtectPath,
   ).buildPlan();

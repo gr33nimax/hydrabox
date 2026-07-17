@@ -11,6 +11,7 @@ class LibboxCapabilities {
     required this.supportsGroupUrlTestSessions,
     required this.supportsStructuredProbeErrors,
     required this.supportsOutboundExternalInfo,
+    required this.supportsMixedRoutingOutbound,
     required this.supportsUrlTestTimeout,
     required this.supportsUrlTestConcurrency,
     required this.supportsUrlTestDeadline,
@@ -31,6 +32,7 @@ class LibboxCapabilities {
     supportsGroupUrlTestSessions: false,
     supportsStructuredProbeErrors: false,
     supportsOutboundExternalInfo: false,
+    supportsMixedRoutingOutbound: false,
     supportsUrlTestTimeout: false,
     supportsUrlTestConcurrency: false,
     supportsUrlTestDeadline: false,
@@ -80,6 +82,10 @@ class LibboxCapabilities {
         supportsOutboundExternalInfo: _readBool(
           json,
           'supports_outbound_external_info',
+        ),
+        supportsMixedRoutingOutbound: _readBool(
+          json,
+          'supports_mixed_routing_outbound',
         ),
         supportsUrlTestTimeout: _readBool(json, 'supports_url_test_timeout'),
         supportsUrlTestConcurrency: _readBool(
@@ -139,6 +145,7 @@ class LibboxCapabilities {
   final bool supportsGroupUrlTestSessions;
   final bool supportsStructuredProbeErrors;
   final bool supportsOutboundExternalInfo;
+  final bool supportsMixedRoutingOutbound;
   final bool supportsUrlTestTimeout;
   final bool supportsUrlTestConcurrency;
   final bool supportsUrlTestDeadline;

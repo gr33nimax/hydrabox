@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:meow_client/data/local/app_settings_store.dart';
+import 'package:meow_client/core/lowest_proxy_groups.dart';
 import 'package:meow_client/singbox/core_config_migration.dart';
 import 'package:meow_client/singbox/libbox_capabilities.dart';
 
@@ -66,6 +67,22 @@ void main() {
     expect(result.changes, <String>['vpn_tun_implementation:mixed->gvisor']);
   });
 
+  test('unsupported mixed routing selection migrates to lowest', () {
+    final original = _loadVersion021Fixture(
+      store,
+    ).copyWith(selectedProxyTag: mixedProxyTag);
+    final result = CoreConfigMigration.plan(
+      state: original,
+      capabilities: _versionedCapabilities(
+        tunStacks: const <String>{'system', 'gvisor', 'mixed'},
+      ),
+    );
+
+    expect(result.status, CoreConfigMigrationStatus.readyForValidation);
+    expect(result.state.selectedProxyTag, lowestProxyTag);
+    expect(result.changes, contains('selected_proxy_tag:mixed->lowest'));
+  });
+
   test('schema marker is local-only and survives storage round trips', () {
     final original = _loadVersion021Fixture(
       store,
@@ -94,6 +111,7 @@ LibboxCapabilities _versionedCapabilities({required Set<String> tunStacks}) {
     supportsGroupUrlTestSessions: false,
     supportsStructuredProbeErrors: false,
     supportsOutboundExternalInfo: false,
+    supportsMixedRoutingOutbound: false,
     supportsUrlTestTimeout: false,
     supportsUrlTestConcurrency: false,
     supportsUrlTestDeadline: false,

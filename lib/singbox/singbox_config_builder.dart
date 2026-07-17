@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:meow_client/core/lowest_proxy_groups.dart';
 import 'package:meow_client/data/local/app_settings_store.dart';
 import 'package:meow_client/models/subscription.dart';
+import 'package:meow_client/singbox/libbox_capabilities.dart';
 
 class SingboxConfigBuilder {
   static const List<String> _russiaDirectDomainSuffixes = ['ru', 'su', 'рф'];
@@ -77,6 +78,7 @@ class SingboxConfigBuilder {
     required this.interruptExistingConnections,
     required this.urlTestStrictTolerance,
     required this.markAllServersRussia,
+    this.capabilities = LibboxCapabilities.bundledLegacy,
     this.snowtunBinaryPath,
     this.snowtunProtectPath,
   });
@@ -124,6 +126,7 @@ class SingboxConfigBuilder {
   final bool interruptExistingConnections;
   final bool urlTestStrictTolerance;
   final bool markAllServersRussia;
+  final LibboxCapabilities capabilities;
   final String? snowtunBinaryPath;
   final String? snowtunProtectPath;
 
@@ -181,6 +184,7 @@ class SingboxConfigBuilder {
         .where(lowestOutboundTags.containsKey)
         .toList(growable: false);
     final mixedProxyAvailable =
+        _supportsConfigExtension(capabilities.supportsMixedRoutingOutbound) &&
         lowestOutboundTags.containsKey(lowestProxyTag) &&
         lowestOutboundTags.containsKey(lowestOpenProxyTag) &&
         lowestOutboundTags.containsKey(lowestFreeProxyTag);
@@ -255,11 +259,13 @@ class SingboxConfigBuilder {
     return SingboxBuildPlan(
       config: {
         'log': {'level': logLevel},
-        'global': {
-          'urltest_concurrency_limit': _urltestConcurrency(
-            activeSubscription?.urlTestConfig.concurrency ?? urlTestConcurrency,
-          ),
-        },
+        if (_supportsConfigExtension(capabilities.supportsUrlTestConcurrency))
+          'global': {
+            'urltest_concurrency_limit': _urltestConcurrency(
+              activeSubscription?.urlTestConfig.concurrency ??
+                  urlTestConcurrency,
+            ),
+          },
         'dns': {
           'servers': [
             _buildDnsServer(
@@ -897,20 +903,28 @@ class SingboxConfigBuilder {
         activeSubscription?.urlTestConfig.intervalSeconds ??
             urlTestIntervalSeconds,
       ),
-      'timeout': _urltestTimeout(
-        activeSubscription?.urlTestConfig.timeoutSeconds ??
-            urlTestTimeoutSeconds,
-      ),
-      'concurrency': _urltestConcurrency(
-        activeSubscription?.urlTestConfig.concurrency ?? urlTestConcurrency,
-      ),
-      'unavailable_check_interval': _urltestUnavailableInterval(
-        activeSubscription?.urlTestConfig.unavailableCheckIntervalSeconds ??
-            urlTestUnavailableCheckIntervalSeconds,
-      ),
+      if (_supportsConfigExtension(capabilities.supportsUrlTestTimeout))
+        'timeout': _urltestTimeout(
+          activeSubscription?.urlTestConfig.timeoutSeconds ??
+              urlTestTimeoutSeconds,
+        ),
+      if (_supportsConfigExtension(capabilities.supportsUrlTestConcurrency))
+        'concurrency': _urltestConcurrency(
+          activeSubscription?.urlTestConfig.concurrency ?? urlTestConcurrency,
+        ),
+      if (_supportsConfigExtension(
+        capabilities.supportsUrlTestUnavailableCheckInterval,
+      ))
+        'unavailable_check_interval': _urltestUnavailableInterval(
+          activeSubscription?.urlTestConfig.unavailableCheckIntervalSeconds ??
+              urlTestUnavailableCheckIntervalSeconds,
+        ),
       'tolerance': _urltestTolerance(),
       'interrupt_exist_connections': false,
-      'interrupt_delay_threshold': _urltestInterruptDelayThresholdMs,
+      if (_supportsConfigExtension(
+        capabilities.supportsUrlTestInterruptDelayThreshold,
+      ))
+        'interrupt_delay_threshold': _urltestInterruptDelayThresholdMs,
     };
   }
 
@@ -954,7 +968,8 @@ class SingboxConfigBuilder {
       'type': 'urltest',
       'tag': group.tag,
       'outbounds': memberTags,
-      ...?_urltestMethodEntry(group.urlTestConfig.method),
+      if (_supportsConfigExtension(capabilities.supportsUrlTestMethod))
+        ...?_urltestMethodEntry(group.urlTestConfig.method),
       'url': activeSubscription?.urlTestConfig.url ?? urlTestUrl,
       'interval': _urltestInterval(
         activeSubscription?.urlTestConfig.intervalSeconds ??
@@ -964,22 +979,33 @@ class SingboxConfigBuilder {
         activeSubscription?.urlTestConfig.intervalSeconds ??
             urlTestIntervalSeconds,
       ),
-      'timeout': _urltestTimeout(
-        activeSubscription?.urlTestConfig.timeoutSeconds ??
-            urlTestTimeoutSeconds,
-      ),
-      'concurrency': _urltestConcurrency(
-        activeSubscription?.urlTestConfig.concurrency ?? urlTestConcurrency,
-      ),
-      'unavailable_check_interval': _urltestUnavailableInterval(
-        activeSubscription?.urlTestConfig.unavailableCheckIntervalSeconds ??
-            urlTestUnavailableCheckIntervalSeconds,
-      ),
+      if (_supportsConfigExtension(capabilities.supportsUrlTestTimeout))
+        'timeout': _urltestTimeout(
+          activeSubscription?.urlTestConfig.timeoutSeconds ??
+              urlTestTimeoutSeconds,
+        ),
+      if (_supportsConfigExtension(capabilities.supportsUrlTestConcurrency))
+        'concurrency': _urltestConcurrency(
+          activeSubscription?.urlTestConfig.concurrency ?? urlTestConcurrency,
+        ),
+      if (_supportsConfigExtension(
+        capabilities.supportsUrlTestUnavailableCheckInterval,
+      ))
+        'unavailable_check_interval': _urltestUnavailableInterval(
+          activeSubscription?.urlTestConfig.unavailableCheckIntervalSeconds ??
+              urlTestUnavailableCheckIntervalSeconds,
+        ),
       'tolerance': _urltestTolerance(),
       'interrupt_exist_connections': false,
-      'interrupt_delay_threshold': _urltestInterruptDelayThresholdMs,
+      if (_supportsConfigExtension(
+        capabilities.supportsUrlTestInterruptDelayThreshold,
+      ))
+        'interrupt_delay_threshold': _urltestInterruptDelayThresholdMs,
     };
   }
+
+  bool _supportsConfigExtension(bool advertised) =>
+      !capabilities.hasVersionedContract || advertised;
 
   String _urltestInterval(int? seconds) {
     final safeSeconds = seconds == null || seconds <= 0 ? 180 : seconds;

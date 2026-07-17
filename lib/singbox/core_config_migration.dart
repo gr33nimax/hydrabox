@@ -1,4 +1,5 @@
 import 'package:meow_client/data/local/app_settings_store.dart';
+import 'package:meow_client/core/lowest_proxy_groups.dart';
 import 'package:meow_client/singbox/libbox_capabilities.dart';
 
 const currentCoreConfigSchemaVersion = 1;
@@ -61,6 +62,7 @@ class CoreConfigMigration {
     }
 
     var tunImplementation = state.vpnTunImplementation;
+    var selectedProxyTag = state.selectedProxyTag;
     final changes = <String>[];
     if (!capabilities.supportsTunStack(tunImplementation.name)) {
       final fallback = _firstSupportedTunStack(capabilities);
@@ -76,12 +78,18 @@ class CoreConfigMigration {
       );
       tunImplementation = fallback;
     }
+    if (isMixedProxyTag(selectedProxyTag) &&
+        !capabilities.supportsMixedRoutingOutbound) {
+      changes.add('selected_proxy_tag:$mixedProxyTag->$lowestProxyTag');
+      selectedProxyTag = lowestProxyTag;
+    }
 
     return CoreConfigMigrationResult(
       status: CoreConfigMigrationStatus.readyForValidation,
       state: state.copyWith(
         coreConfigSchemaVersion: currentCoreConfigSchemaVersion,
         vpnTunImplementation: tunImplementation,
+        selectedProxyTag: selectedProxyTag,
       ),
       changes: List<String>.unmodifiable(changes),
     );
