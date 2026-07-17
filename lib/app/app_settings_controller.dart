@@ -41,6 +41,7 @@ class AppSettingsChange {
 }
 
 class AppSettingsController {
+  int coreConfigSchemaVersion = 0;
   String localeCode = 'system';
   AppThemePreference themePreference = AppThemePreference.system;
   String accentColorHex = 'default';
@@ -121,6 +122,7 @@ class AppSettingsController {
     required String selectedProxyTag,
   }) {
     return AppSettingsState(
+      coreConfigSchemaVersion: coreConfigSchemaVersion,
       onboardingCompleted: onboardingCompleted,
       acceptedLegalVersion: acceptedLegalVersion,
       acceptedLegalAtMillis: acceptedLegalAtMillis,
@@ -182,6 +184,7 @@ class AppSettingsController {
     AppSettingsState state, {
     bool progressiveBlurEnabledOverride = false,
   }) {
+    coreConfigSchemaVersion = state.coreConfigSchemaVersion;
     localeCode = state.localeCode;
     themePreference = state.themePreference;
     accentColorHex = normalizeAccentColorHex(state.accentColorHex);
