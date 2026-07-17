@@ -563,7 +563,10 @@ private object MeowLocalResolver : LocalDNSTransport {
         DnsResolver.getInstance().rawQuery(
             network,
             message,
-            DnsResolver.FLAG_NO_RETRY,
+            // Let Android retry across the DNS servers configured for the
+            // selected underlying network. A single lost cellular response
+            // must not fail the whole sing-box lookup immediately.
+            DnsResolver.FLAG_EMPTY,
             Runnable::run,
             signal,
             callback,
@@ -657,7 +660,7 @@ private object MeowLocalResolver : LocalDNSTransport {
                 active,
                 host,
                 queryType,
-                DnsResolver.FLAG_NO_RETRY,
+                DnsResolver.FLAG_EMPTY,
                 Runnable::run,
                 signal,
                 callback,
@@ -666,7 +669,7 @@ private object MeowLocalResolver : LocalDNSTransport {
             DnsResolver.getInstance().query(
                 active,
                 host,
-                DnsResolver.FLAG_NO_RETRY,
+                DnsResolver.FLAG_EMPTY,
                 Runnable::run,
                 signal,
                 callback,

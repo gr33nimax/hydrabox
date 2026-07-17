@@ -2168,41 +2168,34 @@ class AppLocalizationsRu extends AppLocalizations {
   String get cancelAction => 'Отмена';
 
   @override
-  String get backupTitle => 'Данные и резервная копия';
+  String get settingsMenuImport => 'Импорт';
 
   @override
-  String get backupSubtitle =>
-      'Экспорт настроек и перенос подписок без лишнего риска';
+  String get settingsMenuExport => 'Экспорт';
+
+  @override
+  String get settingsResetAction => 'Сбросить настройки';
+
+  @override
+  String get settingsResetTitle => 'Сбросить настройки?';
+
+  @override
+  String get settingsResetMessage =>
+      'Все настройки клиента вернутся к значениям по умолчанию. Подписки и выбранный сервер сохранятся.';
+
+  @override
+  String get settingsResetSuccess => 'Настройки сброшены';
 
   @override
   String get backupExportSettings => 'Экспортировать настройки';
-
-  @override
-  String get backupExportSettingsSubtitle =>
-      'Сохраняет только безопасные настройки клиента, без подписок и ключей';
 
   @override
   String get backupExportProfileEncrypted =>
       'Экспортировать подписки с паролем';
 
   @override
-  String get backupExportProfileEncryptedSubtitle =>
-      'Рекомендуется. Подписки, выбранные узлы и raw-данные шифруются AES-256-GCM';
-
-  @override
   String get backupExportProfilePlain =>
       'Экспортировать подписки без шифрования';
-
-  @override
-  String get backupExportProfilePlainSubtitle =>
-      'Только для доверенной локальной передачи. Файл содержит VPN-ключи';
-
-  @override
-  String get backupImportFile => 'Импортировать файл Etonify';
-
-  @override
-  String get backupImportFileSubtitle =>
-      'Поддерживает .etonify-settings.json и .etonify-profile из Etonify 0.2.0+';
 
   @override
   String get backupPlainWarningTitle => 'Файл будет содержать VPN-ключи';

@@ -394,6 +394,57 @@ void main() {
     expect(result.selectedProxyTagToApply, isNull);
     expect(result.shouldClearRuntimeProxySelectionGuard, isFalse);
   });
+
+  test('network change hides stale latency until fresh telemetry arrives', () {
+    final controller = ProxyRuntimeController();
+    addTearDown(controller.dispose);
+    controller.runtimeLatencies['vless-1'] = 73;
+    controller.runtimeLatencyTimes['vless-1'] = 100;
+    controller.unavailableLatencyTags.add('vless-2');
+    controller.latencyErrors['vless-2'] = 'old timeout';
+    controller.latencyFailureCounts['vless-2'] = 2;
+    controller.lowestLatency = 73;
+    controller.runtimeLowestSelections['lowest'] = 'vless-1';
+    controller.runtimeGroupSelections['group-1'] = 'vless-2';
+
+    final changed = controller.invalidateNetworkMeasurements(const [
+      'vless-1',
+      'vless-2',
+    ]);
+
+    expect(changed, isTrue);
+    expect(controller.runtimeLatencies, isEmpty);
+    expect(controller.runtimeLatencyTimes, isEmpty);
+    expect(controller.unavailableLatencyTags, isEmpty);
+    expect(controller.latencyErrors, isEmpty);
+    expect(controller.latencyFailureCounts, isEmpty);
+    expect(controller.lowestLatency, isNull);
+    expect(controller.invalidatedLatencyTags, {'vless-1', 'vless-2'});
+    expect(controller.runtimeLowestSelections['lowest'], 'vless-1');
+    expect(controller.runtimeGroupSelections['group-1'], 'vless-2');
+
+    final fresh = controller.applyGroupUpdates(
+      _input(
+        rawGroups: [
+          {
+            'tag': 'select',
+            'items': [
+              {
+                'tag': 'vless-1',
+                'status': 'available',
+                'delay': 91,
+                'time': 101,
+              },
+            ],
+          },
+        ],
+      ),
+    );
+
+    expect(fresh.changed, isTrue);
+    expect(controller.runtimeLatencies['vless-1'], 91);
+    expect(controller.invalidatedLatencyTags, {'vless-2'});
+  });
 }
 
 ProxyRuntimeGroupUpdateInput _input({

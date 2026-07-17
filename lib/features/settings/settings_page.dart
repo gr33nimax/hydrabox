@@ -13,7 +13,11 @@ class SettingsPage extends StatelessWidget {
     required this.onOpenSubscriptions,
     required this.onOpenInbound,
     required this.onOpenRouting,
-    required this.onOpenBackup,
+    required this.onImportBackup,
+    required this.onExportSettings,
+    required this.onExportEncryptedProfile,
+    required this.onExportPlainProfile,
+    required this.onResetSettings,
     required this.onOpenExperimental,
     required this.onOpenLogs,
     required this.onOpenAbout,
@@ -26,10 +30,40 @@ class SettingsPage extends StatelessWidget {
   final VoidCallback onOpenSubscriptions;
   final VoidCallback onOpenInbound;
   final VoidCallback onOpenRouting;
-  final VoidCallback onOpenBackup;
+  final VoidCallback onImportBackup;
+  final VoidCallback onExportSettings;
+  final VoidCallback onExportEncryptedProfile;
+  final VoidCallback onExportPlainProfile;
+  final VoidCallback onResetSettings;
   final VoidCallback onOpenExperimental;
   final VoidCallback onOpenLogs;
   final VoidCallback onOpenAbout;
+
+  Future<void> _confirmResetSettings(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(AppLocalizations.of(dialogContext).settingsResetTitle),
+        content: Text(AppLocalizations.of(dialogContext).settingsResetMessage),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(
+              MaterialLocalizations.of(dialogContext).cancelButtonLabel,
+            ),
+          ),
+          FilledButton(
+            key: const ValueKey('settings-reset-confirm'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(AppLocalizations.of(dialogContext).settingsResetAction),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      onResetSettings();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -39,26 +73,71 @@ class SettingsPage extends StatelessWidget {
       appBar: AppBar(
         title: Text(l10n.settingsTitle),
         actions: [
-          PopupMenuButton<String>(
-            tooltip: l10n.backupTitle,
-            onSelected: (value) {
-              if (value == 'backup') {
-                onOpenBackup();
-              }
-            },
-            itemBuilder: (context) => [
-              PopupMenuItem(
-                value: 'backup',
-                child: ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.backup_rounded),
-                  title: Text(l10n.backupTitle),
-                  subtitle: Text(l10n.backupSubtitle),
+          MenuAnchor(
+            menuChildren: [
+              MenuItemButton(
+                key: const ValueKey('settings-import'),
+                onPressed: onImportBackup,
+                leadingIcon: const Icon(Icons.file_open_rounded),
+                child: Text(l10n.settingsMenuImport),
+              ),
+              SubmenuButton(
+                key: const ValueKey('settings-export'),
+                leadingIcon: const Icon(Icons.ios_share_rounded),
+                menuChildren: [
+                  MenuItemButton(
+                    key: const ValueKey('settings-export-options'),
+                    onPressed: onExportSettings,
+                    leadingIcon: const Icon(
+                      Icons.settings_backup_restore_rounded,
+                    ),
+                    child: Text(l10n.backupExportSettings),
+                  ),
+                  MenuItemButton(
+                    key: const ValueKey('settings-export-encrypted-profile'),
+                    onPressed: onExportEncryptedProfile,
+                    leadingIcon: const Icon(Icons.lock_rounded),
+                    child: Text(l10n.backupExportProfileEncrypted),
+                  ),
+                  MenuItemButton(
+                    key: const ValueKey('settings-export-plain-profile'),
+                    onPressed: onExportPlainProfile,
+                    leadingIcon: const Icon(Icons.no_encryption_rounded),
+                    child: Text(l10n.backupExportProfilePlain),
+                  ),
+                ],
+                child: Text(l10n.settingsMenuExport),
+              ),
+              const PopupMenuDivider(),
+              MenuItemButton(
+                key: const ValueKey('settings-reset'),
+                onPressed: () => _confirmResetSettings(context),
+                leadingIcon: Icon(
+                  Icons.restart_alt_rounded,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+                child: Text(
+                  l10n.settingsResetAction,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
               ),
             ],
+            builder: (context, controller, child) {
+              return IconButton(
+                key: const ValueKey('settings-more-menu'),
+                tooltip: MaterialLocalizations.of(context).moreButtonTooltip,
+                onPressed: () {
+                  if (controller.isOpen) {
+                    controller.close();
+                  } else {
+                    controller.open();
+                  }
+                },
+                icon: const Icon(Icons.more_vert_rounded),
+              );
+            },
           ),
+          const SizedBox(width: 8),
         ],
       ),
       body: ListView(

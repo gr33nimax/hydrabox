@@ -2165,40 +2165,34 @@ class AppLocalizationsEn extends AppLocalizations {
   String get cancelAction => 'Cancel';
 
   @override
-  String get backupTitle => 'Data & backup';
+  String get settingsMenuImport => 'Import';
 
   @override
-  String get backupSubtitle => 'Export settings or move subscriptions safely';
+  String get settingsMenuExport => 'Export';
+
+  @override
+  String get settingsResetAction => 'Reset settings';
+
+  @override
+  String get settingsResetTitle => 'Reset settings?';
+
+  @override
+  String get settingsResetMessage =>
+      'All client settings will return to their defaults. Subscriptions and the selected server will be kept.';
+
+  @override
+  String get settingsResetSuccess => 'Settings reset to defaults';
 
   @override
   String get backupExportSettings => 'Export settings';
-
-  @override
-  String get backupExportSettingsSubtitle =>
-      'Saves only safe client settings, without subscriptions or keys';
 
   @override
   String get backupExportProfileEncrypted =>
       'Export subscriptions with password';
 
   @override
-  String get backupExportProfileEncryptedSubtitle =>
-      'Recommended. Stores subscriptions, selected nodes and raw profile data encrypted with AES-256-GCM';
-
-  @override
   String get backupExportProfilePlain =>
       'Export subscriptions without encryption';
-
-  @override
-  String get backupExportProfilePlainSubtitle =>
-      'Only use this for trusted local transfer. The file contains VPN keys';
-
-  @override
-  String get backupImportFile => 'Import Etonify file';
-
-  @override
-  String get backupImportFileSubtitle =>
-      'Supports .etonify-settings.json and .etonify-profile from Etonify 0.2.0+';
 
   @override
   String get backupPlainWarningTitle => 'The file will contain VPN keys';

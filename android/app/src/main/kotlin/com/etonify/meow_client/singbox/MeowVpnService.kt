@@ -26,14 +26,34 @@ class MeowVpnService : VpnService() {
             return currentService?.protect(socket) == true
         }
 
-        fun setUnderlyingNetwork(network: Network?, reason: String) {
+        fun setUnderlyingNetwork(network: Network?, reason: String): Boolean {
             val service = currentService
             if (service == null) {
                 MeowDiagnostics.log(TAG, "underlying_network_skipped reason=$reason service=null")
-                return
+                return false
             }
-            runCatching {
-                service.setUnderlyingNetworks(network?.let { arrayOf(it) })
+            return runCatching {
+                val applied = service.setUnderlyingNetworks(network?.let { arrayOf(it) })
+                if (!applied) {
+                    Log.w(TAG, "setUnderlyingNetworks rejected reason=$reason network=$network")
+                    MeowDiagnostics.log(
+                        TAG,
+                        "underlying_network_rejected reason=$reason network=$network",
+                    )
+                    if (network != null) {
+                        // Do not leave a dead Wi-Fi network pinned after Android
+                        // rejects the requested cellular network. Returning to
+                        // system-managed selection is the safest fallback.
+                        val fallbackApplied = service.setUnderlyingNetworks(null)
+                        MeowDiagnostics.log(
+                            TAG,
+                            "underlying_network_fallback_default reason=$reason " +
+                                "applied=$fallbackApplied",
+                        )
+                        return@runCatching fallbackApplied
+                    }
+                    return@runCatching false
+                }
                 MeowDiagnostics.log(
                     TAG,
                     if (network == null) {
@@ -42,9 +62,11 @@ class MeowVpnService : VpnService() {
                         "underlying_network_set reason=$reason network=$network"
                     },
                 )
-            }.onFailure {
+                true
+            }.getOrElse {
                 Log.w(TAG, "setUnderlyingNetworks failed reason=$reason", it)
                 MeowDiagnostics.log(TAG, "underlying_network_failed reason=$reason error=${it.message}")
+                false
             }
         }
     }

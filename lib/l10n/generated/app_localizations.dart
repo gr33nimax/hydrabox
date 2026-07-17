@@ -3849,17 +3849,41 @@ abstract class AppLocalizations {
   /// **'Cancel'**
   String get cancelAction;
 
-  /// No description provided for @backupTitle.
+  /// No description provided for @settingsMenuImport.
   ///
   /// In en, this message translates to:
-  /// **'Data & backup'**
-  String get backupTitle;
+  /// **'Import'**
+  String get settingsMenuImport;
 
-  /// No description provided for @backupSubtitle.
+  /// No description provided for @settingsMenuExport.
   ///
   /// In en, this message translates to:
-  /// **'Export settings or move subscriptions safely'**
-  String get backupSubtitle;
+  /// **'Export'**
+  String get settingsMenuExport;
+
+  /// No description provided for @settingsResetAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset settings'**
+  String get settingsResetAction;
+
+  /// No description provided for @settingsResetTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset settings?'**
+  String get settingsResetTitle;
+
+  /// No description provided for @settingsResetMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'All client settings will return to their defaults. Subscriptions and the selected server will be kept.'**
+  String get settingsResetMessage;
+
+  /// No description provided for @settingsResetSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Settings reset to defaults'**
+  String get settingsResetSuccess;
 
   /// No description provided for @backupExportSettings.
   ///
@@ -3867,47 +3891,17 @@ abstract class AppLocalizations {
   /// **'Export settings'**
   String get backupExportSettings;
 
-  /// No description provided for @backupExportSettingsSubtitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Saves only safe client settings, without subscriptions or keys'**
-  String get backupExportSettingsSubtitle;
-
   /// No description provided for @backupExportProfileEncrypted.
   ///
   /// In en, this message translates to:
   /// **'Export subscriptions with password'**
   String get backupExportProfileEncrypted;
 
-  /// No description provided for @backupExportProfileEncryptedSubtitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Recommended. Stores subscriptions, selected nodes and raw profile data encrypted with AES-256-GCM'**
-  String get backupExportProfileEncryptedSubtitle;
-
   /// No description provided for @backupExportProfilePlain.
   ///
   /// In en, this message translates to:
   /// **'Export subscriptions without encryption'**
   String get backupExportProfilePlain;
-
-  /// No description provided for @backupExportProfilePlainSubtitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Only use this for trusted local transfer. The file contains VPN keys'**
-  String get backupExportProfilePlainSubtitle;
-
-  /// No description provided for @backupImportFile.
-  ///
-  /// In en, this message translates to:
-  /// **'Import Etonify file'**
-  String get backupImportFile;
-
-  /// No description provided for @backupImportFileSubtitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Supports .etonify-settings.json and .etonify-profile from Etonify 0.2.0+'**
-  String get backupImportFileSubtitle;
 
   /// No description provided for @backupPlainWarningTitle.
   ///

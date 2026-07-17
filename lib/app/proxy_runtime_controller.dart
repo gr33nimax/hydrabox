@@ -86,6 +86,7 @@ class ProxyRuntimeController {
   final Map<String, int> runtimeLatencies = <String, int>{};
   final Map<String, int> runtimeLatencyTimes = <String, int>{};
   final Set<String> unavailableLatencyTags = <String>{};
+  final Set<String> invalidatedLatencyTags = <String>{};
   final Map<String, String> latencyErrors = <String, String>{};
   final Map<String, int> latencyFailureCounts = <String, int>{};
   final Map<String, String> runtimeGroupSelections = <String, String>{};
@@ -123,12 +124,46 @@ class ProxyRuntimeController {
     runtimeLatencies.clear();
     runtimeLatencyTimes.clear();
     unavailableLatencyTags.clear();
+    invalidatedLatencyTags.clear();
     latencyErrors.clear();
     latencyFailureCounts.clear();
     runtimeGroupSelections.clear();
     runtimeLowestSelections.clear();
     lowestLatency = null;
     runtimeLowestOutboundTag = null;
+  }
+
+  /// Drops measurements that belong to a previous Android network while
+  /// keeping selector choices intact. Until fresh URLTest telemetry arrives,
+  /// callers must not fall back to the persisted ping for these tags.
+  bool invalidateNetworkMeasurements(Iterable<String> tags) {
+    final nextInvalidatedTags = tags
+        .map((tag) => tag.trim())
+        .where((tag) => tag.isNotEmpty)
+        .toSet();
+    final changed =
+        runtimeLatencies.isNotEmpty ||
+        runtimeLatencyTimes.isNotEmpty ||
+        unavailableLatencyTags.isNotEmpty ||
+        latencyErrors.isNotEmpty ||
+        latencyFailureCounts.isNotEmpty ||
+        lowestLatency != null ||
+        !setEquals(invalidatedLatencyTags, nextInvalidatedTags);
+
+    runtimeLatencies.clear();
+    runtimeLatencyTimes.clear();
+    unavailableLatencyTags.clear();
+    invalidatedLatencyTags
+      ..clear()
+      ..addAll(nextInvalidatedTags);
+    latencyErrors.clear();
+    latencyFailureCounts.clear();
+    lowestLatency = null;
+    return changed;
+  }
+
+  bool isLatencyInvalidated(String tag) {
+    return invalidatedLatencyTags.contains(tag.trim());
   }
 
   String? runtimeLowestOutboundTagFor(String lowestTag) {
@@ -276,6 +311,7 @@ class ProxyRuntimeController {
     final nextRuntimeLatencies = Map<String, int>.from(runtimeLatencies);
     final nextRuntimeLatencyTimes = Map<String, int>.from(runtimeLatencyTimes);
     final nextUnavailableLatencyTags = Set<String>.from(unavailableLatencyTags);
+    final nextInvalidatedLatencyTags = Set<String>.from(invalidatedLatencyTags);
     final nextLatencyErrors = Map<String, String>.from(latencyErrors);
     final nextLatencyFailureCounts = Map<String, int>.from(
       latencyFailureCounts,
@@ -294,6 +330,7 @@ class ProxyRuntimeController {
           status == urlTestStatusUnavailable ||
           (error.isNotEmpty && !hasPositiveDelay);
       if (terminalFailure) {
+        nextInvalidatedLatencyTags.remove(tag);
         final failureCount = (nextLatencyFailureCounts[tag] ?? 0) + 1;
         nextLatencyFailureCounts[tag] = failureCount;
         nextRuntimeLatencies.remove(tag);
@@ -306,6 +343,7 @@ class ProxyRuntimeController {
         continue;
       }
       if (hasPositiveDelay) {
+        nextInvalidatedLatencyTags.remove(tag);
         nextRuntimeLatencies[tag] = delay;
         nextUnavailableLatencyTags.remove(tag);
         nextLatencyErrors.remove(tag);
@@ -353,6 +391,7 @@ class ProxyRuntimeController {
         !mapEquals(runtimeLatencies, nextRuntimeLatencies) ||
         !mapEquals(runtimeLatencyTimes, nextRuntimeLatencyTimes) ||
         !setEquals(unavailableLatencyTags, nextUnavailableLatencyTags) ||
+        !setEquals(invalidatedLatencyTags, nextInvalidatedLatencyTags) ||
         !mapEquals(latencyErrors, nextLatencyErrors) ||
         !mapEquals(latencyFailureCounts, nextLatencyFailureCounts) ||
         !mapEquals(runtimeLowestSelections, lowestSelections) ||
@@ -399,6 +438,9 @@ class ProxyRuntimeController {
     unavailableLatencyTags
       ..clear()
       ..addAll(nextUnavailableLatencyTags);
+    invalidatedLatencyTags
+      ..clear()
+      ..addAll(nextInvalidatedLatencyTags);
     latencyErrors
       ..clear()
       ..addAll(nextLatencyErrors);

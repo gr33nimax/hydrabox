@@ -40,7 +40,7 @@ import 'package:meow_client/features/proxies/proxies_page.dart';
 import 'package:meow_client/features/proxies/proxy_panel_shell.dart';
 import 'package:meow_client/features/settings/changelog_sheet.dart';
 import 'package:meow_client/features/settings/settings_about_page.dart';
-import 'package:meow_client/features/settings/settings_backup_page.dart';
+import 'package:meow_client/features/settings/settings_backup_actions.dart';
 import 'package:meow_client/features/settings/settings_dns_page.dart';
 import 'package:meow_client/features/settings/settings_experimental_page.dart';
 import 'package:meow_client/features/settings/settings_general_page.dart';
@@ -144,6 +144,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   bool _invalidOutboundRetryScheduled = false;
   bool _runtimeDesiredByUser = false;
   bool _deepLinkImportInFlight = false;
+  bool _settingsBackupOperationInFlight = false;
   bool _locationLookupInFlight = false;
   bool _proxyPanelInteractionActive = false;
   bool _retryRuntimeOnResume = false;
@@ -345,6 +346,9 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   Set<String> get _unavailableLatencyTags =>
       _proxyRuntime.unavailableLatencyTags;
 
+  Set<String> get _invalidatedLatencyTags =>
+      _proxyRuntime.invalidatedLatencyTags;
+
   Map<String, String> get _latencyErrors => _proxyRuntime.latencyErrors;
 
   Map<String, int> get _latencyFailureCounts =>
@@ -352,6 +356,13 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
 
   Map<String, String> get _runtimeGroupSelections =>
       _proxyRuntime.runtimeGroupSelections;
+
+  int? _effectiveOutboundLatency(Outbound outbound) {
+    if (_proxyRuntime.isLatencyInvalidated(outbound.tag)) {
+      return null;
+    }
+    return _runtimeLatencies[outbound.tag] ?? outbound.info.latestPing;
+  }
 
   bool get _russiaRouteProxiesEnabled =>
       _useRussiaRouteData && _russiaRouteDataStatus.available;
@@ -459,8 +470,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       if (_unavailableLatencyTags.contains(outbound.tag)) {
         continue;
       }
-      final latency =
-          _runtimeLatencies[outbound.tag] ?? outbound.info.latestPing;
+      final latency = _effectiveOutboundLatency(outbound);
       if (latency == null) {
         continue;
       }
@@ -1204,9 +1214,11 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     }
     final targetSummary = _displaySummaryForOutbound(target);
     final detourName = _proxyDisplayNameForTag(chain.detourTag);
-    final runtimeLatency = _runtimeLatencies[tag];
-    final latencyUnavailable = _unavailableLatencyTags.contains(tag);
-    final latencyError = _latencyErrors[tag];
+    final latencyInvalidated = _proxyRuntime.isLatencyInvalidated(tag);
+    final runtimeLatency = latencyInvalidated ? null : _runtimeLatencies[tag];
+    final latencyUnavailable =
+        !latencyInvalidated && _unavailableLatencyTags.contains(tag);
+    final latencyError = latencyInvalidated ? null : _latencyErrors[tag];
     return targetSummary.copyWith(
       tag: tag,
       displayName: chain.name.trim().isEmpty
@@ -1217,11 +1229,14 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       countryCode: _normalizeCountryCode(target.info.country).isNotEmpty
           ? _normalizeCountryCode(target.info.country)
           : _normalizeCountryCode(chain.targetCountry),
-      latency: runtimeLatency ?? targetSummary.latency,
+      latency: latencyInvalidated
+          ? null
+          : runtimeLatency ?? targetSummary.latency,
       clearLatency:
-          runtimeLatency == null &&
-          targetSummary.latency == null &&
-          latencyUnavailable,
+          latencyInvalidated ||
+          (runtimeLatency == null &&
+              targetSummary.latency == null &&
+              latencyUnavailable),
       latencyFresh: runtimeLatency != null || targetSummary.latencyFresh,
       latencyChecking: _latencyCoordinator.isChecking(tag),
       latencyUnavailable: latencyUnavailable,
@@ -1234,8 +1249,12 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   AppProxySummary _displaySummaryForOutbound(Outbound outbound) {
     final protocolLabel = _protocolLabel(outbound.config, outbound.type);
     final endpointLabel = _endpointLabel(outbound);
-    final runtimeLatency = _runtimeLatencies[outbound.tag];
-    final latencyUnavailable = _unavailableLatencyTags.contains(outbound.tag);
+    final latencyInvalidated = _proxyRuntime.isLatencyInvalidated(outbound.tag);
+    final runtimeLatency = latencyInvalidated
+        ? null
+        : _runtimeLatencies[outbound.tag];
+    final latencyUnavailable =
+        !latencyInvalidated && _unavailableLatencyTags.contains(outbound.tag);
     return AppProxySummary(
       tag: outbound.tag,
       displayName: outbound.name.trim().isEmpty ? outbound.tag : outbound.name,
@@ -1245,11 +1264,13 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       port: outbound.port,
       detailText: '$protocolLabel · $endpointLabel',
       ip: outbound.info.externalIp?.trim() ?? '',
-      latency: runtimeLatency ?? outbound.info.latestPing,
+      latency: latencyInvalidated
+          ? null
+          : runtimeLatency ?? outbound.info.latestPing,
       latencyFresh: runtimeLatency != null,
       latencyChecking: _latencyCoordinator.isChecking(outbound.tag),
       latencyUnavailable: latencyUnavailable,
-      latencyError: _latencyErrors[outbound.tag],
+      latencyError: latencyInvalidated ? null : _latencyErrors[outbound.tag],
       protocolLabel: protocolLabel,
       endpointLabel: endpointLabel,
       highlighted: _selectedProxyTag == outbound.tag,
@@ -1508,14 +1529,19 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     Set<String> mixedOutboundTags = const <String>{},
   }) {
     final latencyChecking = _latencyCoordinator.isChecking(proxy.tag);
-    final runtimeLatency = _runtimeLatencies[proxy.tag];
+    final latencyInvalidated = _proxyRuntime.isLatencyInvalidated(proxy.tag);
+    final runtimeLatency = latencyInvalidated
+        ? null
+        : _runtimeLatencies[proxy.tag];
     final latencyUnavailable =
         ProxyRuntimeController.effectiveLatencyUnavailable(
-          urlTestUnavailable: _unavailableLatencyTags.contains(proxy.tag),
+          urlTestUnavailable:
+              !latencyInvalidated &&
+              _unavailableLatencyTags.contains(proxy.tag),
           endpointFallbackReachable: false,
         );
     final latencyError = ProxyRuntimeController.effectiveLatencyError(
-      urlTestError: _latencyErrors[proxy.tag],
+      urlTestError: latencyInvalidated ? null : _latencyErrors[proxy.tag],
       endpointFallbackReachable: false,
     );
     final parentGroupTag = proxy.parentGroupTag;
@@ -1526,7 +1552,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         isLowestProxyTag(_selectedProxyTag) &&
         _activeRuntimeLowestOutboundTag() == proxy.tag;
     final highlightedByMixed = mixedOutboundTags.contains(proxy.tag);
-    final shouldClearLatency = runtimeLatency == null && latencyUnavailable;
+    final shouldClearLatency =
+        runtimeLatency == null && (latencyUnavailable || latencyInvalidated);
     final activeIpMatches =
         _connected && _activeProxyIp.outboundTag == proxy.tag;
     final activeIpOverride = activeIpMatches && _activeProxyIp.hasKnownIp
@@ -2688,6 +2715,13 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   }
 
   Future<void> _applyImportedSettingsState(AppSettingsState state) async {
+    await _applySettingsState(state, configReason: 'settings backup imported');
+  }
+
+  Future<void> _applySettingsState(
+    AppSettingsState state, {
+    required String configReason,
+  }) async {
     setState(() {
       _settings.applyState(state, progressiveBlurEnabledOverride: false);
       _refreshThemeCache();
@@ -2695,7 +2729,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     await _persistState();
     await _syncRuntimePerformanceFlags();
     _configCoordinator.emitCurrentConfigLog(
-      'settings backup imported',
+      configReason,
       restartRuntime: _connected,
     );
   }
@@ -3392,6 +3426,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         _runtimeLowestSelections.clear();
         _runtimeLatencies.clear();
         _unavailableLatencyTags.clear();
+        _invalidatedLatencyTags.clear();
         _latencyErrors.clear();
         _latencyFailureCounts.clear();
         _runtimeStartupUrlTestGate.reset();
@@ -4206,6 +4241,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         if (!preserveLatencyDuringReload) {
           _runtimeLatencies.clear();
           _unavailableLatencyTags.clear();
+          _invalidatedLatencyTags.clear();
           _latencyErrors.clear();
           _latencyFailureCounts.clear();
         }
@@ -4312,6 +4348,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
           if (!preserveLatencyDuringReload) {
             _runtimeLatencies.clear();
             _unavailableLatencyTags.clear();
+            _invalidatedLatencyTags.clear();
             _latencyErrors.clear();
             _latencyFailureCounts.clear();
           }
@@ -4555,7 +4592,21 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
           onOpenSubscriptions: _showSubscriptionsSettingsPage,
           onOpenInbound: _showInboundSettingsPage,
           onOpenRouting: _showRoutingSettingsPage,
-          onOpenBackup: _showBackupSettingsPage,
+          onImportBackup: () => unawaited(
+            _runSettingsBackupAction(SettingsBackupAction.importFile),
+          ),
+          onExportSettings: () => unawaited(
+            _runSettingsBackupAction(SettingsBackupAction.exportSettings),
+          ),
+          onExportEncryptedProfile: () => unawaited(
+            _runSettingsBackupAction(
+              SettingsBackupAction.exportEncryptedProfile,
+            ),
+          ),
+          onExportPlainProfile: () => unawaited(
+            _runSettingsBackupAction(SettingsBackupAction.exportPlainProfile),
+          ),
+          onResetSettings: () => unawaited(_resetSettingsToDefaults()),
           onOpenExperimental: _showExperimentalSettingsPage,
           onOpenLogs: _showLogsPage,
           onOpenAbout: _showAboutSettingsPage,
@@ -4699,22 +4750,48 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     );
   }
 
-  Future<void> _showBackupSettingsPage() async {
+  Future<void> _runSettingsBackupAction(SettingsBackupAction action) async {
+    if (_settingsBackupOperationInFlight) return;
     final navigator = _navigatorKey.currentState;
     final store = _store;
     if (navigator == null || store == null) return;
-    await _refreshAppVersionInfo();
-    await navigator.push(
-      MaterialPageRoute<void>(
-        builder: (context) => SettingsBackupPage(
-          store: store,
-          settingsState: _currentSettingsState(),
-          clientVersion: _clientVersionLabel,
-          loadSubscriptions: SubscriptionStore.getAll,
-          onImportSettings: _applyImportedSettingsState,
-          onImportSubscriptions: _importBackupSubscriptions,
-        ),
-      ),
+    _settingsBackupOperationInFlight = true;
+    try {
+      await _refreshAppVersionInfo();
+      if (!mounted) return;
+      final actions = SettingsBackupActions(
+        store: store,
+        settingsState: _currentSettingsState(),
+        clientVersion: _clientVersionLabel,
+        loadSubscriptions: SubscriptionStore.getAll,
+        onImportSettings: _applyImportedSettingsState,
+        onImportSubscriptions: _importBackupSubscriptions,
+      );
+      await actions.run(navigator.context, action);
+    } finally {
+      _settingsBackupOperationInFlight = false;
+    }
+  }
+
+  Future<void> _resetSettingsToDefaults() async {
+    final navigator = _navigatorKey.currentState;
+    if (navigator == null) return;
+    final defaults = AppSettingsController().toState(
+      onboardingCompleted: _onboardingCompleted,
+      acceptedLegalVersion: _acceptedLegalVersion,
+      acceptedLegalAtMillis: _acceptedLegalAtMillis,
+      activeProfileId: _activeProfileId,
+      selectedProxyTag: _selectedProxyTag,
+    );
+    await _applySettingsState(
+      defaults,
+      configReason: 'settings reset to defaults',
+    );
+    if (!mounted) return;
+    AppNotice.show(
+      navigator.context,
+      AppLocalizations.of(navigator.context).settingsResetSuccess,
+      tone: AppNoticeTone.success,
     );
   }
 
@@ -5402,6 +5479,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         _runtimeLowestSelections.clear();
         _runtimeLatencies.clear();
         _unavailableLatencyTags.clear();
+        _invalidatedLatencyTags.clear();
         _latencyErrors.clear();
         _latencyFailureCounts.clear();
         _groupUrlTestScheduler.cancel();
@@ -5526,6 +5604,22 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     if (!_connected || _runtimeTransitionInProgress) {
       return;
     }
+
+    final invalidatedTags = <String>{
+      ..._expectedLatencyTagsForSession(''),
+      ..._runtimeLatencies.keys,
+      ..._unavailableLatencyTags,
+      ..._invalidatedLatencyTags,
+    };
+    _proxyRuntime.invalidateNetworkMeasurements(invalidatedTags);
+    _resetActiveProxyIpState(rebuild: false);
+    _locationLookupGeneration++;
+    _locationLookupTimer?.cancel();
+    _locationLookupInFlight = false;
+    _locationLookupRefreshRequested = false;
+    _lastLocationLookupSignature = '';
+    _cancelQueuedLocationLookups();
+    _applyRuntimeStateToDerivedCaches();
     if (!diagnosticsWereReady && _runtimeOperations.diagnosticsReady) {
       _onRuntimeDiagnosticsReady();
     }
@@ -5534,6 +5628,13 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       return;
     }
     if (usable) {
+      // Give the new transport a moment to settle, then refresh only the
+      // selected endpoint metadata. A full URLTest here can flood a freshly
+      // attached cellular resolver and compete with real application traffic.
+      _scheduleActiveOutboundIpRefresh(
+        delay: const Duration(seconds: 2),
+        forceRefresh: true,
+      );
       _scheduleNetworkRecovery(
         reason: 'default_interface_changed',
         networkGeneration: networkGeneration,
@@ -6334,7 +6435,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       if (_unavailableLatencyTags.contains(tag)) {
         continue;
       }
-      final latency = _runtimeLatencies[tag] ?? outbound.info.latestPing;
+      final latency = _effectiveOutboundLatency(outbound);
       if (latency == null) {
         continue;
       }
@@ -6679,7 +6780,10 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     }
     final signature =
         '${activeSubscription.id}|$_locationLookupLimit|'
-        '${targetTags.map((tag) => '$tag:${_runtimeLatencies[tag] ?? _activeOutboundByTagLookup[tag]?.info.latestPing ?? ''}').join('|')}';
+        '${targetTags.map((tag) {
+          final outbound = _activeOutboundByTagLookup[tag];
+          return '$tag:${outbound == null ? '' : _effectiveOutboundLatency(outbound) ?? ''}';
+        }).join('|')}';
     if (signature == _lastLocationLookupSignature) {
       return;
     }
@@ -6754,15 +6858,13 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         .where(
           (outbound) =>
               !_unavailableLatencyTags.contains(outbound.tag) &&
-              (_runtimeLatencies[outbound.tag] != null ||
-                  outbound.info.latestPing != null),
+              !_proxyRuntime.isLatencyInvalidated(outbound.tag) &&
+              _effectiveOutboundLatency(outbound) != null,
         )
         .toList(growable: false);
     outbounds.sort((left, right) {
-      final leftLatency =
-          _runtimeLatencies[left.tag] ?? left.info.latestPing ?? (1 << 30);
-      final rightLatency =
-          _runtimeLatencies[right.tag] ?? right.info.latestPing ?? (1 << 30);
+      final leftLatency = _effectiveOutboundLatency(left) ?? (1 << 30);
+      final rightLatency = _effectiveOutboundLatency(right) ?? (1 << 30);
       if (leftLatency != rightLatency) {
         return leftLatency.compareTo(rightLatency);
       }
