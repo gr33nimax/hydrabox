@@ -52,6 +52,38 @@ void main() {
     expect(coordinator.phase, LatencySessionPhase.settled);
   });
 
+  test('targeted session checks only the selected concrete outbound', () async {
+    final requests = <LatencyTestRequest>[];
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final coordinator = _coordinator(
+      runTest: (request) async => requests.add(request),
+      capabilities: LibboxCapabilities.parseOrLegacy(
+        '{"api_version":1,"supports_targeted_url_test":true}',
+      ),
+    );
+    addTearDown(coordinator.dispose);
+
+    final result = coordinator.runTarget(
+      targetOutboundTag: 'proxy-2',
+      reason: 'home',
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    expect(requests, hasLength(1));
+    expect(requests.single.groupTag, 'select');
+    expect(requests.single.targetOutboundTag, 'proxy-2');
+    expect(requests.single.priorityOutboundTag, 'proxy-2');
+    expect(requests.single.concurrency, 1);
+    expect(coordinator.kind, LatencySessionKind.targeted);
+    expect(coordinator.isChecking('proxy-2'), isTrue);
+    expect(coordinator.isChecking('proxy-1'), isFalse);
+    expect(
+      coordinator.handleGroupEvent(tag: 'proxy-2', timeSeconds: now),
+      isTrue,
+    );
+    expect(await result, isTrue);
+  });
+
   test(
     'RPC acceptance without fresh events does not fabricate success',
     () async {
@@ -276,6 +308,7 @@ LatencyCoordinator _coordinator({
   LatencyEventTimesReader? eventBaselineTimes,
   LatencyIntReader? operationGeneration,
   LatencyExpectedTagsReader? expectedTags,
+  LibboxCapabilities capabilities = LibboxCapabilities.bundledLegacy,
 }) {
   return LatencyCoordinator(
     runTest: runTest,
@@ -287,6 +320,7 @@ LatencyCoordinator _coordinator({
     eventBaselineTimes: eventBaselineTimes,
     expectedTags: expectedTags,
     operationGeneration: operationGeneration,
+    capabilities: capabilities,
     onSessionChanged: (_, _, _) {},
     uiPolicy: _testPolicy,
   );

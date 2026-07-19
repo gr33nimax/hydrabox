@@ -116,6 +116,7 @@ List<String> normalizeSplitRoutingPackages(Iterable<String> values) {
 
 class AppSettingsState {
   const AppSettingsState({
+    this.coreConfigSchemaVersion = 0,
     required this.onboardingCompleted,
     this.acceptedLegalVersion = '',
     this.acceptedLegalAtMillis,
@@ -170,6 +171,7 @@ class AppSettingsState {
     required this.experimentalUrlTestStrictTolerance,
   });
 
+  final int coreConfigSchemaVersion;
   final bool onboardingCompleted;
   final String acceptedLegalVersion;
   final int? acceptedLegalAtMillis;
@@ -224,6 +226,7 @@ class AppSettingsState {
   final bool experimentalUrlTestStrictTolerance;
 
   AppSettingsState copyWith({
+    int? coreConfigSchemaVersion,
     bool? onboardingCompleted,
     String? acceptedLegalVersion,
     int? acceptedLegalAtMillis,
@@ -278,6 +281,8 @@ class AppSettingsState {
     bool? experimentalUrlTestStrictTolerance,
   }) {
     return AppSettingsState(
+      coreConfigSchemaVersion:
+          coreConfigSchemaVersion ?? this.coreConfigSchemaVersion,
       onboardingCompleted: onboardingCompleted ?? this.onboardingCompleted,
       acceptedLegalVersion: acceptedLegalVersion ?? this.acceptedLegalVersion,
       acceptedLegalAtMillis:
@@ -360,6 +365,7 @@ abstract class AppSettingsStore {
   static const exportMinClientVersion = '0.2.0';
 
   static const _onboardingCompletedKey = 'onboarding_completed';
+  static const _coreConfigSchemaVersionKey = 'core_config_schema_version';
   static const _acceptedLegalVersionKey = 'accepted_legal_version';
   static const _acceptedLegalAtMillisKey = 'accepted_legal_at_millis';
   static const _activeProfileIdKey = 'active_profile_id';
@@ -539,6 +545,8 @@ abstract class AppSettingsStore {
     );
 
     return AppSettingsState(
+      coreConfigSchemaVersion:
+          int.tryParse(map[_coreConfigSchemaVersionKey]?.toString() ?? '') ?? 0,
       onboardingCompleted: boolValue(
         _onboardingCompletedKey,
         defaultValue: false,
@@ -723,6 +731,7 @@ abstract class AppSettingsStore {
 
   Map<String, dynamic> stateToMap(AppSettingsState state) {
     return {
+      _coreConfigSchemaVersionKey: state.coreConfigSchemaVersion.toString(),
       _onboardingCompletedKey: state.onboardingCompleted ? '1' : '0',
       _acceptedLegalVersionKey: state.acceptedLegalVersion,
       _acceptedLegalAtMillisKey: state.acceptedLegalAtMillis?.toString() ?? '',

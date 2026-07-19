@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:meow_client/singbox/libbox_capabilities.dart';
 import 'package:meow_client/singbox/singbox_api.g.dart' as pigeon;
 
 @visibleForTesting
@@ -594,6 +595,32 @@ class SingboxRuntime {
         const <String, dynamic>{};
   }
 
+  Future<List<String>> resolveHostOnUnderlyingNetwork({
+    required String host,
+    Duration timeout = const Duration(seconds: 3),
+  }) async {
+    if (!Platform.isAndroid) {
+      throw UnsupportedError(
+        'Underlying-network DNS is only available on Android.',
+      );
+    }
+    final normalizedHost = host.trim();
+    if (normalizedHost.isEmpty) {
+      throw ArgumentError.value(host, 'host', 'Host is empty');
+    }
+    final addresses = await _methods
+        .invokeListMethod<String>(
+          'resolveHostOnUnderlyingNetwork',
+          <String, Object?>{'host': normalizedHost},
+        )
+        .timeout(timeout);
+    return (addresses ?? const <String>[])
+        .map((address) => address.trim())
+        .where((address) => address.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+  }
+
   Future<String> getAndroidId() async {
     final value = await _withMethodChannelFallback<String?>(
       () => _hostApi.getAndroidId(),
@@ -679,6 +706,35 @@ class SingboxRuntime {
     } on MissingPluginException {
       return null;
     }
+  }
+
+  Future<LibboxCapabilities> getCoreCapabilities() async {
+    if (!Platform.isAndroid) {
+      return LibboxCapabilities.bundledLegacy;
+    }
+    try {
+      final value = await _withMethodChannelFallback<String?>(
+        () => _hostApi.getCoreCapabilities(),
+        () => _methods.invokeMethod<String>('getCoreCapabilities'),
+      ).timeout(const Duration(seconds: 2));
+      return LibboxCapabilities.parseOrLegacy(value);
+    } on TimeoutException {
+      return LibboxCapabilities.bundledLegacy;
+    } on MissingPluginException {
+      return LibboxCapabilities.bundledLegacy;
+    } on PlatformException {
+      return LibboxCapabilities.bundledLegacy;
+    }
+  }
+
+  Future<void> checkConfig(String config) {
+    if (!Platform.isAndroid) {
+      return Future<void>.value();
+    }
+    return _withMethodChannelFallback(
+      () => _hostApi.checkConfig(config),
+      () => _methods.invokeMethod<void>('checkConfig', {'config': config}),
+    );
   }
 
   Future<Map<String, dynamic>> getPerformanceSnapshot() async {

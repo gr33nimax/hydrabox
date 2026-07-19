@@ -15,7 +15,7 @@
 
 </div>
 
-Etonify — Android-орієнтований VPN-клієнт для людей, яким потрібна прозора, підтримувана й відкрита альтернатива застарілим або закритим VPN-клієнтам. Проєкт починався в лінії ідей навколо Hiddify, але Android runtime, робота з підписками, інтерфейс, діагностика та супровід поступово перебудовуються навколо Etonify і модифікованого ядра [**MeowSingBox**](https://github.com/dudosxdev/sing-box).
+Etonify — Android-орієнтований VPN-клієнт для людей, яким потрібна прозора, підтримувана й відкрита альтернатива застарілим або закритим VPN-клієнтам. Проєкт починався в лінії ідей навколо Hiddify, але Android runtime, робота з підписками, інтерфейс, діагностика та супровід поступово перебудовуються навколо Etonify і [**yamixdev/etonify-core**](https://github.com/yamixdev/etonify-core/tree/etonify-dev) — стабільної бази sing-box зі змінами спеціально для клієнта.
 
 Застосунок не надає VPN-сервери. Це клієнт для підписок і конфігурацій, якими ви володієте або маєте право користуватися.
 
@@ -45,7 +45,7 @@ Etonify перебуває на ранньому етапі публічної �
 
 - Telegram-канал: [@etonify](https://t.me/etonify)
 - Зв'язок із розробниками: [Etonify Direct](https://t.me/etonify?direct)
-- MeowTeam: YamixDEV працює над клієнтом, [dudosxdev](https://github.com/dudosxdev) — над модифікованим [ядром sing-box](https://github.com/dudosxdev/sing-box).
+- MeowTeam: YamixDEV працює над Android-клієнтом, релізами та [etonify-core](https://github.com/yamixdev/etonify-core/tree/etonify-dev); [dudosxdev](https://github.com/dudosxdev) допомагає з мережею та протоколами.
 - Issues і pull requests вітаються.
 - Повідомлення про вразливості вітаються. Будь ласка, не публікуйте експлуатаційні деталі відкрито до того, як команда матиме час розібратися.
 

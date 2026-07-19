@@ -89,9 +89,12 @@ class MainActivity : FlutterFragmentActivity() {
     private var pendingInstallSettingsResult: MethodChannel.Result? = null
     private var pendingApkInstallResult: MethodChannel.Result? = null
     private var deepLinkEventSink: EventChannel.EventSink? = null
+    @Volatile
+    private var singboxEventSinkRegistration = 0L
     private val mainHandler = Handler(Looper.getMainLooper())
     private val ioExecutor = Executors.newSingleThreadExecutor()
     private val subscriptionNetworkExecutor = Executors.newFixedThreadPool(2)
+    private val endpointDnsExecutor = Executors.newFixedThreadPool(2)
     private val appIconExecutor = Executors.newFixedThreadPool(3)
 
     private val vpnPermissionLauncher: ActivityResultLauncher<Intent> =
@@ -193,6 +196,17 @@ class MainActivity : FlutterFragmentActivity() {
             "versionCode" to versionCode,
         )
     }
+
+    private fun getEtonifyCoreCapabilities(): String =
+        runCatching {
+            val capabilityMethod = Libbox::class.java.methods.firstOrNull { method ->
+                method.parameterCount == 0 &&
+                    method.name.equals("etonifyCapabilities", ignoreCase = true)
+            }
+            capabilityMethod?.invoke(null) as? String ?: ""
+        }.onFailure { error ->
+            Log.w(TAG, "Core capability handshake is unavailable", error)
+        }.getOrDefault("")
 
     private fun canRequestApkInstalls(): Boolean = packageManager.canRequestPackageInstalls()
 
@@ -397,6 +411,19 @@ class MainActivity : FlutterFragmentActivity() {
                     .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
             }
             .distinct()
+    }
+
+    private fun resolveHostOnUnderlyingNetwork(rawHost: String): List<String> {
+        val host = rawHost.trim().removePrefix("[").removeSuffix("]")
+        require(host.isNotEmpty()) { "Host is empty." }
+        require(host.length <= 253) { "Host is too long." }
+        val network = MeowDefaultNetworkMonitor.require()
+        val addresses = network.getAllByName(host)
+            .mapNotNull { address -> address.hostAddress?.trim() }
+            .filter { address -> address.isNotEmpty() }
+            .distinct()
+        require(addresses.isNotEmpty()) { "Host did not resolve to an IP address." }
+        return addresses
     }
 
     private fun fetchUrlOnUnderlyingNetwork(
@@ -1581,6 +1608,24 @@ class MainActivity : FlutterFragmentActivity() {
                     callback(Result.success(Libbox.version()))
                 }
 
+                override fun getCoreCapabilities(callback: (Result<String>) -> Unit) {
+                    callback(Result.success(getEtonifyCoreCapabilities()))
+                }
+
+                override fun checkConfig(config: String, callback: (Result<Unit>) -> Unit) {
+                    ioExecutor.execute {
+                        runCatching { Libbox.checkConfig(config) }
+                            .onSuccess {
+                                mainHandler.post { callback(Result.success(Unit)) }
+                            }
+                            .onFailure { error ->
+                                mainHandler.post {
+                                    callback(errorResult("config_check_failed", error.message ?: error.toString()))
+                                }
+                            }
+                    }
+                }
+
                 override fun getPerformanceSnapshot(callback: (Result<Map<String?, Any?>>) -> Unit) {
                     callback(Result.success(pigeonMap(buildPerformanceSnapshot())))
                 }
@@ -1641,11 +1686,16 @@ class MainActivity : FlutterFragmentActivity() {
         ).setStreamHandler(
             object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
-                    SingboxController.setEventSink(events)
+                    if (events == null) {
+                        return
+                    }
+                    singboxEventSinkRegistration = SingboxController.registerEventSink(events)
                 }
 
                 override fun onCancel(arguments: Any?) {
-                    SingboxController.setEventSink(null)
+                    val registration = singboxEventSinkRegistration
+                    singboxEventSinkRegistration = 0L
+                    SingboxController.clearEventSink(registration)
                 }
             },
         )
@@ -1739,6 +1789,23 @@ class MainActivity : FlutterFragmentActivity() {
                     result.success(Libbox.version())
                 }
 
+                "getCoreCapabilities" -> {
+                    result.success(getEtonifyCoreCapabilities())
+                }
+
+                "checkConfig" -> {
+                    val config = call.argument<String>("config").orEmpty()
+                    ioExecutor.execute {
+                        runCatching { Libbox.checkConfig(config) }
+                            .onSuccess { mainHandler.post { result.success(null) } }
+                            .onFailure { error ->
+                                mainHandler.post {
+                                    result.error("config_check_failed", error.message, null)
+                                }
+                            }
+                    }
+                }
+
                 "getConfigPath" -> {
                     result.success(MeowApplication.configFile.absolutePath)
                 }
@@ -1790,7 +1857,10 @@ class MainActivity : FlutterFragmentActivity() {
                     if (foreground == null) {
                         result.error("missing_foreground", "Foreground state is missing", null)
                     } else {
-                        SingboxController.setUiForeground(foreground)
+                        SingboxController.setUiForeground(
+                            foreground,
+                            singboxEventSinkRegistration,
+                        )
                         result.success(true)
                     }
                 }
@@ -2057,6 +2127,29 @@ class MainActivity : FlutterFragmentActivity() {
                     }
                 }
 
+                "resolveHostOnUnderlyingNetwork" -> {
+                    val host = call.argument<String>("host")?.trim().orEmpty()
+                    if (host.isEmpty()) {
+                        result.error("missing_host", "Host is empty", null)
+                        return@setMethodCallHandler
+                    }
+                    endpointDnsExecutor.execute {
+                        runCatching { resolveHostOnUnderlyingNetwork(host) }
+                            .onSuccess { addresses ->
+                                mainHandler.post { result.success(addresses) }
+                            }
+                            .onFailure { error ->
+                                mainHandler.post {
+                                    result.error(
+                                        "underlying_dns_failed",
+                                        error.message,
+                                        null,
+                                    )
+                                }
+                            }
+                    }
+                }
+
                 "getAndroidId" -> {
                     result.success(
                         Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "",
@@ -2123,5 +2216,15 @@ class MainActivity : FlutterFragmentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         dispatchImportDeepLink(intent)
+    }
+
+    override fun onDestroy() {
+        val registration = singboxEventSinkRegistration
+        singboxEventSinkRegistration = 0L
+        if (registration != 0L) {
+            SingboxController.clearEventSink(registration)
+        }
+        deepLinkEventSink = null
+        super.onDestroy()
     }
 }

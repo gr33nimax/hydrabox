@@ -9,6 +9,7 @@ import 'package:meow_client/data/subscription/subscription_parser.dart';
 import 'package:meow_client/data/subscription/subscription_store.dart';
 import 'package:meow_client/models/subscription.dart';
 import 'package:meow_client/singbox/singbox_config_builder.dart';
+import 'package:meow_client/singbox/libbox_capabilities.dart';
 
 void main() {
   test('parses Xray balancer as a proxy group', () {
@@ -393,6 +394,46 @@ void main() {
     expect(groupUrltest['tolerance'], 1);
     expect(groupUrltest['interrupt_exist_connections'], isFalse);
     expect(groupUrltest['interrupt_delay_threshold'], 300);
+
+    final stableConfig = _defaultBuilder(
+      subscription,
+      capabilities: LibboxCapabilities.parseOrLegacy(
+        '{"api_version":1,"core_version":"1.13.14-etonify",'
+        '"supports_url_test_timeout":true,'
+        '"supports_url_test_concurrency":true,'
+        '"supports_url_test_deadline":true,'
+        '"supports_url_test_force":true,'
+        '"supports_config_check":true,'
+        '"tun_stacks":["system","gvisor","mixed"]}',
+      ),
+    ).build();
+    expect(stableConfig, isNot(contains('global')));
+    final stableOutbounds = (stableConfig['outbounds'] as List)
+        .cast<Map<String, dynamic>>();
+    expect(
+      stableOutbounds.any((entry) => entry['tag'] == mixedProxyTag),
+      isFalse,
+    );
+    final stableLowest = stableOutbounds.firstWhere(
+      (entry) => entry['tag'] == lowestProxyTag,
+    );
+    final stableGroup = stableOutbounds.firstWhere(
+      (entry) => entry['tag'] == 'group-auto',
+    );
+    for (final legacyKey in const <String>[
+      'timeout',
+      'concurrency',
+      'unavailable_check_interval',
+      'interrupt_delay_threshold',
+    ]) {
+      expect(stableLowest, isNot(contains(legacyKey)));
+      expect(stableGroup, isNot(contains(legacyKey)));
+    }
+    expect(stableGroup, isNot(contains('method')));
+    expect(stableLowest['url'], isNotEmpty);
+    expect(stableLowest['interval'], isNotEmpty);
+    expect(stableLowest['idle_timeout'], isNotEmpty);
+    expect(stableLowest['tolerance'], 1);
   });
 
   test('keeps group-only detour clone out of top-level selector', () {
@@ -1304,6 +1345,7 @@ void main() {
             'server': 'one.example.com',
             'server_port': 443,
             'uuid': '7c6a5b3e-4f1a-4d2b-8c9e-1a2b3c4d5e6f',
+            'encryption': 'none',
             'tls': {
               'enabled': true,
               'utls': {'enabled': true, 'fingerprint': 'QQ'},
@@ -1326,6 +1368,7 @@ void main() {
     final leaf = outbounds.firstWhere((entry) => entry['tag'] == 'leaf');
 
     expect(leaf['tls']['utls']['fingerprint'], 'qq');
+    expect(leaf, isNot(contains('encryption')));
   });
 
   test('startup config normalizes comma separated reality short id', () {
@@ -2185,7 +2228,44 @@ void main() {
     });
     expect(remoteDns('tcp://1.1.1.1')['type'], 'tcp');
     expect(remoteDns('tls://dns.google')['server_port'], 853);
-    expect(remoteDns('https://dns.google/dns-query')['path'], '/dns-query');
+    expect(remoteDns('https://dns.google/dns-query'), {
+      'type': 'https',
+      'tag': 'dns-remote',
+      'server': 'dns.google',
+      'server_port': 443,
+      'path': '/dns-query',
+      'detour': 'select',
+    });
+
+    Map<String, dynamic> directDns(String directResolver) {
+      final config = _defaultBuilder(
+        subscription,
+        dnsDirectResolver: directResolver,
+      ).build();
+      final servers = (config['dns'] as Map)['servers'] as List;
+      return servers.cast<Map<String, dynamic>>().firstWhere(
+        (server) => server['tag'] == 'dns-direct',
+      );
+    }
+
+    for (final resolver in const [
+      'udp://dns.example',
+      'tcp://dns.example',
+      'tls://dns.example',
+      'https://dns.example/dns-query',
+    ]) {
+      expect(
+        directDns(resolver)['domain_resolver'],
+        'dns-local',
+        reason: '$resolver needs a non-circular bootstrap resolver',
+      );
+    }
+    expect(directDns('1.1.1.1'), {
+      'type': 'udp',
+      'tag': 'dns-direct',
+      'server': '1.1.1.1',
+      'server_port': 53,
+    });
 
     final config = _defaultBuilder(
       subscription,
@@ -2271,6 +2351,7 @@ SingboxConfigBuilder _defaultBuilder(
   String dnsDirectResolver = 'udp://1.1.1.1',
   String dnsProxyResolver = 'https://dns.cloudflare.com/dns-query',
   String russiaDnsDirectResolver = defaultRussiaDnsDirectResolver,
+  LibboxCapabilities capabilities = LibboxCapabilities.bundledLegacy,
 }) {
   return SingboxConfigBuilder(
     activeSubscription: subscription,
@@ -2332,6 +2413,7 @@ SingboxConfigBuilder _defaultBuilder(
     interruptExistingConnections: true,
     urlTestStrictTolerance: urlTestStrictTolerance,
     markAllServersRussia: markAllServersRussia,
+    capabilities: capabilities,
   );
 }
 

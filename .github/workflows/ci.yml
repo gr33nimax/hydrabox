@@ -33,8 +33,7 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Verify pinned libbox binary
-        working-directory: android/app/libs
-        run: sha256sum --check libbox.sha256
+        run: python3 scripts/verify_libbox.py
 
       - name: Set up JDK
         uses: actions/setup-java@v5

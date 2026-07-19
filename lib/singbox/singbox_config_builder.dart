@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:meow_client/core/lowest_proxy_groups.dart';
 import 'package:meow_client/data/local/app_settings_store.dart';
 import 'package:meow_client/models/subscription.dart';
+import 'package:meow_client/singbox/libbox_capabilities.dart';
 
 class SingboxConfigBuilder {
   static const List<String> _russiaDirectDomainSuffixes = ['ru', 'su', 'рф'];
@@ -77,6 +78,7 @@ class SingboxConfigBuilder {
     required this.interruptExistingConnections,
     required this.urlTestStrictTolerance,
     required this.markAllServersRussia,
+    this.capabilities = LibboxCapabilities.bundledLegacy,
     this.snowtunBinaryPath,
     this.snowtunProtectPath,
   });
@@ -124,6 +126,7 @@ class SingboxConfigBuilder {
   final bool interruptExistingConnections;
   final bool urlTestStrictTolerance;
   final bool markAllServersRussia;
+  final LibboxCapabilities capabilities;
   final String? snowtunBinaryPath;
   final String? snowtunProtectPath;
 
@@ -181,6 +184,9 @@ class SingboxConfigBuilder {
         .where(lowestOutboundTags.containsKey)
         .toList(growable: false);
     final mixedProxyAvailable =
+        _supportsCoreConfigExtension(
+          capabilities.supportsMixedRoutingOutbound,
+        ) &&
         lowestOutboundTags.containsKey(lowestProxyTag) &&
         lowestOutboundTags.containsKey(lowestOpenProxyTag) &&
         lowestOutboundTags.containsKey(lowestFreeProxyTag);
@@ -255,11 +261,13 @@ class SingboxConfigBuilder {
     return SingboxBuildPlan(
       config: {
         'log': {'level': logLevel},
-        'global': {
-          'urltest_concurrency_limit': _urltestConcurrency(
-            activeSubscription?.urlTestConfig.concurrency ?? urlTestConcurrency,
-          ),
-        },
+        if (_supportsLegacyUrlTestConfigExtensions)
+          'global': {
+            'urltest_concurrency_limit': _urltestConcurrency(
+              activeSubscription?.urlTestConfig.concurrency ??
+                  urlTestConcurrency,
+            ),
+          },
         'dns': {
           'servers': [
             _buildDnsServer(
@@ -669,6 +677,7 @@ class SingboxConfigBuilder {
   Map<String, dynamic> _buildProxyOutbound(Outbound outbound) {
     final config = Map<String, dynamic>.from(outbound.config);
     config.remove('_group_only');
+    _normalizeStableOutboundSchema(config);
     if (outbound.type == 'snowtun') {
       final binaryPath = snowtunBinaryPath?.trim();
       if (binaryPath == null || binaryPath.isEmpty) {
@@ -738,6 +747,7 @@ class SingboxConfigBuilder {
     config['tag'] = tag;
     config['detour'] = detourTag;
     config.remove('domain_resolver');
+    _normalizeStableOutboundSchema(config);
     if (target.type == 'snowtun') {
       final binaryPath = snowtunBinaryPath?.trim();
       if (binaryPath == null || binaryPath.isEmpty) {
@@ -897,20 +907,24 @@ class SingboxConfigBuilder {
         activeSubscription?.urlTestConfig.intervalSeconds ??
             urlTestIntervalSeconds,
       ),
-      'timeout': _urltestTimeout(
-        activeSubscription?.urlTestConfig.timeoutSeconds ??
-            urlTestTimeoutSeconds,
-      ),
-      'concurrency': _urltestConcurrency(
-        activeSubscription?.urlTestConfig.concurrency ?? urlTestConcurrency,
-      ),
-      'unavailable_check_interval': _urltestUnavailableInterval(
-        activeSubscription?.urlTestConfig.unavailableCheckIntervalSeconds ??
-            urlTestUnavailableCheckIntervalSeconds,
-      ),
+      if (_supportsLegacyUrlTestConfigExtensions)
+        'timeout': _urltestTimeout(
+          activeSubscription?.urlTestConfig.timeoutSeconds ??
+              urlTestTimeoutSeconds,
+        ),
+      if (_supportsLegacyUrlTestConfigExtensions)
+        'concurrency': _urltestConcurrency(
+          activeSubscription?.urlTestConfig.concurrency ?? urlTestConcurrency,
+        ),
+      if (_supportsLegacyUrlTestConfigExtensions)
+        'unavailable_check_interval': _urltestUnavailableInterval(
+          activeSubscription?.urlTestConfig.unavailableCheckIntervalSeconds ??
+              urlTestUnavailableCheckIntervalSeconds,
+        ),
       'tolerance': _urltestTolerance(),
       'interrupt_exist_connections': false,
-      'interrupt_delay_threshold': _urltestInterruptDelayThresholdMs,
+      if (_supportsLegacyUrlTestConfigExtensions)
+        'interrupt_delay_threshold': _urltestInterruptDelayThresholdMs,
     };
   }
 
@@ -954,7 +968,8 @@ class SingboxConfigBuilder {
       'type': 'urltest',
       'tag': group.tag,
       'outbounds': memberTags,
-      ...?_urltestMethodEntry(group.urlTestConfig.method),
+      if (_supportsLegacyUrlTestConfigExtensions)
+        ...?_urltestMethodEntry(group.urlTestConfig.method),
       'url': activeSubscription?.urlTestConfig.url ?? urlTestUrl,
       'interval': _urltestInterval(
         activeSubscription?.urlTestConfig.intervalSeconds ??
@@ -964,22 +979,35 @@ class SingboxConfigBuilder {
         activeSubscription?.urlTestConfig.intervalSeconds ??
             urlTestIntervalSeconds,
       ),
-      'timeout': _urltestTimeout(
-        activeSubscription?.urlTestConfig.timeoutSeconds ??
-            urlTestTimeoutSeconds,
-      ),
-      'concurrency': _urltestConcurrency(
-        activeSubscription?.urlTestConfig.concurrency ?? urlTestConcurrency,
-      ),
-      'unavailable_check_interval': _urltestUnavailableInterval(
-        activeSubscription?.urlTestConfig.unavailableCheckIntervalSeconds ??
-            urlTestUnavailableCheckIntervalSeconds,
-      ),
+      if (_supportsLegacyUrlTestConfigExtensions)
+        'timeout': _urltestTimeout(
+          activeSubscription?.urlTestConfig.timeoutSeconds ??
+              urlTestTimeoutSeconds,
+        ),
+      if (_supportsLegacyUrlTestConfigExtensions)
+        'concurrency': _urltestConcurrency(
+          activeSubscription?.urlTestConfig.concurrency ?? urlTestConcurrency,
+        ),
+      if (_supportsLegacyUrlTestConfigExtensions)
+        'unavailable_check_interval': _urltestUnavailableInterval(
+          activeSubscription?.urlTestConfig.unavailableCheckIntervalSeconds ??
+              urlTestUnavailableCheckIntervalSeconds,
+        ),
       'tolerance': _urltestTolerance(),
       'interrupt_exist_connections': false,
-      'interrupt_delay_threshold': _urltestInterruptDelayThresholdMs,
+      if (_supportsLegacyUrlTestConfigExtensions)
+        'interrupt_delay_threshold': _urltestInterruptDelayThresholdMs,
     };
   }
+
+  bool _supportsCoreConfigExtension(bool advertised) =>
+      !capabilities.hasVersionedContract || advertised;
+
+  // The old bundled core exposed URLTest tuning as custom JSON fields. The
+  // versioned Etonify core exposes the same controls through URLTestWithOptions
+  // while intentionally retaining the upstream sing-box config schema.
+  bool get _supportsLegacyUrlTestConfigExtensions =>
+      !capabilities.hasVersionedContract;
 
   String _urltestInterval(int? seconds) {
     final safeSeconds = seconds == null || seconds <= 0 ? 180 : seconds;
@@ -1061,10 +1089,7 @@ class SingboxConfigBuilder {
           'tag': tag,
           'server': uri.host,
           'server_port': uri.hasPort ? uri.port : 53,
-          ...?switch (_normalizeDnsDetour(detour)) {
-            final value? => {'detour': value},
-            null => null,
-          },
+          ..._dnsDialFields(server: uri.host, detour: detour),
         };
       case 'tls':
         if (uri.host.isEmpty) {
@@ -1075,10 +1100,7 @@ class SingboxConfigBuilder {
           'tag': tag,
           'server': uri.host,
           'server_port': uri.hasPort ? uri.port : 853,
-          ...?switch (_normalizeDnsDetour(detour)) {
-            final value? => {'detour': value},
-            null => null,
-          },
+          ..._dnsDialFields(server: uri.host, detour: detour),
         };
       case 'https':
         if (uri.host.isEmpty) {
@@ -1090,14 +1112,24 @@ class SingboxConfigBuilder {
           'server': uri.host,
           'server_port': uri.hasPort ? uri.port : 443,
           if (uri.path.isNotEmpty && uri.path != '/') 'path': uri.path,
-          ...?switch (_normalizeDnsDetour(detour)) {
-            final value? => {'detour': value},
-            null => null,
-          },
+          ..._dnsDialFields(server: uri.host, detour: detour),
         };
       default:
         throw FormatException('Unsupported DNS resolver "$trimmed" for $tag');
     }
+  }
+
+  Map<String, String> _dnsDialFields({required String server, String? detour}) {
+    final normalizedDetour = _normalizeDnsDetour(detour);
+    if (normalizedDetour != null) {
+      return {'detour': normalizedDetour};
+    }
+    if (InternetAddress.tryParse(server) == null) {
+      // A direct encrypted DNS server cannot resolve its own hostname. Use
+      // Android's current-network resolver solely for this bootstrap lookup.
+      return const {'domain_resolver': 'dns-local'};
+    }
+    return const {};
   }
 
   String? _normalizeDnsDetour(String? detour) {
@@ -1231,6 +1263,16 @@ class SingboxConfigBuilder {
           config['server'] = host;
         }
       }
+    }
+  }
+
+  static void _normalizeStableOutboundSchema(Map<String, dynamic> config) {
+    final type = config['type']?.toString().trim().toLowerCase();
+    if (type == 'vless') {
+      // VLESS does not expose a configurable encryption field in sing-box.
+      // Legacy parsers stored `encryption: none`; omitting it is equivalent
+      // and keeps the config accepted by the strict stable-core decoder.
+      config.remove('encryption');
     }
   }
 }

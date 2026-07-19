@@ -1,11 +1,16 @@
 # libbox binary
 
-Etonify 0.2.2 intentionally uses the same `libbox.aar` that shipped with
-Etonify 0.2.1. Its SHA-256 is pinned in `libbox.sha256` and verified by CI
-before Android compilation.
+Etonify 0.2.2 bundles
+[`yamixdev/etonify-core`](https://github.com/yamixdev/etonify-core/tree/etonify-dev)
+`v1.13.14-etonify.1`, based on the stable sing-box `v1.13.14` line. The AAR
+exposes Etonify's versioned capability
+contract, targeted and bounded asynchronous URLTest sessions with failover,
+structured probe failures, bounded XHTTP/SplitHTTP transports, opt-in VLESS
+Encryption, and resilient per-outbound external IP lookup.
 
-The exact upstream/fork commit used to produce this binary is not known. The
-binary must therefore be treated as a compatibility artifact, not as a
-reproducible build. Replacing it requires updating the hash and testing the
-Pigeon/Kotlin API contract, Android unit tests, lint, assemble, and a device
+`libbox.sha256` pins the exact AAR and is verified by CI before Android
+compilation. `libbox.provenance.json` records the fork commit, upstream commit,
+toolchain, Android API, and build tags used by the release workflow. Replacing
+the binary requires updating both files and testing the Pigeon/Kotlin API
+contract, Android unit tests, lint, assemble, upgrade from 0.2.1, and a device
 soak test.

@@ -183,12 +183,14 @@ class MeowVpnService : VpnService() {
         }
         Log.i(TAG, "onTaskRemoved – scheduling service restart")
         MeowDiagnostics.log(TAG, "onTaskRemoved – scheduling service restart")
-        // Schedule restart via AlarmManager so the VPN survives app-swipe.
+        // Arm a foreground-service recovery so the VPN survives an OEM killing
+        // the process together with the task. If the service stayed alive,
+        // startInternal() recognizes the existing runtime and leaves TUN alone.
         val restartIntent = Intent(this, MeowVpnService::class.java)
             .setAction(MeowBoxService.ACTION_START)
         val flags = PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_ONE_SHOT or
             PendingIntent.FLAG_IMMUTABLE
-        val pending = PendingIntent.getService(
+        val pending = PendingIntent.getForegroundService(
             this,
             RESTART_REQUEST_CODE,
             restartIntent,
@@ -206,7 +208,7 @@ class MeowVpnService : VpnService() {
         val flags = PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
         val restartIntent = Intent(this, MeowVpnService::class.java)
             .setAction(MeowBoxService.ACTION_START)
-        val pending = PendingIntent.getService(
+        val pending = PendingIntent.getForegroundService(
             this,
             RESTART_REQUEST_CODE,
             restartIntent,
