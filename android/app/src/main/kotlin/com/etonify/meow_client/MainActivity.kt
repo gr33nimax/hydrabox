@@ -783,15 +783,26 @@ class MainActivity : FlutterFragmentActivity() {
         // kills the process during cleanup, START_STICKY must not resurrect a
         // VPN the user has just stopped.
         MeowApplication.clearRuntimeIntent()
-        MeowBoxService.requestStopForMode(modeAtRequest, "main_activity_stop:$reason")
-        runCatching {
-            startService(
-                Intent(this, primaryTarget)
-                    .setAction(MeowBoxService.ACTION_STOP)
-                    .putExtra(MeowBoxService.EXTRA_STOP_REASON, reason),
-            )
-        }.onFailure {
-            MeowDiagnostics.log(TAG, "ACTION_STOP failed target=${primaryTarget.simpleName}", it)
+
+        val stopRequestedDirectly = MeowBoxService.requestStopForMode(
+            modeAtRequest,
+            "main_activity_stop:$reason",
+        )
+
+        if (!stopRequestedDirectly) {
+            runCatching {
+                startService(
+                    Intent(this, primaryTarget)
+                        .setAction(MeowBoxService.ACTION_STOP)
+                        .putExtra(MeowBoxService.EXTRA_STOP_REASON, reason),
+                )
+            }.onFailure {
+                MeowDiagnostics.log(
+                    TAG,
+                    "ACTION_STOP failed target=${primaryTarget.simpleName}",
+                    it,
+                )
+            }
         }
         mainHandler.postDelayed({
             if (!SingboxController.running) {
