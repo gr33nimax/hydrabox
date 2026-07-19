@@ -170,11 +170,9 @@ class MeowApplication : Application() {
                     tempPath = tempDir.absolutePath
                     logMaxLines = if (performanceMode == "performance") 3000 else 800
                     debug = (app.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
-                    oomKillerEnabled = memoryLimitFlag
-                    oomKillerDisabled = !memoryLimitFlag
-                    oomMemoryLimit = 0L
                 }
                 Libbox.setup(setupOptions)
+                Libbox.setMemoryLimit(memoryLimitFlag)
                 libboxReady = true
                 MeowDiagnostics.log(
                     "Application",

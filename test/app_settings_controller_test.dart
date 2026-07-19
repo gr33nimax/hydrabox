@@ -47,6 +47,16 @@ void main() {
       AppSettingsController.normalizedRussiaDnsDirectResolver('77.88.8.1'),
       'udp://77.88.8.1',
     );
+    expect(normalizeDnsResolverInput('8.8.8.8:5353'), 'udp://8.8.8.8:5353');
+    expect(
+      normalizeDnsResolverInput('2606:4700:4700::1111'),
+      'udp://[2606:4700:4700::1111]',
+    );
+    expect(
+      normalizeDnsResolverInput('[2606:4700:4700::1111]:5353'),
+      'udp://[2606:4700:4700::1111]:5353',
+    );
+    expect(normalizeDnsResolverInput('tcp://8.8.8.8'), 'tcp://8.8.8.8');
   });
 
   test('DNS settings keep implicit UDP out of the editable field', () {

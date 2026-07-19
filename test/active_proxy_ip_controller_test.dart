@@ -4,6 +4,203 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:meow_client/app/active_proxy_ip_controller.dart';
 
 void main() {
+  test('literal endpoint IP is published before runtime diagnostics', () {
+    final controller = ActiveProxyIpController();
+    addTearDown(controller.dispose);
+
+    final snapshots = <ActiveProxyIpSnapshot>[];
+    var endpointCalls = 0;
+    var externalCalls = 0;
+
+    controller.schedule(
+      delay: Duration.zero,
+      externalLookupReady: false,
+      isConnected: () => true,
+      isForegroundActive: () => true,
+      currentTarget: () =>
+          _target(endpointHost: '198.51.100.20', endpointIp: '198.51.100.20'),
+      networkUsable: (_) async => true,
+      resolveEndpointIp: (_) async {
+        endpointCalls++;
+        return null;
+      },
+      resolveExternalIp: (_) async {
+        externalCalls++;
+        return null;
+      },
+      persistResult: (_, _) async {},
+      onSnapshot: snapshots.add,
+    );
+
+    expect(snapshots, hasLength(1));
+    expect(snapshots.single.state, ActiveProxyIpState.known);
+    expect(snapshots.single.source, ActiveProxyIpSource.endpoint);
+    expect(snapshots.single.ip, '198.51.100.20');
+    expect(endpointCalls, 0);
+    expect(externalCalls, 0);
+  });
+
+  test(
+    'hostname endpoint appears before external IP and is then refined',
+    () async {
+      final controller = ActiveProxyIpController();
+      addTearDown(controller.dispose);
+
+      final snapshots = <ActiveProxyIpSnapshot>[];
+      final endpointLookup = Completer<String?>();
+      final externalLookup = Completer<ActiveProxyIpResolveResult?>();
+      var persistCalls = 0;
+
+      controller.schedule(
+        delay: Duration.zero,
+        isConnected: () => true,
+        isForegroundActive: () => true,
+        currentTarget: () => _target(endpointHost: 'proxy.example.com'),
+        networkUsable: (_) async => true,
+        resolveEndpointIp: (_) => endpointLookup.future,
+        resolveExternalIp: (_) => externalLookup.future,
+        persistResult: (_, _) async {
+          persistCalls++;
+        },
+        onSnapshot: snapshots.add,
+      );
+
+      expect(snapshots.single.state, ActiveProxyIpState.checking);
+      endpointLookup.complete('198.51.100.30');
+      await _waitUntil(
+        () => controller.snapshot.source == ActiveProxyIpSource.endpoint,
+      );
+      expect(controller.snapshot.ip, '198.51.100.30');
+      expect(persistCalls, 0);
+
+      externalLookup.complete(
+        const ActiveProxyIpResolveResult(ip: '203.0.113.30'),
+      );
+      await _waitUntil(
+        () => controller.snapshot.source == ActiveProxyIpSource.external,
+      );
+      expect(controller.snapshot.ip, '203.0.113.30');
+      expect(persistCalls, 1);
+    },
+  );
+
+  test('late endpoint result cannot overwrite an external IP', () async {
+    final controller = ActiveProxyIpController();
+    addTearDown(controller.dispose);
+
+    final endpointLookup = Completer<String?>();
+    final externalLookup = Completer<ActiveProxyIpResolveResult?>();
+
+    controller.schedule(
+      delay: Duration.zero,
+      isConnected: () => true,
+      isForegroundActive: () => true,
+      currentTarget: () => _target(endpointHost: 'proxy.example.com'),
+      networkUsable: (_) async => true,
+      resolveEndpointIp: (_) => endpointLookup.future,
+      resolveExternalIp: (_) => externalLookup.future,
+      persistResult: (_, _) async {},
+      onSnapshot: (_) {},
+    );
+
+    await Future<void>.delayed(Duration.zero);
+    externalLookup.complete(
+      const ActiveProxyIpResolveResult(ip: '203.0.113.31'),
+    );
+    await _waitUntil(
+      () => controller.snapshot.source == ActiveProxyIpSource.external,
+    );
+
+    endpointLookup.complete('198.51.100.31');
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(controller.snapshot.source, ActiveProxyIpSource.external);
+    expect(controller.snapshot.ip, '203.0.113.31');
+  });
+
+  test('network generation prevents reuse of stale endpoint DNS', () async {
+    final controller = ActiveProxyIpController();
+    addTearDown(controller.dispose);
+
+    final firstLookup = Completer<String?>();
+    var target = _target(
+      endpointHost: 'proxy.example.com',
+      networkGeneration: 1,
+    );
+    var calls = 0;
+
+    Future<String?> resolveEndpoint(String _) {
+      calls++;
+      if (calls == 1) {
+        return firstLookup.future;
+      }
+      return Future<String?>.value('198.51.100.42');
+    }
+
+    void schedule() {
+      controller.schedule(
+        delay: Duration.zero,
+        externalLookupReady: false,
+        isConnected: () => true,
+        isForegroundActive: () => true,
+        currentTarget: () => target,
+        networkUsable: (_) async => true,
+        resolveEndpointIp: resolveEndpoint,
+        resolveExternalIp: (_) async => null,
+        persistResult: (_, _) async {},
+        onSnapshot: (_) {},
+      );
+    }
+
+    schedule();
+    target = _target(endpointHost: 'proxy.example.com', networkGeneration: 2);
+    schedule();
+    await _waitUntil(() => controller.snapshot.ip == '198.51.100.42');
+
+    firstLookup.complete('198.51.100.41');
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(calls, 2);
+    expect(controller.snapshot.ip, '198.51.100.42');
+  });
+
+  test(
+    'endpoint fallback remains visible when external lookup fails',
+    () async {
+      final controller = ActiveProxyIpController(
+        retryDelay: const Duration(days: 1),
+      );
+      addTearDown(controller.dispose);
+
+      final snapshots = <ActiveProxyIpSnapshot>[];
+      var externalCalls = 0;
+
+      controller.schedule(
+        delay: Duration.zero,
+        isConnected: () => true,
+        isForegroundActive: () => true,
+        currentTarget: () =>
+            _target(endpointHost: '198.51.100.40', endpointIp: '198.51.100.40'),
+        networkUsable: (_) async => true,
+        resolveExternalIp: (_) async {
+          externalCalls++;
+          return null;
+        },
+        persistResult: (_, _) async {},
+        onSnapshot: snapshots.add,
+      );
+
+      await _waitUntil(() => externalCalls == 1);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.snapshot.state, ActiveProxyIpState.known);
+      expect(controller.snapshot.source, ActiveProxyIpSource.endpoint);
+      expect(controller.snapshot.ip, '198.51.100.40');
+    },
+  );
+
   test('schedule publishes checking then known snapshot', () async {
     final controller = ActiveProxyIpController();
     addTearDown(controller.dispose);
@@ -368,15 +565,23 @@ ActiveProxyIpTarget _target({
   String outboundTag = 'vless-1',
   String cachedIp = '',
   String cachedCountryCode = '',
+  String endpointHost = '',
+  String endpointIp = '',
+  String endpointCountryCode = '',
   int operationGeneration = 0,
+  int networkGeneration = 0,
 }) {
   return ActiveProxyIpTarget(
     subscriptionId: 'sub-1',
     outboundTag: outboundTag,
     cachedIp: cachedIp,
     cachedCountryCode: cachedCountryCode,
+    endpointHost: endpointHost,
+    endpointIp: endpointIp,
+    endpointCountryCode: endpointCountryCode,
     hasCachedLocation: cachedIp.isNotEmpty && cachedCountryCode.isNotEmpty,
     operationGeneration: operationGeneration,
+    networkGeneration: networkGeneration,
   );
 }
 

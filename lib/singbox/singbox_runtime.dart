@@ -595,6 +595,32 @@ class SingboxRuntime {
         const <String, dynamic>{};
   }
 
+  Future<List<String>> resolveHostOnUnderlyingNetwork({
+    required String host,
+    Duration timeout = const Duration(seconds: 3),
+  }) async {
+    if (!Platform.isAndroid) {
+      throw UnsupportedError(
+        'Underlying-network DNS is only available on Android.',
+      );
+    }
+    final normalizedHost = host.trim();
+    if (normalizedHost.isEmpty) {
+      throw ArgumentError.value(host, 'host', 'Host is empty');
+    }
+    final addresses = await _methods
+        .invokeListMethod<String>(
+          'resolveHostOnUnderlyingNetwork',
+          <String, Object?>{'host': normalizedHost},
+        )
+        .timeout(timeout);
+    return (addresses ?? const <String>[])
+        .map((address) => address.trim())
+        .where((address) => address.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+  }
+
   Future<String> getAndroidId() async {
     final value = await _withMethodChannelFallback<String?>(
       () => _hostApi.getAndroidId(),

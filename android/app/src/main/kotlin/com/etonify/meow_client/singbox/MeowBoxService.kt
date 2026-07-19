@@ -225,13 +225,6 @@ class MeowBoxService(
 
     override fun setSystemProxyEnabled(isEnabled: Boolean) = Unit
 
-    override fun triggerNativeCrash() {
-        Thread {
-            Thread.sleep(200)
-            throw RuntimeException("debug native crash")
-        }.start()
-    }
-
     override fun writeDebugMessage(message: String?) {
         SingboxController.log("debug", message ?: "")
     }

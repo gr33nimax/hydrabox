@@ -399,6 +399,10 @@ void main() {
       subscription,
       capabilities: LibboxCapabilities.parseOrLegacy(
         '{"api_version":1,"core_version":"1.13.14-etonify",'
+        '"supports_url_test_timeout":true,'
+        '"supports_url_test_concurrency":true,'
+        '"supports_url_test_deadline":true,'
+        '"supports_url_test_force":true,'
         '"supports_config_check":true,'
         '"tun_stacks":["system","gvisor","mixed"]}',
       ),
@@ -1341,6 +1345,7 @@ void main() {
             'server': 'one.example.com',
             'server_port': 443,
             'uuid': '7c6a5b3e-4f1a-4d2b-8c9e-1a2b3c4d5e6f',
+            'encryption': 'none',
             'tls': {
               'enabled': true,
               'utls': {'enabled': true, 'fingerprint': 'QQ'},
@@ -1363,6 +1368,7 @@ void main() {
     final leaf = outbounds.firstWhere((entry) => entry['tag'] == 'leaf');
 
     expect(leaf['tls']['utls']['fingerprint'], 'qq');
+    expect(leaf, isNot(contains('encryption')));
   });
 
   test('startup config normalizes comma separated reality short id', () {
@@ -2222,7 +2228,44 @@ void main() {
     });
     expect(remoteDns('tcp://1.1.1.1')['type'], 'tcp');
     expect(remoteDns('tls://dns.google')['server_port'], 853);
-    expect(remoteDns('https://dns.google/dns-query')['path'], '/dns-query');
+    expect(remoteDns('https://dns.google/dns-query'), {
+      'type': 'https',
+      'tag': 'dns-remote',
+      'server': 'dns.google',
+      'server_port': 443,
+      'path': '/dns-query',
+      'detour': 'select',
+    });
+
+    Map<String, dynamic> directDns(String directResolver) {
+      final config = _defaultBuilder(
+        subscription,
+        dnsDirectResolver: directResolver,
+      ).build();
+      final servers = (config['dns'] as Map)['servers'] as List;
+      return servers.cast<Map<String, dynamic>>().firstWhere(
+        (server) => server['tag'] == 'dns-direct',
+      );
+    }
+
+    for (final resolver in const [
+      'udp://dns.example',
+      'tcp://dns.example',
+      'tls://dns.example',
+      'https://dns.example/dns-query',
+    ]) {
+      expect(
+        directDns(resolver)['domain_resolver'],
+        'dns-local',
+        reason: '$resolver needs a non-circular bootstrap resolver',
+      );
+    }
+    expect(directDns('1.1.1.1'), {
+      'type': 'udp',
+      'tag': 'dns-direct',
+      'server': '1.1.1.1',
+      'server_port': 53,
+    });
 
     final config = _defaultBuilder(
       subscription,

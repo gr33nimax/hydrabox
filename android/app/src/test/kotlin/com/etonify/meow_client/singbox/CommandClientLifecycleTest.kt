@@ -86,6 +86,20 @@ class CommandClientLifecycleTest {
     }
 
     @Test
+    fun `foreground reattach can connect after queued expected disconnect`() {
+        val lifecycle = connectedLifecycle()
+        val disconnectEpoch = lifecycle.beginExpectedDisconnect()
+
+        assertNull(lifecycle.beginConnect(shouldConnect = true))
+        lifecycle.finishExpectedDisconnect(disconnectEpoch)
+
+        val replacementEpoch = lifecycle.beginConnect(shouldConnect = true)
+        assertTrue(replacementEpoch != null)
+        assertTrue(lifecycle.onConnected(replacementEpoch!!))
+        assertEquals(CommandConnectionState.CONNECTED, lifecycle.state)
+    }
+
+    @Test
     fun `successful connection resets reconnect backoff`() {
         val lifecycle = connectedLifecycle()
         val firstEpoch = lifecycle.currentEpoch()

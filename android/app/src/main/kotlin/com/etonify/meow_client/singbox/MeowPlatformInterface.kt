@@ -22,7 +22,6 @@ import io.nekohasekai.libbox.ExchangeContext
 import io.nekohasekai.libbox.InterfaceUpdateListener
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.LocalDNSTransport
-import io.nekohasekai.libbox.NeighborUpdateListener
 import io.nekohasekai.libbox.NetworkInterface
 import io.nekohasekai.libbox.NetworkInterfaceIterator
 import io.nekohasekai.libbox.Notification
@@ -51,8 +50,6 @@ abstract class MeowBasePlatformInterface(
     override fun closeDefaultInterfaceMonitor(listener: InterfaceUpdateListener?) {
         MeowDefaultNetworkMonitor.setListener(null)
     }
-
-    override fun closeNeighborMonitor(listener: NeighborUpdateListener?) = Unit
 
     override fun findConnectionOwner(
         ipProtocol: Int,
@@ -143,8 +140,6 @@ abstract class MeowBasePlatformInterface(
 
     override fun readWIFIState(): WIFIState = WIFIState("", "")
 
-    override fun registerMyInterface(name: String?) = Unit
-
     override fun sendNotification(notification: Notification?) {
         if (notification == null) return
         SingboxController.log("info", notification.title + ": " + notification.body)
@@ -155,8 +150,6 @@ abstract class MeowBasePlatformInterface(
             MeowDefaultNetworkMonitor.setListener(listener)
         }
     }
-
-    override fun startNeighborMonitor(listener: NeighborUpdateListener?) = Unit
 
     override fun systemCertificates(): StringIterator {
         val certificates = mutableListOf<String>()
@@ -256,12 +249,11 @@ class MeowVpnPlatformInterface(
                 splitPackages.excluded,
                 service.packageName,
             )
-            val dnsServerAddress = runCatching { options.dnsServerAddress }.getOrNull()
-            while (dnsServerAddress?.hasNext() == true) {
-                val dnsAddress = dnsServerAddress.next()
-                if (dnsAddress.isBlank()) {
-                    continue
-                }
+            val dnsAddress = runCatching { options.dnsServerAddress?.value }
+                .getOrNull()
+                ?.trim()
+                .orEmpty()
+            if (dnsAddress.isNotEmpty()) {
                 builder.addDnsServer(dnsAddress)
                 MeowDiagnostics.log("MeowVpnPlatform", "openTun dns=$dnsAddress")
             }

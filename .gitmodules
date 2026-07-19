@@ -1,0 +1,4 @@
+[submodule "etonify-core"]
+	path = etonify-core
+	url = https://github.com/yamixdev/etonify-core.git
+	branch = etonify-dev

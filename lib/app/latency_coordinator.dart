@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:meow_client/logging/app_log_store.dart';
 import 'package:meow_client/singbox/libbox_capabilities.dart';
 
-enum LatencySessionKind { full, startup }
+enum LatencySessionKind { full, startup, targeted }
 
 enum LatencySessionPhase { idle, startingRpc, collectingEvents, settled }
 
@@ -183,6 +183,34 @@ class LatencyCoordinator {
     return _runGroupSession(kind: LatencySessionKind.full, reason: reason);
   }
 
+  Future<bool> runTarget({
+    required String targetOutboundTag,
+    required String reason,
+  }) {
+    final targetTag = targetOutboundTag.trim();
+    if (targetTag.isEmpty || !_capabilities.supportsTargetedUrlTest) {
+      AppLogStore.warning(
+        'latency',
+        'targeted URLTest skipped reason=$reason target=$targetTag '
+            'supported=${_capabilities.supportsTargetedUrlTest}',
+      );
+      return Future<bool>.value(false);
+    }
+    return _runSession(
+      kind: LatencySessionKind.targeted,
+      reason: reason,
+      targetTag: targetTag,
+      request: LatencyTestRequest(
+        targetOutboundTag: targetTag,
+        priorityOutboundTag: targetTag,
+        url: _testUrl(),
+        timeoutMillis: perOutboundTimeoutMillis,
+        concurrency: 1,
+        deadlineMillis: perOutboundTimeoutMillis + 5000,
+      ),
+    );
+  }
+
   /// Records one timestamped result from the command client's group stream.
   /// Cached snapshots from before this session and duplicate events are
   /// ignored, so they cannot keep the progress UI alive indefinitely.
@@ -274,6 +302,18 @@ class LatencyCoordinator {
   Future<bool> _runGroupSession({
     required LatencySessionKind kind,
     required String reason,
+  }) => _runSession(
+    kind: kind,
+    reason: reason,
+    targetTag: '',
+    request: _groupRequest(),
+  );
+
+  Future<bool> _runSession({
+    required LatencySessionKind kind,
+    required String reason,
+    required String targetTag,
+    required LatencyTestRequest request,
   }) {
     if (_disposed ||
         !_isConnected() ||
@@ -294,21 +334,24 @@ class LatencyCoordinator {
     _sessionOperationGeneration = _operationGeneration();
     _sessionStartedAtSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     _baselineEventTimes = Map<String, int>.from(_eventBaselineTimes());
-    _sessionExpectedTags = _expectedTags()
-        .map((tag) => tag.trim())
-        .where((tag) => tag.isNotEmpty)
-        .toSet();
+    _sessionExpectedTags = targetTag.isNotEmpty
+        ? <String>{targetTag}
+        : _expectedTags()
+              .map((tag) => tag.trim())
+              .where((tag) => tag.isNotEmpty)
+              .toSet();
     _acceptedEventTimes.clear();
     _rpcAccepted = false;
     _phase = LatencySessionPhase.startingRpc;
     _kind = kind;
-    _targetTag = '';
+    _targetTag = targetTag;
     final result = Completer<bool>();
     _sessionResult = result;
-    _onSessionChanged(true, kind, '');
+    _onSessionChanged(true, kind, targetTag);
     AppLogStore.info(
       'latency',
-      'group session start kind=${kind.name} reason=$reason '
+      'latency session start kind=${kind.name} reason=$reason '
+          'target=$targetTag '
           'outbounds=${_outboundCount()} expected=${_sessionExpectedTags.length} '
           'completion='
           '${capabilities.urlTestCompletionModel.name}',
@@ -322,17 +365,17 @@ class LatencyCoordinator {
       );
     });
     unawaited(
-      _invokeNativeGroupTest(
+      _invokeNativeTest(
         generation: generation,
         kind: kind,
         reason: reason,
-        request: _groupRequest(),
+        request: request,
       ),
     );
     return result.future;
   }
 
-  Future<void> _invokeNativeGroupTest({
+  Future<void> _invokeNativeTest({
     required int generation,
     required LatencySessionKind kind,
     required String reason,
@@ -377,7 +420,7 @@ class LatencyCoordinator {
       if (!_isActiveGeneration(generation)) return;
       AppLogStore.warning(
         'latency',
-        'native group command timed out kind=${kind.name} reason=$reason '
+        'native URLTest command timed out kind=${kind.name} reason=$reason '
             'uiTimeoutMs=${uiPolicy.nativeCommandTimeout.inMilliseconds}',
       );
       _settleCurrent(success: false, reason: 'native_command_timeout');
@@ -385,7 +428,7 @@ class LatencyCoordinator {
       if (!_isActiveGeneration(generation)) return;
       AppLogStore.warning(
         'latency',
-        'native group command failed kind=${kind.name} reason=$reason '
+        'native URLTest command failed kind=${kind.name} reason=$reason '
             'error=$error\n$stackTrace',
       );
       _settleCurrent(success: false, reason: 'native_command_error');
@@ -428,7 +471,7 @@ class LatencyCoordinator {
     }
     AppLogStore.info(
       'latency',
-      'group session settled kind=${previousKind?.name ?? 'unknown'} '
+      'latency session settled kind=${previousKind?.name ?? 'unknown'} '
           'reason=$reason success=$success '
           'received=$receivedCount expected=$expectedCount',
     );

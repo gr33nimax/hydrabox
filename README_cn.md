@@ -15,7 +15,7 @@
 
 </div>
 
-Etonify 是一个以 Android 为核心目标的 VPN 客户端，面向需要透明、可维护、社区驱动替代方案的用户。项目最初受 Hiddify 相关思路启发，但 Android 运行时、订阅处理、界面、诊断和维护流程正在围绕 Etonify 与修改版 [**MeowSingBox**](https://github.com/dudosxdev/sing-box) 核心重建。
+Etonify 是一个以 Android 为核心目标的 VPN 客户端，面向需要透明、可维护、社区驱动替代方案的用户。项目最初受 Hiddify 相关思路启发，但 Android 运行时、订阅处理、界面、诊断和维护流程正在围绕 Etonify 与 [**yamixdev/etonify-core**](https://github.com/yamixdev/etonify-core/tree/etonify-dev) 重建；后者基于稳定版 sing-box，并维护客户端所需的改动。
 
 本应用不提供 VPN 服务器。它是用于导入和使用你拥有或有权使用的订阅与配置的客户端。
 
@@ -45,7 +45,7 @@ Etonify 仍处于早期公开开发阶段。目前 Android 是唯一的生产目
 
 - Telegram 频道：[@etonify](https://t.me/etonify)
 - 联系开发者：[Etonify Direct](https://t.me/etonify?direct)
-- MeowTeam：YamixDEV 负责客户端，[dudosxdev](https://github.com/dudosxdev) 维护修改版 [sing-box 核心](https://github.com/dudosxdev/sing-box)。
+- MeowTeam：YamixDEV 负责 Android 客户端、发布和 [etonify-core](https://github.com/yamixdev/etonify-core/tree/etonify-dev)；[dudosxdev](https://github.com/dudosxdev) 提供网络与协议方面的支持。
 - 欢迎 Issues 和 Pull Requests。
 - 欢迎报告安全问题。请在团队有时间调查前，避免公开发布可利用细节。
 

@@ -1266,7 +1266,7 @@ void main() {
     expect(find.text('Client version'), findsOneWidget);
     expect(find.text('0.1.1'), findsOneWidget);
     expect(find.text('MeowVPN'), findsNothing);
-    expect(find.text('dudosxdev/sing-box'), findsOneWidget);
+    expect(find.text('yamixdev/etonify-core'), findsOneWidget);
 
     final teamAction = find.ancestor(
       of: find.text('MeowTeam'),
@@ -1277,11 +1277,13 @@ void main() {
 
     expect(find.text('The team behind Etonify'), findsOneWidget);
     expect(find.text('Started as a Hiddify fork'), findsOneWidget);
-    expect(find.text('MeowSingBox core'), findsOneWidget);
+    expect(find.text('Moving to etonify-core'), findsOneWidget);
 
     await tester.scrollUntilVisible(find.text('dudosxdev'), 500);
     expect(find.text('dudosxdev'), findsOneWidget);
     expect(find.text('yamixdev'), findsOneWidget);
+
+    await tester.scrollUntilVisible(find.text('© 2026 MeowTeam™'), 500);
     expect(find.text('© 2026 MeowTeam™'), findsOneWidget);
   });
 

@@ -605,7 +605,7 @@ abstract class AppLocalizations {
   /// No description provided for @teamIntroBody.
   ///
   /// In en, this message translates to:
-  /// **'MeowTeam is two developers building Etonify and custom networking components as an independent technical project.'**
+  /// **'MeowTeam is two developers building Etonify, its core, and networking components together as an independent open-source project.'**
   String get teamIntroBody;
 
   /// No description provided for @teamTimelineForkTitle.
@@ -635,13 +635,13 @@ abstract class AppLocalizations {
   /// No description provided for @teamTimelineCoreTitle.
   ///
   /// In en, this message translates to:
-  /// **'MeowSingBox core'**
+  /// **'Moving to etonify-core'**
   String get teamTimelineCoreTitle;
 
   /// No description provided for @teamTimelineCoreBody.
   ///
   /// In en, this message translates to:
-  /// **'The app uses a modified sing-box core with extra work around URLTest, connection cleanup, and resource handling.'**
+  /// **'After MeowSingBox, the client moved to a more stable sing-box base with the changes Etonify needs. Maintaining our own core makes updates and testing easier, while URLTest, server failover, and resource-cleanup improvements benefit everyday use.'**
   String get teamTimelineCoreBody;
 
   /// No description provided for @teamTimelineNowTitle.
@@ -665,7 +665,7 @@ abstract class AppLocalizations {
   /// No description provided for @teamDeveloperYamixdevRole.
   ///
   /// In en, this message translates to:
-  /// **'Android client, interface, and releases'**
+  /// **'Android client, interface, core, and releases'**
   String get teamDeveloperYamixdevRole;
 
   /// No description provided for @teamTelegramRole.

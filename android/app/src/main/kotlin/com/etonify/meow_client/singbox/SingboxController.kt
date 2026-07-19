@@ -66,8 +66,9 @@ object SingboxController {
     private val stopWaiterLock = Any()
     private val stopWaiters = mutableListOf<(Boolean) -> Unit>()
 
-    @Volatile
-    private var eventSink: EventChannel.EventSink? = null
+    private val eventSinkRegistry = RuntimeEventSinkRegistry<EventChannel.EventSink>()
+    private val eventSink: EventChannel.EventSink?
+        get() = eventSinkRegistry.current()
     @Volatile
     private var uiForeground = true
     @Volatile
@@ -80,7 +81,6 @@ object SingboxController {
     private var lastEmittedGroupsPayload: Map<String, Any?>? = null
     private var lastStatusEventUptimeMs: Long = 0
     private var lastGroupsEventUptimeMs: Long = 0
-    private var lastGroupsParseUptimeMs: Long = 0
     private var lastGroupsDiagnosticLogUptimeMs: Long = 0
 
     @Volatile
@@ -148,13 +148,6 @@ object SingboxController {
         override fun writeGroups(message: OutboundGroupIterator?) {
             if (message == null || !commandClientLifecycle.acceptsEvents(epoch)) return
             val now = SystemClock.uptimeMillis()
-            val parseThrottleMs = when (MeowApplication.performanceMode) {
-                "performance" -> 1_000L
-                "balanced" -> 2_000L
-                else -> 3_000L
-            }
-            if (now - lastGroupsParseUptimeMs < parseThrottleMs) return
-            lastGroupsParseUptimeMs = now
             val groups = mutableListOf<Map<String, Any?>>()
             val selectedGroups = mutableListOf<String>()
             var itemCount = 0
@@ -177,10 +170,12 @@ object SingboxController {
                     val time = item.urlTestTime
                     val status = item.urlTestStatus
                     val error = item.urlTestError
+                    val errorCode = item.urlTestErrorCode
                     if (delay <= 0L &&
                         time <= 0L &&
                         status.isNullOrBlank() &&
-                        error.isNullOrBlank()
+                        error.isNullOrBlank() &&
+                        errorCode.isNullOrBlank()
                     ) {
                         continue
                     }
@@ -203,6 +198,7 @@ object SingboxController {
                         time = time,
                         status = status,
                         error = error,
+                        errorCode = errorCode,
                     )
                 }
                 groups += mapOf(
@@ -235,8 +231,6 @@ object SingboxController {
                 ),
             )
         }
-
-        override fun writeOutbounds(message: io.nekohasekai.libbox.OutboundGroupItemIterator?) = Unit
 
         override fun writeLogs(messageList: LogIterator?) {
             if (messageList == null || !commandClientLifecycle.acceptsEvents(epoch)) return
@@ -288,6 +282,7 @@ object SingboxController {
         val time: Long,
         val status: String?,
         val error: String?,
+        val errorCode: String?,
     ) {
         fun toEventMap(): Map<String, Any?> = mapOf(
             "tag" to tag,
@@ -296,6 +291,7 @@ object SingboxController {
             "time" to time,
             "status" to status,
             "error" to error,
+            "errorCode" to errorCode,
         )
     }
 
@@ -324,17 +320,39 @@ object SingboxController {
         return sorted.map { it.toEventMap() }
     }
 
-    fun setEventSink(sink: EventChannel.EventSink?) {
-        eventSink = sink
-        if (sink != null) {
-            emitCurrentState()
-            emitCurrentStatus()
-            if (running && uiForeground && commandClient == null) {
-                connectClient()
-            }
-        } else {
-            disconnectClient()
+    fun registerEventSink(sink: EventChannel.EventSink): Long {
+        val registration = eventSinkRegistry.register(sink)
+        // A fresh Flutter subscription is authoritative evidence that a UI
+        // engine has been attached. The previous engine may have left this
+        // flag false when its task was removed.
+        uiForeground = true
+        MeowDiagnostics.log(
+            TAG,
+            "runtime event sink attached registration=$registration running=$running",
+        )
+        emitCurrentState()
+        emitCurrentStatus()
+        emitCurrentGroups()
+        if (running) {
+            // Always enqueue reconciliation. CommandClientLifecycle suppresses
+            // duplicates, while a queued disconnect from the old engine is
+            // followed by this connect request instead of leaving diagnostics
+            // permanently detached.
+            connectClient()
         }
+        return registration
+    }
+
+    fun clearEventSink(registration: Long) {
+        if (!eventSinkRegistry.clear(registration)) {
+            MeowDiagnostics.log(
+                TAG,
+                "runtime event sink detach ignored stale registration=$registration",
+            )
+            return
+        }
+        MeowDiagnostics.log(TAG, "runtime event sink detached registration=$registration")
+        disconnectClient()
     }
 
     fun setRunning(value: Boolean, mode: String = serviceMode, error: String? = null) {
@@ -359,10 +377,20 @@ object SingboxController {
         }
     }
 
-    fun setUiForeground(value: Boolean) {
-        if (uiForeground == value) return
+    fun setUiForeground(value: Boolean, registration: Long = 0L) {
+        if (!eventSinkRegistry.canControl(registration)) {
+            MeowDiagnostics.log(
+                TAG,
+                "ui foreground ignored stale registration=$registration value=$value",
+            )
+            return
+        }
+        val changed = uiForeground != value
         uiForeground = value
-        MeowDiagnostics.log(TAG, "ui foreground=$value running=$running")
+        MeowDiagnostics.log(
+            TAG,
+            "ui foreground=$value changed=$changed registration=$registration running=$running",
+        )
         if (!value) {
             disconnectClient()
             return
@@ -370,6 +398,7 @@ object SingboxController {
         if (running && eventSink != null) {
             emitCurrentState()
             emitCurrentStatus()
+            emitCurrentGroups()
             connectClient()
         }
     }
@@ -803,32 +832,24 @@ object SingboxController {
             "info",
             "libbox addOutbound selector=$selectorTag tag=$tag type=$type detour=$detour jsonChars=${outboundJson.length}",
         )
-        commandExecutor.execute {
-            val result = runCatching {
-                withStandaloneCommandClient { client ->
-                    client.addOutbound(selectorTag, outboundJson)
-                }
-            }
-            result.onFailure {
-                log("error", "libbox addOutbound failed selector=$selectorTag tag=$tag error=${it.message}")
-            }
-            mainHandler.post { callback(result.map { Unit }) }
-        }
+        callback(
+            Result.failure(
+                UnsupportedOperationException(
+                    "Dynamic outbound insertion is unavailable; rebuild and apply the runtime config",
+                ),
+            ),
+        )
     }
 
     fun removeOutbound(selectorTag: String, outboundTag: String, callback: (Result<Unit>) -> Unit) {
         log("info", "libbox removeOutbound selector=$selectorTag outbound=$outboundTag")
-        commandExecutor.execute {
-            val result = runCatching {
-                withStandaloneCommandClient { client ->
-                    client.removeOutbound(selectorTag, outboundTag)
-                }
-            }
-            result.onFailure {
-                log("error", "libbox removeOutbound failed selector=$selectorTag outbound=$outboundTag error=${it.message}")
-            }
-            mainHandler.post { callback(result.map { Unit }) }
-        }
+        callback(
+            Result.failure(
+                UnsupportedOperationException(
+                    "Dynamic outbound removal is unavailable; rebuild and apply the runtime config",
+                ),
+            ),
+        )
     }
 
     fun urlTest(
@@ -854,24 +875,18 @@ object SingboxController {
                 check(operationGeneration > 0L && operationGeneration == activeRuntimeGeneration && running) {
                     "stale runtime before URL test"
                 }
-                if (targetOutboundTag.isNotBlank()) {
-                    // The stable 0.2.x libbox has no per-outbound HTTP URLTest.
-                    // Never report this as success: the caller would treat a
-                    // cached latency as a fresh measurement. A raw TCP/ICMP
-                    // fallback is deliberately not used because it cannot
-                    // validate VLESS/Reality/WebSocket proxy traffic.
-                    throw UnsupportedOperationException(
-                        "Targeted HTTP URLTest is not supported by the bundled core: " +
-                            "group=$groupTag target=$targetOutboundTag",
+                withStandaloneCommandClient { client ->
+                    client.urlTestWithOptions(
+                        groupTag,
+                        targetOutboundTag,
+                        priorityOutboundTag,
+                        excludeOutboundTag,
+                        url,
+                        timeoutMillis,
+                        concurrency,
+                        deadlineMillis,
+                        force,
                     )
-                } else {
-                    withStandaloneCommandClient { client ->
-                        if (url.isBlank()) {
-                            client.urlTest(groupTag)
-                        } else {
-                            client.urlTestWithURL(groupTag, url)
-                        }
-                    }
                 }
             }
             if (operationGeneration != activeRuntimeGeneration) {
@@ -893,20 +908,13 @@ object SingboxController {
             "info",
             "libbox removeURLTestOutbounds group=$groupTag count=${outboundTags.size} tags=${outboundTags.take(12).joinToString(",")}",
         )
-        commandExecutor.execute {
-            val result = runCatching {
-                withStandaloneCommandClient { client ->
-                    client.removeURLTestOutbounds(
-                        groupTag,
-                        outboundTags.joinToString("\n"),
-                    )
-                }
-            }
-            result.onFailure {
-                log("error", "libbox removeURLTestOutbounds failed group=$groupTag error=${it.message}")
-            }
-            mainHandler.post { callback(result.map { Unit }) }
-        }
+        callback(
+            Result.failure(
+                UnsupportedOperationException(
+                    "Dynamic URLTest group mutation is unavailable; rebuild and apply the runtime config",
+                ),
+            ),
+        )
     }
 
     fun lookupOutboundExternalInfo(outboundTag: String, callback: (Result<Map<String, String>>) -> Unit) {
@@ -1042,6 +1050,10 @@ object SingboxController {
                 "trafficAvailable" to trafficAvailable,
             ),
         )
+    }
+
+    private fun emitCurrentGroups() {
+        latestGroupsPayload?.let(::emit)
     }
 
     private fun fetchOutboundExternalInfo(outboundTag: String): Map<String, String> {

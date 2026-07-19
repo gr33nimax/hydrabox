@@ -279,7 +279,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get teamIntroBody =>
-      'MeowTeam is two developers building Etonify and custom networking components as an independent technical project.';
+      'MeowTeam is two developers building Etonify, its core, and networking components together as an independent open-source project.';
 
   @override
   String get teamTimelineForkTitle => 'Started as a Hiddify fork';
@@ -296,11 +296,11 @@ class AppLocalizationsEn extends AppLocalizations {
       'We gradually split the large legacy code into focused components, simplified VPN control, and added checks for critical scenarios.';
 
   @override
-  String get teamTimelineCoreTitle => 'MeowSingBox core';
+  String get teamTimelineCoreTitle => 'Moving to etonify-core';
 
   @override
   String get teamTimelineCoreBody =>
-      'The app uses a modified sing-box core with extra work around URLTest, connection cleanup, and resource handling.';
+      'After MeowSingBox, the client moved to a more stable sing-box base with the changes Etonify needs. Maintaining our own core makes updates and testing easier, while URLTest, server failover, and resource-cleanup improvements benefit everyday use.';
 
   @override
   String get teamTimelineNowTitle => 'Etonify today';
@@ -315,7 +315,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get teamDeveloperYamixdevRole =>
-      'Android client, interface, and releases';
+      'Android client, interface, core, and releases';
 
   @override
   String get teamTelegramRole => 'Official channel and release news';

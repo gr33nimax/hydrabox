@@ -20,7 +20,7 @@ class SettingsAboutPage extends StatefulWidget {
   });
 
   static final Uri _coreSourceUri = Uri.parse(
-    'https://github.com/dudosxdev/sing-box',
+    'https://github.com/yamixdev/etonify-core/tree/etonify-dev',
   );
   static final Uri _telegramUri = Uri.parse('https://t.me/etonify');
   static final Uri _contactUri = Uri.parse('https://t.me/etonify?direct');
@@ -238,7 +238,7 @@ class _AboutInfoCard extends StatelessWidget {
                 ),
                 _AboutActionChip(
                   icon: Icons.code_rounded,
-                  label: 'dudosxdev/sing-box',
+                  label: 'yamixdev/etonify-core',
                   onTap: onOpenCoreSource,
                 ),
                 _AboutActionChip(
@@ -517,7 +517,7 @@ class _MeowTeamPage extends StatelessWidget {
   static final Uri _yamixdevUri = Uri.parse('https://t.me/Ilushadev');
   static final Uri _telegramUri = Uri.parse('https://t.me/etonify');
   static final Uri _coreUri = Uri.parse(
-    'https://github.com/dudosxdev/sing-box',
+    'https://github.com/yamixdev/etonify-core/tree/etonify-dev',
   );
 
   Future<void> _open(BuildContext context, Uri uri) async {
@@ -571,7 +571,7 @@ class _MeowTeamPage extends StatelessWidget {
             icon: Icons.memory_rounded,
             title: l10n.teamTimelineCoreTitle,
             body: l10n.teamTimelineCoreBody,
-            actionLabel: 'dudosxdev/sing-box',
+            actionLabel: 'yamixdev/etonify-core',
             onAction: () => _open(context, _coreUri),
           ),
           _TimelineItem(

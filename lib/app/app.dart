@@ -5195,6 +5195,38 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     await _latencyCoordinator.runFull(reason: 'manual');
   }
 
+  Future<void> _runActiveProxyUrlTest({bool haptic = true}) async {
+    if (!_connected || !_foregroundLifecycleActive) {
+      return;
+    }
+    if (_urlTestInFlight) {
+      AppLogStore.debug(
+        'latency',
+        'targeted URLTest skipped: native session is still producing results',
+      );
+      return;
+    }
+    final targetTag = _currentResolvedActiveOutboundTag()?.trim() ?? '';
+    if (targetTag.isEmpty) {
+      AppLogStore.warning(
+        'latency',
+        'targeted URLTest skipped: active outbound is unresolved',
+      );
+      return;
+    }
+    if (haptic) {
+      _haptic();
+    }
+    if (!_latencyCoordinator.capabilities.supportsTargetedUrlTest) {
+      await _latencyCoordinator.runFull(reason: 'manual_active_fallback');
+      return;
+    }
+    await _latencyCoordinator.runTarget(
+      targetOutboundTag: targetTag,
+      reason: 'manual_active',
+    );
+  }
+
   Future<void> _handleRuntimeLifecycleTimeout(
     RuntimeLifecycleResult result,
   ) async {
@@ -5463,6 +5495,13 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
 
   void _startSingboxEvents() {
     _runtimeEvents.start();
+    if (_foregroundLifecycleActive) {
+      // A foreground VPN service can outlive the Flutter engine after the task
+      // is swiped away. Explicitly reattach the new engine even though its
+      // initial lifecycle state is already `resumed` and therefore produces no
+      // didChangeAppLifecycleState callback.
+      unawaited(_syncRuntimeUiForeground(true));
+    }
     unawaited(_syncRuntimeState());
   }
 
@@ -6506,20 +6545,22 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     Duration delay = const Duration(milliseconds: 120),
     bool forceRefresh = false,
   }) {
-    if (!_runtimeOperations.diagnosticsReady) {
+    final externalLookupReady = _runtimeOperations.diagnosticsReady;
+    if (!externalLookupReady) {
       AppLogStore.debug(
         'proxy',
-        'active IP lookup deferred: runtime diagnostics are not ready',
+        'external IP lookup deferred; resolving endpoint IP first',
       );
-      return;
     }
     _activeProxyIpController.schedule(
       delay: delay,
       forceRefresh: forceRefresh,
+      externalLookupReady: externalLookupReady,
       isConnected: () => _connected,
       isForegroundActive: () => _foregroundLifecycleActive,
       currentTarget: _currentActiveProxyIpTarget,
       networkUsable: (reason) => _networkInterfaceUsable(reason: reason),
+      resolveEndpointIp: _resolveProxyEndpointIp,
       resolveExternalIp: _resolveActiveProxyIp,
       persistResult: _persistActiveProxyIpResult,
       onSnapshot: _publishActiveProxyIpSnapshot,
@@ -6547,6 +6588,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     if (activeSubscription == null || activeOutbound == null) {
       return null;
     }
+    final endpointHost = _normalizedProxyEndpointHost(activeOutbound.server);
+    final literalEndpointIp = InternetAddress.tryParse(endpointHost)?.address;
     return ActiveProxyIpTarget(
       subscriptionId: activeSubscription.id,
       outboundTag: activeOutbound.tag,
@@ -6554,9 +6597,43 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       cachedCountryCode: _normalizeCountryCode(
         activeOutbound.info.exitCountry ?? activeOutbound.info.country,
       ),
+      endpointHost: endpointHost,
+      endpointIp: literalEndpointIp,
+      endpointCountryCode: _normalizeCountryCode(activeOutbound.info.country),
       hasCachedLocation: _hasResolvedExternalLocation(activeOutbound),
       operationGeneration: _runtimeOperations.diagnosticGeneration,
+      networkGeneration: _networkInterfaceGeneration,
     );
+  }
+
+  String _normalizedProxyEndpointHost(String rawHost) {
+    final host = rawHost.trim();
+    if (host.length >= 2 && host.startsWith('[') && host.endsWith(']')) {
+      return host.substring(1, host.length - 1);
+    }
+    return host;
+  }
+
+  Future<String?> _resolveProxyEndpointIp(String host) async {
+    final normalizedHost = _normalizedProxyEndpointHost(host);
+    if (normalizedHost.isEmpty) {
+      return null;
+    }
+    final literal = InternetAddress.tryParse(normalizedHost);
+    if (literal != null) {
+      return literal.address;
+    }
+    try {
+      final addresses = await SingboxRuntime.instance
+          .resolveHostOnUnderlyingNetwork(
+            host: normalizedHost,
+            timeout: const Duration(seconds: 3),
+          );
+      return addresses.firstOrNull;
+    } catch (error) {
+      AppLogStore.debug('proxy', 'endpoint DNS lookup failed: $error');
+      return null;
+    }
   }
 
   Future<ActiveProxyIpResolveResult?> _resolveActiveProxyIp(
@@ -7142,7 +7219,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
                 onToggleConnection: () => unawaited(
                   _toggleConnection(source: 'home.connection_button'),
                 ),
-                onRefreshLatency: () => unawaited(_runUrlTest()),
+                onRefreshLatency: () => unawaited(_runActiveProxyUrlTest()),
                 onRefreshActiveProxyIp: _refreshActiveProxyIp,
                 onHideServerIpChanged: _setHideServerIp,
                 onOpenSubscriptions: _showSubscriptionsPage,

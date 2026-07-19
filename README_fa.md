@@ -15,7 +15,7 @@
 
 </div>
 
-Etonify یک کلاینت VPN با تمرکز روی Android است؛ برای کاربرانی که به جای کلاینت‌های قدیمی یا بسته، به یک گزینه‌ی شفاف، قابل نگهداری و جامعه‌محور نیاز دارند. این پروژه در مسیر ایده‌های مرتبط با Hiddify شروع شد، اما runtime اندروید، مدیریت subscription، رابط کاربری، تشخیص خطا و روند نگهداری اکنون حول Etonify و هسته‌ی تغییر یافته‌ی [**MeowSingBox**](https://github.com/dudosxdev/sing-box) بازسازی می‌شود.
+Etonify یک کلاینت VPN با تمرکز روی Android است؛ برای کاربرانی که به جای کلاینت‌های قدیمی یا بسته، به یک گزینه‌ی شفاف، قابل نگهداری و جامعه‌محور نیاز دارند. این پروژه در مسیر ایده‌های مرتبط با Hiddify شروع شد، اما runtime اندروید، مدیریت subscription، رابط کاربری، تشخیص خطا و روند نگهداری اکنون حول Etonify و [**yamixdev/etonify-core**](https://github.com/yamixdev/etonify-core/tree/etonify-dev) بازسازی می‌شود؛ هسته‌ای بر پایه‌ی نسخه‌ی پایدار sing-box با تغییرات مورد نیاز کلاینت.
 
 این برنامه سرور VPN ارائه نمی‌کند. Etonify یک کلاینت برای subscriptionها و configurationهایی است که مالک آن‌ها هستید یا اجازه‌ی استفاده از آن‌ها را دارید.
 
@@ -45,7 +45,7 @@ Etonify در مرحله‌ی اولیه‌ی توسعه‌ی عمومی است. 
 
 - کانال Telegram: [@etonify](https://t.me/etonify)
 - ارتباط مستقیم با توسعه‌دهندگان: [Etonify Direct](https://t.me/etonify?direct)
-- MeowTeam: بخش کلاینت توسط YamixDEV توسعه داده می‌شود و [dudosxdev](https://github.com/dudosxdev) نگهداری [هسته‌ی تغییر یافته‌ی sing-box](https://github.com/dudosxdev/sing-box) را بر عهده دارد.
+- MeowTeam: YamixDEV روی کلاینت Android، انتشارها و [etonify-core](https://github.com/yamixdev/etonify-core/tree/etonify-dev) کار می‌کند؛ [dudosxdev](https://github.com/dudosxdev) در بخش شبکه و پروتکل‌ها همکاری می‌کند.
 - Issue و Pull Request پذیرفته می‌شود.
 - گزارش امنیتی هم پذیرفته می‌شود. لطفاً قبل از بررسی تیم، جزئیات قابل سوءاستفاده را عمومی منتشر نکنید.
 

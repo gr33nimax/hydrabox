@@ -15,7 +15,7 @@
 
 </div>
 
-Etonify is an Android-focused VPN client for people who need a transparent, maintainable, and community-driven alternative to legacy VPN clients. The project started as a fork lineage inspired by Hiddify, but the Android runtime, subscription handling, UI, diagnostics, and maintenance flow are being rebuilt around Etonify and the modified [**MeowSingBox**](https://github.com/dudosxdev/sing-box) core.
+Etonify is an Android-focused VPN client for people who need a transparent, maintainable, and community-driven alternative to legacy VPN clients. The project started as a fork lineage inspired by Hiddify, but the Android runtime, subscription handling, UI, diagnostics, and maintenance flow are being rebuilt around Etonify and [**yamixdev/etonify-core**](https://github.com/yamixdev/etonify-core/tree/etonify-dev), a stable sing-box base with changes maintained specifically for the client.
 
 The app does not provide VPN servers. It is a client for subscriptions and configurations that you own or are allowed to use.
 
@@ -25,7 +25,7 @@ Etonify is in early public development. Android is the only production target ri
 
 ## Features
 
-- Android VPN TUN mode powered by a modified sing-box core.
+- Android VPN TUN mode powered by [etonify-core](https://github.com/yamixdev/etonify-core/tree/etonify-dev).
 - Local mixed proxy inbound for apps or devices that use HTTP/SOCKS manually.
 - Subscription import from URL, QR code, local file, clipboard, and deep links.
 - Deep link handlers for `etonify://`, `happ://add`, `happ://crypt*`, and `sing-box://import-remote-profile`.
@@ -45,7 +45,7 @@ Etonify is in early public development. Android is the only production target ri
 
 - Telegram channel: [@etonify](https://t.me/etonify)
 - Direct contact with the developers: [Etonify Direct](https://t.me/etonify?direct)
-- MeowTeam: YamixDEV works on the client; [dudosxdev](https://github.com/dudosxdev) maintains the modified [sing-box core](https://github.com/dudosxdev/sing-box).
+- MeowTeam: YamixDEV works on the Android client, releases, and [etonify-core](https://github.com/yamixdev/etonify-core/tree/etonify-dev); [dudosxdev](https://github.com/dudosxdev) contributes networking and protocol expertise.
 - Issues and pull requests are welcome.
 - Security reports are welcome. Please avoid publishing exploitable details publicly before the team has time to investigate.
 
