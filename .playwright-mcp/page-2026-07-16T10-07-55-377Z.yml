@@ -1,0 +1,498 @@
+- generic [active] [ref=f3e1]:
+  - link "К содержанию" [ref=f3e2] [cursor=pointer]:
+    - /url: "#doc-content"
+  - banner [ref=f3e3]:
+    - generic [ref=f3e4]:
+      - button "Открыть навигацию" [ref=f3e5] [cursor=pointer]:
+        - generic [ref=f3e7]: menu
+      - link "Etonify" [ref=f3e8] [cursor=pointer]:
+        - /url: "#start"
+      - generic [ref=f3e9]:
+        - button [ref=f3e10] [cursor=pointer]:
+          - generic [ref=f3e11]: search
+        - generic "Language" [ref=f3e12]:
+          - button "RU" [pressed] [ref=f3e13] [cursor=pointer]
+          - button "EN" [ref=f3e14] [cursor=pointer]
+        - button "Настроить тему" [ref=f3e16] [cursor=pointer]:
+          - generic [ref=f3e18]: light_mode
+  - generic [ref=f3e19]:
+    - complementary "Документация" [ref=f3e20]:
+      - generic [ref=f3e21]:
+        - navigation "Разделы" [ref=f3e22]:
+          - generic [ref=f3e23]:
+            - generic [ref=f3e24]: Начало
+            - link "Что такое Etonify" [ref=f3e25] [cursor=pointer]:
+              - /url: "#start"
+              - generic [ref=f3e26]: vpn_key
+            - link "Установка" [ref=f3e28] [cursor=pointer]:
+              - /url: "#install"
+              - generic [ref=f3e29]: install_mobile
+            - link "Первое подключение" [ref=f3e31] [cursor=pointer]:
+              - /url: "#quick-start"
+              - generic [ref=f3e32]: rocket_launch
+          - generic [ref=f3e34]:
+            - generic [ref=f3e35]: Использование
+            - link "Подписки" [ref=f3e36] [cursor=pointer]:
+              - /url: "#subscriptions"
+              - generic [ref=f3e37]: add_link
+            - link "Серверы и задержка" [ref=f3e39] [cursor=pointer]:
+              - /url: "#servers"
+              - generic [ref=f3e40]: speed
+            - link "Раздельная маршрутизация" [ref=f3e42] [cursor=pointer]:
+              - /url: "#split-routing"
+              - generic [ref=f3e43]: alt_route
+            - link "DNS и маршрутизация" [ref=f3e45] [cursor=pointer]:
+              - /url: "#dns-routing"
+              - generic [ref=f3e46]: dns
+            - link "Импорт, экспорт и сброс" [ref=f3e48] [cursor=pointer]:
+              - /url: "#backup"
+              - generic [ref=f3e49]: backup
+            - link "Обновление клиента" [ref=f3e51] [cursor=pointer]:
+              - /url: "#updates"
+              - generic [ref=f3e52]: system_update
+          - generic [ref=f3e54]:
+            - generic [ref=f3e55]: Решение проблем
+            - link "Решение проблем" [ref=f3e56] [cursor=pointer]:
+              - /url: "#troubleshooting"
+              - generic [ref=f3e57]: troubleshoot
+            - link "Логи и отчёт" [ref=f3e59] [cursor=pointer]:
+              - /url: "#diagnostics"
+              - generic [ref=f3e60]: description
+          - generic [ref=f3e62]:
+            - generic [ref=f3e63]: О проекте
+            - link "Приватность и безопасность" [ref=f3e64] [cursor=pointer]:
+              - /url: "#privacy"
+              - generic [ref=f3e65]: shield_lock
+            - link "Частые вопросы" [ref=f3e67] [cursor=pointer]:
+              - /url: "#faq"
+              - generic [ref=f3e68]: help
+            - link "Ссылки и поддержка" [ref=f3e70] [cursor=pointer]:
+              - /url: "#support"
+              - generic [ref=f3e71]: support_agent
+        - generic [ref=f3e75]:
+          - strong [ref=f3e76]: Версия 0.2.2
+          - generic [ref=f3e77]: Android 8.0+
+    - button
+    - main [ref=f3e78]:
+      - generic [ref=f3e79]:
+        - region [ref=f3e80]:
+          - generic [ref=f3e81]: Документация · 0.2.2
+          - heading "Настройка без догадок." [level=1] [ref=f3e82]
+          - paragraph [ref=f3e83]: Здесь собраны установка, подписки, выбор серверов, раздельная маршрутизация и понятные действия, когда VPN подключён, но интернет не работает.
+          - generic [ref=f3e84]:
+            - link "Начать настройку" [ref=f3e85] [cursor=pointer]:
+              - /url: "#quick-start"
+              - generic [ref=f3e86]: arrow_forward
+            - link "Решить проблему" [ref=f3e88] [cursor=pointer]:
+              - /url: "#troubleshooting"
+              - generic [ref=f3e89]: troubleshoot
+          - paragraph [ref=f3e91]: Etonify — клиент. Он не продаёт и не выдаёт VPN-серверы.
+          - generic "Как проходит подключение" [ref=f3e92]:
+            - generic [ref=f3e94]:
+              - strong [ref=f3e97]: Подписка
+              - strong [ref=f3e100]: Сервер
+              - strong [ref=f3e103]: VPN
+              - strong [ref=f3e106]: Интернет
+        - generic [ref=f3e107]:
+          - generic [ref=f3e108]:
+            - generic [ref=f3e109]:
+              - generic [ref=f3e110]: vpn_key
+              - generic [ref=f3e112]: Перед началом
+            - heading "Клиент для ваших подписок" [level=2] [ref=f3e113]
+            - paragraph [ref=f3e114]: Etonify создаёт VPN-туннель на Android и направляет трафик через серверы из добавленной вами подписки или конфигурации.
+          - generic [ref=f3e115]:
+            - generic [ref=f3e116]:
+              - article [ref=f3e117]:
+                - generic [ref=f3e118]: "01"
+                - heading "Только Android" [level=3] [ref=f3e119]
+                - paragraph [ref=f3e120]: Основная платформа — Android 8.0 и новее. Остальные платформенные папки в исходниках пока не являются релизными целями.
+              - article [ref=f3e121]:
+                - generic [ref=f3e122]: "02"
+                - heading "Нужна подписка" [level=3] [ref=f3e123]
+                - paragraph [ref=f3e124]: Приложение не предоставляет серверы. Используйте подписку или конфигурацию, которой вы владеете либо имеете право пользоваться.
+              - article [ref=f3e125]:
+                - generic [ref=f3e126]: "03"
+                - heading "Открытый код" [level=3] [ref=f3e127]
+                - paragraph [ref=f3e128]: Клиент распространяется по Apache-2.0. Исходники, история изменений и сборки находятся на GitHub.
+            - generic [ref=f3e129]:
+              - strong [ref=f3e130]: Проект развивается.
+              - paragraph [ref=f3e131]: Перед обновлением сохраняйте рабочую подписку и настройки. Если заметили регрессию, экспортируйте диагностику до переустановки приложения.
+        - generic [ref=f3e132]:
+          - generic [ref=f3e133]:
+            - generic [ref=f3e134]:
+              - generic [ref=f3e135]: install_mobile
+              - generic [ref=f3e137]: Шаг 1
+            - heading "Установите APK под архитектуру устройства" [level=2] [ref=f3e138]
+            - paragraph [ref=f3e139]: Безопаснее всего брать APK из раздела Releases основного репозитория Etonify.
+          - generic [ref=f3e140]:
+            - list [ref=f3e141]:
+              - listitem [ref=f3e142]:
+                - generic [ref=f3e143]: "1"
+                - generic [ref=f3e144]:
+                  - heading "Откройте последний релиз" [level=3] [ref=f3e145]
+                  - paragraph [ref=f3e146]:
+                    - text: Перейдите в
+                    - link "GitHub Releases" [ref=f3e147] [cursor=pointer]:
+                      - /url: https://github.com/yamixdev/Etonify/releases/latest
+                    - text: . Не скачивайте APK из случайных каналов и перезаливов.
+              - listitem [ref=f3e148]:
+                - generic [ref=f3e149]: "2"
+                - generic [ref=f3e150]:
+                  - heading "Выберите файл" [level=3] [ref=f3e151]
+                  - paragraph [ref=f3e152]: Если не знаете архитектуру телефона, используйте universal APK. Для большинства современных устройств подходит arm64-v8a.
+              - listitem [ref=f3e153]:
+                - generic [ref=f3e154]: "3"
+                - generic [ref=f3e155]:
+                  - heading "Разрешите установку" [level=3] [ref=f3e156]
+                  - paragraph [ref=f3e157]: Android может попросить временно разрешить установку из браузера или файлового менеджера. После установки разрешение можно отключить.
+              - listitem [ref=f3e158]:
+                - generic [ref=f3e159]: "4"
+                - generic [ref=f3e160]:
+                  - heading "Подтвердите VPN" [level=3] [ref=f3e161]
+                  - paragraph [ref=f3e162]: При первом подключении Android покажет системный запрос на создание VPN. Это обязательное разрешение для TUN-режима.
+            - generic [ref=f3e163]:
+              - strong [ref=f3e164]: Не устанавливается поверх старой сборки?
+              - paragraph [ref=f3e165]: Вероятна другая подпись APK или меньший номер сборки. Сначала экспортируйте данные, затем удалите старую версию и установите новую.
+            - generic [ref=f3e166]:
+              - generic [ref=f3e167]:
+                - generic [ref=f3e168]: Установка через ADB
+                - button "Копировать" [ref=f3e169] [cursor=pointer]:
+                  - generic [ref=f3e170]: content_copy
+              - code [ref=f3e173]: adb install -r app-arm64-v8a-release.apk
+        - generic [ref=f3e174]:
+          - generic [ref=f3e175]:
+            - generic [ref=f3e176]:
+              - generic [ref=f3e177]: rocket_launch
+              - generic [ref=f3e179]: Шаг 2
+            - heading "Подписка → сервер → подключение" [level=2] [ref=f3e180]
+            - paragraph [ref=f3e181]: Для первого запуска достаточно добавить подписку, выбрать профиль и сервер, затем нажать центральную кнопку.
+          - generic [ref=f3e182]:
+            - generic [ref=f3e183]:
+              - article [ref=f3e184]:
+                - generic [ref=f3e185]: add_link
+                - generic [ref=f3e187]:
+                  - heading "Добавьте подписку" [level=3] [ref=f3e188]
+                  - paragraph [ref=f3e189]: Нажмите «+» на главном экране. Вставьте ссылку, прочитайте QR-код, выберите файл или используйте ручной ввод.
+              - article [ref=f3e190]:
+                - generic [ref=f3e191]: swap_vert
+                - generic [ref=f3e193]:
+                  - heading "Выберите сервер" [level=3] [ref=f3e194]
+                  - paragraph [ref=f3e195]: Откройте нижнюю панель прокси. Можно выбрать конкретный сервер, «Самый быстрый» или «Умную маршрутизацию».
+              - article [ref=f3e196]:
+                - generic [ref=f3e197]: power_settings_new
+                - generic [ref=f3e199]:
+                  - heading "Запустите VPN" [level=3] [ref=f3e200]
+                  - paragraph [ref=f3e201]: Нажмите большую кнопку подключения и подтвердите системный VPN-запрос, если Android показывает его впервые.
+            - generic [ref=f3e202]:
+              - strong [ref=f3e203]: Можно выбрать сервер до запуска VPN.
+              - paragraph [ref=f3e204]: Etonify сохраняет выбор в подписке и использует его при следующем подключении.
+        - generic [ref=f3e205]:
+          - generic [ref=f3e206]:
+            - generic [ref=f3e207]:
+              - generic [ref=f3e208]: add_link
+              - generic [ref=f3e210]: Профили
+            - heading "Добавление и обновление подписок" [level=2] [ref=f3e211]
+            - paragraph [ref=f3e212]: Etonify понимает обычные ссылки, одиночные ключи, sing-box/Xray-конфигурации, локальные файлы и несколько форматов Happ.
+          - generic [ref=f3e213]:
+            - generic [ref=f3e214]:
+              - article [ref=f3e215]:
+                - heading "Буфер обмена" [level=3] [ref=f3e216]
+                - paragraph [ref=f3e217]: Скопируйте ссылку провайдера и выберите импорт из буфера. Клиент распознает поддерживаемый формат автоматически.
+              - article [ref=f3e218]:
+                - heading "QR-код" [level=3] [ref=f3e219]
+                - paragraph [ref=f3e220]: Разрешение камеры используется только во время сканирования. Проверьте адрес перед подтверждением.
+              - article [ref=f3e221]:
+                - heading "Файл" [level=3] [ref=f3e222]
+                - paragraph [ref=f3e223]: Подходит для локального sing-box/Xray JSON и экспортов, которые не нужно загружать по сети.
+              - article [ref=f3e224]:
+                - heading "Happ" [level=3] [ref=f3e225]
+                - paragraph [ref=f3e226]:
+                  - text: Поддерживаются ссылки
+                  - code [ref=f3e227]: happ://add
+                  - text: и семейство
+                  - code [ref=f3e228]: crypt*
+                  - text: . HWID отправляется только после явного согласия.
+            - heading "Если подписка не добавляется" [level=3] [ref=f3e229]
+            - list [ref=f3e230]:
+              - listitem [ref=f3e231]: ✓ Откройте ссылку в браузере и проверьте, что сервер не отвечает HTML-страницей, 403, 404, 502 или 503.
+              - listitem [ref=f3e232]: ✓ Проверьте срок действия подписки и отсутствие лишних пробелов в адресе.
+              - listitem [ref=f3e233]: ✓ Если провайдер требует User-Agent, Cookie или HWID, настройте их в ручном импорте.
+              - listitem [ref=f3e234]: ✓ Чувствительные заголовки отправляются только по HTTPS; переход HTTPS → HTTP блокируется.
+            - generic [ref=f3e235]:
+              - strong [ref=f3e236]: Локальный импорт
+              - paragraph [ref=f3e237]: Профиль, добавленный из файла без URL, нельзя обновить с сервера. Импортируйте новый файл вручную.
+        - generic [ref=f3e238]:
+          - generic [ref=f3e239]:
+            - generic [ref=f3e240]:
+              - generic [ref=f3e241]: speed
+              - generic [ref=f3e243]: Прокси
+            - heading "Что означают пинг, «Самый быстрый» и таймаут" [level=2] [ref=f3e244]
+            - paragraph [ref=f3e245]: Проверка задержки выполняет HTTP-запрос через прокси. Это полезнее обычного ICMP-пинга, потому что проверяет прохождение реального трафика.
+          - generic [ref=f3e246]:
+            - table "Состояния сервера" [ref=f3e247]:
+              - row [ref=f3e248]:
+                - cell "84 мс" [ref=f3e249]
+                - cell "Ответ получен Чем меньше значение, тем быстрее завершилась проверка." [ref=f3e250]:
+                  - strong [ref=f3e251]: Ответ получен
+                  - generic [ref=f3e252]: Чем меньше значение, тем быстрее завершилась проверка.
+              - row [ref=f3e253]:
+                - cell "•••" [ref=f3e254]
+                - cell "Идёт проверка Новое значение ещё не пришло; старый результат не выдаётся за свежий." [ref=f3e255]:
+                  - strong [ref=f3e256]: Идёт проверка
+                  - generic [ref=f3e257]: Новое значение ещё не пришло; старый результат не выдаётся за свежий.
+              - row [ref=f3e258]:
+                - cell "таймаут" [ref=f3e259]
+                - cell "Ответ не получен вовремя Это может быть перегрузка, блокировка, сетевой переход или проблема самого endpoint." [ref=f3e260]:
+                  - strong [ref=f3e261]: Ответ не получен вовремя
+                  - generic [ref=f3e262]: Это может быть перегрузка, блокировка, сетевой переход или проблема самого endpoint.
+              - row [ref=f3e263]:
+                - cell "EOF" [ref=f3e264]
+                - cell "Соединение закрыто Сервер или промежуточный узел завершил запрос раньше ответа." [ref=f3e265]:
+                  - strong [ref=f3e266]: Соединение закрыто
+                  - generic [ref=f3e267]: Сервер или промежуточный узел завершил запрос раньше ответа.
+            - generic [ref=f3e268]:
+              - article [ref=f3e269]:
+                - heading "Самый быстрый" [level=3] [ref=f3e270]
+                - paragraph [ref=f3e271]: Группа URLTest выбирает доступный сервер с наименьшей измеренной задержкой. Выбор может измениться после новой проверки.
+              - article [ref=f3e272]:
+                - heading "Умная маршрутизация" [level=3] [ref=f3e273]
+                - paragraph [ref=f3e274]: Маршрутизирует разные назначения по правилам. Одно число задержки для всей схемы не описывает её работу, поэтому интерфейс не должен выдумывать общий пинг.
+            - generic [ref=f3e275]:
+              - strong [ref=f3e276]: Не запускайте проверку сотен серверов много раз подряд.
+              - paragraph [ref=f3e277]: Каждая проверка создаёт сетевые запросы и расходует процессор, батарею и файловые дескрипторы. Дождитесь завершения текущей сессии.
+        - generic [ref=f3e278]:
+          - generic [ref=f3e279]:
+            - generic [ref=f3e280]:
+              - generic [ref=f3e281]: alt_route
+              - generic [ref=f3e283]: Android VPN
+            - heading "Какие приложения идут через VPN" [level=2] [ref=f3e284]
+            - paragraph [ref=f3e285]: Раздельная маршрутизация применяет список приложений на уровне Android VPN. После изменения режима или списка сервис перезапускается.
+          - generic [ref=f3e286]:
+            - generic [ref=f3e287]:
+              - article [ref=f3e288]:
+                - generic [ref=f3e289]: Выкл.
+                - heading "Все приложения через VPN" [level=3] [ref=f3e290]
+                - paragraph [ref=f3e291]: Стандартный режим. Исключения не задаются.
+              - article [ref=f3e292]:
+                - generic [ref=f3e293]: Через VPN
+                - heading "Только выбранные приложения" [level=3] [ref=f3e294]
+                - paragraph [ref=f3e295]: "Белый список: через туннель идут только отмеченные приложения."
+              - article [ref=f3e296]:
+                - generic [ref=f3e297]: Обход VPN
+                - heading "Кроме выбранных приложений" [level=3] [ref=f3e298]
+                - paragraph [ref=f3e299]: "Чёрный список: отмеченные приложения используют обычную сеть."
+            - list [ref=f3e300]:
+              - listitem [ref=f3e301]:
+                - strong [ref=f3e302]: Остановите частые изменения.
+                - generic [ref=f3e303]: Несколько быстрых нажатий объединяются, но дайте сервису завершить один перезапуск.
+              - listitem [ref=f3e304]:
+                - strong [ref=f3e305]: Проверьте выбранные пакеты.
+                - generic [ref=f3e306]: Удалённое или клонированное приложение может иметь другое имя пакета.
+              - listitem [ref=f3e307]:
+                - strong [ref=f3e308]: Перезапустите режим.
+                - generic [ref=f3e309]: Если после обновления весь трафик ушёл в таймаут, выключите раздельную маршрутизацию, подключитесь и включите её заново.
+            - generic [ref=f3e310]:
+              - strong [ref=f3e311]: VPN подключён, но не работает ни один сервер?
+              - paragraph [ref=f3e312]: Сначала выключите раздельную маршрутизацию. Если трафик появился, экспортируйте диагностику с включённым проблемным режимом и укажите модель телефона, оболочку и версию Android.
+        - generic [ref=f3e313]:
+          - generic [ref=f3e314]:
+            - generic [ref=f3e315]:
+              - generic [ref=f3e316]: dns
+              - generic [ref=f3e318]: Сеть
+            - heading "DNS, правила и защита от обхода" [level=2] [ref=f3e319]
+            - paragraph [ref=f3e320]: DNS определяет адрес назначения, а правила маршрутизации решают, через какой outbound пойдёт соединение.
+          - generic [ref=f3e321]:
+            - generic [ref=f3e322]:
+              - article [ref=f3e323]:
+                - heading "Прямой DNS" [level=3] [ref=f3e324]
+                - paragraph [ref=f3e325]: Используется для запросов, которые должны идти через обычную сеть. Доступны DNS устройства, UDP, TCP, DoT и DoH.
+              - article [ref=f3e326]:
+                - heading "DNS через прокси" [level=3] [ref=f3e327]
+                - paragraph [ref=f3e328]: Запросы проходят через выбранный маршрут. DoH часто удобен в сетях, где обычный UDP DNS фильтруется.
+              - article [ref=f3e329]:
+                - heading "Умная маршрутизация" [level=3] [ref=f3e330]
+                - paragraph [ref=f3e331]: Использует локальные наборы правил. Проверяйте статус скачивания и установки данных перед включением.
+              - article [ref=f3e332]:
+                - heading "AdGuard DNS Filter" [level=3] [ref=f3e333]
+                - paragraph [ref=f3e334]: Фильтр компилируется локально. Обновление может занять время и временно использовать больше памяти.
+            - generic [ref=f3e335]:
+              - strong [ref=f3e336]: Без необходимости оставьте пресеты.
+              - paragraph [ref=f3e337]: Собственный DNS полезен при конкретной проблеме. Случайное сочетание прямого DNS и маршрутов может раскрывать назначения или ломать резолвинг.
+        - generic [ref=f3e338]:
+          - generic [ref=f3e339]:
+            - generic [ref=f3e340]:
+              - generic [ref=f3e341]: backup
+              - generic [ref=f3e343]: Настройки
+            - heading "Сохраняйте данные перед экспериментами" [level=2] [ref=f3e344]
+            - paragraph [ref=f3e345]: Меню «⋮» в настройках содержит прямые действия импорта, экспорта и сброса.
+          - generic [ref=f3e346]:
+            - generic [ref=f3e347]:
+              - article [ref=f3e348]:
+                - heading "Экспорт настроек" [level=3] [ref=f3e349]
+                - paragraph [ref=f3e350]: Сохраняет безопасные параметры клиента без подписок и VPN-ключей.
+              - article [ref=f3e351]:
+                - generic [ref=f3e352]: Рекомендуется
+                - heading "Подписки с паролем" [level=3] [ref=f3e353]
+                - paragraph [ref=f3e354]: Профили, выбранные серверы и raw-данные защищаются AES-256-GCM.
+              - article [ref=f3e355]:
+                - heading "Без шифрования" [level=3] [ref=f3e356]
+                - paragraph [ref=f3e357]: Файл содержит VPN-ключи открытым текстом. Используйте только для доверенной локальной передачи.
+              - article [ref=f3e358]:
+                - heading "Сброс настроек" [level=3] [ref=f3e359]
+                - paragraph [ref=f3e360]: Возвращает параметры по умолчанию, но сохраняет подписки и выбранный сервер.
+            - generic [ref=f3e361]:
+              - strong [ref=f3e362]: Пароль экспорта восстановить нельзя.
+              - paragraph [ref=f3e363]: Храните его отдельно. Без правильного пароля зашифрованный профиль не импортируется.
+        - generic [ref=f3e364]:
+          - generic [ref=f3e365]:
+            - generic [ref=f3e366]:
+              - generic [ref=f3e367]: system_update
+              - generic [ref=f3e369]: OTA
+            - heading "Обновляйте клиент без потери данных" [level=2] [ref=f3e370]
+            - paragraph [ref=f3e371]: Встроенный центр обновлений выбирает APK по архитектуре, проверяет манифест, подпись, пакет и SHA-256 перед установкой.
+          - generic [ref=f3e372]:
+            - list [ref=f3e373]:
+              - listitem [ref=f3e374]: ✓ Не закрывайте Etonify во время скачивания и проверки APK.
+              - listitem [ref=f3e375]: ✓ Android всё равно покажет отдельное системное подтверждение установки.
+              - listitem [ref=f3e376]: ✓ Если после OTA память временно выше обычного, полностью закройте приложение и откройте снова.
+              - listitem [ref=f3e377]: ✓ При несовпадении подписи Android не установит APK поверх существующего приложения.
+            - generic [ref=f3e378]:
+              - strong [ref=f3e379]: Настройки сохраняются при обычном обновлении.
+              - paragraph [ref=f3e380]: Удаление приложения очищает его локальные данные, поэтому перед переустановкой используйте зашифрованный экспорт.
+        - generic [ref=f3e381]:
+          - generic [ref=f3e382]:
+            - generic [ref=f3e383]:
+              - generic [ref=f3e384]: troubleshoot
+              - generic [ref=f3e386]: Диагностика
+            - heading "Сначала определите, на каком этапе всё сломалось" [level=2] [ref=f3e387]
+            - paragraph [ref=f3e388]: Не меняйте сразу DNS, сервер, маршрутизацию и режим TUN. Один изменённый параметр даёт полезный результат; пять изменений скрывают причину.
+          - generic [ref=f3e390]:
+            - group [ref=f3e391]:
+              - generic "VPN подключён, но сайты не открываются 01" [ref=f3e392] [cursor=pointer]:
+                - generic [ref=f3e393]: VPN подключён, но сайты не открываются
+                - generic [ref=f3e394]: "01"
+              - list [ref=f3e396]:
+                - listitem [ref=f3e397]: Выключите раздельную маршрутизацию.
+                - listitem [ref=f3e398]: Выберите конкретный сервер вместо автоматической группы.
+                - listitem [ref=f3e399]: Переключитесь между Wi-Fi и мобильной сетью, затем переподключите VPN.
+                - listitem [ref=f3e400]: Верните DNS-пресеты и повторите проверку.
+            - group [ref=f3e401]:
+              - generic "Все серверы показывают таймаут или EOF 02" [ref=f3e402] [cursor=pointer]:
+                - generic [ref=f3e403]: Все серверы показывают таймаут или EOF
+                - generic [ref=f3e404]: "02"
+            - group [ref=f3e405]:
+              - generic "Подписка не обновляется 03" [ref=f3e406] [cursor=pointer]:
+                - generic [ref=f3e407]: Подписка не обновляется
+                - generic [ref=f3e408]: "03"
+            - group [ref=f3e409]:
+              - generic "После перезапуска выбран другой сервер 04" [ref=f3e410] [cursor=pointer]:
+                - generic [ref=f3e411]: После перезапуска выбран другой сервер
+                - generic [ref=f3e412]: "04"
+            - group [ref=f3e413]:
+              - generic "Высокое потребление памяти 05" [ref=f3e414] [cursor=pointer]:
+                - generic [ref=f3e415]: Высокое потребление памяти
+                - generic [ref=f3e416]: "05"
+        - generic [ref=f3e417]:
+          - generic [ref=f3e418]:
+            - generic [ref=f3e419]:
+              - generic [ref=f3e420]: description
+              - generic [ref=f3e422]: Помощь
+            - heading "Хороший отчёт экономит несколько часов" [level=2] [ref=f3e423]
+            - paragraph [ref=f3e424]: Экспортируйте логи сразу после воспроизведения — до очистки данных, переустановки и десятка случайных изменений.
+          - generic [ref=f3e425]:
+            - generic [ref=f3e426]:
+              - heading "Что приложить" [level=3] [ref=f3e427]
+              - list [ref=f3e428]:
+                - listitem [ref=f3e429]: Версию Etonify и способ установки.
+                - listitem [ref=f3e430]: "Модель устройства, версию Android и оболочку: HyperOS, MIUI, Realme UI и т. п."
+                - listitem [ref=f3e431]: "Точный режим: VPN/локальный прокси, раздельная маршрутизация, Wi-Fi/мобильная сеть."
+                - listitem [ref=f3e432]: Короткие шаги воспроизведения и ожидаемый результат.
+                - listitem [ref=f3e433]: Экспорт диагностики после появления ошибки.
+            - generic [ref=f3e434]:
+              - strong [ref=f3e435]: Проверьте файл перед публикацией.
+              - paragraph [ref=f3e436]: Клиент маскирует известные секреты, но стороннее ядро или сервер могут записать неожиданные данные. Не публикуйте UUID, токены, Cookie и ссылки подписок.
+        - generic [ref=f3e437]:
+          - generic [ref=f3e438]:
+            - generic [ref=f3e439]:
+              - generic [ref=f3e440]: shield_lock
+              - generic [ref=f3e442]: Данные
+            - heading "Что хранится и куда отправляется" [level=2] [ref=f3e443]
+            - paragraph [ref=f3e444]: Etonify не содержит рекламы и аналитических SDK. Подписки, настройки и диагностика хранятся локально на устройстве.
+          - generic [ref=f3e445]:
+            - generic [ref=f3e446]:
+              - article [ref=f3e447]:
+                - heading "Локальное хранение" [level=3] [ref=f3e448]
+                - paragraph [ref=f3e449]: Настройки, подписки, пароли и ключи защищаются AES-GCM; ключ хранится через Android Keystore.
+              - article [ref=f3e450]:
+                - heading "Сетевые запросы" [level=3] [ref=f3e451]
+                - paragraph [ref=f3e452]: Клиент обращается к указанному вами сервису подписки, источникам правил и GitHub для проверки обновлений.
+              - article [ref=f3e453]:
+                - heading "HWID" [level=3] [ref=f3e454]
+                - paragraph [ref=f3e455]: Отправляется только для профиля, где пользователь явно разрешил это действие, и только по HTTPS.
+              - article [ref=f3e456]:
+                - heading "Логи" [level=3] [ref=f3e457]
+                - paragraph [ref=f3e458]: Хранятся локально до экспорта. Перед передачей отчёта всё равно просмотрите содержимое.
+            - paragraph [ref=f3e459]:
+              - link "Сообщить об уязвимости →" [ref=f3e460] [cursor=pointer]:
+                - /url: https://github.com/yamixdev/Etonify/security
+        - generic [ref=f3e461]:
+          - generic [ref=f3e462]:
+            - generic [ref=f3e463]:
+              - generic [ref=f3e464]: help
+              - generic [ref=f3e466]: FAQ
+            - heading "Короткие ответы" [level=2] [ref=f3e467]
+            - paragraph [ref=f3e468]: То, что чаще всего приходится объяснять отдельно.
+          - generic [ref=f3e470]:
+            - group [ref=f3e471]:
+              - generic "Etonify выдаёт бесплатные серверы? +" [ref=f3e472] [cursor=pointer]:
+                - generic [ref=f3e473]: Etonify выдаёт бесплатные серверы?
+                - generic [ref=f3e474]: +
+            - group [ref=f3e475]:
+              - generic "Почему пинг отличается от другого клиента? +" [ref=f3e476] [cursor=pointer]:
+                - generic [ref=f3e477]: Почему пинг отличается от другого клиента?
+                - generic [ref=f3e478]: +
+            - group [ref=f3e479]:
+              - generic "Можно одновременно включить системный VPN и локальный прокси? +" [ref=f3e480] [cursor=pointer]:
+                - generic [ref=f3e481]: Можно одновременно включить системный VPN и локальный прокси?
+                - generic [ref=f3e482]: +
+            - group [ref=f3e483]:
+              - generic "Почему Android показывает VPN даже без трафика? +" [ref=f3e484] [cursor=pointer]:
+                - generic [ref=f3e485]: Почему Android показывает VPN даже без трафика?
+                - generic [ref=f3e486]: +
+            - group [ref=f3e487]:
+              - generic "Где задать вопрос? +" [ref=f3e488] [cursor=pointer]:
+                - generic [ref=f3e489]: Где задать вопрос?
+                - generic [ref=f3e490]: +
+        - generic [ref=f3e491]:
+          - generic [ref=f3e492]:
+            - generic [ref=f3e493]:
+              - generic [ref=f3e494]: support_agent
+              - generic [ref=f3e496]: MeowTeam
+            - heading "Исходники, релизы и связь" [level=2] [ref=f3e497]
+            - paragraph [ref=f3e498]: Если ответ уже есть в документации, приложите ссылку на раздел. Если нет — помогите сделать следующий ответ полезнее для всех.
+          - generic [ref=f3e499]:
+            - generic [ref=f3e500]:
+              - link "Исходный код yamixdev/Etonify ↗" [ref=f3e501] [cursor=pointer]:
+                - /url: https://github.com/yamixdev/Etonify
+                - generic [ref=f3e502]: Исходный код
+                - generic [ref=f3e503]: yamixdev/Etonify
+                - generic [ref=f3e504]: ↗
+              - link "Скачать APK GitHub Releases ↗" [ref=f3e505] [cursor=pointer]:
+                - /url: https://github.com/yamixdev/Etonify/releases
+                - generic [ref=f3e506]: Скачать APK
+                - generic [ref=f3e507]: GitHub Releases
+                - generic [ref=f3e508]: ↗
+              - link "Сообщить об ошибке GitHub Issues ↗" [ref=f3e509] [cursor=pointer]:
+                - /url: https://github.com/yamixdev/Etonify/issues
+                - generic [ref=f3e510]: Сообщить об ошибке
+                - generic [ref=f3e511]: GitHub Issues
+                - generic [ref=f3e512]: ↗
+              - link "Telegram @etonify ↗" [ref=f3e513] [cursor=pointer]:
+                - /url: https://t.me/etonify
+                - generic [ref=f3e514]: Telegram
+                - generic [ref=f3e515]: "@etonify"
+                - generic [ref=f3e516]: ↗
+            - paragraph [ref=f3e518]: Etonify — открытый Android VPN-клиент. Документация относится к версии 0.2.2.
+  - button "Наверх":
+    - generic: keyboard_arrow_up
+  - status

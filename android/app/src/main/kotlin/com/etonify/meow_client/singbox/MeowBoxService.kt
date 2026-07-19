@@ -558,88 +558,98 @@ class MeowBoxService(
             }
             return
         }
-        commandServer = null
         unregisterRuntimeReceiver()
+
         if (shouldStopRuntimeState) {
             MeowDefaultNetworkMonitor.stop()
         } else {
             MeowDiagnostics.log(
                 TAG,
-                "network monitor stop skipped source=$source generation=$generation active=$activeGeneration",
+                "network monitor stop skipped source=$source " +
+                    "generation=$generation active=$activeGeneration",
             )
         }
+
         var cleanupComplete = true
+
+        // Сначала отключаем активный CommandClient.
+        if (shouldStopRuntimeState) {
+            val clientDisconnected = SingboxController.disconnectClientBlocking(
+                timeoutMs = CLEANUP_STEP_TIMEOUT_MS,
+            )
+
+            if (!clientDisconnected) {
+                MeowDiagnostics.log(
+                    TAG,
+                    "command client disconnect timed out source=$source",
+                )
+            }
+
+            cleanupComplete = clientDisconnected && cleanupComplete
+        }
+
+        // Затем закрываем native runtime и CommandServer.
         if (server != null) {
             cleanupComplete = runCleanupStep("closeService source=$source") {
                 server.closeService()
             } && cleanupComplete
-            if (shouldStopRuntimeState) {
-                cleanupComplete = runCleanupStep("disconnect command client source=$source") {
-                    SingboxController.disconnectClientBlocking()
-                } && cleanupComplete
-            } else {
-                MeowDiagnostics.log(
-                    TAG,
-                    "command client disconnect skipped source=$source generation=$generation active=$activeGeneration",
-                )
-            }
+
             cleanupComplete = runCleanupStep("close command server source=$source") {
                 server.close()
             } && cleanupComplete
-        } else {
-            if (shouldStopRuntimeState) {
-                cleanupComplete = runCleanupStep("disconnect command client source=$source") {
-                    SingboxController.disconnectClientBlocking()
-                } && cleanupComplete
-            } else {
-                MeowDiagnostics.log(
-                    TAG,
-                    "command client disconnect skipped source=$source generation=$generation active=$activeGeneration",
-                )
-            }
         }
+
+        if (!cleanupComplete) {
+            SingboxController.log(
+                "error",
+                "VPN service cleanup incomplete source=$source " +
+                    "service=${service.javaClass.simpleName}",
+            )
+            MeowDiagnostics.log(
+                TAG,
+                "runtime stop not acknowledged source=$source " +
+                    "generation=$generation activeGeneration=$activeGeneration " +
+                    "cleanupComplete=false",
+            )
+
+            showForeground("Stopping")
+            return
+        }
+
+        commandServer = null
         runningConfigHash = null
         serviceGeneration = 0L
-        if (shouldStopRuntimeState && cleanupComplete) {
+
+        if (shouldStopRuntimeState) {
             SingboxController.markServiceStopped(generation, source)
             MeowApplication.clearServiceState()
             MeowApplication.clearRuntimeIntent()
             MeowQuickSettingsTileService.requestRefresh(service)
-        } else if (shouldStopRuntimeState) {
-            // Do not report a successful stop while Go/JNI may still own the
-            // duplicated TUN descriptor. Starting another VPN in this state can
-            // leave Android UID routing attached to the stale interface and turn
-            // every outbound dial into an i/o timeout.
-            SingboxController.log(
-                "error",
-                "VPN service cleanup incomplete source=$source service=${service.javaClass.simpleName}",
-            )
-            MeowDiagnostics.log(
-                TAG,
-                "runtime stop not acknowledged source=$source generation=$generation " +
-                    "activeGeneration=$activeGeneration cleanupComplete=false",
-            )
         } else {
             MeowDiagnostics.log(
                 TAG,
-                "runtime state stop skipped source=$source generation=$generation active=$activeGeneration",
+                "runtime state stop skipped source=$source " +
+                    "generation=$generation active=$activeGeneration",
             )
         }
+
         SingboxController.log(
-            if (cleanupComplete) "warning" else "error",
-            if (cleanupComplete) {
-                "VPN service stopped source=$source service=${service.javaClass.simpleName}"
-            } else {
-                "VPN service stop incomplete source=$source service=${service.javaClass.simpleName}"
-            },
+            "warning",
+            "VPN service stopped source=$source " +
+                "service=${service.javaClass.simpleName}",
         )
+
         runCatching {
             service.stopForeground(Service.STOP_FOREGROUND_REMOVE)
         }
+
         if (stopSelf) {
             if (startId != null) {
                 val stopped = service.stopSelfResult(startId)
-                MeowDiagnostics.log(TAG, "stopSelfResult source=$source startId=$startId result=$stopped")
+                MeowDiagnostics.log(
+                    TAG,
+                    "stopSelfResult source=$source startId=$startId result=$stopped",
+                )
             } else {
                 service.stopSelf()
                 MeowDiagnostics.log(TAG, "stopSelf source=$source")
