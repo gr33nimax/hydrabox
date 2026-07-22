@@ -754,51 +754,54 @@ class _ProxiesPageState extends State<ProxiesPage> {
       _embeddedListActivated = true;
     }
     final listMounted = _embeddedListActivated;
-    final list = Builder(
-      builder: (context) {
-        final entries = listMounted
-            ? _visibleEntries()
-            : const <_ProxyListEntry>[];
-        return ListView.builder(
-          controller: widget.scrollController,
-          physics: const ClampingScrollPhysics(
-            parent: AlwaysScrollableScrollPhysics(),
-          ),
-          itemExtent: _kProxySheetRowExtent,
-          scrollCacheExtent: const ScrollCacheExtent.pixels(0),
-          addAutomaticKeepAlives: false,
-          addRepaintBoundaries: true,
-          addSemanticIndexes: false,
-          padding: listMounted
-              ? EdgeInsets.only(top: listTopPadding, bottom: bottomInset + 20)
-              : EdgeInsets.zero,
-          itemCount: !listMounted
-              ? 0
-              : widget.proxies.isEmpty
-              ? 1
-              : entries.length,
-          itemBuilder: (context, index) {
-            if (widget.proxies.isEmpty) {
-              return Center(
-                child: Text(
-                  l10n.noProxies,
-                  style: Theme.of(context).textTheme.titleMedium,
+    final list = Padding(
+      padding: EdgeInsets.only(bottom: bottomInset),
+      child: Builder(
+        builder: (context) {
+          final entries = listMounted
+              ? _visibleEntries()
+              : const <_ProxyListEntry>[];
+          return ListView.builder(
+            controller: widget.scrollController,
+            physics: const ClampingScrollPhysics(
+              parent: AlwaysScrollableScrollPhysics(),
+            ),
+            itemExtent: _kProxySheetRowExtent,
+            scrollCacheExtent: const ScrollCacheExtent.pixels(0),
+            addAutomaticKeepAlives: false,
+            addRepaintBoundaries: true,
+            addSemanticIndexes: false,
+            padding: listMounted
+                ? EdgeInsets.only(top: listTopPadding, bottom: 20)
+                : EdgeInsets.zero,
+            itemCount: !listMounted
+                ? 0
+                : widget.proxies.isEmpty
+                ? 1
+                : entries.length,
+            itemBuilder: (context, index) {
+              if (widget.proxies.isEmpty) {
+                return Center(
+                  child: Text(
+                    l10n.noProxies,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                );
+              }
+
+              final entry = entries[index];
+              return IgnorePointer(
+                ignoring: !effectiveSheetAtMaxExtent,
+                child: _buildEmbeddedEntry(
+                  context: context,
+                  l10n: l10n,
+                  entry: entry,
                 ),
               );
-            }
-
-            final entry = entries[index];
-            return IgnorePointer(
-              ignoring: !effectiveSheetAtMaxExtent,
-              child: _buildEmbeddedEntry(
-                context: context,
-                l10n: l10n,
-                entry: entry,
-              ),
-            );
-          },
-        );
-      },
+            },
+          );
+        },
+      ),
     );
     final header = _ProxySheetHeader(
       height: headerHeight,

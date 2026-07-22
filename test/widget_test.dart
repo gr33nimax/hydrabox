@@ -295,6 +295,13 @@ void main() {
       MaterialApp(
         supportedLocales: AppLocalizations.supportedLocales,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(
+            padding: const EdgeInsets.only(bottom: 48),
+            viewPadding: const EdgeInsets.only(bottom: 48),
+          ),
+          child: child!,
+        ),
         home: ProxyPanelShell(
           ready: true,
           onboardingCompleted: true,
@@ -366,6 +373,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(panelProgress, closeTo(0, .01));
+    expect(find.text('Amsterdam'), findsOneWidget);
     expect(find.text('Paris'), findsNothing);
 
     await tester.tap(find.text('Amsterdam'));
@@ -376,6 +384,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(panelProgress, closeTo(0, .01));
+    expect(find.text('Amsterdam'), findsOneWidget);
     expect(find.text('Paris'), findsNothing);
   });
 
