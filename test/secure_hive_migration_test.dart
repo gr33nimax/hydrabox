@@ -38,6 +38,7 @@ void main() {
     );
     final metadata = await Hive.openBox('subscriptions');
     final payloads = await Hive.openBox('subscription_payloads');
+    final summaries = await Hive.openBox('subscription_summaries');
     await metadata.put(
       subscription.id,
       jsonEncode(subscription.toMetadataMap()),
@@ -46,8 +47,10 @@ void main() {
       subscription.id,
       jsonEncode(subscription.toPayloadMap()),
     );
+    await summaries.put(subscription.id, subscription.name);
     await metadata.close();
     await payloads.close();
+    await summaries.close();
 
     await SubscriptionStore.init();
 
@@ -59,6 +62,9 @@ void main() {
       'subscription_payloads_secure_v1',
     ).get(subscription.id);
     expect(storedPayload, isA<String>());
+    // Startup must not rewrite and compact every legacy payload. The mixed
+    // raw/compressed reader keeps this entry usable until its next save.
+    expect(storedPayload as String, isNot(startsWith('gzip-base64-v1:')));
     expect(
       jsonDecode(SubscriptionStore.payloadJsonFor(subscription.id)!)
           as Map<String, dynamic>,
@@ -66,6 +72,7 @@ void main() {
     );
     expect(await Hive.boxExists('subscriptions'), isFalse);
     expect(await Hive.boxExists('subscription_payloads'), isFalse);
+    expect(await Hive.boxExists('subscription_summaries'), isFalse);
     expect(await Hive.boxExists('subscriptions_secure_v1'), isTrue);
     expect(await Hive.boxExists('subscription_payloads_secure_v1'), isTrue);
   });

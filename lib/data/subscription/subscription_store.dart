@@ -115,7 +115,10 @@ class SubscriptionStore {
     await _migratePlaintextBox(_legacyMetaBoxName, _metaStore);
     await _migratePlaintextBox(_legacyPayloadBoxName, _payloadStore);
     await _migrateLegacyData();
-    await _compressStoredPayloads();
+    // Do not rewrite or compact every legacy payload during app startup.
+    // Readers accept both formats and each payload is compressed the next time
+    // that subscription is saved or refreshed. A bulk rewrite here can keep
+    // the bootstrap screen visible for close to a minute on large profiles.
     await _cleanupLegacySummaryBox();
     await _metaStore.put(_storageSchemaVersionKey, _storageSchemaVersion);
     await _metaStore.flush();
@@ -164,46 +167,6 @@ class SubscriptionStore {
       'SubscriptionStore.init() must be called first',
     );
     return _payloadBox!;
-  }
-
-  static Future<void> _compressStoredPayloads() async {
-    final rawPayloads = <dynamic, String>{};
-    for (final key in _payloadStore.keys) {
-      final raw = _payloadStore.get(key);
-      if (raw is String && !_isCompressedPayload(raw)) {
-        rawPayloads[key] = raw;
-      }
-    }
-    if (rawPayloads.isEmpty) {
-      return;
-    }
-    final stopwatch = Stopwatch()..start();
-    final compressed = await Isolate.run(
-      () => <dynamic, String>{
-        for (final entry in rawPayloads.entries)
-          entry.key: _encodeStoredPayload(entry.value),
-      },
-      debugName: 'meow-compress-subscription-payloads',
-    );
-    await _payloadStore.putAll(compressed);
-    // Rewriting values only appends new frames. Compact immediately so the
-    // old multi-megabyte plaintext frames do not keep slowing every startup.
-    await _payloadStore.compact();
-    await _payloadStore.flush();
-    stopwatch.stop();
-    final beforeBytes = rawPayloads.values.fold<int>(
-      0,
-      (total, value) => total + value.length,
-    );
-    final afterBytes = compressed.values.fold<int>(
-      0,
-      (total, value) => total + value.length,
-    );
-    AppLogStore.info(
-      'subscription storage',
-      'compressedPayloads=${compressed.length} beforeBytes=$beforeBytes '
-          'afterBytes=$afterBytes elapsedMs=${stopwatch.elapsedMilliseconds}',
-    );
   }
 
   static Future<T> _withSubscriptionWriteLock<T>(
@@ -1513,17 +1476,15 @@ class SubscriptionStore {
   }
 
   static Future<void> _cleanupLegacySummaryBox() async {
-    final box = Hive.isBoxOpen(_legacySummaryBoxName)
-        ? Hive.box(_legacySummaryBoxName)
-        : (await Hive.boxExists(_legacySummaryBoxName)
-              ? await Hive.openBox(_legacySummaryBoxName)
-              : null);
-    if (box == null) {
+    if (Hive.isBoxOpen(_legacySummaryBoxName)) {
+      await Hive.box(_legacySummaryBoxName).close();
+    }
+    if (!await Hive.boxExists(_legacySummaryBoxName)) {
       return;
     }
-    if (box.isNotEmpty) {
-      await box.clear();
-    }
+    // This cache is obsolete. Opening it would decode every legacy summary
+    // before clearing it, which is especially expensive for huge profiles.
+    await Hive.deleteBoxFromDisk(_legacySummaryBoxName);
   }
 
   /// Creates a lookup key from outbound config for matching across refreshes.
