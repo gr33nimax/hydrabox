@@ -79,8 +79,10 @@ For public distribution, create a real release keystore and `android/key.propert
 ## Notes
 
 - Production focus is Android.
-- Etonify 0.2.2 keeps the 0.2.1 `libbox.aar`; its SHA-256 and known provenance
-  limitations are documented under `android/app/libs` and checked by CI.
+- Etonify 0.2.3 bundles `libbox.aar` built from
+  [`yamixdev/etonify-core`](https://github.com/yamixdev/etonify-core/tree/etonify-dev).
+  Its source commit, SHA-256 and build provenance are documented under
+  `android/app/libs` and verified by CI.
 - Generated l10n files under `lib/l10n/generated` are part of the source tree because the app imports them directly.
 - `third_party/flutter_circle_flags` is required by `pubspec.yaml` as a local path dependency.
 - Third-party attribution notes are tracked in [NOTICE.md](NOTICE.md).

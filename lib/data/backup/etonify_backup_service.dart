@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:isolate';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -63,7 +64,9 @@ class EtonifyBackupService {
   static const profileMagic = 'ETONIFY_PROFILE';
   static const formatVersion = 1;
   static const minClientVersion = AppSettingsStore.exportMinClientVersion;
-  static const maxImportBytes = 8 * 1024 * 1024;
+  // Large multi-profile exports can legitimately exceed 8 MiB. Keep a hard
+  // ceiling to avoid decoding arbitrary files into several times their size.
+  static const maxImportBytes = 32 * 1024 * 1024;
   static const _kdfIterations = 180000;
   static const _saltBytes = 16;
   static const _nonceBytes = 12;
@@ -154,6 +157,24 @@ class EtonifyBackupService {
     return const JsonEncoder.withIndent('  ').convert(envelope);
   }
 
+  /// Serializes and encrypts large profile exports away from the UI isolate.
+  Future<String> buildProfileExportInBackground({
+    required List<Subscription> subscriptions,
+    required String clientVersion,
+    required EtonifyProfileEncryption encryption,
+    String? password,
+  }) {
+    return Isolate.run(
+      () => const EtonifyBackupService().buildProfileExport(
+        subscriptions: subscriptions,
+        clientVersion: clientVersion,
+        encryption: encryption,
+        password: password,
+      ),
+      debugName: 'etonify-profile-export',
+    );
+  }
+
   EtonifyProfileImportResult parseProfileExport({
     required List<int> bytes,
     required String currentClientVersion,
@@ -193,6 +214,25 @@ class EtonifyBackupService {
       warning: _compatibility(envelope, currentClientVersion),
       subscriptions: subscriptions,
       encryption: encryption,
+    );
+  }
+
+  /// Decodes, decrypts and reconstructs profiles away from the UI isolate.
+  Future<EtonifyProfileImportResult> parseProfileExportInBackground({
+    required List<int> bytes,
+    required String currentClientVersion,
+    String? password,
+  }) {
+    final transferable = TransferableTypedData.fromList([
+      bytes is Uint8List ? bytes : Uint8List.fromList(bytes),
+    ]);
+    return Isolate.run(
+      () => const EtonifyBackupService().parseProfileExport(
+        bytes: transferable.materialize().asUint8List(),
+        currentClientVersion: currentClientVersion,
+        password: password,
+      ),
+      debugName: 'etonify-profile-import',
     );
   }
 

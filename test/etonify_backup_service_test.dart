@@ -65,6 +65,63 @@ void main() {
     expect(parsed.subscriptions.single.selectedProxyTag, 'node-1');
   });
 
+  test('large backup keeps profiles and their servers separate', () async {
+    final first = sampleSubscription().copyWith(
+      name: 'First profile',
+      rawContent: ''.padRight(9 * 1024 * 1024, 'a'),
+      outbounds: const [
+        Outbound(
+          tag: 'first-1',
+          name: 'First one',
+          config: {'type': 'vless', 'server': 'first.example'},
+        ),
+        Outbound(
+          tag: 'first-2',
+          name: 'First two',
+          config: {'type': 'vless', 'server': 'second.example'},
+        ),
+      ],
+    );
+    final second = sampleSubscription().copyWith(
+      id: 'sub-2',
+      url: 'https://example.com/sub-2',
+      name: 'Second profile',
+      selectedProxyTag: 'second-1',
+      rawContent: 'vless://second',
+      outbounds: const [
+        Outbound(
+          tag: 'second-1',
+          name: 'Second one',
+          config: {'type': 'vless', 'server': 'third.example'},
+        ),
+      ],
+    );
+
+    final content = await service.buildProfileExportInBackground(
+      subscriptions: [first, second],
+      clientVersion: '0.2.2',
+      encryption: EtonifyProfileEncryption.plain,
+    );
+    expect(utf8.encode(content).length, greaterThan(8 * 1024 * 1024));
+
+    final parsed = await service.parseProfileExportInBackground(
+      bytes: utf8.encode(content),
+      currentClientVersion: '0.2.2',
+    );
+
+    expect(parsed.subscriptions.map((item) => item.name), [
+      'First profile',
+      'Second profile',
+    ]);
+    expect(parsed.subscriptions[0].outbounds.map((item) => item.tag), [
+      'first-1',
+      'first-2',
+    ]);
+    expect(parsed.subscriptions[1].outbounds.map((item) => item.tag), [
+      'second-1',
+    ]);
+  });
+
   test('rejects backups that require a newer minimum client version', () {
     final content = service.buildProfileExport(
       subscriptions: [sampleSubscription()],

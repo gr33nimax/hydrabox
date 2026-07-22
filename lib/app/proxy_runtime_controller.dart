@@ -355,6 +355,18 @@ class ProxyRuntimeController {
       }
     }
 
+    // Do not keep presenting a child that the same URLTest update has already
+    // marked unavailable. For nested provider groups, validate the confirmed
+    // leaf selection rather than only the group tag.
+    lowestSelections.removeWhere((_, selectedTag) {
+      final selectedLeaf = groupSelections[selectedTag];
+      final effectiveTag = selectedLeaf != null && selectedLeaf.isNotEmpty
+          ? selectedLeaf
+          : selectedTag;
+      return nextUnavailableLatencyTags.contains(effectiveTag) ||
+          nextLatencyErrors.containsKey(effectiveTag);
+    });
+
     final nextLowestLatency = _computeLowestLatency(
       nextRuntimeLatencies,
       nextUnavailableLatencyTags,

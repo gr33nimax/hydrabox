@@ -10,29 +10,7 @@ class SingboxConfigBuilder {
   static const List<String> _russiaDirectDomainSuffixes = ['ru', 'su', 'рф'];
   static const String _snowtunProtectPath =
       '@com.etonify.meow_client.snowtun.protect';
-  static const String _telegramServicesRuleSetTag = 'telegram-services';
   static const int _urltestInterruptDelayThresholdMs = 300;
-  static const List<String> _telegramIpCidrs = [
-    '91.108.4.0/22',
-    '91.108.8.0/22',
-    '91.108.12.0/22',
-    '91.108.16.0/22',
-    '91.108.20.0/22',
-    '91.108.56.0/22',
-    '149.154.160.0/20',
-    '2001:67c:4e8::/48',
-    '2001:b28:f23d::/48',
-    '2001:b28:f23f::/48',
-    '2001:b28:f242::/48',
-  ];
-  static const List<String> _telegramDomainSuffixes = [
-    't.me',
-    'tdesktop.com',
-    'telegra.ph',
-    'telegram.dog',
-    'telegram.me',
-    'telegram.org',
-  ];
 
   const SingboxConfigBuilder({
     required this.activeSubscription,
@@ -162,8 +140,6 @@ class SingboxConfigBuilder {
     final russiaCuratedDirectServicesActive =
         useRussiaRouteData &&
         _validRuleSetPath(russiaCuratedDirectServicesPath);
-    final russiaAiServicesActive =
-        russiaRouteDataActive && _validRuleSetPath(russiaAiServicesPath);
     final defaultLowestOutboundTags = _lowestOutboundTagsFor(
       lowestProxyTag,
       outbounds,
@@ -172,25 +148,13 @@ class SingboxConfigBuilder {
     final urlTestAvailable =
         selectableOutboundTags.length > 1 ||
         visibleGroups.any(_isSetbackUrlTestGroup);
-    final lowestOutboundTags = urlTestAvailable
-        ? ({
-            for (final tag in lowestProxyTags)
-              tag: _lowestOutboundTagsFor(tag, outbounds, visibleGroups).isEmpty
-                  ? defaultLowestOutboundTags
-                  : _lowestOutboundTagsFor(tag, outbounds, visibleGroups),
-          }..removeWhere((_, tags) => tags.isEmpty))
+    final lowestOutboundTags =
+        urlTestAvailable && defaultLowestOutboundTags.isNotEmpty
+        ? <String, List<String>>{lowestProxyTag: defaultLowestOutboundTags}
         : <String, List<String>>{};
     final availableLowestTags = lowestProxyTags
         .where(lowestOutboundTags.containsKey)
         .toList(growable: false);
-    final mixedProxyAvailable =
-        _supportsCoreConfigExtension(
-          capabilities.supportsMixedRoutingOutbound,
-        ) &&
-        lowestOutboundTags.containsKey(lowestProxyTag) &&
-        lowestOutboundTags.containsKey(lowestOpenProxyTag) &&
-        lowestOutboundTags.containsKey(lowestFreeProxyTag);
-    final telegramServicesActive = mixedProxyAvailable;
     final groupTags = visibleGroups
         .map((group) => group.tag)
         .toList(growable: false);
@@ -198,7 +162,6 @@ class SingboxConfigBuilder {
       visibleOutbounds: outbounds,
       selectableBaseTags: <String>{
         ...availableLowestTags,
-        if (mixedProxyAvailable) mixedProxyTag,
         ...groupTags,
         ...selectableOutboundTags,
       },
@@ -209,7 +172,6 @@ class SingboxConfigBuilder {
         .toList(growable: false);
     final selectableTags = <String>[
       ...availableLowestTags,
-      if (mixedProxyAvailable) mixedProxyTag,
       ...groupTags,
       ...chainTags,
       ...selectableOutboundTags,
@@ -232,10 +194,13 @@ class SingboxConfigBuilder {
         adBlockEnabled && _validRuleSetPath(adBlockBlockRuleSetPath);
     final adBlockAllowActive =
         adBlockActive && _validRuleSetPath(adBlockAllowRuleSetPath);
+    final normalizedSelectedProxyTag = normalizeProxySelectionTag(
+      selectedProxyTag,
+    );
     final selectorDefault = hasProxies
-        ? (selectedProxyTag.isNotEmpty &&
-                  selectableTags.contains(selectedProxyTag)
-              ? selectedProxyTag
+        ? (normalizedSelectedProxyTag.isNotEmpty &&
+                  selectableTags.contains(normalizedSelectedProxyTag)
+              ? normalizedSelectedProxyTag
               : availableLowestTags.isNotEmpty
               ? lowestProxyTag
               : outboundTags.first)
@@ -244,7 +209,6 @@ class SingboxConfigBuilder {
     final proxyStartIndex = hasProxies
         ? 1 +
               availableLowestTags.length +
-              (mixedProxyAvailable ? 1 : 0) +
               visibleGroups.length +
               chainOutbounds.length
         : 1;
@@ -391,12 +355,6 @@ class SingboxConfigBuilder {
             ...availableLowestTags.map(
               (tag) => _buildLowestOutbound(tag, lowestOutboundTags[tag]!),
             ),
-          if (hasProxies && mixedProxyAvailable)
-            _buildMixedOutbound(
-              russiaAiServicesActive: russiaAiServicesActive,
-              russiaRouteDataActive: russiaRouteDataActive,
-              telegramServicesActive: telegramServicesActive,
-            ),
           if (hasProxies)
             ...visibleGroups.map(
               (group) => _buildProxyGroupOutbound(group, outboundTags.toSet()),
@@ -420,27 +378,8 @@ class SingboxConfigBuilder {
           'default_domain_resolver': 'dns-local',
           if (russiaRouteDataActive ||
               russiaCuratedDirectServicesActive ||
-              russiaAiServicesActive ||
-              telegramServicesActive ||
               adBlockActive)
             'rule_set': [
-              if (telegramServicesActive)
-                {
-                  'tag': _telegramServicesRuleSetTag,
-                  'rules': [
-                    {
-                      'ip_cidr': _telegramIpCidrs,
-                      'domain_suffix': _telegramDomainSuffixes,
-                    },
-                  ],
-                },
-              if (russiaAiServicesActive)
-                {
-                  'type': 'local',
-                  'tag': 'ru-ai-services',
-                  'format': 'binary',
-                  'path': russiaAiServicesPath,
-                },
               if (russiaCuratedDirectServicesActive)
                 {
                   'type': 'local',
@@ -697,7 +636,12 @@ class SingboxConfigBuilder {
       }
     }
     _normalizeServerAddress(config);
-    _ensureRealityUtls(config);
+    _ensureRealityUtls(
+      config,
+      supportsSpiderX: _supportsCoreConfigExtension(
+        capabilities.supportsRealitySpiderX,
+      ),
+    );
     _applyTlsFragmentation(config, tlsFragmentationMode);
     config['tag'] = outbound.tag;
     config['tcp_fast_open'] = tcpFastOpenEnabled;
@@ -737,6 +681,7 @@ class SingboxConfigBuilder {
     required bool tcpFastOpenEnabled,
     required bool tcpMultiPathEnabled,
     required TlsFragmentationMode tlsFragmentationMode,
+    bool supportsRealitySpiderX = true,
   }) {
     final tag = chain.tag.trim();
     final detourTag = chain.detourTag.trim();
@@ -767,7 +712,7 @@ class SingboxConfigBuilder {
       }
     }
     _normalizeServerAddress(config);
-    _ensureRealityUtls(config);
+    _ensureRealityUtls(config, supportsSpiderX: supportsRealitySpiderX);
     _applyTlsFragmentation(config, tlsFragmentationMode);
     config['tcp_fast_open'] = tcpFastOpenEnabled;
     config['tcp_multi_path'] = tcpMultiPathEnabled;
@@ -805,6 +750,9 @@ class SingboxConfigBuilder {
         tcpFastOpenEnabled: tcpFastOpenEnabled,
         tcpMultiPathEnabled: tcpMultiPathEnabled,
         tlsFragmentationMode: tlsFragmentationMode,
+        supportsRealitySpiderX: _supportsCoreConfigExtension(
+          capabilities.supportsRealitySpiderX,
+        ),
       );
       if (config != null) {
         result.add(config);
@@ -925,35 +873,6 @@ class SingboxConfigBuilder {
       'interrupt_exist_connections': false,
       if (_supportsLegacyUrlTestConfigExtensions)
         'interrupt_delay_threshold': _urltestInterruptDelayThresholdMs,
-    };
-  }
-
-  Map<String, dynamic> _buildMixedOutbound({
-    required bool russiaAiServicesActive,
-    required bool russiaRouteDataActive,
-    required bool telegramServicesActive,
-  }) {
-    return {
-      'type': 'mixed',
-      'tag': mixedProxyTag,
-      'outbounds': [lowestProxyTag, lowestOpenProxyTag, lowestFreeProxyTag],
-      'default': lowestProxyTag,
-      'setback_to_default': true,
-      'rules': [
-        if (russiaAiServicesActive)
-          {'rule_set': 'ru-ai-services', 'outbound': lowestFreeProxyTag},
-        if (telegramServicesActive)
-          {
-            'rule_set': _telegramServicesRuleSetTag,
-            'outbound': lowestOpenProxyTag,
-          },
-        if (russiaRouteDataActive)
-          {
-            'rule_set': ['ru-geosite-ru-blocked', 'ru-geoip-ru-blocked'],
-            'outbound': lowestOpenProxyTag,
-          },
-      ],
-      'interrupt_exist_connections': interruptExistingConnections,
     };
   }
 
@@ -1140,7 +1059,10 @@ class SingboxConfigBuilder {
     return trimmed;
   }
 
-  static void _ensureRealityUtls(Map<String, dynamic> config) {
+  static void _ensureRealityUtls(
+    Map<String, dynamic> config, {
+    required bool supportsSpiderX,
+  }) {
     final tls = config['tls'];
     if (tls is! Map) {
       return;
@@ -1149,6 +1071,9 @@ class SingboxConfigBuilder {
     final reality = tlsMap['reality'];
     if (reality is Map && reality['enabled'] == true) {
       final realityMap = Map<String, dynamic>.from(reality);
+      if (!supportsSpiderX) {
+        realityMap.remove('spider_x');
+      }
       final shortId = _normalizeRealityShortId(realityMap['short_id']);
       if (shortId != null) {
         realityMap['short_id'] = shortId;

@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,6 +11,7 @@ import 'package:meow_client/app/bounded_task_runner.dart';
 import 'package:meow_client/core/demo_utils.dart';
 import 'package:meow_client/core/security/sensitive_clipboard.dart';
 import 'package:meow_client/core/widgets/app_notice.dart';
+import 'package:meow_client/data/backup/etonify_backup_service.dart';
 import 'package:meow_client/data/subscription/happ_crypto_link.dart';
 import 'package:meow_client/data/subscription/subscription_fetcher.dart';
 import 'package:meow_client/data/subscription/subscription_store.dart';
@@ -3392,7 +3395,7 @@ class _AddSubscriptionSheetState extends State<_AddSubscriptionSheet> {
       return;
     }
     FocusScope.of(context).unfocus();
-    final result = await FilePicker.pickFiles(withData: true);
+    final result = await FilePicker.pickFiles(withData: false);
     if (!mounted || result == null || result.files.isEmpty) return;
     final l10n = AppLocalizations.of(context);
     setState(() {
@@ -3408,7 +3411,26 @@ class _AddSubscriptionSheetState extends State<_AddSubscriptionSheet> {
       _setError(AppLocalizations.of(context).invalidSubscriptionFile);
       return;
     }
-    final content = utf8.decode(bytes, allowMalformed: true).trim();
+    final decodedHead = utf8.decode(
+      bytes.take(256).toList(growable: false),
+      allowMalformed: true,
+    );
+    if (decodedHead.contains(EtonifyBackupService.profileMagic) ||
+        decodedHead.contains(EtonifyBackupService.settingsMagic)) {
+      _setError(AppLocalizations.of(context).backupUseSettingsImport);
+      return;
+    }
+    final transferable = TransferableTypedData.fromList([bytes]);
+    final content = await Isolate.run(
+      () => utf8
+          .decode(
+            transferable.materialize().asUint8List(),
+            allowMalformed: true,
+          )
+          .trim(),
+      debugName: 'meow-read-subscription-file',
+    );
+    if (!mounted) return;
     if (content.isEmpty) {
       _setError(AppLocalizations.of(context).invalidSubscriptionFile);
       return;

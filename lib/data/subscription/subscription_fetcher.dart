@@ -40,7 +40,7 @@ class FetchResult {
 class SubscriptionFetcher {
   SubscriptionFetcher._();
 
-  static const fallbackAppVersion = '0.2.2';
+  static const fallbackAppVersion = '0.2.3';
   static String _appVersion = fallbackAppVersion;
   static String get defaultUserAgent => 'Etonify/$_appVersion';
   static const _maxSubscriptionResponseBytes = 16 * 1024 * 1024;

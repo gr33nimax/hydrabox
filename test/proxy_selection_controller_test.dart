@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:meow_client/app/proxy_selection_controller.dart';
+import 'package:meow_client/core/lowest_proxy_groups.dart';
 import 'package:meow_client/models/subscription.dart';
 
 void main() {
@@ -56,6 +57,71 @@ void main() {
       ),
       'chain-exit',
     );
+  });
+
+  test('unused multi-server profile defaults to lowest', () {
+    final controller = ProxySelectionController();
+    addTearDown(controller.dispose);
+
+    const subscription = Subscription(
+      id: 'sub-1',
+      name: 'Subscription',
+      url: 'https://example.test/sub',
+      outbounds: [
+        Outbound(
+          tag: 'amsterdam',
+          name: 'Amsterdam',
+          config: {'type': 'vless', 'tag': 'amsterdam'},
+        ),
+        Outbound(
+          tag: 'france',
+          name: 'France',
+          config: {'type': 'vless', 'tag': 'france'},
+        ),
+      ],
+    );
+
+    expect(
+      controller.validSelectedProxyTagForSubscription(subscription, ''),
+      lowestProxyTag,
+    );
+  });
+
+  test('legacy automatic selections normalize to lowest', () {
+    final controller = ProxySelectionController();
+    addTearDown(controller.dispose);
+
+    const subscription = Subscription(
+      id: 'sub-1',
+      name: 'Subscription',
+      url: 'https://example.test/sub',
+      outbounds: [
+        Outbound(
+          tag: 'amsterdam',
+          name: 'Amsterdam',
+          config: {'type': 'vless', 'tag': 'amsterdam'},
+        ),
+        Outbound(
+          tag: 'france',
+          name: 'France',
+          config: {'type': 'vless', 'tag': 'france'},
+        ),
+      ],
+    );
+
+    for (final legacyTag in const <String>[
+      mixedProxyTag,
+      lowestOpenProxyTag,
+      lowestFreeProxyTag,
+    ]) {
+      expect(
+        controller.validSelectedProxyTagForSubscription(
+          subscription,
+          legacyTag,
+        ),
+        lowestProxyTag,
+      );
+    }
   });
 
   test(

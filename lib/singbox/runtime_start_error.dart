@@ -9,7 +9,10 @@ class RuntimeInvalidOutboundError {
 }
 
 RuntimeInvalidOutboundError? parseRuntimeInvalidOutboundError(String error) {
-  final normalized = error.trim();
+  final normalized = error.trim().replaceFirst(
+    RegExp(r',\s*null,\s*null\)\s*$'),
+    '',
+  );
   if (normalized.isEmpty) {
     return null;
   }

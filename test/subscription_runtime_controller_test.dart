@@ -45,6 +45,47 @@ void main() {
   });
 
   test(
+    'normalize selection defaults an unused multi-server profile to lowest',
+    () {
+      final selection = normalizeActiveSubscriptionSelection(
+        _subscription(
+          id: 'sub-1',
+          outbounds: [_outbound('amsterdam'), _outbound('france')],
+        ),
+        selectedProxyTag: '',
+        preferSelectedProxyTag: false,
+      );
+
+      expect(selection.activeSubscriptionId, 'sub-1');
+      expect(selection.selectedProxyTag, lowestProxyTag);
+    },
+  );
+
+  test('metadata keeps the last server stored by each profile', () {
+    final controller = SubscriptionRuntimeController();
+    final resolved = controller.resolveMetadata(
+      metadataSubscriptions: [
+        _subscription(
+          id: 'furkvpn',
+          selectedProxyTag: 'amsterdam',
+          outbounds: [_outbound('amsterdam'), _outbound('france')],
+        ),
+        _subscription(
+          id: 'other',
+          selectedProxyTag: 'france',
+          outbounds: [_outbound('amsterdam'), _outbound('france')],
+        ),
+      ],
+      activeSubscriptionId: 'furkvpn',
+      selectedProxyTag: '',
+      preferSelectedProxyTag: false,
+    );
+
+    expect(resolved.normalized.activeSubscriptionId, 'furkvpn');
+    expect(resolved.normalized.selectedProxyTag, 'amsterdam');
+  });
+
+  test(
     'hydration keeps the preferred offline selection in the model and UI',
     () async {
       final controller = SubscriptionRuntimeController();
@@ -61,8 +102,7 @@ void main() {
             preferSelectedProxyTag: true,
             preserveRuntimeState: false,
             runtimeSnapshot: const SubscriptionRuntimeSnapshot(),
-            russiaRouteProxiesEnabled: false,
-            payloadJson: jsonEncode(stored.toPayloadMap()),
+            payloadSnapshot: jsonEncode(stored.toPayloadMap()),
           );
 
       expect(hydrated.normalized.selectedProxyTag, 'france');

@@ -30,25 +30,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get proxySelectorTitle => 'Selector';
 
   @override
-  String get proxyFastestName => 'Fastest';
-
-  @override
-  String get proxyFastestOpenName => 'Fastest · open access';
-
-  @override
-  String get proxyFastestFreeName => 'Fastest · unrestricted';
+  String get proxyLowestName => 'Lowest';
 
   @override
   String get proxyAutomaticSelectionLabel => 'Automatic selection';
-
-  @override
-  String get proxySmartRoutingName => 'Smart routing';
-
-  @override
-  String get proxySmartRoutingSubtitle => 'Routing by destination';
-
-  @override
-  String get proxySmartRoutingLatencyLabel => 'auto';
 
   @override
   String get proxyChainLabel => 'Chain';
@@ -1297,6 +1282,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get invalidSubscriptionFile => 'Failed to read the subscription file';
+
+  @override
+  String get backupUseSettingsImport =>
+      'This is an Etonify backup. Import it from Settings → Import.';
 
   @override
   String get subscriptionName => 'Name (optional)';

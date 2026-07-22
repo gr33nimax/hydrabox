@@ -89,7 +89,7 @@ enum AppConnectionPhase {
 }
 
 class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
-  static const _fallbackClientVersionLabel = '0.2.2';
+  static const _fallbackClientVersionLabel = '0.2.3';
   static const _requiredLegalVersion = '0.2.1';
   static final RegExp _quickTileCountryCodePattern = RegExp(r'^[A-Z]{2}$');
   static const _lowestProxyTag = lowestProxyTag;
@@ -142,8 +142,11 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   bool _starting = false;
   bool _runtimeTransitionInProgress = false;
   bool _startAfterStopRequested = false;
+  bool _suppressStartAfterStop = false;
+  Future<bool>? _runtimeStopInFlight;
   bool _invalidOutboundRetryScheduled = false;
   bool _runtimeDesiredByUser = false;
+  int _manualRuntimeStartGeneration = 0;
   bool _deepLinkImportInFlight = false;
   bool _settingsBackupOperationInFlight = false;
   bool _locationLookupInFlight = false;
@@ -366,9 +369,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     return _runtimeLatencies[outbound.tag] ?? outbound.info.latestPing;
   }
 
-  bool get _russiaRouteProxiesEnabled =>
-      _useRussiaRouteData && _russiaRouteDataStatus.available;
-
   bool get _markAllServersRussia =>
       _activeSubscription?.markAllServersRussia ?? false;
 
@@ -383,105 +383,34 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     return _runtimeLowestOutboundTagFor(_selectedProxyTag);
   }
 
-  Set<String> _activeMixedRuntimeLowestTags() {
-    if (!isMixedProxyTag(_selectedProxyTag)) {
-      return const <String>{};
-    }
-    _ensureActiveLookupCaches();
-    final visibleOutbounds = _activeVisibleOutboundsLookup;
-    if (visibleOutbounds.isEmpty) {
-      return const <String>{};
-    }
-    final tags = <String>{};
-    for (final lowestTag in lowestProxyTags) {
-      final eligibleOutbounds = _lowestEligibleOutbounds(
-        lowestTag,
-        visibleOutbounds,
-      );
-      tags.add(eligibleOutbounds.isEmpty ? lowestProxyTag : lowestTag);
-    }
-    return tags;
-  }
-
-  Set<String> _activeMixedRuntimeOutboundTags() {
-    if (!isMixedProxyTag(_selectedProxyTag)) {
-      return const <String>{};
-    }
-    _ensureActiveLookupCaches();
-    final visibleOutbounds = _activeVisibleOutboundsLookup;
-    if (visibleOutbounds.isEmpty) {
-      return const <String>{};
-    }
-    final tags = <String>{};
-    final defaultEligible = _lowestEligibleOutbounds(
-      lowestProxyTag,
-      visibleOutbounds,
-    );
-    final defaultSelected = defaultEligible.isEmpty
-        ? null
-        : _lowestSelectedOutbound(lowestProxyTag, defaultEligible);
-    for (final lowestTag in lowestProxyTags) {
-      final runtimeSelectedTag = _runtimeLowestOutboundTagFor(lowestTag);
-      if (runtimeSelectedTag != null && runtimeSelectedTag.isNotEmpty) {
-        tags.add(runtimeSelectedTag);
-      }
-      final eligibleOutbounds = _lowestEligibleOutbounds(
-        lowestTag,
-        visibleOutbounds,
-      );
-      final selected = eligibleOutbounds.isEmpty
-          ? defaultSelected
-          : _lowestSelectedOutbound(lowestTag, eligibleOutbounds);
-      if (selected != null) {
-        tags.add(selected.tag);
-      }
-    }
-    return tags;
-  }
-
-  List<Outbound> _lowestEligibleOutbounds(
-    String lowestTag,
-    List<Outbound> visibleOutbounds,
-  ) {
-    return visibleOutbounds
-        .where(
-          (outbound) => lowestProxyAllowsCountry(
-            lowestTag,
-            _effectiveOutboundCountry(outbound),
-          ),
-        )
-        .toList(growable: false);
-  }
-
   Outbound? _lowestSelectedOutbound(
     String lowestTag,
     List<Outbound> visibleOutbounds,
   ) {
     final runtimeSelectedTag = _runtimeLowestOutboundTagFor(lowestTag);
-    if (runtimeSelectedTag != null && runtimeSelectedTag.isNotEmpty) {
-      for (final outbound in visibleOutbounds) {
-        if (outbound.tag == runtimeSelectedTag) {
-          return outbound;
-        }
-      }
+    if (runtimeSelectedTag == null || runtimeSelectedTag.isEmpty) {
+      return null;
     }
-
-    Outbound? bestOutbound;
-    int? bestLatency;
+    final selectedGroup = _activeGroupByTagLookup[runtimeSelectedTag];
+    final effectiveTag = selectedGroup == null
+        ? runtimeSelectedTag
+        : _runtimeGroupSelections[selectedGroup.tag]?.trim();
+    if (effectiveTag == null ||
+        effectiveTag.isEmpty ||
+        _unavailableLatencyTags.contains(effectiveTag) ||
+        _latencyErrors.containsKey(effectiveTag)) {
+      return null;
+    }
+    final cached = _activeOutboundByTagLookup[effectiveTag];
+    if (cached != null) {
+      return cached;
+    }
     for (final outbound in visibleOutbounds) {
-      if (_unavailableLatencyTags.contains(outbound.tag)) {
-        continue;
-      }
-      final latency = _effectiveOutboundLatency(outbound);
-      if (latency == null) {
-        continue;
-      }
-      if (bestLatency == null || latency < bestLatency) {
-        bestLatency = latency;
-        bestOutbound = outbound;
+      if (outbound.tag == effectiveTag) {
+        return outbound;
       }
     }
-    return bestOutbound ?? visibleOutbounds.first;
+    return null;
   }
 
   void _rebuildDerivedCaches() {
@@ -584,7 +513,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       unavailableLatencyTags: Set<String>.from(_unavailableLatencyTags),
       latencyErrors: Map<String, String>.from(_latencyErrors),
       runtimeGroupSelections: Map<String, String>.from(_runtimeGroupSelections),
-      russiaRouteProxiesEnabled: _russiaRouteProxiesEnabled,
       markAllServersRussia: subscription?.markAllServersRussia ?? false,
     );
   }
@@ -627,15 +555,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     if (displayProxy != null) {
       summariesByTag[displayProxy.tag] = displayProxy;
     }
-    final mixedLowestTags = _activeMixedRuntimeLowestTags();
-    final mixedOutboundTags = _activeMixedRuntimeOutboundTags();
     ProxyRuntimeVisualState runtimeStateFor(AppProxySummary proxy) {
-      final runtimeProxy = _withRuntimeProxyState(
-        proxy,
-        summariesByTag,
-        mixedLowestTags: mixedLowestTags,
-        mixedOutboundTags: mixedOutboundTags,
-      );
+      final runtimeProxy = _withRuntimeProxyState(proxy, summariesByTag);
       return _runtimeVisualStateFor(runtimeProxy);
     }
 
@@ -1094,28 +1015,14 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     if (previousDisplayProxy != null) {
       previousSummariesByTag[previousDisplayProxy.tag] = previousDisplayProxy;
     }
-    final mixedLowestTags = _activeMixedRuntimeLowestTags();
-    final mixedOutboundTags = _activeMixedRuntimeOutboundTags();
     _activeProxiesCache = _activeProxiesCache
-        .map(
-          (proxy) => _withRuntimeProxyState(
-            proxy,
-            previousSummariesByTag,
-            mixedLowestTags: mixedLowestTags,
-            mixedOutboundTags: mixedOutboundTags,
-          ),
-        )
+        .map((proxy) => _withRuntimeProxyState(proxy, previousSummariesByTag))
         .toList(growable: false);
     _activeGroupChildrenByTagCache = {
       for (final entry in _activeGroupChildrenByTagCache.entries)
         entry.key: entry.value
             .map(
-              (proxy) => _withRuntimeProxyState(
-                proxy,
-                previousSummariesByTag,
-                mixedLowestTags: mixedLowestTags,
-                mixedOutboundTags: mixedOutboundTags,
-              ),
+              (proxy) => _withRuntimeProxyState(proxy, previousSummariesByTag),
             )
             .toList(growable: false),
     };
@@ -1130,12 +1037,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     }
     _displayProxyCache = currentDisplay == null
         ? null
-        : _withRuntimeProxyState(
-            currentDisplay,
-            summariesByTag,
-            mixedLowestTags: mixedLowestTags,
-            mixedOutboundTags: mixedOutboundTags,
-          );
+        : _withRuntimeProxyState(currentDisplay, summariesByTag);
     _publishProxyRuntimeVisualStates();
     _publishTrafficDashboardSnapshot();
   }
@@ -1156,27 +1058,36 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     }
 
     _ensureActiveLookupCaches();
-    if (isMixedProxyTag(normalizedTag)) {
-      return _displaySummaryForMixedProxy();
-    }
     if (isLowestProxyTag(normalizedTag)) {
-      final eligibleOutbounds = _lowestEligibleOutbounds(
-        normalizedTag,
-        _activeVisibleOutboundsLookup,
-      );
-      final defaultOutbounds = _lowestEligibleOutbounds(
-        lowestProxyTag,
-        _activeVisibleOutboundsLookup,
-      );
-      if (eligibleOutbounds.isEmpty && defaultOutbounds.isEmpty) {
+      if (_activeVisibleOutboundsLookup.isEmpty) {
         return null;
       }
       final selectedOutbound = _lowestSelectedOutbound(
         normalizedTag,
-        eligibleOutbounds.isEmpty ? defaultOutbounds : eligibleOutbounds,
+        _activeVisibleOutboundsLookup,
       );
       if (selectedOutbound == null) {
-        return null;
+        final allUnavailable = _activeVisibleOutboundsLookup.every(
+          (outbound) => _unavailableLatencyTags.contains(outbound.tag),
+        );
+        return AppProxySummary(
+          tag: lowestProxyTag,
+          displayName: lowestProxyBaseLabel(lowestProxyTag),
+          countryCode: '',
+          type: 'urltest',
+          server: '',
+          port: 0,
+          detailText: 'URLTest · auto',
+          ip: '',
+          latency: null,
+          latencyFresh: false,
+          latencyChecking: _urlTestInFlight,
+          latencyUnavailable: allUnavailable,
+          latencyError: null,
+          protocolLabel: 'URLTest · auto',
+          endpointLabel: '',
+          highlighted: true,
+        );
       }
       final selectedSummary = _displaySummaryForOutbound(selectedOutbound);
       return selectedSummary.copyWith(
@@ -1328,95 +1239,52 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     );
   }
 
-  AppProxySummary? _displaySummaryForMixedProxy() {
-    if (_activeVisibleOutboundsLookup.isEmpty) {
-      return null;
-    }
-    final eligibleOutbounds = _lowestEligibleOutbounds(
-      lowestProxyTag,
-      _activeVisibleOutboundsLookup,
-    );
-    if (eligibleOutbounds.isEmpty) {
-      return null;
-    }
-    final selectedOutbound = _lowestSelectedOutbound(
-      lowestProxyTag,
-      eligibleOutbounds,
-    );
-    final selectedSummary = selectedOutbound == null
-        ? null
-        : _displaySummaryForOutbound(selectedOutbound);
-    return AppProxySummary(
-      tag: mixedProxyTag,
-      displayName: 'mixed',
-      countryCode: selectedSummary?.countryCode ?? '',
-      type: 'selector',
-      server: '',
-      port: 0,
-      detailText: 'AI -> lowest · free · TG/RU blocked -> lowest · open',
-      ip: selectedSummary?.ip ?? '',
-      latency: null,
-      latencyFresh: false,
-      latencyChecking: _urlTestInFlight,
-      latencyUnavailable: selectedSummary?.latencyUnavailable ?? false,
-      latencyError: selectedSummary?.latencyError,
-      protocolLabel: 'Routing',
-      endpointLabel: selectedSummary?.endpointLabel ?? '',
-      childTags: const [lowestProxyTag, lowestOpenProxyTag, lowestFreeProxyTag],
-      childCount: 3,
-      highlighted: _selectedProxyTag == mixedProxyTag,
-    );
-  }
-
   AppProxySummary _withRuntimeProxyState(
     AppProxySummary proxy,
-    Map<String, AppProxySummary> summariesByTag, {
-    Set<String> mixedLowestTags = const <String>{},
-    Set<String> mixedOutboundTags = const <String>{},
-  }) {
-    if (isMixedProxyTag(proxy.tag)) {
-      final selectedLowest =
-          summariesByTag[lowestProxyTag] ?? _displaySummaryForMixedProxy();
-      if (selectedLowest == null) {
+    Map<String, AppProxySummary> summariesByTag,
+  ) {
+    if (isLowestProxyTag(proxy.tag)) {
+      final selectedTag = _runtimeLowestOutboundTagFor(proxy.tag);
+      final selectedGroupTag =
+          selectedTag != null &&
+              _activeGroupByTagLookup.containsKey(selectedTag)
+          ? selectedTag
+          : null;
+      final selectedLeafTag = selectedGroupTag == null
+          ? selectedTag
+          : _runtimeGroupSelections[selectedGroupTag];
+      final selected =
+          selectedLeafTag == null ||
+              _unavailableLatencyTags.contains(selectedLeafTag) ||
+              _latencyErrors.containsKey(selectedLeafTag)
+          ? null
+          : summariesByTag[selectedLeafTag];
+      if (selected == null) {
         return proxy.copyWith(
+          displayName: lowestProxyBaseLabel(proxy.tag),
+          countryCode: '',
+          type: 'urltest',
+          detailText: 'URLTest · auto',
+          ip: '',
+          ipChecking: false,
           clearLatency: true,
           latencyFresh: false,
           latencyChecking: _urlTestInFlight,
+          latencyUnavailable:
+              !_urlTestInFlight &&
+              _activeVisibleOutboundsLookup.isNotEmpty &&
+              _activeVisibleOutboundsLookup.every(
+                (outbound) => _unavailableLatencyTags.contains(outbound.tag),
+              ),
+          clearLatencyError: true,
+          protocolLabel: 'URLTest · auto',
+          endpointLabel: '',
+          clearSelectedChildTag: true,
+          clearSelectedChildName: true,
           highlighted: proxy.tag == _selectedProxyTag,
         );
       }
-      return proxy.copyWith(
-        countryCode: selectedLowest.countryCode,
-        ip: selectedLowest.ip,
-        ipChecking: selectedLowest.ipChecking,
-        clearLatency: true,
-        latencyFresh: false,
-        latencyChecking: _urlTestInFlight || selectedLowest.latencyChecking,
-        latencyUnavailable: selectedLowest.latencyUnavailable,
-        latencyError: selectedLowest.latencyError,
-        clearLatencyError: selectedLowest.latencyError == null,
-        endpointLabel: selectedLowest.endpointLabel,
-        highlighted: proxy.tag == _selectedProxyTag,
-      );
-    }
-
-    if (isLowestProxyTag(proxy.tag)) {
-      final selectedTag = _runtimeLowestOutboundTagFor(proxy.tag);
-      final selected = selectedTag == null ? null : summariesByTag[selectedTag];
-      final highlightedByMixed = mixedLowestTags.contains(proxy.tag);
-      if (selected == null) {
-        return proxy.copyWith(
-          latencyFresh: false,
-          latencyChecking: _urlTestInFlight,
-          latencyUnavailable:
-              !_urlTestInFlight && _unavailableLatencyTags.isNotEmpty,
-          highlighted: proxy.tag == _selectedProxyTag || highlightedByMixed,
-        );
-      }
-      final selectedWithRuntime = _withDirectRuntimeProxyState(
-        selected,
-        mixedOutboundTags: mixedOutboundTags,
-      );
+      final selectedWithRuntime = _withDirectRuntimeProxyState(selected);
       return proxy.copyWith(
         displayName: lowestProxyDisplayName(
           proxy.tag,
@@ -1436,7 +1304,9 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         clearLatencyError: selectedWithRuntime.latencyError == null,
         protocolLabel: 'URLTest · ${selectedWithRuntime.protocolLabel}',
         endpointLabel: selectedWithRuntime.endpointLabel,
-        highlighted: proxy.tag == _selectedProxyTag || highlightedByMixed,
+        selectedChildTag: selectedWithRuntime.tag,
+        selectedChildName: selectedWithRuntime.displayName,
+        highlighted: proxy.tag == _selectedProxyTag,
       );
     }
 
@@ -1452,10 +1322,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
           : summariesByTag[selectedChildTag];
       final selectedChildWithRuntime = selectedChild == null
           ? null
-          : _withDirectRuntimeProxyState(
-              selectedChild,
-              mixedOutboundTags: mixedOutboundTags,
-            );
+          : _withDirectRuntimeProxyState(selectedChild);
       final selectedCountry =
           selectedChildWithRuntime?.countryCode.trim() ?? '';
       final selectedChildName =
@@ -1476,10 +1343,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       final selectedByLowest =
           isLowestProxyTag(_selectedProxyTag) &&
           _activeRuntimeLowestOutboundTag() == proxy.tag;
-      final selectedByMixed = mixedOutboundTags.contains(proxy.tag);
-      final childSelectedByMixed = mixedOutboundTags.any(
-        fullChildTags.contains,
-      );
       final unavailable =
           selectedChildWithRuntime?.latencyUnavailable ??
           proxy.latencyUnavailable;
@@ -1514,22 +1377,14 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
             _selectedProxyTag == proxy.tag ||
             childSelectedByUser ||
             selectedByLowest ||
-            selectedByMixed ||
-            (isLowestProxyTag(_selectedProxyTag) && childSelectedByLowest) ||
-            childSelectedByMixed,
+            (isLowestProxyTag(_selectedProxyTag) && childSelectedByLowest),
       );
     }
 
-    return _withDirectRuntimeProxyState(
-      proxy,
-      mixedOutboundTags: mixedOutboundTags,
-    );
+    return _withDirectRuntimeProxyState(proxy);
   }
 
-  AppProxySummary _withDirectRuntimeProxyState(
-    AppProxySummary proxy, {
-    Set<String> mixedOutboundTags = const <String>{},
-  }) {
+  AppProxySummary _withDirectRuntimeProxyState(AppProxySummary proxy) {
     final latencyChecking = _latencyCoordinator.isChecking(proxy.tag);
     final latencyInvalidated = _proxyRuntime.isLatencyInvalidated(proxy.tag);
     final runtimeLatency = latencyInvalidated
@@ -1553,7 +1408,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     final highlightedByLowest =
         isLowestProxyTag(_selectedProxyTag) &&
         _activeRuntimeLowestOutboundTag() == proxy.tag;
-    final highlightedByMixed = mixedOutboundTags.contains(proxy.tag);
     final shouldClearLatency =
         runtimeLatency == null && (latencyUnavailable || latencyInvalidated);
     final activeIpMatches =
@@ -1576,7 +1430,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       highlighted:
           highlightedByGroupUrlTest ||
           highlightedByLowest ||
-          highlightedByMixed ||
           _selectedProxyTag == proxy.tag,
     );
   }
@@ -1960,7 +1813,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     if (total <= 0) {
       return _activeProfileCache == null ? 0 : 1;
     }
-    return total > 50 ? 51 : total;
+    return total;
   }
 
   Future<void> _startDeepLinkHandling() async {
@@ -2778,7 +2631,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     if (importedSubscriptions.isEmpty) {
       return;
     }
-    final existing = SubscriptionStore.getAll();
+    final existing = await SubscriptionStore.getAllMetadataInBackground();
     final byIdentity = <String, Subscription>{};
     for (final subscription in existing) {
       if (subscription.id.trim().isNotEmpty) {
@@ -3392,98 +3245,116 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       );
       return;
     }
-    final activeOrRequested =
-        _connected ||
-        _runtimeDesiredByUser ||
-        _connectionPhase == AppConnectionPhase.preparing ||
-        _connectionPhase == AppConnectionPhase.configuring ||
-        _connectionPhase == AppConnectionPhase.starting ||
-        _connectionPhase == AppConnectionPhase.recovering ||
-        _connectionPhase == AppConnectionPhase.reconfiguring;
-    if (activeOrRequested) {
-      _cancelAutomaticRuntimeRecovery('explicit_user_stop');
-      _runtimeDesiredByUser = false;
-      if (mounted) {
-        setState(() {
-          _setConnectionPhase(AppConnectionPhase.stopping);
-        });
-      } else {
-        _setConnectionPhase(AppConnectionPhase.stopping);
-      }
-      var stopFailed = false;
-      try {
-        await SingboxRuntime.instance
-            .stop(reason: 'toggle_connection')
-            .timeout(const Duration(seconds: 7));
-      } catch (error, stackTrace) {
-        stopFailed = true;
-        AppLogStore.error(
-          'sing-box',
-          'native stop failed reason=toggle_connection error=$error\n'
-              '$stackTrace',
-        );
-      }
-      if (!mounted) return;
-      if (stopFailed) {
-        final status = await SingboxRuntime.instance
-            .status()
-            .timeout(
-              const Duration(seconds: 2),
-              onTimeout: () => const <String, dynamic>{'running': true},
-            )
-            .catchError((_) => const <String, dynamic>{'running': true});
-        if (!mounted) return;
-        if (status['running'] == true) {
-          _runtimeDesiredByUser = true;
-          _startAfterStopRequested = false;
-          setState(() {
-            _setConnectionPhase(AppConnectionPhase.connected);
-          });
-          _showAppSnackBar(_vpnStopFailedMessage);
-          return;
-        }
-      }
-      final startAfterStop = _startAfterStopRequested;
-      _startAfterStopRequested = false;
-      _latencyCoordinator.cancel();
-      _groupUrlTestScheduler.cancel();
-      setState(() {
-        _setConnectionPhase(AppConnectionPhase.idle);
-        _resetActiveProxyIpState();
-        _locationLookupGeneration++;
-        _locationLookupTimer?.cancel();
-        _locationLookupInFlight = false;
-        _locationLookupRefreshRequested = false;
-        _cancelQueuedLocationLookups();
-        _excludedRuntimeOutboundTags.clear();
-        _clearLastStartedBuildCache();
-        _invalidOutboundRetryScheduled = false;
-        _invalidOutboundRetryTimer?.cancel();
-        _lowestLatency = null;
-        _runtimeLowestOutboundTag = null;
-        _runtimeLowestSelections.clear();
-        _runtimeLatencies.clear();
-        _unavailableLatencyTags.clear();
-        _invalidatedLatencyTags.clear();
-        _latencyErrors.clear();
-        _latencyFailureCounts.clear();
-        _runtimeStartupUrlTestGate.reset();
-        _networkRecoveryDecisionTimer?.cancel();
-        _networkRecoveryDecisionTimer = null;
-        _applyRuntimeStateToDerivedCaches();
-      });
-      unawaited(_syncQuickSettingsTileLabel());
-      if (startAfterStop && mounted) {
-        AppLogStore.info(
-          'runtime',
-          'connection queued start after stop source=$source',
-        );
-        await _startConnection(source: 'queued_after_stop:$source');
-      }
+    if (_runtimeActiveOrRequested) {
+      await _stopRuntime(reason: 'toggle_connection');
       return;
     }
 
     await _startConnection(source: source);
+  }
+
+  bool get _runtimeActiveOrRequested =>
+      _connected ||
+      _runtimeDesiredByUser ||
+      _connectionPhase == AppConnectionPhase.preparing ||
+      _connectionPhase == AppConnectionPhase.configuring ||
+      _connectionPhase == AppConnectionPhase.starting ||
+      _connectionPhase == AppConnectionPhase.stopping ||
+      _connectionPhase == AppConnectionPhase.recovering ||
+      _connectionPhase == AppConnectionPhase.reconfiguring;
+
+  Future<bool> _stopRuntime({
+    required String reason,
+    bool allowQueuedRestart = true,
+  }) {
+    if (!allowQueuedRestart) {
+      _suppressStartAfterStop = true;
+      _startAfterStopRequested = false;
+    }
+    final inFlight = _runtimeStopInFlight;
+    if (inFlight != null) {
+      return inFlight;
+    }
+    if (!_runtimeActiveOrRequested) {
+      _suppressStartAfterStop = false;
+      return Future<bool>.value(true);
+    }
+
+    late final Future<bool> operation;
+    operation = _performRuntimeStop(reason: reason).whenComplete(() {
+      if (identical(_runtimeStopInFlight, operation)) {
+        _runtimeStopInFlight = null;
+        _suppressStartAfterStop = false;
+      }
+    });
+    _runtimeStopInFlight = operation;
+    return operation;
+  }
+
+  Future<bool> _performRuntimeStop({required String reason}) async {
+    _cancelAutomaticRuntimeRecovery('stop:$reason');
+    _cancelManualRuntimeStart('stop:$reason');
+    _runtimeDesiredByUser = false;
+    if (mounted) {
+      setState(() {
+        _setConnectionPhase(AppConnectionPhase.stopping);
+      });
+    } else {
+      _setConnectionPhase(AppConnectionPhase.stopping);
+    }
+
+    final stopped = await _runtimeLifecycle.stopRuntime(reason: reason);
+    if (!mounted) {
+      return stopped;
+    }
+    if (!stopped) {
+      _runtimeDesiredByUser = true;
+      _startAfterStopRequested = false;
+      setState(() {
+        _setConnectionPhase(AppConnectionPhase.connected);
+      });
+      _showAppSnackBar(_vpnStopFailedMessage);
+      return false;
+    }
+
+    final startAfterStop = !_suppressStartAfterStop && _startAfterStopRequested;
+    _startAfterStopRequested = false;
+    _latencyCoordinator.cancel();
+    _groupUrlTestScheduler.cancel();
+    setState(() {
+      _setConnectionPhase(AppConnectionPhase.idle);
+      _resetActiveProxyIpState();
+      _locationLookupGeneration++;
+      _locationLookupTimer?.cancel();
+      _locationLookupInFlight = false;
+      _locationLookupRefreshRequested = false;
+      _cancelQueuedLocationLookups();
+      _excludedRuntimeOutboundTags.clear();
+      _clearLastStartedBuildCache();
+      _invalidOutboundRetryScheduled = false;
+      _invalidOutboundRetryTimer?.cancel();
+      _lowestLatency = null;
+      _runtimeLowestOutboundTag = null;
+      _runtimeLowestSelections.clear();
+      _runtimeLatencies.clear();
+      _unavailableLatencyTags.clear();
+      _invalidatedLatencyTags.clear();
+      _latencyErrors.clear();
+      _latencyFailureCounts.clear();
+      _runtimeStartupUrlTestGate.reset();
+      _networkRecoveryDecisionTimer?.cancel();
+      _networkRecoveryDecisionTimer = null;
+      _applyRuntimeStateToDerivedCaches();
+    });
+    unawaited(_syncQuickSettingsTileLabel());
+    if (startAfterStop && mounted) {
+      AppLogStore.info(
+        'runtime',
+        'connection queued start after stop source=$reason',
+      );
+      await _startConnection(source: 'queued_after_stop:$reason');
+    }
+    return true;
   }
 
   Future<void> _startConnection({required String source}) async {
@@ -3492,6 +3363,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         _invalidOutboundRetryScheduled) {
       return;
     }
+    final startGeneration = ++_manualRuntimeStartGeneration;
     AppLogStore.info(
       'sing-box',
       'manual start requested source=$source\n'
@@ -3511,73 +3383,108 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       return;
     }
 
+    SingboxConfigBuildResult? build;
     _runtimeDesiredByUser = true;
-    setState(() {
-      _setConnectionPhase(AppConnectionPhase.preparing);
-    });
-
-    final granted = await SingboxRuntime.instance.prepareVpn(
-      requiresVpn: _vpnInboundEnabled,
-    );
-    if (!mounted) {
-      return;
-    }
-    if (!granted) {
-      _runtimeDesiredByUser = false;
+    try {
       setState(() {
-        _setConnectionPhase(AppConnectionPhase.idle);
+        _setConnectionPhase(AppConnectionPhase.preparing);
       });
-      return;
-    }
 
-    await _synchronizeSelectedProxyBeforeStart();
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _setConnectionPhase(AppConnectionPhase.configuring);
-    });
-
-    final build = await _configCoordinator
-        .buildCurrentSingboxConfigInBackground(returnConfig: true);
-    if (build == null || !mounted) {
-      if (mounted) {
+      final granted = await SingboxRuntime.instance.prepareVpn(
+        requiresVpn: _vpnInboundEnabled,
+      );
+      if (!_manualRuntimeStartCurrent(startGeneration)) {
+        return;
+      }
+      if (!granted) {
         _runtimeDesiredByUser = false;
         setState(() {
           _setConnectionPhase(AppConnectionPhase.idle);
         });
+        return;
       }
-      return;
-    }
-    if (!_applyStartupValidationResult(build, 'manual start')) {
-      _configCoordinator.discardPreparedConfigCandidate(build);
-      _runtimeDesiredByUser = false;
-      if (mounted) {
+
+      await _synchronizeSelectedProxyBeforeStart();
+      if (!_manualRuntimeStartCurrent(startGeneration)) {
+        return;
+      }
+      setState(() {
+        _setConnectionPhase(AppConnectionPhase.configuring);
+      });
+
+      build = await _configCoordinator.buildCurrentSingboxConfigInBackground(
+        returnConfig: true,
+      );
+      if (!_manualRuntimeStartCurrent(startGeneration)) {
+        if (build != null) {
+          _configCoordinator.discardPreparedConfigCandidate(build);
+        }
+        return;
+      }
+      if (build == null) {
+        _runtimeDesiredByUser = false;
+        setState(() {
+          _setConnectionPhase(AppConnectionPhase.idle);
+        });
+        return;
+      }
+      if (!_applyStartupValidationResult(build, 'manual start')) {
+        _configCoordinator.discardPreparedConfigCandidate(build);
+        _runtimeDesiredByUser = false;
         setState(() {
           _setConnectionPhase(AppConnectionPhase.failed);
         });
+        _showNoValidOutboundsWarning();
+        return;
       }
-      _showNoValidOutboundsWarning();
-      return;
-    }
-    if (mounted) {
       setState(() {
         _setConnectionPhase(AppConnectionPhase.starting);
       });
-    }
-    final selectedTagForStart = _selectedProxyTag.trim();
-    if (selectedTagForStart.isNotEmpty) {
-      _proxySelection.guardCurrentSelectionForRuntime(
-        tag: selectedTagForStart,
-        previousTag: selectedTagForStart,
-        onTimeout: _handleRuntimeProxySelectionTimeout,
-        confirmationTimeout:
-            _runtimeLifecycle.startTimeout +
-            _runtimeCommands.selectionTimeout +
-            const Duration(seconds: 2),
+      final selectedTagForStart = _selectedProxyTag.trim();
+      if (selectedTagForStart.isNotEmpty) {
+        _proxySelection.guardCurrentSelectionForRuntime(
+          tag: selectedTagForStart,
+          previousTag: selectedTagForStart,
+          onTimeout: _handleRuntimeProxySelectionTimeout,
+          confirmationTimeout:
+              _runtimeLifecycle.startTimeout +
+              _runtimeCommands.selectionTimeout +
+              const Duration(seconds: 2),
+        );
+      }
+      await _startRuntimeWithBuild(
+        build,
+        useVpn: _vpnInboundEnabled,
+        manualStartGeneration: startGeneration,
       );
+    } catch (error, stackTrace) {
+      if (build != null) {
+        _configCoordinator.discardPreparedConfigCandidate(build);
+      }
+      if (!_manualRuntimeStartCurrent(startGeneration)) {
+        AppLogStore.info(
+          'runtime',
+          'discarded cancelled manual start result source=$source error=$error',
+        );
+        return;
+      }
+      AppLogStore.error(
+        'sing-box',
+        'manual start failed source=$source error=$error\n$stackTrace',
+      );
+      await _handleRuntimeError(error.toString(), false);
     }
-    await _startRuntimeWithBuild(build, useVpn: _vpnInboundEnabled);
+  }
+
+  bool _manualRuntimeStartCurrent(int generation) {
+    return mounted &&
+        _runtimeDesiredByUser &&
+        generation == _manualRuntimeStartGeneration;
+  }
+
+  void _cancelManualRuntimeStart(String reason) {
+    _manualRuntimeStartGeneration++;
+    _configCoordinator.cancelPendingWork(reason: reason);
   }
 
   void _selectProxy(String tag) {
@@ -3982,6 +3889,9 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       tcpFastOpenEnabled: _experimentalTcpFastOpen,
       tcpMultiPathEnabled: _experimentalTcpMultiPath,
       tlsFragmentationMode: _tlsFragmentationMode,
+      supportsRealitySpiderX:
+          !_latencyCoordinator.capabilities.hasVersionedContract ||
+          _latencyCoordinator.capabilities.supportsRealitySpiderX,
     );
     if (config == null) {
       return;
@@ -4034,12 +3944,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       ...subscription.outbounds.map((outbound) => outbound.tag),
       ...subscription.groups.map((group) => group.tag),
       ...subscription.proxyChains.map((chain) => chain.tag),
-      lowestProxyTag,
-      lowestOpenProxyTag,
-      lowestFreeProxyTag,
-      mixedProxyTag,
-      'select',
-      'direct',
+      ...reservedProxyTags,
     };
     final base = 'chain-${DateTime.now().millisecondsSinceEpoch}';
     var tag = base;
@@ -4078,14 +3983,12 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   }
 
   String _proxyDisplayNameForTag(String tag) {
-    final normalized = tag.trim();
+    final normalized = normalizeProxySelectionTag(tag);
     if (normalized.isEmpty) {
       return '';
     }
     return _displayProxyForSelectedTag(normalized)?.displayName ??
-        (isMixedProxyTag(normalized)
-            ? 'mixed'
-            : isLowestProxyTag(normalized)
+        (isLowestProxyTag(normalized)
             ? lowestProxyBaseLabel(normalized)
             : normalized);
   }
@@ -4470,8 +4373,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       runtimeSnapshot: _currentSubscriptionRuntimeSnapshot(
         preserveRuntimeState: preserveRuntimeState,
       ),
-      russiaRouteProxiesEnabled: _russiaRouteProxiesEnabled,
-      payloadJsonFor: SubscriptionStore.payloadJsonFor,
+      payloadSnapshotFor: SubscriptionStore.payloadSnapshotFor,
     );
   }
 
@@ -4490,8 +4392,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       runtimeSnapshot: _currentSubscriptionRuntimeSnapshot(
         preserveRuntimeState: preserveRuntimeState,
       ),
-      russiaRouteProxiesEnabled: _russiaRouteProxiesEnabled,
-      payloadJson: SubscriptionStore.payloadJsonFor(metadata.id),
+      payloadSnapshot: SubscriptionStore.payloadSnapshotFor(metadata.id),
     );
   }
 
@@ -4594,13 +4495,33 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       return;
     }
 
-    if (selectedSubscriptionId != _activeProfileId) {
+    final switchingProfile = selectedSubscriptionId != _activeProfileId;
+    if (switchingProfile) {
       _haptic();
+      await _proxySelection.waitForPersistence();
+      if (!mounted) {
+        return;
+      }
+      AppLogStore.info(
+        'subscription',
+        'profile switch requested from=$_activeProfileId '
+            'to=$selectedSubscriptionId running=$_runtimeActiveOrRequested',
+      );
+      if (_runtimeActiveOrRequested) {
+        final stopped = await _stopRuntime(
+          reason: 'profile_switch',
+          allowQueuedRestart: false,
+        );
+        if (!mounted || !stopped) {
+          return;
+        }
+      }
     }
 
     await _reloadSubscriptions(
       preferredSubscriptionId: selectedSubscriptionId,
       preferredProxyTag: '',
+      applyRuntime: false,
     );
   }
 
@@ -4801,7 +4722,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         store: store,
         settingsState: _currentSettingsState(),
         clientVersion: _clientVersionLabel,
-        loadSubscriptions: SubscriptionStore.getAll,
+        loadSubscriptions: SubscriptionStore.getAllInBackground,
         onImportSettings: _applyImportedSettingsState,
         onImportSubscriptions: _importBackupSubscriptions,
       );
@@ -5242,12 +5163,35 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   Future<void> _startRuntimeWithBuild(
     SingboxConfigBuildResult build, {
     required bool useVpn,
+    int? manualStartGeneration,
+    int? automaticRecoveryGeneration,
   }) async {
     final result = await _configCoordinator.startRuntimeWithBuild(
       build,
       useVpn: useVpn,
     );
     if (!mounted) {
+      return;
+    }
+    final manualStartCancelled =
+        manualStartGeneration != null &&
+        !_manualRuntimeStartCurrent(manualStartGeneration);
+    final automaticRecoveryCancelled =
+        automaticRecoveryGeneration != null &&
+        !_automaticRuntimeRecoveryCurrent(automaticRecoveryGeneration);
+    if (manualStartCancelled || automaticRecoveryCancelled) {
+      if (result.success && !_runtimeDesiredByUser) {
+        try {
+          await SingboxRuntime.instance
+              .stop(reason: 'cancelled_runtime_start_completed')
+              .timeout(const Duration(seconds: 7));
+        } catch (error, stackTrace) {
+          AppLogStore.error(
+            'sing-box',
+            'late cancelled start cleanup failed: $error\n$stackTrace',
+          );
+        }
+      }
       return;
     }
     if (result.success) {
@@ -5832,6 +5776,18 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
 
   Future<void> _handleRuntimeError(String error, bool wasRetryScheduled) async {
     AppLogStore.error('sing-box', error);
+    if (!_runtimeDesiredByUser) {
+      AppLogStore.info(
+        'runtime',
+        'ignored runtime error after explicit stop: $error',
+      );
+      if (mounted && _connectionPhase != AppConnectionPhase.stopping) {
+        setState(() {
+          _setConnectionPhase(AppConnectionPhase.idle);
+        });
+      }
+      return;
+    }
     if (wasRetryScheduled && _isTransientConfigRetryError(error)) {
       AppLogStore.warning(
         'sing-box',
@@ -5887,6 +5843,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
           .buildCurrentSingboxConfigInBackground(
             dropStale: false,
             prepareConfig: false,
+            validateConfig: false,
           );
       if (build == null) {
         return false;
@@ -6007,53 +5964,70 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       AppLogStore.info('sing-box', reason);
       unawaited(() async {
         try {
-          await SingboxRuntime.instance.stop(reason: 'invalid_outbound_retry');
-        } catch (_) {}
-        if (!_automaticRuntimeRecoveryCurrent(retryGeneration)) {
-          return;
-        }
-        await Future<void>.delayed(const Duration(milliseconds: 150));
-        if (!_automaticRuntimeRecoveryCurrent(retryGeneration)) {
-          return;
-        }
-        if (await _tryFastRetryViaMutation(reason, retryGeneration)) {
-          return;
-        }
-        if (!_automaticRuntimeRecoveryCurrent(retryGeneration)) {
-          return;
-        }
-        final build = await _configCoordinator
-            .buildCurrentSingboxConfigInBackground(
-              dropStale: false,
-              returnConfig: true,
+          try {
+            await SingboxRuntime.instance.stop(
+              reason: 'invalid_outbound_retry',
             );
-        if (build == null) {
-          if (mounted) {
-            setState(() {
-              _setConnectionPhase(AppConnectionPhase.failed);
-            });
-          } else {
-            _setConnectionPhase(AppConnectionPhase.failed);
+          } catch (_) {}
+          if (!_automaticRuntimeRecoveryCurrent(retryGeneration)) {
+            return;
           }
-          return;
-        }
-        if (!_automaticRuntimeRecoveryCurrent(retryGeneration)) {
-          _configCoordinator.discardPreparedConfigCandidate(build);
-          return;
-        }
-        if (!_applyStartupValidationResult(build, reason)) {
-          _configCoordinator.discardPreparedConfigCandidate(build);
-          if (mounted) {
-            setState(() {
-              _setConnectionPhase(AppConnectionPhase.failed);
-            });
-          } else {
-            _setConnectionPhase(AppConnectionPhase.failed);
+          await Future<void>.delayed(const Duration(milliseconds: 150));
+          if (!_automaticRuntimeRecoveryCurrent(retryGeneration)) {
+            return;
           }
-          _showNoValidOutboundsWarning();
-          return;
+          if (await _tryFastRetryViaMutation(reason, retryGeneration)) {
+            return;
+          }
+          if (!_automaticRuntimeRecoveryCurrent(retryGeneration)) {
+            return;
+          }
+          final build = await _configCoordinator
+              .buildCurrentSingboxConfigInBackground(
+                dropStale: false,
+                returnConfig: true,
+              );
+          if (build == null) {
+            if (mounted) {
+              setState(() {
+                _setConnectionPhase(AppConnectionPhase.failed);
+              });
+            } else {
+              _setConnectionPhase(AppConnectionPhase.failed);
+            }
+            return;
+          }
+          if (!_automaticRuntimeRecoveryCurrent(retryGeneration)) {
+            _configCoordinator.discardPreparedConfigCandidate(build);
+            return;
+          }
+          if (!_applyStartupValidationResult(build, reason)) {
+            _configCoordinator.discardPreparedConfigCandidate(build);
+            if (mounted) {
+              setState(() {
+                _setConnectionPhase(AppConnectionPhase.failed);
+              });
+            } else {
+              _setConnectionPhase(AppConnectionPhase.failed);
+            }
+            _showNoValidOutboundsWarning();
+            return;
+          }
+          await _startRuntimeWithBuild(
+            build,
+            useVpn: _vpnInboundEnabled,
+            automaticRecoveryGeneration: retryGeneration,
+          );
+        } catch (error, stackTrace) {
+          if (!_automaticRuntimeRecoveryCurrent(retryGeneration)) {
+            return;
+          }
+          AppLogStore.error(
+            'sing-box',
+            'automatic outbound recovery failed: $error\n$stackTrace',
+          );
+          await _handleRuntimeError(error.toString(), true);
         }
-        await _startRuntimeWithBuild(build, useVpn: _vpnInboundEnabled);
       }());
     });
   }
@@ -6160,7 +6134,11 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     if (!_automaticRuntimeRecoveryCurrent(retryGeneration)) {
       return true;
     }
-    await _startRuntimeWithBuild(build, useVpn: _vpnInboundEnabled);
+    await _startRuntimeWithBuild(
+      build,
+      useVpn: _vpnInboundEnabled,
+      automaticRecoveryGeneration: retryGeneration,
+    );
     return true;
   }
 
@@ -6442,45 +6420,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     if (visibleOutbounds.isEmpty) {
       return null;
     }
-    final selectedLowestTag = isMixedProxyTag(_selectedProxyTag)
-        ? lowestProxyTag
-        : _selectedProxyTag;
-    if (isLowestProxyTag(selectedLowestTag)) {
-      final eligibleOutbounds = _lowestEligibleOutbounds(
-        selectedLowestTag,
-        visibleOutbounds,
-      );
-      final defaultOutbounds = _lowestEligibleOutbounds(
-        lowestProxyTag,
-        visibleOutbounds,
-      );
-      if (eligibleOutbounds.isEmpty && defaultOutbounds.isEmpty) {
-        return null;
-      }
-      final runtimeLowestOutboundTag = _runtimeLowestOutboundTagFor(
-        selectedLowestTag,
-      );
-      final hasResolvedLowest =
-          (runtimeLowestOutboundTag?.isNotEmpty ?? false) ||
-          _runtimeLatencies.isNotEmpty ||
-          _unavailableLatencyTags.isNotEmpty;
-      if (!hasResolvedLowest) {
-        return null;
-      }
-      if (runtimeLowestOutboundTag != null &&
-          runtimeLowestOutboundTag.isNotEmpty) {
-        final outbound = _activeOutboundByTagLookup[runtimeLowestOutboundTag];
-        final effectiveOutbounds = eligibleOutbounds.isEmpty
-            ? defaultOutbounds
-            : eligibleOutbounds;
-        if (outbound != null && effectiveOutbounds.contains(outbound)) {
-          return outbound;
-        }
-      }
-      return _lowestSelectedOutbound(
-        selectedLowestTag,
-        eligibleOutbounds.isEmpty ? defaultOutbounds : eligibleOutbounds,
-      );
+    if (isLowestProxyTag(_selectedProxyTag)) {
+      return _lowestSelectedOutbound(lowestProxyTag, visibleOutbounds);
     }
     final selectedGroup = _subscriptionGroupForTag(_selectedProxyTag);
     if (selectedGroup != null) {
@@ -6493,9 +6434,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         return target.copyWith(tag: selectedChain.tag);
       }
     }
-    return _activeOutboundByTagLookup[_selectedProxyTag] ??
-        _checkedOutboundFromVisibleOutbounds() ??
-        visibleOutbounds.first;
+    return _activeOutboundByTagLookup[_selectedProxyTag];
   }
 
   SubscriptionGroup? _subscriptionGroupForTag(String tag) {
@@ -6580,7 +6519,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     final selectedTag = _selectedProxyTag.trim();
     final activeOutbound =
         isLowestProxyTag(selectedTag) ||
-            isMixedProxyTag(selectedTag) ||
             _subscriptionGroupForTag(selectedTag) != null ||
             _proxyChainForTag(selectedTag) != null
         ? _currentResolvedActiveOutbound()
@@ -7079,15 +7017,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     return '${outbound.server}:${outbound.port}';
   }
 
-  Outbound? _checkedOutboundFromVisibleOutbounds() {
-    for (final outbound in _activeVisibleOutboundsLookup) {
-      if (outbound.info.checked) {
-        return outbound;
-      }
-    }
-    return null;
-  }
-
   Subscription _withSelectedOutbound(Subscription subscription, String tag) {
     return _proxySelection.withSelectedOutbound(subscription, tag);
   }
@@ -7254,7 +7183,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
                   return ProxiesPage(
                     proxies: _activeProxies,
                     groupChildrenByTag: _activeGroupChildrenByTag,
-                    totalTopLevelProxies: _activeTopLevelProxiesCount,
                     selectedTag: _selectedProxyTag,
                     activeProxy: _displayProxy,
                     activeProxyHideIp: _hideServerIp,
@@ -7293,11 +7221,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
                     collapsedSheetExtent: 0,
                     expandedHeaderExtent: 1,
                     sheetCornerRadius: proxyPanelScreenCornerRadius,
-                    collapseOnAnyDownwardDrag:
-                        metrics.collapseOnAnyDownwardDrag,
-                    onInteractionStart: gestures.onInteractionStart,
-                    onHeaderDragUpdate: gestures.onDragUpdate,
-                    onHeaderDragEnd: gestures.onDragEnd,
                     onHeaderTap: gestures.onHeaderTap,
                   );
                 },

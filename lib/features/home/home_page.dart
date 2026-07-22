@@ -3,9 +3,7 @@ import 'dart:math' as math;
 
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:gap/gap.dart';
@@ -18,11 +16,6 @@ import 'package:meow_client/widgets/country_flag_badge.dart';
 import 'package:meow_client/widgets/ip_refresh_dots.dart';
 
 const _kActiveProxyFooterReservedHeight = 82.0;
-const _kProxyPanelCarryMinVelocity = 1200.0;
-const _kProxyPanelCarryMinDistance = 32.0;
-const _kProxyPanelCarryMinResidualVelocity = 90.0;
-const _kProxyPanelFrictionDrag = 0.135;
-const _kProxyPanelMaxTransferVelocity = 5000.0;
 
 class HomePage extends StatelessWidget {
   const HomePage({
@@ -428,37 +421,27 @@ class _HomeProxyPanelGestureRelayState
     extends State<_HomeProxyPanelGestureRelay> {
   static const _startThreshold = 6.0;
 
-  VelocityTracker? _velocityTracker;
-  ScrollMetrics? _lastScrollMetrics;
-  double? _pendingCarryVelocity;
   bool _dragStarted = false;
   double _totalDeltaY = 0;
 
   void _handlePointerDown(PointerDownEvent event) {
     widget.onInteractionStart?.call();
-    _pendingCarryVelocity = null;
     _dragStarted = false;
     _totalDeltaY = 0;
-    _velocityTracker = VelocityTracker.withKind(event.kind)
-      ..addPosition(event.timeStamp, event.position);
   }
 
   void _handlePointerMove(PointerMoveEvent event) {
-    final tracker = _velocityTracker;
-    if (tracker == null) {
-      return;
-    }
-    tracker.addPosition(event.timeStamp, event.position);
     _totalDeltaY += event.delta.dy;
     if (!_dragStarted && _totalDeltaY.abs() < _startThreshold) {
       return;
     }
+    final deltaY = _dragStarted ? event.delta.dy : _totalDeltaY;
     _dragStarted = true;
     widget.onDragUpdate?.call(
       DragUpdateDetails(
         sourceTimeStamp: event.timeStamp,
-        delta: event.delta,
-        primaryDelta: event.delta.dy,
+        delta: Offset(0, deltaY),
+        primaryDelta: deltaY,
         globalPosition: event.position,
         localPosition: event.localPosition,
       ),
@@ -466,136 +449,29 @@ class _HomeProxyPanelGestureRelayState
   }
 
   void _handlePointerEnd(PointerUpEvent event) {
-    final tracker = _velocityTracker;
-    if (_dragStarted && tracker != null) {
-      final velocity = tracker.getVelocity().pixelsPerSecond.dy;
-      final residualVelocity = _residualProxyPanelVelocity(velocity);
-      widget.onDragEnd?.call(
-        DragEndDetails(
-          velocity: Velocity(
-            pixelsPerSecond: Offset(0, residualVelocity ?? velocity),
-          ),
-          primaryVelocity: residualVelocity ?? velocity,
-        ),
-      );
-    } else if (tracker != null) {
-      final velocity = tracker.getVelocity().pixelsPerSecond.dy;
-      final residualVelocity = _residualProxyPanelVelocity(velocity);
-      if (residualVelocity != null) {
-        _pendingCarryVelocity = residualVelocity;
-      }
-    }
+    widget.onDragEnd?.call(DragEndDetails());
     _reset();
   }
 
   void _handlePointerCancel(PointerCancelEvent event) {
-    if (_dragStarted) {
-      widget.onDragEnd?.call(DragEndDetails());
-    }
+    widget.onDragEnd?.call(DragEndDetails());
     _reset();
   }
 
   void _reset() {
-    _velocityTracker = null;
     _dragStarted = false;
     _totalDeltaY = 0;
   }
 
-  bool _handleScrollNotification(ScrollNotification notification) {
-    _lastScrollMetrics = notification.metrics;
-    if (_pendingCarryVelocity != null &&
-        (notification is ScrollUpdateNotification ||
-            notification is ScrollEndNotification)) {
-      _startPendingCarryIfAtEdge();
-      if (notification is ScrollEndNotification) {
-        _pendingCarryVelocity = null;
-      }
-    }
-    return false;
-  }
-
-  void _startPendingCarryIfAtEdge() {
-    final velocity = _pendingCarryVelocity;
-    final metrics = _lastScrollMetrics;
-    if (velocity == null || metrics == null) {
-      return;
-    }
-    if (!_isAtTransferEdge(metrics, velocity)) {
-      return;
-    }
-    _pendingCarryVelocity = null;
-    widget.onDragEnd?.call(
-      DragEndDetails(
-        velocity: Velocity(pixelsPerSecond: Offset(0, velocity)),
-        primaryVelocity: velocity,
-      ),
-    );
-  }
-
-  double? _residualProxyPanelVelocity(double pointerVelocity) {
-    if (pointerVelocity.abs() < _kProxyPanelCarryMinVelocity ||
-        _totalDeltaY.abs() < _kProxyPanelCarryMinDistance) {
-      return null;
-    }
-    final metrics = _lastScrollMetrics;
-    if (metrics == null || metrics.maxScrollExtent <= metrics.minScrollExtent) {
-      return pointerVelocity
-          .clamp(
-            -_kProxyPanelMaxTransferVelocity,
-            _kProxyPanelMaxTransferVelocity,
-          )
-          .toDouble();
-    }
-    final targetEdge = pointerVelocity < 0
-        ? metrics.maxScrollExtent
-        : metrics.minScrollExtent;
-    final scrollVelocity = -pointerVelocity;
-    final simulation = FrictionSimulation(
-      _kProxyPanelFrictionDrag,
-      metrics.pixels,
-      scrollVelocity,
-    );
-    final willReachEdge = pointerVelocity < 0
-        ? simulation.finalX >= targetEdge
-        : simulation.finalX <= targetEdge;
-    if (!willReachEdge) {
-      return null;
-    }
-    final timeAtEdge = simulation.timeAtX(targetEdge);
-    if (!timeAtEdge.isFinite) {
-      return null;
-    }
-    final residualVelocity = -simulation.dx(timeAtEdge);
-    if (residualVelocity.abs() < _kProxyPanelCarryMinResidualVelocity) {
-      return null;
-    }
-    return residualVelocity
-        .clamp(
-          -_kProxyPanelMaxTransferVelocity,
-          _kProxyPanelMaxTransferVelocity,
-        )
-        .toDouble();
-  }
-
-  bool _isAtTransferEdge(ScrollMetrics metrics, double panelVelocity) {
-    if (panelVelocity < 0) {
-      return metrics.pixels >= metrics.maxScrollExtent - 0.5;
-    }
-    return metrics.pixels <= metrics.minScrollExtent + 0.5;
-  }
-
   @override
   Widget build(BuildContext context) {
-    return NotificationListener<ScrollNotification>(
-      onNotification: _handleScrollNotification,
-      child: Listener(
-        behavior: HitTestBehavior.translucent,
-        onPointerDown: _handlePointerDown,
-        onPointerMove: _handlePointerMove,
-        onPointerUp: _handlePointerEnd,
-        onPointerCancel: _handlePointerCancel,
-        child: widget.child,
-      ),
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: _handlePointerDown,
+      onPointerMove: _handlePointerMove,
+      onPointerUp: _handlePointerEnd,
+      onPointerCancel: _handlePointerCancel,
+      child: widget.child,
     );
   }
 }

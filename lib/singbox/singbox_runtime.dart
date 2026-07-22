@@ -40,7 +40,7 @@ class AppVersionInfo {
 
   String get displayVersion {
     final normalized = versionName.trim();
-    return normalized.isEmpty ? '0.2.2' : normalized;
+    return normalized.isEmpty ? '0.2.3' : normalized;
   }
 
   int get updateBuildNumber => normalizeSplitApkVersionCode(versionCode);
@@ -665,7 +665,7 @@ class SingboxRuntime {
     if (!Platform.isAndroid) {
       return const AppVersionInfo(
         packageName: '',
-        versionName: '0.2.2',
+        versionName: '0.2.3',
         versionCode: 0,
       );
     }
@@ -686,7 +686,7 @@ class SingboxRuntime {
     } on MissingPluginException {
       return const AppVersionInfo(
         packageName: '',
-        versionName: '0.2.2',
+        versionName: '0.2.3',
         versionCode: 0,
       );
     }

@@ -5,9 +5,7 @@ import 'dart:ui';
 
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/physics.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:meow_client/core/demo_utils.dart';
@@ -24,18 +22,11 @@ import 'package:meow_client/widgets/progressive_blur_scaffold.dart';
 import 'proxy_list_ordering.dart';
 import 'proxy_panel_shell.dart';
 
-const _kProxyListPreviewLimit = 50;
 const _kProxySheetHeaderHeight = 108.0;
 const _kProxySheetCompactHeaderHeight = 72.0;
-const _kProxySheetListTopReserve = 148.0;
 const _kProxyGroupSheetListTopReserve = 144.0;
 const _kProxySheetRowExtent = 72.0;
 const _kProxySheetHeaderCollapseDistance = 48.0;
-const _kProxySheetCarryMinVelocity = 1200.0;
-const _kProxySheetCarryMinDistance = 32.0;
-const _kProxySheetCarryMinResidualVelocity = 90.0;
-const _kProxySheetFrictionDrag = 0.135;
-const _kProxySheetMaxSpringTransferVelocity = 5000.0;
 const _kProxySheetHeaderBlurStart = 0.0;
 
 enum _ProxyChainAction { edit, rename, remove }
@@ -48,11 +39,7 @@ String _proxySortLabel(AppLocalizations l10n, ProxySort sort) => switch (sort) {
 };
 
 String _localizedLowestBaseLabel(AppLocalizations l10n, String tag) =>
-    switch (tag) {
-      lowestOpenProxyTag => l10n.proxyFastestOpenName,
-      lowestFreeProxyTag => l10n.proxyFastestFreeName,
-      _ => l10n.proxyFastestName,
-    };
+    l10n.proxyLowestName;
 
 String? _lowestSelectedDisplayName(AppProxySummary proxy) {
   final selected = proxy.selectedChildName?.trim() ?? '';
@@ -67,9 +54,6 @@ String? _lowestSelectedDisplayName(AppProxySummary proxy) {
 }
 
 String _localizedProxyTitle(AppLocalizations l10n, AppProxySummary proxy) {
-  if (isMixedProxyTag(proxy.tag)) {
-    return l10n.proxySmartRoutingName;
-  }
   if (!isLowestProxyTag(proxy.tag)) {
     return proxy.displayName;
   }
@@ -79,16 +63,10 @@ String _localizedProxyTitle(AppLocalizations l10n, AppProxySummary proxy) {
 }
 
 String _localizedProxySubtitle(AppLocalizations l10n, AppProxySummary proxy) {
-  if (isMixedProxyTag(proxy.tag)) {
-    return l10n.proxySmartRoutingSubtitle;
-  }
   return _localizedProxyTechnicalText(l10n, proxy, proxy.protocolLabel.trim());
 }
 
 String _localizedProxyDetail(AppLocalizations l10n, AppProxySummary proxy) {
-  if (isMixedProxyTag(proxy.tag)) {
-    return l10n.proxySmartRoutingSubtitle;
-  }
   return _localizedProxyTechnicalText(l10n, proxy, proxy.detailText.trim());
 }
 
@@ -318,7 +296,6 @@ class ProxiesPage extends StatefulWidget {
   const ProxiesPage({
     super.key,
     required this.proxies,
-    this.totalTopLevelProxies,
     required this.selectedTag,
     this.activeProxy,
     this.activeProxyHideIp = false,
@@ -351,17 +328,12 @@ class ProxiesPage extends StatefulWidget {
     this.collapsedSheetExtent = 0,
     this.expandedHeaderExtent = 1,
     this.sheetCornerRadius = 0,
-    this.collapseOnAnyDownwardDrag = false,
-    this.onInteractionStart,
-    this.onHeaderDragUpdate,
-    this.onHeaderDragEnd,
     this.onHeaderTap,
     this.runtimeStates,
     this.groupChildrenByTag = const <String, List<AppProxySummary>>{},
   });
 
   final List<AppProxySummary> proxies;
-  final int? totalTopLevelProxies;
   final String selectedTag;
   final AppProxySummary? activeProxy;
   final bool activeProxyHideIp;
@@ -397,10 +369,6 @@ class ProxiesPage extends StatefulWidget {
   final double collapsedSheetExtent;
   final double expandedHeaderExtent;
   final double sheetCornerRadius;
-  final bool collapseOnAnyDownwardDrag;
-  final VoidCallback? onInteractionStart;
-  final ValueChanged<DragUpdateDetails>? onHeaderDragUpdate;
-  final ValueChanged<DragEndDetails>? onHeaderDragEnd;
   final VoidCallback? onHeaderTap;
   final ProxyRuntimeVisualStore? runtimeStates;
   final Map<String, List<AppProxySummary>> groupChildrenByTag;
@@ -412,23 +380,14 @@ class ProxiesPage extends StatefulWidget {
 class _ProxiesPageState extends State<ProxiesPage> {
   late ProxySort _sort;
   List<AppProxySummary> _visibleItems = const [];
-  int _hiddenCount = 0;
-  bool _showAllProxies = false;
-  VelocityTracker? _proxySheetDragVelocityTracker;
-  double? _pendingProxySheetCarryVelocity;
-  bool _proxySheetDragMoved = false;
-  bool _proxySheetPointerStartedInList = false;
-  double _proxySheetPointerDeltaY = 0;
   double _proxySheetHeaderScrollCollapse = 0;
   bool _groupSheetOpen = false;
-  bool _showExtraLowests = false;
   List<_ProxyListEntry>? _visibleEntriesCache;
   List<AppProxySummary>? _visibleEntriesItemsCache;
   ProxySort? _visibleEntriesSortCache;
-  bool? _visibleEntriesExtraLowestsCache;
+  bool _embeddedListActivated = false;
   bool? _visibleEntriesCanAddChainCache;
   bool Function(String tag)? _visibleEntriesChainPredicateCache;
-  int? _visibleEntriesHiddenCountCache;
 
   bool _isProxyChain(AppProxySummary proxy) =>
       widget.isProxyChainTag?.call(proxy.tag) ?? false;
@@ -437,10 +396,6 @@ class _ProxiesPageState extends State<ProxiesPage> {
 
   bool get _effectiveSheetAtMaxExtent =>
       _sheetMetrics?.atMaxExtent ?? widget.sheetAtMaxExtent;
-
-  bool get _effectiveCollapseOnAnyDownwardDrag =>
-      _sheetMetrics?.collapseOnAnyDownwardDrag ??
-      widget.collapseOnAnyDownwardDrag;
 
   @override
   void initState() {
@@ -453,7 +408,6 @@ class _ProxiesPageState extends State<ProxiesPage> {
   void didUpdateWidget(covariant ProxiesPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.proxies != widget.proxies ||
-        oldWidget.totalTopLevelProxies != widget.totalTopLevelProxies ||
         oldWidget.isProxyChainTag != widget.isProxyChainTag) {
       _rebuildVisibleItems();
     }
@@ -479,7 +433,6 @@ class _ProxiesPageState extends State<ProxiesPage> {
   }
 
   void _rebuildVisibleItems() {
-    var topLevelCount = 0;
     final pinnedItems = <AppProxySummary>[];
     final visibleItems = <AppProxySummary>[];
     for (final proxy in widget.proxies) {
@@ -487,7 +440,6 @@ class _ProxiesPageState extends State<ProxiesPage> {
       if (parentTag != null && parentTag.isNotEmpty) {
         continue;
       }
-      topLevelCount++;
       if (_isPinnedHeaderProxy(proxy)) {
         pinnedItems.add(proxy);
       } else {
@@ -496,31 +448,13 @@ class _ProxiesPageState extends State<ProxiesPage> {
     }
 
     _sortItems(visibleItems);
-    final displayedItems = _showAllProxies
-        ? visibleItems
-        : visibleItems.take(_kProxyListPreviewLimit).toList(growable: false);
-
-    _visibleItems = [...pinnedItems, ...displayedItems];
-    final effectiveTopLevelCount = widget.totalTopLevelProxies == null
-        ? topLevelCount
-        : widget.totalTopLevelProxies!.clamp(topLevelCount, 1 << 30).toInt();
-    _hiddenCount = effectiveTopLevelCount - _visibleItems.length;
-    if (!_visibleItems.any(_isExtraLowest)) {
-      _showExtraLowests = false;
-    }
+    _visibleItems = [...pinnedItems, ...visibleItems];
     _invalidateVisibleEntries();
+    _visibleEntriesImpl();
   }
 
-  bool _isPrimarySynthetic(AppProxySummary proxy) =>
-      proxy.tag == lowestProxyTag || proxy.tag == mixedProxyTag;
-
-  bool _isExtraLowest(AppProxySummary proxy) =>
-      proxy.tag == lowestOpenProxyTag || proxy.tag == lowestFreeProxyTag;
-
   bool _isPinnedHeaderProxy(AppProxySummary proxy) =>
-      _isPrimarySynthetic(proxy) ||
-      _isExtraLowest(proxy) ||
-      _isProxyChain(proxy);
+      isLowestProxyTag(proxy.tag) || _isProxyChain(proxy);
 
   List<_ProxyListEntry> _visibleEntries() {
     if (kDebugMode) {
@@ -529,7 +463,6 @@ class _ProxiesPageState extends State<ProxiesPage> {
         _visibleEntriesImpl,
         arguments: <String, Object?>{
           'visibleItems': _visibleItems.length,
-          'hiddenCount': _hiddenCount,
           'embedded': widget.embedded,
         },
       );
@@ -542,21 +475,16 @@ class _ProxiesPageState extends State<ProxiesPage> {
     if (cached != null &&
         identical(_visibleEntriesItemsCache, _visibleItems) &&
         _visibleEntriesSortCache == _sort &&
-        _visibleEntriesExtraLowestsCache == _showExtraLowests &&
         _visibleEntriesCanAddChainCache == (widget.onAddProxyChain != null) &&
-        _visibleEntriesChainPredicateCache == widget.isProxyChainTag &&
-        _visibleEntriesHiddenCountCache == _hiddenCount) {
+        _visibleEntriesChainPredicateCache == widget.isProxyChainTag) {
       return cached;
     }
     final primary = <AppProxySummary>[];
-    final extraLowests = <AppProxySummary>[];
     final chains = <AppProxySummary>[];
     final rest = <AppProxySummary>[];
     for (final proxy in _visibleItems) {
-      if (_isPrimarySynthetic(proxy)) {
+      if (isLowestProxyTag(proxy.tag)) {
         primary.add(proxy);
-      } else if (_isExtraLowest(proxy)) {
-        extraLowests.add(proxy);
       } else if (_isProxyChain(proxy)) {
         chains.add(proxy);
       } else {
@@ -566,36 +494,22 @@ class _ProxiesPageState extends State<ProxiesPage> {
     int byPinnedOrder(AppProxySummary a, AppProxySummary b) =>
         pinnedProxyTagOrder(a.tag).compareTo(pinnedProxyTagOrder(b.tag));
     primary.sort(byPinnedOrder);
-    extraLowests.sort(byPinnedOrder);
-    final hasPinnedOverflow =
-        extraLowests.isNotEmpty || widget.onAddProxyChain != null;
-    final visibleChains = _showExtraLowests
-        ? chains
-        : const <AppProxySummary>[];
     final hasPinnedHeader =
-        primary.isNotEmpty || visibleChains.isNotEmpty || hasPinnedOverflow;
+        primary.isNotEmpty ||
+        chains.isNotEmpty ||
+        widget.onAddProxyChain != null;
     final entries = <_ProxyListEntry>[
       for (final proxy in primary) _ProxyListEntry.tile(proxy),
-      if (hasPinnedOverflow && !_showExtraLowests)
-        const _ProxyListEntry.moreLowests(),
-      if (_showExtraLowests)
-        for (final proxy in extraLowests) _ProxyListEntry.tile(proxy),
-      for (final proxy in visibleChains) _ProxyListEntry.tile(proxy),
-      if (_showExtraLowests && widget.onAddProxyChain != null)
-        const _ProxyListEntry.addChain(),
-      if (hasPinnedOverflow && _showExtraLowests)
-        const _ProxyListEntry.moreLowests(),
+      for (final proxy in chains) _ProxyListEntry.tile(proxy),
+      if (widget.onAddProxyChain != null) const _ProxyListEntry.addChain(),
       if (rest.isNotEmpty && hasPinnedHeader) const _ProxyListEntry.divider(),
       for (final proxy in rest) _ProxyListEntry.tile(proxy),
-      if (_hiddenCount > 0) const _ProxyListEntry.moreProxies(),
     ];
     _visibleEntriesCache = entries;
     _visibleEntriesItemsCache = _visibleItems;
     _visibleEntriesSortCache = _sort;
-    _visibleEntriesExtraLowestsCache = _showExtraLowests;
     _visibleEntriesCanAddChainCache = widget.onAddProxyChain != null;
     _visibleEntriesChainPredicateCache = widget.isProxyChainTag;
-    _visibleEntriesHiddenCountCache = _hiddenCount;
     return entries;
   }
 
@@ -603,31 +517,8 @@ class _ProxiesPageState extends State<ProxiesPage> {
     _visibleEntriesCache = null;
     _visibleEntriesItemsCache = null;
     _visibleEntriesSortCache = null;
-    _visibleEntriesExtraLowestsCache = null;
     _visibleEntriesCanAddChainCache = null;
     _visibleEntriesChainPredicateCache = null;
-    _visibleEntriesHiddenCountCache = null;
-  }
-
-  void _toggleExtraLowests() {
-    if (widget.hapticEnabled) {
-      HapticFeedback.selectionClick();
-    }
-    setState(() {
-      _showExtraLowests = !_showExtraLowests;
-      _invalidateVisibleEntries();
-    });
-  }
-
-  void _showEveryProxy() {
-    if (_showAllProxies) return;
-    if (widget.hapticEnabled) {
-      HapticFeedback.selectionClick();
-    }
-    setState(() {
-      _showAllProxies = true;
-      _rebuildVisibleItems();
-    });
   }
 
   List<AppProxySummary> _groupChildren(AppProxySummary group) {
@@ -851,9 +742,6 @@ class _ProxiesPageState extends State<ProxiesPage> {
         : ((effectiveSheetExtent - widget.collapsedSheetExtent) / progressRange)
               .clamp(0.0, 1.0)
               .toDouble();
-    final listProgress = ((headerProgress - .16) / .44)
-        .clamp(0.0, 1.0)
-        .toDouble();
     final headerScrollCollapse = effectiveSheetAtMaxExtent
         ? _proxySheetHeaderScrollCollapse
         : 0.0;
@@ -861,59 +749,57 @@ class _ProxiesPageState extends State<ProxiesPage> {
       headerScrollCollapse,
     );
     final compactListTopPadding = max(headerHeight + 6, 84).toDouble();
-    final listTopPadding = lerpDouble(
-      _kProxySheetListTopReserve,
-      compactListTopPadding,
-      ((headerProgress - .52) / .36).clamp(0.0, 1.0).toDouble(),
-    )!;
-    final listMounted =
-        effectiveSheetAtMaxExtent || headerProgress > .22 || listProgress > 0;
-    final listScrollEnabled = effectiveSheetAtMaxExtent || headerProgress > .94;
-    final list = listMounted
-        ? Builder(
-            builder: (context) {
-              final entries = _visibleEntries();
-              return ListView.builder(
-                controller: widget.scrollController,
-                physics: listScrollEnabled
-                    ? const _ProxySheetScrollPhysics(
-                        parent: AlwaysScrollableScrollPhysics(),
-                      )
-                    : const NeverScrollableScrollPhysics(),
-                itemExtent: _kProxySheetRowExtent,
-                scrollCacheExtent: const ScrollCacheExtent.pixels(0),
-                addAutomaticKeepAlives: false,
-                addRepaintBoundaries: true,
-                addSemanticIndexes: false,
-                padding: EdgeInsets.only(
-                  top: listTopPadding,
-                  bottom: bottomInset + 20,
+    final listTopPadding = compactListTopPadding;
+    if (effectiveSheetAtMaxExtent) {
+      _embeddedListActivated = true;
+    }
+    final listMounted = _embeddedListActivated;
+    final list = Builder(
+      builder: (context) {
+        final entries = listMounted
+            ? _visibleEntries()
+            : const <_ProxyListEntry>[];
+        return ListView.builder(
+          controller: widget.scrollController,
+          physics: const ClampingScrollPhysics(
+            parent: AlwaysScrollableScrollPhysics(),
+          ),
+          itemExtent: _kProxySheetRowExtent,
+          scrollCacheExtent: const ScrollCacheExtent.pixels(0),
+          addAutomaticKeepAlives: false,
+          addRepaintBoundaries: true,
+          addSemanticIndexes: false,
+          padding: listMounted
+              ? EdgeInsets.only(top: listTopPadding, bottom: bottomInset + 20)
+              : EdgeInsets.zero,
+          itemCount: !listMounted
+              ? 0
+              : widget.proxies.isEmpty
+              ? 1
+              : entries.length,
+          itemBuilder: (context, index) {
+            if (widget.proxies.isEmpty) {
+              return Center(
+                child: Text(
+                  l10n.noProxies,
+                  style: Theme.of(context).textTheme.titleMedium,
                 ),
-                itemCount: widget.proxies.isEmpty ? 1 : entries.length,
-                itemBuilder: (context, index) {
-                  if (widget.proxies.isEmpty) {
-                    return Center(
-                      child: Text(
-                        l10n.noProxies,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                    );
-                  }
-
-                  final entry = entries[index];
-                  return IgnorePointer(
-                    ignoring: listProgress < .12,
-                    child: _buildEmbeddedEntry(
-                      context: context,
-                      l10n: l10n,
-                      entry: entry,
-                    ),
-                  );
-                },
               );
-            },
-          )
-        : null;
+            }
+
+            final entry = entries[index];
+            return IgnorePointer(
+              ignoring: !effectiveSheetAtMaxExtent,
+              child: _buildEmbeddedEntry(
+                context: context,
+                l10n: l10n,
+                entry: entry,
+              ),
+            );
+          },
+        );
+      },
+    );
     final header = _ProxySheetHeader(
       height: headerHeight,
       progress: headerProgress,
@@ -932,9 +818,6 @@ class _ProxiesPageState extends State<ProxiesPage> {
       onUrlTest: widget.onUrlTest,
       onRefreshIp: widget.onActiveProxyIpRefresh,
       onTap: widget.onHeaderTap,
-      onInteractionStart: widget.onInteractionStart,
-      onVerticalDragUpdate: widget.onHeaderDragUpdate,
-      onVerticalDragEnd: widget.onHeaderDragEnd,
     );
     final pinnedHeader = _ProxySheetHeaderBackdrop(
       enabled:
@@ -948,18 +831,10 @@ class _ProxiesPageState extends State<ProxiesPage> {
     final sheetBody = RepaintBoundary(
       child: Stack(
         children: [
-          if (list != null)
-            Listener(
-              behavior: HitTestBehavior.translucent,
-              onPointerDown: _handleEmbeddedPointerDown,
-              onPointerMove: _handleEmbeddedPointerMove,
-              onPointerUp: _handleEmbeddedPointerEnd,
-              onPointerCancel: _handleEmbeddedPointerCancel,
-              child: NotificationListener<ScrollNotification>(
-                onNotification: _handleEmbeddedScrollNotification,
-                child: RepaintBoundary(child: list),
-              ),
-            ),
+          NotificationListener<ScrollNotification>(
+            onNotification: _handleEmbeddedScrollNotification,
+            child: RepaintBoundary(child: list),
+          ),
           Positioned(left: 0, right: 0, top: 0, child: pinnedHeader),
         ],
       ),
@@ -975,16 +850,6 @@ class _ProxiesPageState extends State<ProxiesPage> {
 
   bool _handleEmbeddedScrollNotification(ScrollNotification notification) {
     _updateProxySheetHeaderScrollCollapse(notification.metrics);
-    if (_pendingProxySheetCarryVelocity == null) {
-      return false;
-    }
-    if (notification is ScrollUpdateNotification ||
-        notification is ScrollEndNotification) {
-      _startProxySheetCarryIfListSettledAtTop();
-      if (notification is ScrollEndNotification) {
-        _pendingProxySheetCarryVelocity = null;
-      }
-    }
     return false;
   }
 
@@ -1001,149 +866,6 @@ class _ProxiesPageState extends State<ProxiesPage> {
     setState(() {
       _proxySheetHeaderScrollCollapse = nextCollapse;
     });
-  }
-
-  void _handleEmbeddedPointerDown(PointerDownEvent event) {
-    widget.onInteractionStart?.call();
-    _pendingProxySheetCarryVelocity = null;
-    _resetProxySheetDragTracking();
-    final headerHitHeight = _proxySheetHeaderHeightForCollapse(
-      _effectiveSheetAtMaxExtent ? _proxySheetHeaderScrollCollapse : 0,
-    );
-    if (event.localPosition.dy <= headerHitHeight) {
-      return;
-    }
-    _proxySheetPointerStartedInList = true;
-    _proxySheetDragVelocityTracker = VelocityTracker.withKind(event.kind)
-      ..addPosition(event.timeStamp, event.position);
-  }
-
-  void _handleEmbeddedPointerMove(PointerMoveEvent event) {
-    if (!_proxySheetPointerStartedInList) {
-      return;
-    }
-    final deltaY = event.delta.dy;
-    _proxySheetPointerDeltaY += deltaY;
-    _proxySheetDragVelocityTracker?.addPosition(
-      event.timeStamp,
-      event.position,
-    );
-    final shouldCollapseFromAnyScroll =
-        _effectiveCollapseOnAnyDownwardDrag && deltaY > 0;
-    if (deltaY == 0 ||
-        (!_embeddedListAtTop() && !shouldCollapseFromAnyScroll)) {
-      return;
-    }
-    if (_effectiveSheetAtMaxExtent && deltaY < 0) {
-      return;
-    }
-    _proxySheetDragMoved = true;
-    widget.onHeaderDragUpdate?.call(
-      DragUpdateDetails(
-        sourceTimeStamp: event.timeStamp,
-        delta: event.delta,
-        primaryDelta: deltaY,
-        globalPosition: event.position,
-        localPosition: event.localPosition,
-      ),
-    );
-  }
-
-  void _handleEmbeddedPointerEnd(PointerUpEvent event) {
-    final velocity =
-        _proxySheetDragVelocityTracker?.getVelocity().pixelsPerSecond.dy ?? 0;
-    if (!_proxySheetDragMoved) {
-      if (_proxySheetPointerStartedInList &&
-          _effectiveSheetAtMaxExtent &&
-          !_embeddedListAtTop() &&
-          velocity > _kProxySheetCarryMinVelocity &&
-          _proxySheetPointerDeltaY > _kProxySheetCarryMinDistance) {
-        final residualVelocity = _proxySheetResidualVelocityAtTop(velocity);
-        if (residualVelocity > _kProxySheetCarryMinResidualVelocity) {
-          _pendingProxySheetCarryVelocity = residualVelocity;
-        }
-      }
-      _resetProxySheetDragTracking();
-      return;
-    }
-    _resetProxySheetDragTracking();
-    widget.onHeaderDragEnd?.call(
-      DragEndDetails(
-        velocity: Velocity(pixelsPerSecond: Offset(0, velocity)),
-        primaryVelocity: velocity,
-      ),
-    );
-  }
-
-  void _handleEmbeddedPointerCancel(PointerCancelEvent event) {
-    if (_proxySheetDragMoved) {
-      widget.onHeaderDragEnd?.call(DragEndDetails());
-    }
-    _resetProxySheetDragTracking();
-  }
-
-  void _resetProxySheetDragTracking() {
-    _proxySheetDragVelocityTracker = null;
-    _proxySheetDragMoved = false;
-    _proxySheetPointerStartedInList = false;
-    _proxySheetPointerDeltaY = 0;
-  }
-
-  void _startProxySheetCarryIfListSettledAtTop() {
-    final velocity = _pendingProxySheetCarryVelocity;
-    if (velocity == null || !_embeddedListAtTop()) {
-      return;
-    }
-    _pendingProxySheetCarryVelocity = null;
-    widget.onHeaderDragEnd?.call(
-      DragEndDetails(
-        velocity: Velocity(pixelsPerSecond: Offset(0, velocity)),
-        primaryVelocity: velocity,
-      ),
-    );
-  }
-
-  double _proxySheetResidualVelocityAtTop(double pointerVelocity) {
-    final controller = widget.scrollController;
-    if (controller == null || !controller.hasClients) {
-      return 0;
-    }
-    var residualVelocity = 0.0;
-    for (final position in controller.positions) {
-      final scrollVelocity = -pointerVelocity;
-      if (scrollVelocity >= 0) {
-        continue;
-      }
-      final simulation = FrictionSimulation(
-        _kProxySheetFrictionDrag,
-        position.pixels,
-        scrollVelocity,
-      );
-      if (simulation.finalX > position.minScrollExtent) {
-        continue;
-      }
-      final timeAtTop = simulation.timeAtX(position.minScrollExtent);
-      if (!timeAtTop.isFinite) {
-        continue;
-      }
-      final velocityAtTop = -simulation.dx(timeAtTop);
-      if (velocityAtTop > residualVelocity) {
-        residualVelocity = velocityAtTop;
-      }
-    }
-    return residualVelocity
-        .clamp(0.0, _kProxySheetMaxSpringTransferVelocity)
-        .toDouble();
-  }
-
-  bool _embeddedListAtTop() {
-    final controller = widget.scrollController;
-    if (controller == null || !controller.hasClients) {
-      return true;
-    }
-    return controller.positions.every(
-      (position) => position.pixels <= position.minScrollExtent + 0.5,
-    );
   }
 
   double _proxySheetHeaderHeightForCollapse(double collapse) {
@@ -1211,17 +933,10 @@ class _ProxiesPageState extends State<ProxiesPage> {
           valueListenable: runtimeStates.listenableFor(proxy.tag),
           builder: (context, state, _) => buildTile(state),
         );
-      case _ProxyListEntryType.moreLowests:
-        return _MoreLowestsTile(onTap: _toggleExtraLowests);
       case _ProxyListEntryType.addChain:
         return _AddProxyChainTile(onTap: _openAddProxyChainSheet);
       case _ProxyListEntryType.divider:
         return const _ProxyListDivider();
-      case _ProxyListEntryType.moreProxies:
-        return _MoreProxiesTile(
-          label: l10n.moreProxies(_hiddenCount),
-          onTap: _showEveryProxy,
-        );
     }
   }
 
@@ -1243,8 +958,7 @@ class _ProxiesPageState extends State<ProxiesPage> {
           (proxy) =>
               !proxy.isGroup &&
               !_isProxyChain(proxy) &&
-              !isLowestProxyTag(proxy.tag) &&
-              !isMixedProxyTag(proxy.tag),
+              !isSyntheticProxyTag(proxy.tag),
         )
         .toList(growable: false);
     final sources = await widget.loadProxyChainTargetSources?.call();
@@ -1418,7 +1132,7 @@ class _ProxiesPageState extends State<ProxiesPage> {
   }
 }
 
-enum _ProxyListEntryType { tile, moreLowests, addChain, divider, moreProxies }
+enum _ProxyListEntryType { tile, addChain, divider }
 
 class _ProxyChainSelection {
   const _ProxyChainSelection({
@@ -1712,35 +1426,11 @@ class _ProxyListEntry {
 
   const _ProxyListEntry.tile(AppProxySummary proxy)
     : this._(_ProxyListEntryType.tile, proxy);
-  const _ProxyListEntry.moreLowests() : this._(_ProxyListEntryType.moreLowests);
   const _ProxyListEntry.addChain() : this._(_ProxyListEntryType.addChain);
   const _ProxyListEntry.divider() : this._(_ProxyListEntryType.divider);
-  const _ProxyListEntry.moreProxies() : this._(_ProxyListEntryType.moreProxies);
 
   final _ProxyListEntryType type;
   final AppProxySummary? proxy;
-}
-
-class _ProxySheetScrollPhysics extends BouncingScrollPhysics {
-  const _ProxySheetScrollPhysics({super.parent});
-
-  @override
-  _ProxySheetScrollPhysics applyTo(ScrollPhysics? ancestor) {
-    return _ProxySheetScrollPhysics(parent: buildParent(ancestor));
-  }
-
-  @override
-  double applyBoundaryConditions(ScrollMetrics position, double value) {
-    if (value < position.pixels &&
-        position.pixels <= position.minScrollExtent) {
-      return value - position.pixels;
-    }
-    if (value < position.minScrollExtent &&
-        position.minScrollExtent < position.pixels) {
-      return value - position.minScrollExtent;
-    }
-    return super.applyBoundaryConditions(position, value);
-  }
 }
 
 class _ProxySheetHeaderBackdrop extends StatelessWidget {
@@ -1871,9 +1561,6 @@ class _ProxySheetHeader extends StatelessWidget {
     required this.onUrlTest,
     required this.onRefreshIp,
     required this.onTap,
-    required this.onInteractionStart,
-    required this.onVerticalDragUpdate,
-    required this.onVerticalDragEnd,
   });
 
   final double height;
@@ -1893,9 +1580,6 @@ class _ProxySheetHeader extends StatelessWidget {
   final Future<void> Function() onUrlTest;
   final VoidCallback? onRefreshIp;
   final VoidCallback? onTap;
-  final VoidCallback? onInteractionStart;
-  final ValueChanged<DragUpdateDetails>? onVerticalDragUpdate;
-  final ValueChanged<DragEndDetails>? onVerticalDragEnd;
 
   @override
   Widget build(BuildContext context) {
@@ -1913,17 +1597,11 @@ class _ProxySheetHeader extends StatelessWidget {
     final activeProxyFade = (1 - (progress / .34)).clamp(0.0, 1.0).toDouble();
     final activeProxyOpacity = Curves.easeOutCubic.transform(activeProxyFade);
     final showHandle = handleOpacity >= .08;
-    final showActiveProxy = activeProxy != null && activeProxyOpacity >= .02;
-    final showToolbar = headerOpacity >= .02;
     final toolbarTop = lerpDouble(18, 8, collapse)!;
     final toolbarBottom = lerpDouble(0, 4, collapse)!;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTapDown: (_) => onInteractionStart?.call(),
       onTap: onTap,
-      onVerticalDragStart: (_) => onInteractionStart?.call(),
-      onVerticalDragUpdate: onVerticalDragUpdate,
-      onVerticalDragEnd: onVerticalDragEnd,
       child: SizedBox(
         height: height,
         child: Stack(
@@ -1946,7 +1624,7 @@ class _ProxySheetHeader extends StatelessWidget {
                   ),
                 ),
               ),
-            if (showActiveProxy)
+            if (activeProxy != null)
               Positioned(
                 left: 16,
                 right: 16,
@@ -1986,30 +1664,31 @@ class _ProxySheetHeader extends StatelessWidget {
                   ),
                 ),
               ),
-            if (showToolbar) ...[
-              Positioned(
-                left: 16,
-                right: 16,
-                top: toolbarTop,
-                bottom: toolbarBottom,
-                child: Opacity(
-                  opacity: headerOpacity,
-                  child: Center(
-                    child: Text(
-                      l10n.proxiesTitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.titleLarge,
-                    ),
+            Positioned(
+              left: 16,
+              right: 16,
+              top: toolbarTop,
+              bottom: toolbarBottom,
+              child: Opacity(
+                opacity: headerOpacity,
+                child: Center(
+                  child: Text(
+                    l10n.proxiesTitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.titleLarge,
                   ),
                 ),
               ),
-              Positioned(
-                left: 16,
-                right: 16,
-                top: toolbarTop,
-                bottom: toolbarBottom,
+            ),
+            Positioned(
+              left: 16,
+              right: 16,
+              top: toolbarTop,
+              bottom: toolbarBottom,
+              child: IgnorePointer(
+                ignoring: headerOpacity < .85,
                 child: Opacity(
                   opacity: headerOpacity,
                   child: Align(
@@ -2024,11 +1703,14 @@ class _ProxySheetHeader extends StatelessWidget {
                   ),
                 ),
               ),
-              Positioned(
-                left: 16,
-                right: 16,
-                top: toolbarTop,
-                bottom: toolbarBottom,
+            ),
+            Positioned(
+              left: 16,
+              right: 16,
+              top: toolbarTop,
+              bottom: toolbarBottom,
+              child: IgnorePointer(
+                ignoring: headerOpacity < .85,
                 child: Opacity(
                   opacity: headerOpacity,
                   child: Align(
@@ -2057,7 +1739,7 @@ class _ProxySheetHeader extends StatelessWidget {
                   ),
                 ),
               ),
-            ],
+            ),
           ],
         ),
       ),
@@ -2285,61 +1967,6 @@ class _ActiveProxyStatLine extends StatelessWidget {
   }
 }
 
-class _MoreProxiesTile extends StatelessWidget {
-  const _MoreProxiesTile({required this.label, required this.onTap});
-
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Center(
-          child: Text(
-            label,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.primary,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _MoreLowestsTile extends StatelessWidget {
-  const _MoreLowestsTile({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: onTap,
-        child: SizedBox(
-          height: 44,
-          child: Center(
-            child: Icon(
-              FluentIcons.more_horizontal_24_regular,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _AddProxyChainTile extends StatelessWidget {
   const _AddProxyChainTile({required this.onTap});
 
@@ -2471,42 +2098,15 @@ class _GroupOutboundsSheetBody extends StatefulWidget {
       _GroupOutboundsSheetBodyState();
 }
 
-class _GroupOutboundsSheetBodyState extends State<_GroupOutboundsSheetBody>
-    with TickerProviderStateMixin, WidgetsBindingObserver {
-  static const _maxSheetSize = 1.0;
-  static const _sheetMinHeight = _kProxySheetHeaderHeight;
-  static const _sheetStatusBarGap = 8.0;
-  static const _sheetSettleCloseRatio = .857;
-  static const _sheetCompactSettleCloseRatio = .64;
-  static const _sheetInertiaMinVelocity = 90.0;
-  static const _sheetMaxSpringVelocity = 5000.0;
-  static const _predictiveBackLiveMaxProgress = .88;
-  static const _predictiveBackSettleMinDuration = Duration(milliseconds: 110);
-  static const _predictiveBackSettleMaxDuration = Duration(milliseconds: 260);
-  static final SpringDescription _sheetSpring =
-      SpringDescription.withDampingRatio(mass: 0.5, stiffness: 100, ratio: 1.1);
-
-  final ScrollController _scrollController = ScrollController();
+class _GroupOutboundsSheetBodyState extends State<_GroupOutboundsSheetBody> {
   late ProxySort _sort;
   late String _selectedTag;
   List<AppProxySummary>? _sortedChildrenCache;
   ProxySort? _sortedChildrenSort;
-  AnimationController? _sheetInertiaController;
-  AnimationController? _predictiveBackSettleController;
-  VelocityTracker? _sheetDragVelocityTracker;
-  double? _pendingSheetCarryVelocity;
-  double _sheetSize = _maxSheetSize;
-  int _sheetDragDirection = 0;
-  bool _sheetDragMoved = false;
-  bool _sheetPointerStartedInList = false;
-  double _sheetPointerDeltaY = 0;
-  bool _predictiveBackInProgress = false;
-  double _predictiveBackProgress = 0;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
     _sort = widget.initialSort;
     _selectedTag = widget.selectedTag;
   }
@@ -2521,152 +2121,6 @@ class _GroupOutboundsSheetBodyState extends State<_GroupOutboundsSheetBody>
     if (oldWidget.selectedTag != widget.selectedTag) {
       _selectedTag = widget.selectedTag;
     }
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _predictiveBackSettleController?.dispose();
-    _sheetInertiaController?.dispose();
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  @override
-  bool handleStartBackGesture(PredictiveBackEvent backEvent) {
-    if (backEvent.isButtonEvent || !mounted) {
-      return false;
-    }
-    final route = ModalRoute.of(context);
-    if (route?.isCurrent != true) {
-      return false;
-    }
-    _cancelSheetInertia();
-    _cancelPredictiveBackSettle();
-    setState(() {
-      _predictiveBackInProgress = true;
-      _predictiveBackProgress = _livePredictiveBackProgress(backEvent);
-    });
-    return true;
-  }
-
-  @override
-  void handleUpdateBackGestureProgress(PredictiveBackEvent backEvent) {
-    if (!_predictiveBackInProgress || !mounted) {
-      return;
-    }
-    _cancelPredictiveBackSettle();
-    setState(() {
-      _predictiveBackProgress = _livePredictiveBackProgress(backEvent);
-    });
-  }
-
-  @override
-  void handleCancelBackGesture() {
-    if (!_predictiveBackInProgress || !mounted) {
-      return;
-    }
-    _animatePredictiveBackSettle(
-      target: 0,
-      curve: Curves.easeOutCubic,
-      onComplete: () {
-        if (!mounted) {
-          return;
-        }
-        setState(() {
-          _predictiveBackInProgress = false;
-          _predictiveBackProgress = 0;
-        });
-      },
-    );
-  }
-
-  @override
-  void handleCommitBackGesture() {
-    if (!_predictiveBackInProgress || !mounted) {
-      return;
-    }
-    _animatePredictiveBackSettle(
-      target: 1,
-      curve: Curves.easeOutCubic,
-      onComplete: () {
-        if (!mounted) {
-          return;
-        }
-        Navigator.of(context).pop();
-      },
-    );
-  }
-
-  double _livePredictiveBackProgress(PredictiveBackEvent backEvent) {
-    if (backEvent.isButtonEvent) {
-      return 0;
-    }
-    return backEvent.progress
-        .clamp(0.0, _predictiveBackLiveMaxProgress)
-        .toDouble();
-  }
-
-  void _animatePredictiveBackSettle({
-    required double target,
-    required Curve curve,
-    required VoidCallback onComplete,
-  }) {
-    _cancelPredictiveBackSettle();
-    final start = _predictiveBackProgress.clamp(0.0, 1.0).toDouble();
-    final end = target.clamp(0.0, 1.0).toDouble();
-    final distance = (end - start).abs();
-    if (distance <= 0.001) {
-      setState(() {
-        _predictiveBackProgress = end;
-      });
-      onComplete();
-      return;
-    }
-    final duration = lerpDouble(
-      _predictiveBackSettleMinDuration.inMilliseconds.toDouble(),
-      _predictiveBackSettleMaxDuration.inMilliseconds.toDouble(),
-      distance,
-    )!.round();
-    final controller = AnimationController(
-      vsync: this,
-      duration: Duration(milliseconds: duration),
-    );
-    _predictiveBackSettleController = controller;
-    final animation = controller.drive(CurveTween(curve: curve));
-    controller.addListener(() {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _predictiveBackProgress = lerpDouble(
-          start,
-          end,
-          animation.value,
-        )!.clamp(0.0, 1.0).toDouble();
-      });
-    });
-    controller.addStatusListener((status) {
-      if (status != AnimationStatus.completed) {
-        return;
-      }
-      controller.dispose();
-      if (identical(_predictiveBackSettleController, controller)) {
-        _predictiveBackSettleController = null;
-      }
-      onComplete();
-    });
-    controller.forward();
-  }
-
-  void _cancelPredictiveBackSettle() {
-    final controller = _predictiveBackSettleController;
-    if (controller == null) {
-      return;
-    }
-    _predictiveBackSettleController = null;
-    controller.stop();
-    controller.dispose();
   }
 
   void _setSort(ProxySort value) {
@@ -2687,14 +2141,10 @@ class _GroupOutboundsSheetBodyState extends State<_GroupOutboundsSheetBody>
       return cached;
     }
     final children = widget.children.toList(growable: false);
-    _sortItems(children, keepLowestFirst: false);
+    sortProxySummaries(children, _sort, keepPinnedFirst: false);
     _sortedChildrenCache = children;
     _sortedChildrenSort = _sort;
     return children;
-  }
-
-  void _sortItems(List<AppProxySummary> items, {bool keepLowestFirst = true}) {
-    sortProxySummaries(items, _sort, keepPinnedFirst: keepLowestFirst);
   }
 
   void _select(String tag) {
@@ -2721,386 +2171,6 @@ class _GroupOutboundsSheetBodyState extends State<_GroupOutboundsSheetBody>
       backgroundColor: Colors.transparent,
       builder: (context) => _ProxyShareSheet(proxy: proxy, outbound: outbound),
     );
-  }
-
-  void _handleHeaderDragStart(DragStartDetails details) {
-    _cancelSheetInertia();
-  }
-
-  void _handleHeaderDragUpdate(DragUpdateDetails details) {
-    final height = MediaQuery.sizeOf(context).height;
-    _dragSheet(details.delta.dy, height);
-  }
-
-  void _handleHeaderDragEnd(DragEndDetails details) {
-    final height = MediaQuery.sizeOf(context).height;
-    _settleSheet(details, height);
-  }
-
-  bool _handleSheetScrollNotification(ScrollNotification notification) {
-    if (_pendingSheetCarryVelocity == null) {
-      return false;
-    }
-    if (notification is ScrollUpdateNotification ||
-        notification is ScrollEndNotification) {
-      _startSheetCarryIfListSettledAtTop();
-      if (notification is ScrollEndNotification) {
-        _pendingSheetCarryVelocity = null;
-      }
-    }
-    return false;
-  }
-
-  void _handleSheetPointerDown(PointerDownEvent event) {
-    _pendingSheetCarryVelocity = null;
-    _resetSheetDragTracking();
-    const headerHitHeight = _kProxySheetHeaderHeight;
-    if (event.localPosition.dy <= headerHitHeight) {
-      return;
-    }
-    _sheetPointerStartedInList = true;
-    _sheetDragVelocityTracker = VelocityTracker.withKind(event.kind)
-      ..addPosition(event.timeStamp, event.position);
-  }
-
-  void _handleSheetPointerMove(PointerMoveEvent event) {
-    if (!_sheetPointerStartedInList) {
-      return;
-    }
-    final deltaY = event.delta.dy;
-    _sheetPointerDeltaY += deltaY;
-    _sheetDragVelocityTracker?.addPosition(event.timeStamp, event.position);
-    if (deltaY == 0 || (!_sheetListAtTop() && deltaY > 0)) {
-      return;
-    }
-    final maxSize = _sheetMaxSize(MediaQuery.sizeOf(context).height);
-    if (_sheetSize >= maxSize - 0.001 && deltaY < 0) {
-      return;
-    }
-    _sheetDragMoved = true;
-    _dragSheet(deltaY, MediaQuery.sizeOf(context).height);
-  }
-
-  void _handleSheetPointerEnd(PointerUpEvent event) {
-    final velocity =
-        _sheetDragVelocityTracker?.getVelocity().pixelsPerSecond.dy ?? 0;
-    if (!_sheetDragMoved) {
-      if (_sheetPointerStartedInList &&
-          _sheetSize >=
-              _sheetMaxSize(MediaQuery.sizeOf(context).height) - 0.001 &&
-          !_sheetListAtTop() &&
-          velocity > _kProxySheetCarryMinVelocity &&
-          _sheetPointerDeltaY > _kProxySheetCarryMinDistance) {
-        final residualVelocity = _sheetResidualVelocityAtTop(velocity);
-        if (residualVelocity > _kProxySheetCarryMinResidualVelocity) {
-          _pendingSheetCarryVelocity = residualVelocity;
-        }
-      }
-      _resetSheetDragTracking();
-      return;
-    }
-    _resetSheetDragTracking();
-    _settleSheet(
-      DragEndDetails(
-        velocity: Velocity(pixelsPerSecond: Offset(0, velocity)),
-        primaryVelocity: velocity,
-      ),
-      MediaQuery.sizeOf(context).height,
-    );
-  }
-
-  void _handleSheetPointerCancel(PointerCancelEvent event) {
-    if (_sheetDragMoved) {
-      _settleSheet(DragEndDetails(), MediaQuery.sizeOf(context).height);
-    }
-    _resetSheetDragTracking();
-  }
-
-  void _resetSheetDragTracking() {
-    _sheetDragVelocityTracker = null;
-    _sheetDragMoved = false;
-    _sheetPointerStartedInList = false;
-    _sheetPointerDeltaY = 0;
-  }
-
-  void _dragSheet(double deltaY, double viewportHeight) {
-    _cancelSheetInertia();
-    if (viewportHeight <= 0) {
-      return;
-    }
-    final minSize = _sheetMinSize(viewportHeight);
-    final maxSize = _sheetMaxSize(viewportHeight);
-    final nextDirection = deltaY < 0
-        ? 1
-        : deltaY > 0
-        ? -1
-        : _sheetDragDirection;
-    final nextSize = (_sheetSize - deltaY / viewportHeight)
-        .clamp(minSize, maxSize)
-        .toDouble();
-    if ((nextSize - _sheetSize).abs() < 0.001 &&
-        nextDirection == _sheetDragDirection) {
-      return;
-    }
-    setState(() {
-      _sheetDragDirection = nextDirection;
-      _sheetSize = nextSize;
-    });
-    if (nextSize < maxSize - 0.001) {
-      _resetSheetListScroll();
-    }
-  }
-
-  void _settleSheet(DragEndDetails details, double viewportHeight) {
-    _cancelSheetInertia();
-    if (viewportHeight <= 0) {
-      return;
-    }
-    final maxSize = _sheetMaxSize(viewportHeight);
-    final velocity = details.primaryVelocity ?? 0;
-    final opening =
-        velocity < -_sheetInertiaMinVelocity ||
-        (velocity.abs() <= _sheetInertiaMinVelocity && _sheetDragDirection > 0);
-    if (opening) {
-      _animateSheetTo(
-        target: maxSize,
-        sizeVelocity: velocity < 0 ? -velocity / viewportHeight : 0,
-        viewportHeight: viewportHeight,
-      );
-      return;
-    }
-    if (velocity > _sheetInertiaMinVelocity) {
-      _animateSheetBallistic(
-        velocity: velocity,
-        viewportHeight: viewportHeight,
-      );
-      return;
-    }
-    if (_sheetSize <= _sheetCloseThreshold(viewportHeight)) {
-      Navigator.of(context).pop();
-      return;
-    }
-    final target = maxSize;
-    _animateSheetTo(
-      target: target,
-      sizeVelocity: 0,
-      viewportHeight: viewportHeight,
-    );
-  }
-
-  void _animateSheetBallistic({
-    required double velocity,
-    required double viewportHeight,
-  }) {
-    final minSize = _sheetMinSize(viewportHeight);
-    final maxSize = _sheetMaxSize(viewportHeight);
-    final startSize = _sheetSize.clamp(minSize, maxSize).toDouble();
-    final sizeVelocity = (-velocity / viewportHeight)
-        .clamp(-_sheetMaxSpringVelocity, _sheetMaxSpringVelocity)
-        .toDouble();
-    final projectedLowPoint = _sheetProjectedSpringLowPoint(
-      startSize: startSize,
-      targetSize: maxSize,
-      sizeVelocity: sizeVelocity,
-      minSize: minSize,
-      maxSize: maxSize,
-    );
-    final target = projectedLowPoint <= _sheetCloseThreshold(viewportHeight)
-        ? minSize
-        : maxSize;
-    if (target <= minSize + 0.001) {
-      Navigator.of(context).pop();
-      return;
-    }
-    _animateSheetTo(
-      target: target,
-      sizeVelocity: sizeVelocity,
-      viewportHeight: viewportHeight,
-    );
-  }
-
-  double _sheetProjectedSpringLowPoint({
-    required double startSize,
-    required double targetSize,
-    required double sizeVelocity,
-    required double minSize,
-    required double maxSize,
-  }) {
-    if (sizeVelocity >= 0) {
-      return startSize;
-    }
-    final simulation = SpringSimulation(
-      _sheetSpring,
-      startSize,
-      targetSize,
-      sizeVelocity,
-    );
-    var lowPoint = startSize;
-    var previousVelocity = sizeVelocity;
-    for (var step = 1; step <= 120; step += 1) {
-      final time = step / 120;
-      final size = simulation.x(time).clamp(minSize, maxSize).toDouble();
-      if (size < lowPoint) {
-        lowPoint = size;
-      }
-      final velocity = simulation.dx(time);
-      if (previousVelocity < 0 && velocity >= 0) {
-        break;
-      }
-      if (simulation.isDone(time)) {
-        break;
-      }
-      previousVelocity = velocity;
-    }
-    return lowPoint;
-  }
-
-  void _animateSheetTo({
-    required double target,
-    required double sizeVelocity,
-    required double viewportHeight,
-  }) {
-    _cancelSheetInertia();
-    final minSize = _sheetMinSize(viewportHeight);
-    final maxSize = _sheetMaxSize(viewportHeight);
-    final startSize = _sheetSize.clamp(minSize, maxSize).toDouble();
-    if ((target - startSize).abs() <= 0.001 &&
-        sizeVelocity.abs() <= _sheetInertiaMinVelocity / viewportHeight) {
-      setState(() {
-        _sheetDragDirection = 0;
-        _sheetSize = target;
-      });
-      if (target <= minSize + 0.001) {
-        Navigator.of(context).pop();
-      }
-      return;
-    }
-    final controller = AnimationController.unbounded(
-      vsync: this,
-      value: startSize,
-    );
-    _sheetInertiaController = controller;
-    controller.addListener(() {
-      final nextSize = controller.value.clamp(minSize, maxSize).toDouble();
-      setState(() {
-        _sheetDragDirection = target > startSize ? 1 : -1;
-        _sheetSize = nextSize;
-      });
-      if (nextSize < maxSize - 0.001) {
-        _resetSheetListScroll();
-      }
-    });
-    controller.addStatusListener((status) {
-      if (status != AnimationStatus.completed) {
-        return;
-      }
-      controller.dispose();
-      if (identical(_sheetInertiaController, controller)) {
-        _sheetInertiaController = null;
-      }
-      setState(() {
-        _sheetDragDirection = 0;
-        _sheetSize = target;
-      });
-      if (target <= minSize + 0.001) {
-        Navigator.of(context).pop();
-      }
-    });
-    controller.animateWith(
-      SpringSimulation(_sheetSpring, startSize, target, sizeVelocity),
-    );
-  }
-
-  void _cancelSheetInertia() {
-    final controller = _sheetInertiaController;
-    if (controller == null) {
-      return;
-    }
-    final currentSize = controller.value
-        .clamp(0.0, _sheetMaxSize(MediaQuery.sizeOf(context).height))
-        .toDouble();
-    final currentDirection = controller.velocity > 0
-        ? 1
-        : controller.velocity < 0
-        ? -1
-        : _sheetDragDirection;
-    _sheetInertiaController = null;
-    controller.stop();
-    controller.dispose();
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _sheetDragDirection = currentDirection;
-      _sheetSize = currentSize;
-    });
-  }
-
-  void _startSheetCarryIfListSettledAtTop() {
-    final velocity = _pendingSheetCarryVelocity;
-    if (velocity == null || !_sheetListAtTop()) {
-      return;
-    }
-    _pendingSheetCarryVelocity = null;
-    _settleSheet(
-      DragEndDetails(
-        velocity: Velocity(pixelsPerSecond: Offset(0, velocity)),
-        primaryVelocity: velocity,
-      ),
-      MediaQuery.sizeOf(context).height,
-    );
-  }
-
-  double _sheetResidualVelocityAtTop(double pointerVelocity) {
-    if (!_scrollController.hasClients) {
-      return 0;
-    }
-    var residualVelocity = 0.0;
-    for (final position in _scrollController.positions) {
-      final scrollVelocity = -pointerVelocity;
-      if (scrollVelocity >= 0) {
-        continue;
-      }
-      final simulation = FrictionSimulation(
-        _kProxySheetFrictionDrag,
-        position.pixels,
-        scrollVelocity,
-      );
-      if (simulation.finalX > position.minScrollExtent) {
-        continue;
-      }
-      final timeAtTop = simulation.timeAtX(position.minScrollExtent);
-      if (!timeAtTop.isFinite) {
-        continue;
-      }
-      final velocityAtTop = -simulation.dx(timeAtTop);
-      if (velocityAtTop > residualVelocity) {
-        residualVelocity = velocityAtTop;
-      }
-    }
-    return residualVelocity
-        .clamp(0.0, _kProxySheetMaxSpringTransferVelocity)
-        .toDouble();
-  }
-
-  bool _sheetListAtTop() {
-    if (!_scrollController.hasClients) {
-      return true;
-    }
-    return _scrollController.positions.every(
-      (position) => position.pixels <= position.minScrollExtent + 0.5,
-    );
-  }
-
-  void _resetSheetListScroll() {
-    if (!_scrollController.hasClients) {
-      return;
-    }
-    for (final position in _scrollController.positions) {
-      if ((position.pixels - position.minScrollExtent).abs() > 0.5) {
-        position.jumpTo(position.minScrollExtent);
-      }
-    }
   }
 
   Widget _runtimeTile({
@@ -3139,37 +2209,6 @@ class _GroupOutboundsSheetBodyState extends State<_GroupOutboundsSheetBody>
     );
   }
 
-  double _sheetMinSize(double viewportHeight) {
-    if (viewportHeight <= _sheetMinHeight) {
-      return _maxSheetSize;
-    }
-    return (_sheetMinHeight / viewportHeight)
-        .clamp(0.0, _maxSheetSize)
-        .toDouble();
-  }
-
-  double _sheetCloseThreshold(double viewportHeight) {
-    final minSize = _sheetMinSize(viewportHeight);
-    final maxSize = _sheetMaxSize(viewportHeight);
-    final viewportThreshold = _sheetSettleCloseRatio;
-    if (maxSize > viewportThreshold) {
-      return viewportThreshold;
-    }
-    return minSize + (maxSize - minSize) * _sheetCompactSettleCloseRatio;
-  }
-
-  double _sheetMaxSize(double viewportHeight) {
-    if (viewportHeight <= _sheetMinHeight) {
-      return _maxSheetSize;
-    }
-    final topReserve = (appSystemStatusBarInset(context) + _sheetStatusBarGap)
-        .clamp(0.0, viewportHeight - _sheetMinHeight)
-        .toDouble();
-    return ((viewportHeight - topReserve) / viewportHeight)
-        .clamp(0.0, _maxSheetSize)
-        .toDouble();
-  }
-
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -3183,102 +2222,74 @@ class _GroupOutboundsSheetBodyState extends State<_GroupOutboundsSheetBody>
         break;
       }
     }
-    const headerHeight = _kProxySheetHeaderHeight;
-    final sheetTitle = l10n.proxySelectorTitle;
+
     final groupBaseTitle = isLowestProxyTag(widget.group.tag)
         ? _localizedLowestBaseLabel(l10n, widget.group.tag)
-        : isMixedProxyTag(widget.group.tag)
-        ? l10n.proxySmartRoutingName
         : widget.group.displayName;
     final groupTitle = activeChild == null
         ? groupBaseTitle
         : '$groupBaseTitle · ${_localizedProxyTitle(l10n, activeChild)}';
-    final groupSubtitle = isMixedProxyTag(widget.group.tag)
-        ? l10n.proxySmartRoutingSubtitle
-        : activeChild == null
+    final groupSubtitle = activeChild == null
         ? l10n.proxyAutomaticSelectionLabel
         : '${l10n.proxyAutomaticSelectionLabel} · '
               '${_localizedProxySubtitle(l10n, activeChild)}';
-    final viewportHeight = MediaQuery.sizeOf(context).height;
-    final maxSheetSize = _sheetMaxSize(viewportHeight);
-    final effectiveSheetSize = _sheetSize
-        .clamp(_sheetMinSize(viewportHeight), maxSheetSize)
-        .toDouble();
 
     final viewportSize = MediaQuery.sizeOf(context);
-    final destHeight = viewportHeight * effectiveSheetSize;
-    final destRect = Rect.fromLTWH(
+    final topReserve = (appSystemStatusBarInset(context) + 8)
+        .clamp(0.0, max(0.0, viewportSize.height - _kProxySheetHeaderHeight))
+        .toDouble();
+    final panelRect = Rect.fromLTWH(
       0,
-      viewportHeight - destHeight,
+      topReserve,
       viewportSize.width,
-      destHeight,
+      viewportSize.height - topReserve,
     );
-    // Pre-compute static parts of the sheet body once per build —
-    // they don't depend on the route animation.
     final sheetBody = RepaintBoundary(
       child: SizedBox(
-        width: destRect.width,
-        height: destRect.height,
+        width: panelRect.width,
+        height: panelRect.height,
         child: Stack(
           children: [
-            Listener(
-              behavior: HitTestBehavior.translucent,
-              onPointerDown: _handleSheetPointerDown,
-              onPointerMove: _handleSheetPointerMove,
-              onPointerUp: _handleSheetPointerEnd,
-              onPointerCancel: _handleSheetPointerCancel,
-              child: NotificationListener<ScrollNotification>(
-                onNotification: _handleSheetScrollNotification,
-                child: ListView.builder(
-                  controller: _scrollController,
-                  physics: effectiveSheetSize >= maxSheetSize - 0.001
-                      ? const _ProxySheetScrollPhysics(
-                          parent: AlwaysScrollableScrollPhysics(),
-                        )
-                      : const NeverScrollableScrollPhysics(),
-                  itemExtent: _kProxySheetRowExtent,
-                  scrollCacheExtent: const ScrollCacheExtent.pixels(0),
-                  addAutomaticKeepAlives: false,
-                  addRepaintBoundaries: true,
-                  addSemanticIndexes: false,
-                  padding: EdgeInsets.only(
-                    top: _kProxyGroupSheetListTopReserve,
-                    bottom: bottomInset + 18,
-                  ),
-                  itemCount: children.length + 1,
-                  itemBuilder: (context, index) {
-                    if (index == 0) {
-                      return _runtimeTile(
-                        proxy: widget.group,
-                        selected: widget.group.tag == _selectedTag,
-                        highlighted: false,
-                        titleOverride: groupTitle,
-                        subtitleOverride: groupSubtitle,
-                        showGroupHandle: true,
-                        onTap: () => _select(widget.group.tag),
-                      );
-                    }
-                    final proxy = children[index - 1];
-                    return _runtimeTile(
-                      proxy: proxy,
-                      selected: proxy.tag == _selectedTag,
-                      highlighted:
-                          proxy.tag == activeChildTag || proxy.highlighted,
-                      onTap: () => _select(proxy.tag),
-                      onLongPress: () => _openProxyShareSheet(proxy),
-                    );
-                  },
-                ),
+            ListView.builder(
+              physics: const ClampingScrollPhysics(
+                parent: AlwaysScrollableScrollPhysics(),
               ),
+              itemExtent: _kProxySheetRowExtent,
+              scrollCacheExtent: const ScrollCacheExtent.pixels(0),
+              addAutomaticKeepAlives: false,
+              addRepaintBoundaries: true,
+              addSemanticIndexes: false,
+              padding: EdgeInsets.only(
+                top: _kProxyGroupSheetListTopReserve,
+                bottom: bottomInset + 18,
+              ),
+              itemCount: children.length + 1,
+              itemBuilder: (context, index) {
+                if (index == 0) {
+                  return _runtimeTile(
+                    proxy: widget.group,
+                    selected: widget.group.tag == _selectedTag,
+                    highlighted: false,
+                    titleOverride: groupTitle,
+                    subtitleOverride: groupSubtitle,
+                    showGroupHandle: true,
+                    onTap: () => _select(widget.group.tag),
+                  );
+                }
+                final proxy = children[index - 1];
+                return _runtimeTile(
+                  proxy: proxy,
+                  selected: proxy.tag == _selectedTag,
+                  highlighted: proxy.tag == activeChildTag || proxy.highlighted,
+                  onTap: () => _select(proxy.tag),
+                  onLongPress: () => _openProxyShareSheet(proxy),
+                );
+              },
             ),
             Positioned(
               left: 0,
               right: 0,
               top: 0,
-              // BackdropFilter blur is the most expensive widget
-              // in the tree — keep it disabled while the route
-              // animation is in flight, then re-enable it once
-              // the sheet has settled.
               child: AnimatedBuilder(
                 animation: widget.routeAnimation,
                 builder: (context, child) => _ProxySheetHeaderBackdrop(
@@ -3286,18 +2297,15 @@ class _GroupOutboundsSheetBodyState extends State<_GroupOutboundsSheetBody>
                       widget.progressiveBlurEnabled &&
                       widget.routeAnimation.value >= 0.985,
                   cornerRadius: 28,
-                  height: headerHeight,
+                  height: _kProxySheetHeaderHeight,
                   child: child!,
                 ),
                 child: _GroupOutboundsSheetHeader(
-                  title: sheetTitle,
+                  title: l10n.proxySelectorTitle,
                   l10n: l10n,
                   sort: _sort,
                   onSortSelected: _setSort,
                   onClose: () => Navigator.of(context).pop(),
-                  onVerticalDragStart: _handleHeaderDragStart,
-                  onVerticalDragUpdate: _handleHeaderDragUpdate,
-                  onVerticalDragEnd: _handleHeaderDragEnd,
                 ),
               ),
             ),
@@ -3310,10 +2318,12 @@ class _GroupOutboundsSheetBodyState extends State<_GroupOutboundsSheetBody>
       child: AnimatedBuilder(
         animation: widget.routeAnimation,
         builder: (context, _) {
-          final raw = _predictiveBackInProgress
-              ? (1.0 - _predictiveBackProgress)
-              : widget.routeAnimation.value.clamp(0.0, 1.0).toDouble();
+          final raw = widget.routeAnimation.value.clamp(0.0, 1.0).toDouble();
+          final progress = Curves.easeOutCubic.transform(raw);
           final scrimProgress = Curves.easeInOutCubic.transform(raw);
+          final animatedRect = panelRect.shift(
+            Offset(0, panelRect.height * (1 - progress)),
+          );
           return Stack(
             fit: StackFit.expand,
             children: [
@@ -3326,7 +2336,7 @@ class _GroupOutboundsSheetBodyState extends State<_GroupOutboundsSheetBody>
                 ),
               ),
               Positioned.fromRect(
-                rect: destRect,
+                rect: animatedRect,
                 child: IgnorePointer(
                   ignoring: raw < 0.6,
                   child: ClipRRect(
@@ -3353,9 +2363,6 @@ class _GroupOutboundsSheetHeader extends StatelessWidget {
     required this.sort,
     required this.onSortSelected,
     required this.onClose,
-    required this.onVerticalDragStart,
-    required this.onVerticalDragUpdate,
-    required this.onVerticalDragEnd,
   });
 
   final String title;
@@ -3363,89 +2370,80 @@ class _GroupOutboundsSheetHeader extends StatelessWidget {
   final ProxySort sort;
   final ValueChanged<ProxySort> onSortSelected;
   final VoidCallback onClose;
-  final ValueChanged<DragStartDetails> onVerticalDragStart;
-  final ValueChanged<DragUpdateDetails> onVerticalDragUpdate;
-  final ValueChanged<DragEndDetails> onVerticalDragEnd;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onVerticalDragStart: onVerticalDragStart,
-      onVerticalDragUpdate: onVerticalDragUpdate,
-      onVerticalDragEnd: onVerticalDragEnd,
-      child: SizedBox(
-        height: _kProxySheetHeaderHeight,
-        child: Stack(
-          clipBehavior: Clip.hardEdge,
-          children: [
-            Align(
-              alignment: Alignment.topCenter,
-              child: Padding(
-                padding: const EdgeInsets.only(top: 10),
-                child: Container(
-                  width: 38,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.onSurfaceVariant.withValues(
-                      alpha: .34,
-                    ),
-                    borderRadius: BorderRadius.circular(999),
+    return SizedBox(
+      height: _kProxySheetHeaderHeight,
+      child: Stack(
+        clipBehavior: Clip.hardEdge,
+        children: [
+          Align(
+            alignment: Alignment.topCenter,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Container(
+                width: 38,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.onSurfaceVariant.withValues(
+                    alpha: .34,
                   ),
+                  borderRadius: BorderRadius.circular(999),
                 ),
               ),
             ),
-            Positioned(
-              left: 16,
-              right: 16,
-              top: 18,
-              bottom: 0,
-              child: Center(
-                child: Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.titleLarge,
-                ),
+          ),
+          Positioned(
+            left: 16,
+            right: 16,
+            top: 18,
+            bottom: 0,
+            child: Center(
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.titleLarge,
               ),
             ),
-            Positioned(
-              left: 16,
-              right: 16,
-              top: 18,
-              bottom: 0,
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: IconButton(
-                  onPressed: onClose,
-                  tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-                  icon: const Icon(FluentIcons.chevron_left_24_regular),
-                ),
+          ),
+          Positioned(
+            left: 16,
+            right: 16,
+            top: 18,
+            bottom: 0,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: IconButton(
+                onPressed: onClose,
+                tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+                icon: const Icon(FluentIcons.chevron_left_24_regular),
               ),
             ),
-            Positioned(
-              left: 16,
-              right: 16,
-              top: 18,
-              bottom: 0,
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: IconButton(
-                  tooltip: l10n.sort,
-                  onPressed: () => _showProxySortPicker(
-                    context,
-                    l10n: l10n,
-                    current: sort,
-                    onSelected: onSortSelected,
-                  ),
-                  icon: const Icon(FluentIcons.arrow_sort_24_regular),
+          ),
+          Positioned(
+            left: 16,
+            right: 16,
+            top: 18,
+            bottom: 0,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: IconButton(
+                tooltip: l10n.sort,
+                onPressed: () => _showProxySortPicker(
+                  context,
+                  l10n: l10n,
+                  current: sort,
+                  onSelected: onSortSelected,
                 ),
+                icon: const Icon(FluentIcons.arrow_sort_24_regular),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -4058,13 +3056,10 @@ class _ProxyShareSummary extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
-    final isSmartRouting = isMixedProxyTag(proxy.tag);
     final latencyText = proxy.latencyChecking
         ? '... ms'
         : proxy.latencyUnavailable
         ? '—'
-        : isSmartRouting
-        ? l10n.proxySmartRoutingLatencyLabel
         : proxy.latency == null
         ? '—'
         : '${proxy.latency} ms';
@@ -4192,15 +3187,12 @@ class ProxyTile extends StatelessWidget {
     final hasLatencyError = latencyError?.trim().isNotEmpty == true;
     final highlighted = state?.highlighted ?? this.highlighted;
     final selecting = state?.selecting ?? false;
-    final isSmartRouting = isMixedProxyTag(proxy.tag);
     final latencyText = selecting
         ? l10n.proxySwitching
         : latencyChecking
         ? '... ms'
         : latencyUnavailable
         ? _latencyErrorLabel(latencyError)
-        : isSmartRouting
-        ? l10n.proxySmartRoutingLatencyLabel
         : latency == null && hasLatencyError
         ? _latencyErrorLabel(latencyError)
         : latency == null

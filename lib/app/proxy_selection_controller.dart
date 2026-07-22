@@ -137,7 +137,9 @@ class ProxySelectionController {
   bool isCurrentGeneration(int generation) => generation == _generation;
 
   Subscription withSelectedOutbound(Subscription subscription, String tag) {
-    return subscription.copyWith(selectedProxyTag: tag);
+    return subscription.copyWith(
+      selectedProxyTag: normalizeProxySelectionTag(tag),
+    );
   }
 
   List<Subscription> replaceSubscription(
@@ -156,9 +158,12 @@ class ProxySelectionController {
     Subscription subscription,
     String preferredTag,
   ) {
-    final normalized = preferredTag.trim();
+    final normalized = normalizeProxySelectionTag(preferredTag);
     final liveOutbounds = subscription.outbounds
-        .where((outbound) => !outbound.info.deleted)
+        .where(
+          (outbound) =>
+              !outbound.info.deleted && outbound.config['_group_only'] != true,
+        )
         .toList(growable: false);
     if (liveOutbounds.isEmpty) {
       return '';
@@ -168,8 +173,8 @@ class ProxySelectionController {
           ? liveOutbounds.first.tag
           : lowestProxyTag;
     }
-    if (isLowestProxyTag(normalized) || isMixedProxyTag(normalized)) {
-      return normalized;
+    if (isLowestProxyTag(normalized)) {
+      return liveOutbounds.length == 1 ? liveOutbounds.first.tag : normalized;
     }
     final proxyChainTags = subscription.proxyChains
         .map((chain) => chain.tag.trim())
@@ -201,8 +206,8 @@ class ProxySelectionController {
     required String preferredSelectedProxyTag,
     required bool preferPreferred,
   }) {
-    final preferred = preferredSelectedProxyTag.trim();
-    final metadata = metadataSelectedProxyTag.trim();
+    final preferred = normalizeProxySelectionTag(preferredSelectedProxyTag);
+    final metadata = normalizeProxySelectionTag(metadataSelectedProxyTag);
     if (preferPreferred && preferred.isNotEmpty) {
       return preferred;
     }

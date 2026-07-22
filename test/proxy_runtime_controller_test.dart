@@ -88,6 +88,35 @@ void main() {
     expect(controller.latencyFailureCounts['vless-1'], 2);
   });
 
+  test('failed lowest endpoint is no longer presented as selected', () {
+    final controller = ProxyRuntimeController();
+    addTearDown(controller.dispose);
+    controller.runtimeLowestSelections['lowest'] = 'vless-1';
+
+    controller.applyGroupUpdates(
+      _input(
+        selectedProxyTag: 'lowest',
+        rawGroups: [
+          {
+            'tag': 'lowest',
+            'selected': 'vless-1',
+            'items': [
+              {
+                'tag': 'vless-1',
+                'status': 'unavailable',
+                'error': 'context deadline exceeded',
+                'time': 1,
+              },
+            ],
+          },
+        ],
+      ),
+    );
+
+    expect(controller.unavailableLatencyTags, contains('vless-1'));
+    expect(controller.runtimeLowestSelections, isNot(contains('lowest')));
+  });
+
   test('frozen transition keeps existing latency and ignores failures', () {
     final controller = ProxyRuntimeController();
     addTearDown(controller.dispose);

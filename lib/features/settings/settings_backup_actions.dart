@@ -33,7 +33,7 @@ class SettingsBackupActions {
   final AppSettingsStore store;
   final AppSettingsState settingsState;
   final String clientVersion;
-  final List<Subscription> Function() loadSubscriptions;
+  final Future<List<Subscription>> Function() loadSubscriptions;
   final Future<void> Function(AppSettingsState state) onImportSettings;
   final Future<void> Function(List<Subscription> subscriptions)
   onImportSubscriptions;
@@ -85,8 +85,8 @@ class SettingsBackupActions {
     final l10n = AppLocalizations.of(context);
     final password = await _askPassword(context, exportMode: true);
     if (password == null || !context.mounted) return;
-    final content = _service.buildProfileExport(
-      subscriptions: loadSubscriptions(),
+    final content = await _service.buildProfileExportInBackground(
+      subscriptions: await loadSubscriptions(),
       clientVersion: clientVersion,
       encryption: EtonifyProfileEncryption.encrypted,
       password: password,
@@ -126,8 +126,8 @@ class SettingsBackupActions {
     );
     if (confirmed != true || !context.mounted) return;
     final l10n = AppLocalizations.of(context);
-    final content = _service.buildProfileExport(
-      subscriptions: loadSubscriptions(),
+    final content = await _service.buildProfileExportInBackground(
+      subscriptions: await loadSubscriptions(),
       clientVersion: clientVersion,
       encryption: EtonifyProfileEncryption.plain,
     );
@@ -144,12 +144,14 @@ class SettingsBackupActions {
 
   Future<void> _importFile(BuildContext context) async {
     final picked = await FilePicker.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const ['json', 'etonify-profile'],
-      withData: true,
+      type: FileType.any,
+      withData: false,
     );
     if (picked == null || picked.files.isEmpty || !context.mounted) return;
     final file = picked.files.first;
+    if (file.size > EtonifyBackupService.maxImportBytes) {
+      throw const EtonifyBackupException('Backup file is too large.');
+    }
     final path = file.path;
     final bytes =
         file.bytes ?? (path == null ? null : await File(path).readAsBytes());
@@ -194,7 +196,7 @@ class SettingsBackupActions {
   Future<void> _importProfile(BuildContext context, List<int> bytes) async {
     EtonifyProfileImportResult parsed;
     try {
-      parsed = _service.parseProfileExport(
+      parsed = await _service.parseProfileExportInBackground(
         bytes: bytes,
         currentClientVersion: clientVersion,
       );
@@ -202,9 +204,10 @@ class SettingsBackupActions {
       if (!error.message.toLowerCase().contains('password')) {
         rethrow;
       }
+      if (!context.mounted) return;
       final password = await _askPassword(context, exportMode: false);
       if (password == null) return;
-      parsed = _service.parseProfileExport(
+      parsed = await _service.parseProfileExportInBackground(
         bytes: bytes,
         currentClientVersion: clientVersion,
         password: password,

@@ -351,26 +351,11 @@ void main() {
         .cast<Map<String, dynamic>>();
     final selector = outbounds.firstWhere((entry) => entry['tag'] == 'select');
     final lowest = outbounds.firstWhere((entry) => entry['tag'] == 'lowest');
-    final lowestOpen = outbounds.firstWhere(
-      (entry) => entry['tag'] == 'lowest-open',
-    );
-    final lowestFree = outbounds.firstWhere(
-      (entry) => entry['tag'] == 'lowest-free',
-    );
-    final mixed = outbounds.firstWhere((entry) => entry['tag'] == 'mixed');
     final groupUrltest = outbounds.firstWhere(
       (entry) => entry['tag'] == 'group-auto',
     );
 
-    expect(selector['outbounds'], [
-      'lowest',
-      'lowest-open',
-      'lowest-free',
-      'mixed',
-      'group-auto',
-      'leaf-1',
-      'leaf-2',
-    ]);
+    expect(selector['outbounds'], ['lowest', 'group-auto', 'leaf-1', 'leaf-2']);
     expect(selector['default'], 'group-auto');
     expect(lowest['outbounds'], ['group-auto']);
     expect(lowest['timeout'], '8s');
@@ -379,10 +364,14 @@ void main() {
     expect(lowest['tolerance'], 1);
     expect(lowest['interrupt_exist_connections'], isFalse);
     expect(lowest['interrupt_delay_threshold'], 300);
-    expect(lowestOpen['outbounds'], ['group-auto']);
-    expect(lowestFree['outbounds'], ['group-auto']);
-    expect(mixed['outbounds'], ['lowest', 'lowest-open', 'lowest-free']);
-    expect(mixed['setback_to_default'], isTrue);
+    expect(
+      outbounds.map((entry) => entry['tag']).toSet().intersection({
+        'lowest-open',
+        'lowest-free',
+        'mixed',
+      }),
+      isEmpty,
+    );
     expect(groupUrltest['outbounds'], ['leaf-1', 'leaf-2']);
     expect(groupUrltest['method'], 'setback');
     expect(groupUrltest['url'], 'https://subscription.example/generate_204');
@@ -630,7 +619,6 @@ void main() {
         unavailableLatencyTags: const <String>{},
         latencyErrors: const <String, String>{},
         runtimeGroupSelections: const <String, String>{},
-        russiaRouteProxiesEnabled: false,
         markAllServersRussia: false,
       ),
     );
@@ -792,7 +780,6 @@ void main() {
         unavailableLatencyTags: <String>{},
         latencyErrors: <String, String>{},
         runtimeGroupSelections: <String, String>{},
-        russiaRouteProxiesEnabled: false,
         markAllServersRussia: false,
       ),
     );
@@ -819,7 +806,7 @@ void main() {
     });
   });
 
-  test('builds open and free lowest urltests from country filters', () {
+  test('legacy filtered lowest selection becomes the single lowest', () {
     const subscription = Subscription(
       id: 'sub',
       name: 'Sub',
@@ -886,26 +873,21 @@ void main() {
         .cast<Map<String, dynamic>>();
     final selector = outbounds.firstWhere((entry) => entry['tag'] == 'select');
     final lowest = outbounds.firstWhere((entry) => entry['tag'] == 'lowest');
-    final lowestOpen = outbounds.firstWhere(
-      (entry) => entry['tag'] == 'lowest-open',
-    );
-    final lowestFree = outbounds.firstWhere(
-      (entry) => entry['tag'] == 'lowest-free',
-    );
 
-    expect(selector['outbounds'].take(4), [
-      'lowest',
-      'lowest-open',
-      'lowest-free',
-      'mixed',
-    ]);
-    expect(selector['default'], 'lowest-free');
+    expect(selector['outbounds'].first, lowestProxyTag);
+    expect(selector['default'], lowestProxyTag);
     expect(lowest['outbounds'], ['leaf-fi', 'leaf-ru', 'leaf-kz', 'leaf-us']);
-    expect(lowestOpen['outbounds'], ['leaf-fi', 'leaf-kz', 'leaf-us']);
-    expect(lowestFree['outbounds'], ['leaf-fi', 'leaf-us']);
+    expect(
+      outbounds.map((entry) => entry['tag']).toSet().intersection({
+        'lowest-open',
+        'lowest-free',
+        'mixed',
+      }),
+      isEmpty,
+    );
   });
 
-  test('mark all servers as Russia forces country filters to fallback', () {
+  test('mark all servers as Russia still uses the single lowest', () {
     const subscription = Subscription(
       id: 'sub',
       name: 'Sub',
@@ -948,15 +930,13 @@ void main() {
     ).buildPlan();
     final outbounds = (plan.config['outbounds'] as List)
         .cast<Map<String, dynamic>>();
-    final lowestOpen = outbounds.firstWhere(
-      (entry) => entry['tag'] == 'lowest-open',
-    );
-    final lowestFree = outbounds.firstWhere(
-      (entry) => entry['tag'] == 'lowest-free',
+    final selector = outbounds.firstWhere((entry) => entry['tag'] == 'select');
+    final lowest = outbounds.firstWhere(
+      (entry) => entry['tag'] == lowestProxyTag,
     );
 
-    expect(lowestOpen['outbounds'], ['leaf-fi', 'leaf-us']);
-    expect(lowestFree['outbounds'], ['leaf-fi', 'leaf-us']);
+    expect(selector['default'], lowestProxyTag);
+    expect(lowest['outbounds'], ['leaf-fi', 'leaf-us']);
 
     final cache = buildProxyCache(
       ProxyCacheBuildInput(
@@ -970,7 +950,6 @@ void main() {
         unavailableLatencyTags: <String>{},
         latencyErrors: <String, String>{},
         runtimeGroupSelections: <String, String>{},
-        russiaRouteProxiesEnabled: true,
         markAllServersRussia: subscription.markAllServersRussia,
       ),
     );
@@ -981,7 +960,7 @@ void main() {
     expect(leafFi.countryCode, 'RU');
   });
 
-  test('builds mixed Russia-route proxy rules only when selected', () {
+  test('legacy mixed selection becomes lowest without mixed routing data', () {
     const subscription = Subscription(
       id: 'sub',
       name: 'Sub',
@@ -1036,61 +1015,19 @@ void main() {
     final outbounds = (config['outbounds'] as List)
         .cast<Map<String, dynamic>>();
     final selector = outbounds.firstWhere((entry) => entry['tag'] == 'select');
-    final mixed = outbounds.firstWhere((entry) => entry['tag'] == 'mixed');
     final route = (config['route'] as Map).cast<String, dynamic>();
     final routeRules = (route['rules'] as List).cast<Map<String, dynamic>>();
     final ruleSets = (route['rule_set'] as List).cast<Map<String, dynamic>>();
 
-    expect(selector['default'], 'mixed');
-    expect(mixed['type'], 'mixed');
-    expect(mixed['outbounds'], ['lowest', 'lowest-open', 'lowest-free']);
-    expect(mixed['default'], 'lowest');
-    expect(mixed['setback_to_default'], isTrue);
+    expect(selector['default'], lowestProxyTag);
+    expect(outbounds.any((entry) => entry['tag'] == mixedProxyTag), isFalse);
     expect(route['final'], 'select');
     expect(
-      ruleSets.map((entry) => entry['tag']),
-      containsAll([
+      ruleSets.map((entry) => entry['tag']).toSet().intersection({
         'telegram-services',
         'ru-ai-services',
-        'ru-geosite-ru-blocked',
-      ]),
-    );
-    final telegramRuleSet = ruleSets.firstWhere(
-      (entry) => entry['tag'] == 'telegram-services',
-    );
-    expect(
-      ((telegramRuleSet['rules'] as List).single as Map)['ip_cidr'],
-      contains('149.154.160.0/20'),
-    );
-    expect(
-      (mixed['rules'] as List).cast<Map<String, dynamic>>(),
-      contains(
-        allOf([
-          containsPair('rule_set', 'ru-ai-services'),
-          containsPair('outbound', 'lowest-free'),
-        ]),
-      ),
-    );
-    expect(
-      (mixed['rules'] as List).cast<Map<String, dynamic>>(),
-      contains(
-        allOf([
-          containsPair('rule_set', 'telegram-services'),
-          containsPair('outbound', 'lowest-open'),
-        ]),
-      ),
-    );
-    expect(
-      (mixed['rules'] as List).cast<Map<String, dynamic>>(),
-      contains(
-        allOf([
-          containsPair('rule_set', [
-            'ru-geosite-ru-blocked',
-            'ru-geoip-ru-blocked',
-          ]),
-          containsPair('outbound', 'lowest-open'),
-        ]),
-      ),
+      }),
+      isEmpty,
     );
     expect(
       routeRules,
@@ -1098,7 +1035,7 @@ void main() {
         contains(
           allOf([
             containsPair('rule_set', 'ru-ai-services'),
-            containsPair('outbound', 'lowest-free'),
+            containsPair('outbound', lowestProxyTag),
           ]),
         ),
       ),
@@ -1170,7 +1107,6 @@ void main() {
         unavailableLatencyTags: <String>{},
         latencyErrors: <String, String>{},
         runtimeGroupSelections: <String, String>{},
-        russiaRouteProxiesEnabled: false,
         markAllServersRussia: false,
       ),
     );
@@ -1191,7 +1127,6 @@ void main() {
         unavailableLatencyTags: <String>{},
         latencyErrors: <String, String>{},
         runtimeGroupSelections: <String, String>{'group-auto': 'leaf-us'},
-        russiaRouteProxiesEnabled: false,
         markAllServersRussia: false,
       ),
     );
@@ -1201,18 +1136,19 @@ void main() {
     expect(selectedGroup.countryCode, 'US');
   });
 
-  test('highlights group when mixed resolves to a child inside it', () {
+  test('lowest follows the runtime-selected child inside a group', () {
     const subscription = Subscription(
       id: 'sub',
       name: 'Sub',
       url: 'file:///sub.json',
-      selectedProxyTag: 'mixed',
+      selectedProxyTag: lowestProxyTag,
       groups: [
         SubscriptionGroup(
           tag: 'group-auto',
           name: 'Auto',
           country: 'EU',
           outboundTags: ['leaf-fi', 'leaf-us'],
+          urlTestConfig: UrlTestConfig(method: 'setback'),
         ),
       ],
       outbounds: [
@@ -1246,29 +1182,26 @@ void main() {
     final cache = buildProxyCache(
       const ProxyCacheBuildInput(
         subscription: subscription,
-        selectedProxyTag: 'mixed',
+        selectedProxyTag: lowestProxyTag,
         lowestLatency: null,
         runtimeLowestOutboundTag: null,
-        runtimeLowestSelections: <String, String>{lowestProxyTag: 'leaf-us'},
+        runtimeLowestSelections: <String, String>{lowestProxyTag: 'group-auto'},
         urlTestInFlight: false,
         runtimeLatencies: <String, int>{'leaf-us': 42},
         unavailableLatencyTags: <String>{},
         latencyErrors: <String, String>{},
-        runtimeGroupSelections: <String, String>{},
-        russiaRouteProxiesEnabled: true,
+        runtimeGroupSelections: <String, String>{'group-auto': 'leaf-us'},
         markAllServersRussia: false,
       ),
     );
 
-    final group = cache.activeProxies.firstWhere(
-      (proxy) => proxy.tag == 'group-auto',
-    );
-    final child = cache.groupChildrenByTag['group-auto']!.firstWhere(
-      (proxy) => proxy.tag == 'leaf-us',
+    final lowest = cache.activeProxies.firstWhere(
+      (proxy) => proxy.tag == lowestProxyTag,
     );
 
-    expect(group.highlighted, isTrue);
-    expect(child.highlighted, isTrue);
+    expect(lowest.selectedChildTag, 'group-auto');
+    expect(lowest.countryCode, 'US');
+    expect(lowest.latency, 42);
   });
 
   test('lowest never borrows another child latency', () {
@@ -1317,7 +1250,6 @@ void main() {
         unavailableLatencyTags: <String>{},
         latencyErrors: <String, String>{},
         runtimeGroupSelections: <String, String>{},
-        russiaRouteProxiesEnabled: false,
         markAllServersRussia: false,
       ),
     );
@@ -1419,6 +1351,61 @@ void main() {
     final leaf = outbounds.firstWhere((entry) => entry['tag'] == 'leaf');
 
     expect(leaf['tls']['reality']['short_id'], 'ab01');
+  });
+
+  test('startup config gates reality spider_x by core capability', () {
+    const subscription = Subscription(
+      id: 'sub',
+      name: 'Sub',
+      url: 'file:///sub.json',
+      outbounds: [
+        Outbound(
+          tag: 'leaf',
+          name: 'Leaf',
+          config: {
+            'type': 'vless',
+            'tag': 'leaf',
+            'server': 'one.example.com',
+            'server_port': 443,
+            'uuid': '7c6a5b3e-4f1a-4d2b-8c9e-1a2b3c4d5e6f',
+            'tls': {
+              'enabled': true,
+              'utls': {'enabled': true, 'fingerprint': 'chrome'},
+              'reality': {
+                'enabled': true,
+                'public_key': 'thwa3P0vSbbPNr0n94LqAzpFJGwTX3bpIlTyrIis7S8',
+                'short_id': 'ab01',
+                'spider_x': '/assets?ed=2560',
+              },
+            },
+          },
+        ),
+      ],
+    );
+
+    Map<String, dynamic> realityFor(LibboxCapabilities capabilities) {
+      final plan = _defaultBuilder(
+        subscription,
+        selectedProxyTag: 'leaf',
+        capabilities: capabilities,
+      ).buildPlan();
+      final outbounds = (plan.config['outbounds'] as List)
+          .cast<Map<String, dynamic>>();
+      final leaf = outbounds.firstWhere((entry) => entry['tag'] == 'leaf');
+      return Map<String, dynamic>.from((leaf['tls'] as Map)['reality'] as Map);
+    }
+
+    final unsupported = LibboxCapabilities.parseOrLegacy('{"api_version":1}');
+    final supported = LibboxCapabilities.parseOrLegacy(
+      '{"api_version":1,"supports_reality_spider_x":true}',
+    );
+
+    expect(realityFor(unsupported), isNot(contains('spider_x')));
+    expect(realityFor(supported)['spider_x'], '/assets?ed=2560');
+    expect(
+      realityFor(LibboxCapabilities.bundledLegacy)['spider_x'],
+      '/assets?ed=2560',
+    );
   });
 
   test('proxy chain strips inherited domain resolver', () {
@@ -1599,7 +1586,6 @@ void main() {
         unavailableLatencyTags: <String>{},
         latencyErrors: <String, String>{},
         runtimeGroupSelections: <String, String>{},
-        russiaRouteProxiesEnabled: false,
         markAllServersRussia: false,
       ),
     );
@@ -1680,7 +1666,6 @@ void main() {
         unavailableLatencyTags: const <String>{},
         latencyErrors: const <String, String>{},
         runtimeGroupSelections: const <String, String>{},
-        russiaRouteProxiesEnabled: false,
         markAllServersRussia: false,
       ),
     );
@@ -1745,7 +1730,6 @@ void main() {
         unavailableLatencyTags: <String>{},
         latencyErrors: <String, String>{},
         runtimeGroupSelections: <String, String>{},
-        russiaRouteProxiesEnabled: true,
         markAllServersRussia: true,
       ),
     );
@@ -1796,11 +1780,21 @@ void main() {
     );
     expect(tunInbound['include_package'], ['com.example.app']);
     expect(tunInbound.containsKey('exclude_package'), isFalse);
+    expect(tunInbound['address'], ['172.19.0.1/30', 'fdfe:dcba:9876::1/126']);
 
     final route = (config['route'] as Map).cast<String, dynamic>();
     final routeRules = (route['rules'] as List).cast<Map>();
     expect(route['final'], 'select');
     expect(routeRules.any((rule) => rule.containsKey('package_name')), isFalse);
+    expect(
+      routeRules.any(
+        (rule) =>
+            rule['action'] == 'hijack-dns' &&
+            rule['type'] == 'logical' &&
+            rule['mode'] == 'or',
+      ),
+      isTrue,
+    );
     expect(
       routeRules.any(
         (rule) =>

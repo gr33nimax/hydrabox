@@ -10,9 +10,6 @@ import 'package:meow_client/models/subscription.dart';
 import 'package:meow_client/singbox/singbox_config_builder.dart';
 import 'package:meow_client/singbox/libbox_capabilities.dart';
 
-const int _proxyPreviewLimit = 50;
-const int _groupChildPreviewLimit = 160;
-
 class ProxyCacheBuildInput {
   const ProxyCacheBuildInput({
     required this.subscription,
@@ -25,7 +22,6 @@ class ProxyCacheBuildInput {
     required this.unavailableLatencyTags,
     required this.latencyErrors,
     required this.runtimeGroupSelections,
-    required this.russiaRouteProxiesEnabled,
     required this.markAllServersRussia,
   });
 
@@ -39,7 +35,6 @@ class ProxyCacheBuildInput {
   final Set<String> unavailableLatencyTags;
   final Map<String, String> latencyErrors;
   final Map<String, String> runtimeGroupSelections;
-  final bool russiaRouteProxiesEnabled;
   final bool markAllServersRussia;
 }
 
@@ -253,22 +248,8 @@ ProxyCacheBuildResult buildProxyCache(ProxyCacheBuildInput input) {
   final selectableOutbounds = visibleOutbounds
       .where((outbound) => !_isGroupOnlyOutbound(outbound))
       .toList(growable: false);
-  final mixedOutboundTags = _activeMixedRuntimeOutboundTags(
-    input,
-    selectableOutbounds,
-  );
-  final mixedLowestTags = _activeMixedRuntimeLowestTags(
-    input,
-    selectableOutbounds,
-  );
   final proxySummaries = visibleOutbounds
-      .map(
-        (outbound) => _buildProxySummary(
-          input,
-          outbound,
-          mixedOutboundTags: mixedOutboundTags,
-        ),
-      )
+      .map((outbound) => _buildProxySummary(input, outbound))
       .toList(growable: false);
   final proxySummariesByTag = {
     for (final summary in proxySummaries) summary.tag: summary,
@@ -306,7 +287,6 @@ ProxyCacheBuildResult buildProxyCache(ProxyCacheBuildInput input) {
       group,
       visibleChildTags,
       proxySummariesByTag,
-      mixedOutboundTags: mixedOutboundTags,
     );
     groupSummaries.add(groupSummary);
     proxySummariesByTag[groupSummary.tag] = groupSummary;
@@ -318,7 +298,7 @@ ProxyCacheBuildResult buildProxyCache(ProxyCacheBuildInput input) {
 
   final lowestProxies = <AppProxySummary>[];
   if (selectableOutbounds.length + lowestCandidateGroupSummaries.length > 1) {
-    final defaultLowestCandidates = _lowestEligibleProxySummaries(
+    final lowestCandidates = _lowestEligibleProxySummaries(
       input,
       lowestProxyTag,
       selectableOutbounds,
@@ -326,43 +306,21 @@ ProxyCacheBuildResult buildProxyCache(ProxyCacheBuildInput input) {
       lowestCandidateGroupChildTags,
       proxySummariesByTag,
     );
-    for (final tag in lowestProxyTags) {
-      final eligibleCandidates = _lowestEligibleProxySummaries(
-        input,
-        tag,
-        selectableOutbounds,
-        lowestCandidateGroupSummaries,
-        lowestCandidateGroupChildTags,
-        proxySummariesByTag,
-      );
-      final countryFilteredEmpty =
-          tag != lowestProxyTag && eligibleCandidates.isEmpty;
-      lowestProxies.add(
-        _buildLowestProxySummary(
-          input,
-          tag,
-          countryFilteredEmpty ? defaultLowestCandidates : eligibleCandidates,
-          mixedLowestTags: mixedLowestTags,
-          countryFilteredEmpty: countryFilteredEmpty,
-        ),
-      );
-    }
+    lowestProxies.add(
+      _buildLowestProxySummary(input, lowestProxyTag, lowestCandidates),
+    );
   }
   final lowestProxyByTag = {
     for (final proxy in lowestProxies) proxy.tag: proxy,
   };
-  final mixedProxy = _buildMixedProxySummary(input, lowestProxyByTag);
   final chainSummariesByTag = {
     for (final proxy in chainSummaries) proxy.tag: proxy,
   };
 
   final activeProxy =
       selectableOutbounds.length == 1 &&
-          (isMixedProxyTag(input.selectedProxyTag) ||
-              isLowestProxyTag(input.selectedProxyTag))
+          isLowestProxyTag(input.selectedProxyTag)
       ? proxySummariesByTag[selectableOutbounds.single.tag]
-      : isMixedProxyTag(input.selectedProxyTag)
-      ? mixedProxy
       : isLowestProxyTag(input.selectedProxyTag)
       ? lowestProxyByTag[input.selectedProxyTag]
       : chainSummariesByTag[input.selectedProxyTag] ??
@@ -379,46 +337,29 @@ ProxyCacheBuildResult buildProxyCache(ProxyCacheBuildInput input) {
             !_isGroupOnlySummary(summary, visibleOutboundByTag),
       )
       .toList(growable: false);
-  final limitedTopLevelSummaries = _limitedTopLevelProxySummaries(
-    lowestProxies: [...lowestProxies, ?mixedProxy],
-    groupSummaries: groupSummaries,
-    chainSummaries: chainSummaries,
-    standaloneSummaries: standaloneProxySummaries,
-    selectedProxyTag: input.selectedProxyTag,
-    runtimeLowestOutboundTag: input.runtimeLowestOutboundTag,
-    runtimeLowestSelections: input.runtimeLowestSelections,
-    mixedOutboundTags: mixedOutboundTags,
-  );
-  final includedGroupSummaries = limitedTopLevelSummaries
-      .where((summary) => summary.isGroup)
-      .toList(growable: false);
+  final topLevelSummaries = <AppProxySummary>[
+    ...lowestProxies,
+    ...groupSummaries,
+    ...chainSummaries,
+    ...standaloneProxySummaries,
+  ];
   final groupChildrenByTag = <String, List<AppProxySummary>>{
-    for (final group in includedGroupSummaries)
+    for (final group in groupSummaries)
       group.tag: [
         for (final tag in group.childTags)
           if (groupedOutboundTags.contains(tag) &&
               groupTagByChildTag[tag] == group.tag &&
               proxySummariesByTag[tag] != null)
-            _withParentGroup(
-              input,
-              proxySummariesByTag[tag]!,
-              group.tag,
-              mixedOutboundTags: mixedOutboundTags,
-            ),
+            _withParentGroup(input, proxySummariesByTag[tag]!, group.tag),
       ],
   };
 
   return ProxyCacheBuildResult(
     activeProfile: activeProfile,
     displayProxy: displayProxy,
-    activeProxies: limitedTopLevelSummaries,
+    activeProxies: topLevelSummaries,
     groupChildrenByTag: groupChildrenByTag,
-    totalTopLevelProxyCount:
-        lowestProxies.length +
-        (mixedProxy == null ? 0 : 1) +
-        groupSummaries.length +
-        chainSummaries.length +
-        standaloneProxySummaries.length,
+    totalTopLevelProxyCount: topLevelSummaries.length,
   );
 }
 
@@ -723,25 +664,23 @@ AppProfileSummary _buildProfileSummary(Subscription subscription) {
 AppProxySummary _buildLowestProxySummary(
   ProxyCacheBuildInput input,
   String lowestTag,
-  List<AppProxySummary> candidates, {
-  Set<String> mixedLowestTags = const <String>{},
-  bool countryFilteredEmpty = false,
-}) {
+  List<AppProxySummary> candidates,
+) {
   final selectedSummary = _lowestSelectedSummary(input, lowestTag, candidates);
-  final selectedName = countryFilteredEmpty
-      ? null
-      : selectedSummary?.displayName;
-  final emptyLabel = countryFilteredEmpty ? 'В подписке только Россия' : null;
-  final protocolLabel =
-      emptyLabel ??
-      (selectedSummary == null
-          ? 'URLTest · auto'
-          : 'URLTest · ${selectedSummary.protocolLabel}');
-  final detailText =
-      emptyLabel ??
-      (selectedSummary == null
-          ? 'URLTest · auto'
-          : 'URLTest · ${selectedSummary.displayName}');
+  final selectedName = selectedSummary?.displayName;
+  final protocolLabel = (selectedSummary == null
+      ? 'URLTest · auto'
+      : 'URLTest · ${selectedSummary.protocolLabel}');
+  final detailText = (selectedSummary == null
+      ? 'URLTest · auto'
+      : 'URLTest · ${selectedSummary.displayName}');
+  final allCandidatesUnavailable =
+      candidates.isNotEmpty &&
+      candidates.every(
+        (candidate) =>
+            input.unavailableLatencyTags.contains(candidate.tag) ||
+            candidate.latencyUnavailable,
+      );
   return AppProxySummary(
     tag: lowestTag,
     displayName: lowestProxyDisplayName(lowestTag, selectedName),
@@ -757,19 +696,14 @@ AppProxySummary _buildLowestProxySummary(
     latency: selectedSummary?.latency,
     latencyFresh: selectedSummary?.latencyFresh ?? false,
     latencyChecking: input.urlTestInFlight,
-    latencyUnavailable: selectedSummary != null
-        ? selectedSummary.latencyUnavailable
-        : input.lowestLatency == null &&
-              !input.urlTestInFlight &&
-              input.unavailableLatencyTags.isNotEmpty,
+    latencyUnavailable:
+        selectedSummary?.latencyUnavailable ?? allCandidatesUnavailable,
     latencyError: selectedSummary?.latencyError,
     protocolLabel: protocolLabel,
     endpointLabel: selectedSummary?.endpointLabel ?? '',
     selectedChildTag: selectedSummary?.tag,
     selectedChildName: selectedName,
-    highlighted:
-        input.selectedProxyTag == lowestTag ||
-        mixedLowestTags.contains(lowestTag),
+    highlighted: input.selectedProxyTag == lowestTag,
   );
 }
 
@@ -783,64 +717,6 @@ bool _isGroupOnlySummary(
 ) {
   final outbound = outboundByTag[summary.tag];
   return outbound != null && _isGroupOnlyOutbound(outbound);
-}
-
-AppProxySummary? _buildMixedProxySummary(
-  ProxyCacheBuildInput input,
-  Map<String, AppProxySummary> lowestProxyByTag,
-) {
-  if (!input.russiaRouteProxiesEnabled ||
-      !lowestProxyByTag.containsKey(lowestProxyTag) ||
-      !lowestProxyByTag.containsKey(lowestOpenProxyTag) ||
-      !lowestProxyByTag.containsKey(lowestFreeProxyTag)) {
-    return null;
-  }
-  final fallback = lowestProxyByTag[lowestProxyTag];
-  final lowests = <AppProxySummary>[
-    lowestProxyByTag[lowestProxyTag]!,
-    lowestProxyByTag[lowestOpenProxyTag]!,
-    lowestProxyByTag[lowestFreeProxyTag]!,
-  ];
-  final checking = lowests.any((proxy) => proxy.latencyChecking);
-  final unavailable = lowests.every((proxy) => proxy.latencyUnavailable);
-  return AppProxySummary(
-    tag: mixedProxyTag,
-    displayName: 'mixed',
-    countryCode: fallback?.countryCode ?? '',
-    type: 'selector',
-    server: '',
-    port: 0,
-    detailText: 'AI -> lowest · free · TG/RU blocked -> lowest · open',
-    ip: fallback?.ip ?? '',
-    // `mixed` chooses different branches by destination. Copying the default
-    // branch delay presents one server's result as if it described the whole
-    // routing policy, which is not a meaningful measurement.
-    latency: null,
-    latencyFresh: false,
-    latencyChecking: checking,
-    latencyUnavailable: unavailable,
-    latencyError: fallback?.latencyError,
-    protocolLabel: 'Routing',
-    endpointLabel: fallback?.endpointLabel ?? '',
-    childTags: const [lowestProxyTag, lowestOpenProxyTag, lowestFreeProxyTag],
-    childCount: 3,
-    highlighted: input.selectedProxyTag == mixedProxyTag,
-  );
-}
-
-List<Outbound> _lowestEligibleOutbounds(
-  ProxyCacheBuildInput input,
-  String lowestTag,
-  List<Outbound> visibleOutbounds,
-) {
-  return visibleOutbounds
-      .where(
-        (outbound) => lowestProxyAllowsCountry(
-          lowestTag,
-          _effectiveOutboundCountry(input, outbound),
-        ),
-      )
-      .toList(growable: false);
 }
 
 List<AppProxySummary> _lowestEligibleProxySummaries(
@@ -895,102 +771,6 @@ String? _activeRuntimeLowestOutboundTag(ProxyCacheBuildInput input) {
   return _runtimeLowestOutboundTagFor(input, input.selectedProxyTag);
 }
 
-Set<String> _activeMixedRuntimeLowestTags(
-  ProxyCacheBuildInput input,
-  List<Outbound> visibleOutbounds,
-) {
-  if (!isMixedProxyTag(input.selectedProxyTag) || visibleOutbounds.isEmpty) {
-    return const <String>{};
-  }
-  final tags = <String>{};
-  for (final lowestTag in lowestProxyTags) {
-    final eligibleOutbounds = _lowestEligibleOutbounds(
-      input,
-      lowestTag,
-      visibleOutbounds,
-    );
-    tags.add(eligibleOutbounds.isEmpty ? lowestProxyTag : lowestTag);
-  }
-  return tags;
-}
-
-Set<String> _activeMixedRuntimeOutboundTags(
-  ProxyCacheBuildInput input,
-  List<Outbound> visibleOutbounds,
-) {
-  if (!isMixedProxyTag(input.selectedProxyTag) || visibleOutbounds.isEmpty) {
-    return const <String>{};
-  }
-  final tags = <String>{};
-  final defaultEligible = _lowestEligibleOutbounds(
-    input,
-    lowestProxyTag,
-    visibleOutbounds,
-  );
-  final defaultSelected = defaultEligible.isEmpty
-      ? null
-      : _lowestSelectedOutbound(input, lowestProxyTag, defaultEligible);
-  for (final lowestTag in lowestProxyTags) {
-    final runtimeSelectedTag = _runtimeLowestOutboundTagFor(input, lowestTag);
-    if (runtimeSelectedTag != null && runtimeSelectedTag.isNotEmpty) {
-      tags.add(runtimeSelectedTag);
-    }
-    final eligibleOutbounds = _lowestEligibleOutbounds(
-      input,
-      lowestTag,
-      visibleOutbounds,
-    );
-    final selected = eligibleOutbounds.isEmpty
-        ? defaultSelected
-        : _lowestSelectedOutbound(input, lowestTag, eligibleOutbounds);
-    if (selected != null) {
-      tags.add(selected.tag);
-    }
-  }
-  return tags;
-}
-
-Iterable<String> _runtimeLowestOutboundTags(ProxyCacheBuildInput input) sync* {
-  final legacy = input.runtimeLowestOutboundTag;
-  if (legacy != null && legacy.isNotEmpty) {
-    yield legacy;
-  }
-  yield* input.runtimeLowestSelections.values.where((tag) => tag.isNotEmpty);
-}
-
-Outbound? _lowestSelectedOutbound(
-  ProxyCacheBuildInput input,
-  String lowestTag,
-  List<Outbound> visibleOutbounds,
-) {
-  final runtimeSelectedTag = _runtimeLowestOutboundTagFor(input, lowestTag);
-  if (runtimeSelectedTag != null && runtimeSelectedTag.isNotEmpty) {
-    for (final outbound in visibleOutbounds) {
-      if (outbound.tag == runtimeSelectedTag) {
-        return outbound;
-      }
-    }
-  }
-
-  Outbound? bestOutbound;
-  int? bestLatency;
-  for (final outbound in visibleOutbounds) {
-    if (input.unavailableLatencyTags.contains(outbound.tag)) {
-      continue;
-    }
-    final latency =
-        input.runtimeLatencies[outbound.tag] ?? outbound.info.latestPing;
-    if (latency == null) {
-      continue;
-    }
-    if (bestLatency == null || latency < bestLatency) {
-      bestLatency = latency;
-      bestOutbound = outbound;
-    }
-  }
-  return bestOutbound ?? visibleOutbounds.first;
-}
-
 AppProxySummary? _lowestSelectedSummary(
   ProxyCacheBuildInput input,
   String lowestTag,
@@ -1000,27 +780,22 @@ AppProxySummary? _lowestSelectedSummary(
   if (runtimeSelectedTag != null && runtimeSelectedTag.isNotEmpty) {
     for (final candidate in candidates) {
       if (candidate.tag == runtimeSelectedTag) {
+        final selectedLeafTag = candidate.isGroup
+            ? input.runtimeGroupSelections[candidate.tag]?.trim()
+            : candidate.tag;
+        if (selectedLeafTag == null ||
+            selectedLeafTag.isEmpty ||
+            input.unavailableLatencyTags.contains(selectedLeafTag) ||
+            input.latencyErrors.containsKey(selectedLeafTag) ||
+            candidate.latencyUnavailable ||
+            candidate.latencyError != null) {
+          return null;
+        }
         return candidate;
       }
     }
   }
-
-  AppProxySummary? bestSummary;
-  int? bestLatency;
-  for (final candidate in candidates) {
-    if (input.unavailableLatencyTags.contains(candidate.tag)) {
-      continue;
-    }
-    final latency = input.runtimeLatencies[candidate.tag] ?? candidate.latency;
-    if (latency == null) {
-      continue;
-    }
-    if (bestLatency == null || latency < bestLatency) {
-      bestLatency = latency;
-      bestSummary = candidate;
-    }
-  }
-  return bestSummary ?? (candidates.isEmpty ? null : candidates.first);
+  return null;
 }
 
 bool _isSetbackUrlTestGroup(SubscriptionGroup group) {
@@ -1033,9 +808,8 @@ bool _isSetbackUrlTestGroup(SubscriptionGroup group) {
 
 AppProxySummary _buildProxySummary(
   ProxyCacheBuildInput input,
-  Outbound outbound, {
-  Set<String> mixedOutboundTags = const <String>{},
-}) {
+  Outbound outbound,
+) {
   final securityLabel = _securityLabel(outbound.config);
   final transportLabel = _transportLabel(outbound.config);
   final protocolParts = <String>[
@@ -1052,7 +826,6 @@ AppProxySummary _buildProxySummary(
   final highlightedByLowest =
       isLowestProxyTag(input.selectedProxyTag) &&
       runtimeLowestTag == outbound.tag;
-  final highlightedByMixed = mixedOutboundTags.contains(outbound.tag);
   return AppProxySummary(
     tag: outbound.tag,
     displayName: outbound.name.trim().isEmpty ? outbound.tag : outbound.name,
@@ -1071,7 +844,7 @@ AppProxySummary _buildProxySummary(
     latencyError: input.latencyErrors[outbound.tag],
     protocolLabel: protocolLabel,
     endpointLabel: endpointLabel,
-    highlighted: highlightedByLowest || highlightedByMixed,
+    highlighted: highlightedByLowest,
   );
 }
 
@@ -1178,9 +951,7 @@ String _detourDisplayName(
   Map<String, AppProxySummary> proxySummariesByTag,
 ) {
   final normalized = detourTag.trim();
-  if (isMixedProxyTag(normalized)) {
-    return 'mixed';
-  }
+  if (isLegacySyntheticProxyTag(normalized)) return 'lowest';
   if (isLowestProxyTag(normalized)) {
     return lowestProxyBaseLabel(normalized);
   }
@@ -1191,9 +962,8 @@ AppProxySummary _buildGroupProxySummary(
   ProxyCacheBuildInput input,
   SubscriptionGroup group,
   List<String> visibleChildTags,
-  Map<String, AppProxySummary> childSummariesByTag, {
-  Set<String> mixedOutboundTags = const <String>{},
-}) {
+  Map<String, AppProxySummary> childSummariesByTag,
+) {
   final runtimeSelectedTag = input.runtimeGroupSelections[group.tag];
   final selectedChildTag =
       runtimeSelectedTag != null &&
@@ -1207,14 +977,6 @@ AppProxySummary _buildGroupProxySummary(
   final groupCountry = input.markAllServersRussia
       ? 'RU'
       : _normalizeCountryCode(group.country);
-  final previewChildTags = _limitedGroupChildTags(
-    input: input,
-    group: group,
-    visibleChildTags: visibleChildTags,
-    childSummariesByTag: childSummariesByTag,
-    selectedChildTag: selectedChildTag,
-    mixedOutboundTags: mixedOutboundTags,
-  );
   final selectedChildName = selectedChild?.displayName ?? selectedChildTag;
   final hasSelectedChild =
       selectedChildName != null && selectedChildName.isNotEmpty;
@@ -1222,7 +984,6 @@ AppProxySummary _buildGroupProxySummary(
     (tag) => input.unavailableLatencyTags.contains(tag),
   );
   final runtimeLowestTag = _activeRuntimeLowestOutboundTag(input);
-  final childSelectedByMixed = mixedOutboundTags.any(visibleChildTags.contains);
   return AppProxySummary(
     tag: group.tag,
     displayName: group.name.trim().isEmpty ? group.tag : group.name,
@@ -1245,7 +1006,7 @@ AppProxySummary _buildGroupProxySummary(
         : 'URLTest · ${visibleChildTags.length} outbounds',
     endpointLabel: selectedChild?.endpointLabel ?? '',
     isGroup: true,
-    childTags: previewChildTags,
+    childTags: visibleChildTags,
     childCount: visibleChildTags.length,
     selectedChildTag: selectedChildTag,
     selectedChildName: selectedChildName,
@@ -1253,113 +1014,8 @@ AppProxySummary _buildGroupProxySummary(
         input.selectedProxyTag == group.tag ||
         visibleChildTags.contains(input.selectedProxyTag) ||
         (runtimeLowestTag != null &&
-            visibleChildTags.contains(runtimeLowestTag)) ||
-        childSelectedByMixed,
+            visibleChildTags.contains(runtimeLowestTag)),
   );
-}
-
-List<String> _limitedGroupChildTags({
-  required ProxyCacheBuildInput input,
-  required SubscriptionGroup group,
-  required List<String> visibleChildTags,
-  required Map<String, AppProxySummary> childSummariesByTag,
-  required String? selectedChildTag,
-  required Set<String> mixedOutboundTags,
-}) {
-  if (visibleChildTags.length <= _groupChildPreviewLimit) {
-    return visibleChildTags;
-  }
-
-  final visibleChildTagSet = visibleChildTags.toSet();
-  final pinned = <String>[];
-  final included = <String>{};
-
-  void pin(String? tag) {
-    final normalized = tag?.trim() ?? '';
-    if (normalized.isEmpty ||
-        !visibleChildTagSet.contains(normalized) ||
-        included.contains(normalized)) {
-      return;
-    }
-    included.add(normalized);
-    pinned.add(normalized);
-  }
-
-  void include(String tag) {
-    if (visibleChildTagSet.contains(tag)) {
-      included.add(tag);
-    }
-  }
-
-  void includeTop(Comparator<AppProxySummary> comparator) {
-    final sorted =
-        visibleChildTags
-            .map((tag) => childSummariesByTag[tag])
-            .whereType<AppProxySummary>()
-            .toList(growable: false)
-          ..sort(comparator);
-    for (final summary in sorted.take(_groupChildPreviewLimit ~/ 3)) {
-      include(summary.tag);
-    }
-  }
-
-  pin(selectedChildTag);
-  pin(input.selectedProxyTag);
-  for (final tag in mixedOutboundTags) {
-    pin(tag);
-  }
-  for (final tag in _runtimeLowestOutboundTags(input)) {
-    pin(tag);
-  }
-  pin(input.runtimeGroupSelections[group.tag]);
-
-  includeTop(
-    (a, b) => _compareProxySummaries(
-      a,
-      b,
-      sort: ProxySort.latency,
-      keepLowestFirst: false,
-    ),
-  );
-  includeTop(
-    (a, b) => _compareProxySummaries(
-      a,
-      b,
-      sort: ProxySort.name,
-      keepLowestFirst: false,
-    ),
-  );
-  includeTop(
-    (a, b) => _compareProxySummaries(
-      a,
-      b,
-      sort: ProxySort.country,
-      keepLowestFirst: false,
-    ),
-  );
-
-  final rest =
-      included
-          .where((tag) => !pinned.contains(tag))
-          .map((tag) => childSummariesByTag[tag])
-          .whereType<AppProxySummary>()
-          .toList(growable: false)
-        ..sort(
-          (a, b) => _compareProxySummaries(
-            a,
-            b,
-            sort: ProxySort.latency,
-            keepLowestFirst: false,
-          ),
-        );
-  final result = <String>[...pinned];
-  for (final summary in rest) {
-    if (result.length >= _groupChildPreviewLimit) {
-      break;
-    }
-    result.add(summary.tag);
-  }
-  return result;
 }
 
 String? _bestChildTag(
@@ -1398,9 +1054,8 @@ AppProxySummary? _groupSummaryByTag(List<AppProxySummary> groups, String tag) {
 AppProxySummary _withParentGroup(
   ProxyCacheBuildInput input,
   AppProxySummary summary,
-  String? parentTag, {
-  Set<String> mixedOutboundTags = const <String>{},
-}) {
+  String? parentTag,
+) {
   final highlightedByGroupUrlTest =
       parentTag != null &&
       input.runtimeGroupSelections[parentTag] == summary.tag;
@@ -1408,9 +1063,6 @@ AppProxySummary _withParentGroup(
   final highlightedByLowest =
       isLowestProxyTag(input.selectedProxyTag) &&
       runtimeLowestTag == summary.tag;
-  final highlightedByMixed =
-      isMixedProxyTag(input.selectedProxyTag) &&
-      mixedOutboundTags.contains(summary.tag);
   return AppProxySummary(
     tag: summary.tag,
     displayName: summary.displayName,
@@ -1430,186 +1082,8 @@ AppProxySummary _withParentGroup(
     parentGroupTag: parentTag,
     childCount: summary.childCount,
     highlighted:
-        summary.highlighted ||
-        highlightedByGroupUrlTest ||
-        highlightedByLowest ||
-        highlightedByMixed,
+        summary.highlighted || highlightedByGroupUrlTest || highlightedByLowest,
   );
-}
-
-List<AppProxySummary> _limitedTopLevelProxySummaries({
-  required List<AppProxySummary> lowestProxies,
-  required List<AppProxySummary> groupSummaries,
-  required List<AppProxySummary> chainSummaries,
-  required List<AppProxySummary> standaloneSummaries,
-  required String selectedProxyTag,
-  required String? runtimeLowestOutboundTag,
-  required Map<String, String> runtimeLowestSelections,
-  required Set<String> mixedOutboundTags,
-}) {
-  final topLevel = <AppProxySummary>[
-    ...lowestProxies,
-    ...groupSummaries,
-    ...chainSummaries,
-    ...standaloneSummaries,
-  ];
-  if (topLevel.length <= _proxyPreviewLimit) {
-    return topLevel;
-  }
-
-  final included = <String, AppProxySummary>{};
-  void include(AppProxySummary summary) {
-    included[summary.tag] = summary;
-  }
-
-  for (final proxy in lowestProxies) {
-    include(proxy);
-  }
-  for (final proxy in chainSummaries) {
-    include(proxy);
-  }
-  final pinnedTopLevelTags = included.keys.toSet();
-  final sortableTopLevel = topLevel
-      .where((summary) => !pinnedTopLevelTags.contains(summary.tag))
-      .toList(growable: false);
-
-  void includeTop(Comparator<AppProxySummary> comparator) {
-    final sorted = sortableTopLevel.toList(growable: false)..sort(comparator);
-    for (final summary in sorted.take(_proxyPreviewLimit)) {
-      include(summary);
-    }
-  }
-
-  includeTop(
-    (a, b) => _compareProxySummaries(
-      a,
-      b,
-      sort: ProxySort.latency,
-      keepLowestFirst: true,
-    ),
-  );
-  includeTop(
-    (a, b) => _compareProxySummaries(
-      a,
-      b,
-      sort: ProxySort.name,
-      keepLowestFirst: true,
-    ),
-  );
-  includeTop(
-    (a, b) => _compareProxySummaries(
-      a,
-      b,
-      sort: ProxySort.country,
-      keepLowestFirst: true,
-    ),
-  );
-
-  final runtimeLowestTags = <String>{
-    if (runtimeLowestOutboundTag != null && runtimeLowestOutboundTag.isNotEmpty)
-      runtimeLowestOutboundTag,
-    ...runtimeLowestSelections.values.where((tag) => tag.isNotEmpty),
-  };
-
-  for (final summary in topLevel) {
-    if (summary.highlighted) {
-      include(summary);
-      continue;
-    }
-    if (summary.tag == selectedProxyTag ||
-        runtimeLowestTags.contains(summary.tag)) {
-      include(summary);
-      continue;
-    }
-    if (summary.isGroup) {
-      final childSelected =
-          summary.childTags.contains(selectedProxyTag) ||
-          runtimeLowestTags.any(summary.childTags.contains) ||
-          mixedOutboundTags.any(summary.childTags.contains);
-      if (childSelected) {
-        include(summary);
-      }
-    }
-  }
-
-  final ordered = included.values.toList(growable: false)
-    ..sort(
-      (a, b) => _compareProxySummaries(
-        a,
-        b,
-        sort: ProxySort.latency,
-        keepLowestFirst: true,
-      ),
-    );
-  return ordered;
-}
-
-int _compareProxySummaries(
-  AppProxySummary a,
-  AppProxySummary b, {
-  required ProxySort sort,
-  required bool keepLowestFirst,
-}) {
-  switch (sort) {
-    case ProxySort.source:
-      return 0;
-    case ProxySort.name:
-      final lowestOrder = _compareLowestProxySummary(a, b, keepLowestFirst);
-      if (lowestOrder != null) return lowestOrder;
-      return a.displayName.compareTo(b.displayName);
-    case ProxySort.country:
-      final lowestOrder = _compareLowestProxySummary(a, b, keepLowestFirst);
-      if (lowestOrder != null) return lowestOrder;
-      return a.countryCode.compareTo(b.countryCode);
-    case ProxySort.latency:
-      final lowestOrder = _compareLowestProxySummary(a, b, keepLowestFirst);
-      if (lowestOrder != null) return lowestOrder;
-      final aRank = _latencyRank(a);
-      final bRank = _latencyRank(b);
-      if (aRank != bRank) {
-        return aRank.compareTo(bRank);
-      }
-      final aLatency = a.latency ?? 1 << 30;
-      final bLatency = b.latency ?? 1 << 30;
-      if (aLatency != bLatency) {
-        return aLatency.compareTo(bLatency);
-      }
-      return a.displayName.compareTo(b.displayName);
-  }
-}
-
-int? _compareLowestProxySummary(
-  AppProxySummary a,
-  AppProxySummary b,
-  bool keepLowestFirst,
-) {
-  if (!keepLowestFirst) {
-    return null;
-  }
-  final aPinned = isPinnedProxyTag(a.tag);
-  final bPinned = isPinnedProxyTag(b.tag);
-  if (aPinned && bPinned) {
-    return pinnedProxyTagOrder(a.tag).compareTo(pinnedProxyTagOrder(b.tag));
-  }
-  if (aPinned) return -1;
-  if (bPinned) return 1;
-  return null;
-}
-
-int _latencyRank(AppProxySummary proxy) {
-  if (proxy.latencyFresh && proxy.latency != null) {
-    return 0;
-  }
-  if (proxy.latencyChecking) {
-    return 1;
-  }
-  if (!proxy.latencyUnavailable && proxy.latency != null) {
-    return 2;
-  }
-  if (!proxy.latencyUnavailable) {
-    return 3;
-  }
-  return 4;
 }
 
 AppProxySummary _fallbackDisplayProxy(

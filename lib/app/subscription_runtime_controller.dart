@@ -207,8 +207,7 @@ class SubscriptionRuntimeController {
     required String selectedProxyTag,
     required bool preserveRuntimeState,
     required SubscriptionRuntimeSnapshot runtimeSnapshot,
-    required bool russiaRouteProxiesEnabled,
-    required String? Function(String subscriptionId) payloadJsonFor,
+    required String? Function(String subscriptionId) payloadSnapshotFor,
   }) async {
     if (metadataSubscriptions.isEmpty) {
       return const ResolvedSubscriptions(
@@ -236,8 +235,7 @@ class SubscriptionRuntimeController {
       preferSelectedProxyTag: selectedProxyTag.trim().isNotEmpty,
       preserveRuntimeState: preserveRuntimeState,
       runtimeSnapshot: runtimeSnapshot,
-      russiaRouteProxiesEnabled: russiaRouteProxiesEnabled,
-      payloadJson: payloadJsonFor(activeMetadata.id),
+      payloadSnapshot: payloadSnapshotFor(activeMetadata.id),
     );
     final subscriptions = metadataSubscriptions
         .map(
@@ -261,8 +259,7 @@ class SubscriptionRuntimeController {
     required bool preferSelectedProxyTag,
     required bool preserveRuntimeState,
     required SubscriptionRuntimeSnapshot runtimeSnapshot,
-    required bool russiaRouteProxiesEnabled,
-    required String? payloadJson,
+    required String? payloadSnapshot,
   }) {
     final metadataMap = metadata.toMetadataMap();
     final lowestLatency = preserveRuntimeState
@@ -293,11 +290,11 @@ class SubscriptionRuntimeController {
 
     return Isolate.run(() {
       final metadataSubscription = Subscription.fromMetadataMap(metadataMap);
-      final subscription = payloadJson == null
+      final subscription = payloadSnapshot == null
           ? metadataSubscription
           : SubscriptionStore.hydratePayloadJson(
               metadataSubscription,
-              payloadJson,
+              payloadSnapshot,
             );
       final normalized = normalizeActiveSubscriptionSelection(
         subscription,
@@ -319,7 +316,6 @@ class SubscriptionRuntimeController {
           unavailableLatencyTags: unavailableLatencyTags,
           latencyErrors: latencyErrors,
           runtimeGroupSelections: runtimeGroupSelections,
-          russiaRouteProxiesEnabled: russiaRouteProxiesEnabled,
           markAllServersRussia: markAllServersRussia,
         ),
       );
@@ -377,7 +373,6 @@ SubscriptionRuntimeSelection normalizeActiveSubscriptionSelection(
   required bool preferSelectedProxyTag,
 }) {
   Outbound? selectedOutbound;
-  Outbound? checkedOutbound;
   final visibleOutbounds = <Outbound>[];
   final visibleOutboundTags = <String>{};
   for (final outbound in activeSubscription.outbounds) {
@@ -386,7 +381,6 @@ SubscriptionRuntimeSelection normalizeActiveSubscriptionSelection(
     }
     visibleOutbounds.add(outbound);
     visibleOutboundTags.add(outbound.tag);
-    checkedOutbound ??= outbound.info.checked ? outbound : null;
   }
   final effectiveSelectedProxyTag =
       ProxySelectionController.effectiveSelectedProxyTag(
@@ -407,21 +401,13 @@ SubscriptionRuntimeSelection normalizeActiveSubscriptionSelection(
   if (visibleOutbounds.length == 1) {
     final singleTag = visibleOutbounds.single.tag;
     if (effectiveSelectedProxyTag.isEmpty ||
-        isLowestProxyTag(effectiveSelectedProxyTag) ||
-        isMixedProxyTag(effectiveSelectedProxyTag) ||
+        isSyntheticProxyTag(effectiveSelectedProxyTag) ||
         !visibleOutboundTags.contains(effectiveSelectedProxyTag)) {
       return SubscriptionRuntimeSelection(
         activeSubscriptionId: activeSubscription.id,
         selectedProxyTag: singleTag,
       );
     }
-  }
-  if (isMixedProxyTag(effectiveSelectedProxyTag) &&
-      visibleOutbounds.isNotEmpty) {
-    return SubscriptionRuntimeSelection(
-      activeSubscriptionId: activeSubscription.id,
-      selectedProxyTag: mixedProxyTag,
-    );
   }
   if (isLowestProxyTag(effectiveSelectedProxyTag) &&
       visibleOutbounds.isNotEmpty) {
@@ -445,10 +431,15 @@ SubscriptionRuntimeSelection normalizeActiveSubscriptionSelection(
       break;
     }
   }
-  selectedOutbound ??= checkedOutbound;
-  selectedOutbound ??= visibleOutbounds.isNotEmpty
-      ? visibleOutbounds.first
-      : null;
+  if (selectedOutbound == null && visibleOutbounds.length > 1) {
+    return SubscriptionRuntimeSelection(
+      activeSubscriptionId: activeSubscription.id,
+      selectedProxyTag: lowestProxyTag,
+    );
+  }
+  selectedOutbound ??= visibleOutbounds.isEmpty
+      ? null
+      : visibleOutbounds.single;
 
   return SubscriptionRuntimeSelection(
     activeSubscriptionId: activeSubscription.id,

@@ -140,47 +140,17 @@ abstract class AppLocalizations {
   /// **'Selector'**
   String get proxySelectorTitle;
 
-  /// No description provided for @proxyFastestName.
+  /// No description provided for @proxyLowestName.
   ///
   /// In en, this message translates to:
-  /// **'Fastest'**
-  String get proxyFastestName;
-
-  /// No description provided for @proxyFastestOpenName.
-  ///
-  /// In en, this message translates to:
-  /// **'Fastest · open access'**
-  String get proxyFastestOpenName;
-
-  /// No description provided for @proxyFastestFreeName.
-  ///
-  /// In en, this message translates to:
-  /// **'Fastest · unrestricted'**
-  String get proxyFastestFreeName;
+  /// **'Lowest'**
+  String get proxyLowestName;
 
   /// No description provided for @proxyAutomaticSelectionLabel.
   ///
   /// In en, this message translates to:
   /// **'Automatic selection'**
   String get proxyAutomaticSelectionLabel;
-
-  /// No description provided for @proxySmartRoutingName.
-  ///
-  /// In en, this message translates to:
-  /// **'Smart routing'**
-  String get proxySmartRoutingName;
-
-  /// No description provided for @proxySmartRoutingSubtitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Routing by destination'**
-  String get proxySmartRoutingSubtitle;
-
-  /// No description provided for @proxySmartRoutingLatencyLabel.
-  ///
-  /// In en, this message translates to:
-  /// **'auto'**
-  String get proxySmartRoutingLatencyLabel;
 
   /// No description provided for @proxyChainLabel.
   ///
@@ -2401,6 +2371,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Failed to read the subscription file'**
   String get invalidSubscriptionFile;
+
+  /// No description provided for @backupUseSettingsImport.
+  ///
+  /// In en, this message translates to:
+  /// **'This is an Etonify backup. Import it from Settings → Import.'**
+  String get backupUseSettingsImport;
 
   /// No description provided for @subscriptionName.
   ///

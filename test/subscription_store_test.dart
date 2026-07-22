@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -84,6 +85,45 @@ void main() {
     expect(metadata.cachedVisibleProxyCount, greaterThan(0));
     expect(metadata.hasRawPayload, isTrue);
   });
+
+  test(
+    'stores payloads compressed without changing hydrated profiles',
+    () async {
+      final subscription = Subscription(
+        id: 'compressed-profile',
+        name: 'Compressed profile',
+        url: 'file:///compressed.txt',
+        rawContent: ''.padRight(512 * 1024, 'a'),
+        outbounds: const [
+          Outbound(
+            tag: 'node-1',
+            name: 'Node 1',
+            config: {'type': 'vless', 'server': 'server.example'},
+          ),
+        ],
+      );
+
+      await SubscriptionStore.save(subscription);
+
+      final stored = Hive.box(
+        'subscription_payloads_secure_v1',
+      ).get(subscription.id);
+      expect(stored, isA<String>());
+      expect(stored as String, startsWith('gzip-base64-v1:'));
+      expect(stored.length, lessThan(subscription.rawContent.length ~/ 10));
+      expect(SubscriptionStore.payloadSnapshotFor(subscription.id), stored);
+      expect(
+        jsonDecode(SubscriptionStore.payloadJsonFor(subscription.id)!)
+            as Map<String, dynamic>,
+        containsPair('raw_content', subscription.rawContent),
+      );
+
+      final hydrated = await SubscriptionStore.getInBackground(subscription.id);
+      expect(hydrated, isNotNull);
+      expect(hydrated!.rawContent, subscription.rawContent);
+      expect(hydrated.outbounds.single.tag, 'node-1');
+    },
+  );
 
   test('addFromUrl reports a successful response without proxies', () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);

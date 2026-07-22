@@ -27,6 +27,21 @@ void main() {
       );
     });
 
+    test('parses config check PlatformException wrappers', () {
+      final parsed = parseRuntimeInvalidOutboundError(
+        'PlatformException(config_check_failed, decode config: '
+        'outbounds[37].tls.reality.spider_x: json: unknown field "spider_x", '
+        'null, null)',
+      );
+
+      expect(parsed, isNotNull);
+      expect(parsed!.outboundIndex, 37);
+      expect(
+        parsed.reason,
+        'tls.reality.spider_x: json: unknown field "spider_x"',
+      );
+    });
+
     test('returns null for unrelated errors', () {
       final parsed = parseRuntimeInvalidOutboundError(
         'start or reload service: decode config: unexpected eof',

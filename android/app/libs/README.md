@@ -1,6 +1,6 @@
 # libbox binary
 
-Etonify 0.2.2 bundles
+Etonify 0.2.3 bundles
 [`yamixdev/etonify-core`](https://github.com/yamixdev/etonify-core/tree/etonify-dev)
 `v1.13.14-etonify.1`, based on the stable sing-box `v1.13.14` line. The AAR
 exposes Etonify's versioned capability

@@ -78,10 +78,14 @@ class CoreConfigMigration {
       );
       tunImplementation = fallback;
     }
-    if (isMixedProxyTag(selectedProxyTag) &&
-        !capabilities.supportsMixedRoutingOutbound) {
-      changes.add('selected_proxy_tag:$mixedProxyTag->$lowestProxyTag');
-      selectedProxyTag = lowestProxyTag;
+    final normalizedSelectedProxyTag = normalizeProxySelectionTag(
+      selectedProxyTag,
+    );
+    if (normalizedSelectedProxyTag != selectedProxyTag) {
+      changes.add(
+        'selected_proxy_tag:$selectedProxyTag->$normalizedSelectedProxyTag',
+      );
+      selectedProxyTag = normalizedSelectedProxyTag;
     }
 
     return CoreConfigMigrationResult(

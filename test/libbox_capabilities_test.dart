@@ -38,6 +38,7 @@ void main() {
           "url_test_completion_model": "rpc_completion",
           "supports_config_check": true,
           "supports_close_connections": true,
+          "supports_reality_spider_x": true,
           "tun_stacks": ["SYSTEM", "gvisor", "mixed", ""],
           "future_field": "ignored"
         }
@@ -64,6 +65,7 @@ void main() {
       );
       expect(capabilities.supportsConfigCheck, isTrue);
       expect(capabilities.supportsCloseConnections, isTrue);
+      expect(capabilities.supportsRealitySpiderX, isTrue);
       expect(capabilities.supportsTunStack('system'), isTrue);
       expect(capabilities.supportsTunStack(' GVISOR '), isTrue);
       expect(capabilities.supportsTunStack('mixed'), isTrue);
@@ -77,6 +79,7 @@ void main() {
       expect(capabilities.hasVersionedContract, isTrue);
       expect(capabilities.supportsTargetedUrlTest, isFalse);
       expect(capabilities.supportsConfigCheck, isFalse);
+      expect(capabilities.supportsRealitySpiderX, isFalse);
       expect(capabilities.tunStacks, isEmpty);
       expect(
         capabilities.urlTestCompletionModel,

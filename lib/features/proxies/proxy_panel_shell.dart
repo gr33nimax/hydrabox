@@ -1,7 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/physics.dart';
-import 'package:flutter/services.dart';
 import 'package:meow_client/widgets/progressive_blur_scaffold.dart';
 
 const proxyPanelMinHeight = 108.0;
@@ -11,16 +11,9 @@ const _proxyPanelHeaderHeight = 108.0;
 const _proxyPanelRowHeight = 66.0;
 const _proxyPanelContentBottomPadding = 60.0;
 const _proxyPanelStatusBarGap = 8.0;
-const _proxyPanelInertiaMinVelocity = 90.0;
-const _proxyPanelSettleCloseRatio = .857;
-const _proxyPanelCompactSettleCloseRatio = .64;
-const _proxyPanelMaxSpringVelocity = 5000.0;
-
-final SpringDescription _proxyPanelSpring = SpringDescription.withDampingRatio(
-  mass: 0.5,
-  stiffness: 100,
-  ratio: 1.1,
-);
+const _proxyPanelSettleVelocity = 320.0;
+const _proxyPanelOpenThreshold = .36;
+const _proxyPanelAnimationDuration = Duration(milliseconds: 260);
 
 @immutable
 class ProxyPanelMetrics {
@@ -149,27 +142,36 @@ class ProxyPanelShell extends StatefulWidget {
   State<ProxyPanelShell> createState() => _ProxyPanelShellState();
 }
 
-class _ProxyPanelShellState extends State<ProxyPanelShell>
-    with WidgetsBindingObserver, TickerProviderStateMixin {
-  final ScrollController _listController = ScrollController();
+class _ProxyPanelShellState extends State<ProxyPanelShell> {
+  final DraggableScrollableController _sheetController =
+      DraggableScrollableController();
   late final ValueNotifier<ProxyPanelMetrics> _metricsNotifier =
       ValueNotifier<ProxyPanelMetrics>(_fallbackMetrics);
-  AnimationController? _inertiaController;
-  bool _dragging = false;
-  int _dragDirection = 0;
-  double _height = proxyPanelMinHeight;
-  double _lastViewportHeight = proxyPanelMinHeight;
-  double _lastTopInset = 0;
-  double _lastBottomInset = 0;
-  bool _openForBack = false;
-  BuildContext? _routeContext;
-  ModalRoute<dynamic>? _route;
-  LocalHistoryEntry? _historyEntry;
-  bool _historyRemovalInProgress = false;
-  bool _backCloseInProgress = false;
-  bool _predictiveBackInProgress = false;
-  double _predictiveBackStartHeight = proxyPanelMinHeight;
-  double _predictiveBackMaxHeight = proxyPanelMinHeight;
+
+  ScrollController? _listController;
+  Timer? _interactionIdleTimer;
+  bool _interactionActive = false;
+  bool _animating = false;
+  int _animationGeneration = 0;
+  double _parentHeight = proxyPanelMinHeight;
+  double _viewportHeight = proxyPanelMinHeight;
+  double _topInset = 0;
+  double _bottomInset = 0;
+  double _minSize = 1;
+  double _maxSize = 1;
+  double _lastSize = 1;
+  bool _layoutReady = false;
+  int? _sheetPointer;
+  bool _rawSheetDragControlsExtent = false;
+  bool _rawSheetCanDirectionalSettle = false;
+  bool _rawSheetDragMoved = false;
+  bool _rawSheetOpenRequested = false;
+  double _rawSheetStartProgress = 0;
+  double _rawSheetTotalDeltaY = 0;
+  double _lastSheetDragDirection = 0;
+  bool _externalOpenRequested = false;
+  bool _externalPointerActive = false;
+  double _externalDragDeltaY = 0;
 
   static const ProxyPanelMetrics _fallbackMetrics = ProxyPanelMetrics(
     bottomInset: 0,
@@ -189,7 +191,7 @@ class _ProxyPanelShellState extends State<ProxyPanelShell>
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
+    _sheetController.addListener(_handleSheetExtentChanged);
   }
 
   @override
@@ -203,467 +205,181 @@ class _ProxyPanelShellState extends State<ProxyPanelShell>
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _removeHistoryEntry();
-    _routeContext = null;
-    _route = null;
-    _inertiaController?.dispose();
+    _interactionIdleTimer?.cancel();
+    _sheetController
+      ..removeListener(_handleSheetExtentChanged)
+      ..dispose();
     _metricsNotifier.dispose();
-    _listController.dispose();
     super.dispose();
   }
 
-  bool get _isClosed => _height <= proxyPanelMinHeight + 0.5;
+  bool get _isClosed =>
+      _metricsNotifier.value.progress <= .02 &&
+      !_metricsNotifier.value.animating;
 
-  void _setDragging(bool value) {
-    if (_dragging == value) {
+  void _handleSheetExtentChanged() {
+    if (!_sheetController.isAttached || !_layoutReady) {
       return;
     }
-    _dragging = value;
-    if (value && _isClosed) {
-      widget.onOpenRequested?.call();
-    }
-    widget.onInteractionActiveChanged?.call(value);
+    _lastSize = _sheetController.size.clamp(_minSize, _maxSize).toDouble();
+    _markInteractionActive();
+    _publishMetrics();
   }
 
-  @override
-  bool handleStartBackGesture(PredictiveBackEvent backEvent) {
-    if (backEvent.isButtonEvent || !mounted) {
-      return false;
+  void _markInteractionActive() {
+    _interactionIdleTimer?.cancel();
+    if (!_interactionActive) {
+      _interactionActive = true;
+      widget.onInteractionActiveChanged?.call(true);
+      _publishMetrics();
     }
-    final route = _route;
-    final routeContext = _routeContext;
-    if (route?.isCurrent != true || routeContext == null || !_openForBack) {
-      return false;
-    }
-    _ensureHistoryEntry();
-    _cancelInertia();
-    final viewportHeight = _layoutViewportHeight(routeContext);
-    final topInset = MediaQuery.paddingOf(routeContext).top;
-    final maxHeight = _maxHeight(viewportHeight, topInset: topInset);
-    _predictiveBackInProgress = true;
-    _predictiveBackStartHeight = _height
-        .clamp(proxyPanelMinHeight, maxHeight)
-        .toDouble();
-    _predictiveBackMaxHeight = maxHeight;
-    return true;
-  }
-
-  @override
-  void handleUpdateBackGestureProgress(PredictiveBackEvent backEvent) {
-    if (!_predictiveBackInProgress || !mounted) {
-      return;
-    }
-    final progress = backEvent.progress.clamp(0.0, 1.0).toDouble();
-    final nextHeight =
-        _predictiveBackStartHeight +
-        (proxyPanelMinHeight - _predictiveBackStartHeight) * progress;
-    _setDragging(true);
-    _dragDirection = -1;
-    _height = nextHeight
-        .clamp(proxyPanelMinHeight, _predictiveBackMaxHeight)
-        .toDouble();
-    _publishCurrentMetrics();
-  }
-
-  @override
-  void handleCancelBackGesture() {
-    if (!_predictiveBackInProgress || !mounted) {
-      return;
-    }
-    final target = _predictiveBackStartHeight;
-    final maxHeight = _predictiveBackMaxHeight;
-    _predictiveBackInProgress = false;
-    _animateTo(target: target, heightVelocity: 0, maxHeight: maxHeight);
-  }
-
-  @override
-  void handleCommitBackGesture() {
-    if (!_predictiveBackInProgress || !mounted) {
-      return;
-    }
-    final maxHeight = _predictiveBackMaxHeight;
-    _predictiveBackInProgress = false;
-    _backCloseInProgress = true;
-    _animateTo(
-      target: proxyPanelMinHeight,
-      heightVelocity: 0,
-      maxHeight: maxHeight,
-    );
-  }
-
-  void _drag(double deltaY, double viewportHeight, {double topInset = 0}) {
-    _cancelInertia();
-    if (viewportHeight <= 0) {
-      return;
-    }
-    final maxHeight = _maxHeight(viewportHeight, topInset: topInset);
-    if (maxHeight <= proxyPanelMinHeight + 0.5) {
-      return;
-    }
-    final nextDirection = deltaY < 0
-        ? 1
-        : deltaY > 0
-        ? -1
-        : _dragDirection;
-    final nextHeight = (_height - deltaY)
-        .clamp(proxyPanelMinHeight, maxHeight)
-        .toDouble();
-    if ((nextHeight - _height).abs() < 0.5 && nextDirection == _dragDirection) {
-      return;
-    }
-    _setDragging(true);
-    _dragDirection = nextDirection;
-    _height = nextHeight;
-    _publishCurrentMetrics();
-    if (nextHeight > proxyPanelMinHeight + 8) {
-      if (!_openForBack) {
-        setState(() {
-          _openForBack = true;
-        });
-      }
-      _ensureHistoryEntry();
-    }
-    if (nextHeight <= proxyPanelMinHeight + 0.5) {
-      if (_openForBack) {
-        setState(() {
-          _openForBack = false;
-        });
-      }
-      _resetListScroll();
+    if (!_animating) {
+      _scheduleInteractionIdle();
     }
   }
 
-  void _settle(
-    DragEndDetails details,
-    double viewportHeight, {
-    double topInset = 0,
-  }) {
-    _cancelInertia();
-    if (viewportHeight <= 0) {
-      return;
-    }
-    final maxHeight = _maxHeight(viewportHeight, topInset: topInset);
-    if (maxHeight <= proxyPanelMinHeight + 0.5) {
-      _setDragging(false);
-      _dragDirection = 0;
-      _height = proxyPanelMinHeight;
-      _publishCurrentMetrics();
-      _resetListScroll();
-      return;
-    }
-    final velocity = details.primaryVelocity ?? 0;
-    final opening =
-        velocity < -_proxyPanelInertiaMinVelocity ||
-        (velocity.abs() <= _proxyPanelInertiaMinVelocity && _dragDirection > 0);
-    if (opening) {
-      _animateTo(
-        target: maxHeight,
-        heightVelocity: velocity < 0 ? -velocity : 0,
-        maxHeight: maxHeight,
-      );
-      return;
-    }
-    if (velocity > _proxyPanelInertiaMinVelocity) {
-      _animateBallistic(
-        velocity: velocity,
-        viewportHeight: viewportHeight,
-        maxHeight: maxHeight,
-      );
-      return;
-    }
-    _finishSettle(viewportHeight: viewportHeight, maxHeight: maxHeight);
-  }
-
-  void _animateBallistic({
-    required double velocity,
-    required double viewportHeight,
-    required double maxHeight,
-  }) {
-    final startHeight = _height
-        .clamp(proxyPanelMinHeight, maxHeight)
-        .toDouble();
-    final closeThreshold = _closeThreshold(
-      viewportHeight: viewportHeight,
-      maxHeight: maxHeight,
-    );
-    final heightVelocity = (-velocity)
-        .clamp(-_proxyPanelMaxSpringVelocity, _proxyPanelMaxSpringVelocity)
-        .toDouble();
-    final projectedLowPoint = _projectedSpringLowPoint(
-      startHeight: startHeight,
-      targetHeight: maxHeight,
-      heightVelocity: heightVelocity,
-      maxHeight: maxHeight,
-    );
-    final target = projectedLowPoint <= closeThreshold
-        ? proxyPanelMinHeight
-        : maxHeight;
-    _animateTo(
-      target: target,
-      heightVelocity: heightVelocity,
-      maxHeight: maxHeight,
-    );
-  }
-
-  double _projectedSpringLowPoint({
-    required double startHeight,
-    required double targetHeight,
-    required double heightVelocity,
-    required double maxHeight,
-  }) {
-    if (heightVelocity >= 0) {
-      return startHeight;
-    }
-    final simulation = SpringSimulation(
-      _proxyPanelSpring,
-      startHeight,
-      targetHeight,
-      heightVelocity,
-    );
-    var lowPoint = startHeight;
-    var previousVelocity = heightVelocity;
-    for (var step = 1; step <= 120; step += 1) {
-      final time = step / 120;
-      final height = simulation
-          .x(time)
-          .clamp(proxyPanelMinHeight, maxHeight)
-          .toDouble();
-      if (height < lowPoint) {
-        lowPoint = height;
-      }
-      final velocity = simulation.dx(time);
-      if (previousVelocity < 0 && velocity >= 0) {
-        break;
-      }
-      if (simulation.isDone(time)) {
-        break;
-      }
-      previousVelocity = velocity;
-    }
-    return lowPoint;
-  }
-
-  void _animateTo({
-    required double target,
-    required double heightVelocity,
-    required double maxHeight,
-  }) {
-    _cancelInertia();
-    if (target > proxyPanelMinHeight + 8) {
-      _openForBack = true;
-      _ensureHistoryEntry();
-    }
-    final startHeight = _height
-        .clamp(proxyPanelMinHeight, maxHeight)
-        .toDouble();
-    if ((target - startHeight).abs() <= 0.5 &&
-        heightVelocity.abs() <= _proxyPanelInertiaMinVelocity) {
-      _setDragging(false);
-      _dragDirection = 0;
-      _height = target;
-      _publishCurrentMetrics();
-      _completeAnimationTarget(target);
-      return;
-    }
-    final controller = AnimationController.unbounded(
-      vsync: this,
-      value: startHeight,
-    );
-    _inertiaController = controller;
-    controller.addListener(() {
-      final nextHeight = controller.value
-          .clamp(proxyPanelMinHeight, maxHeight)
-          .toDouble();
-      _setDragging(true);
-      _dragDirection = target > startHeight ? 1 : -1;
-      _height = nextHeight;
-      _publishCurrentMetrics();
-    });
-    controller.addStatusListener((status) {
-      if (status != AnimationStatus.completed) {
+  void _scheduleInteractionIdle() {
+    _interactionIdleTimer?.cancel();
+    _interactionIdleTimer = Timer(const Duration(milliseconds: 140), () {
+      if (!mounted || _animating || !_interactionActive) {
         return;
       }
-      controller.dispose();
-      if (identical(_inertiaController, controller)) {
-        _inertiaController = null;
+      if (_sheetPointer != null || _externalPointerActive) {
+        _scheduleInteractionIdle();
+        return;
       }
-      _setDragging(false);
-      _dragDirection = 0;
-      _height = target;
-      _publishCurrentMetrics();
-      _completeAnimationTarget(target);
+      final progress = _currentMetrics().progress;
+      if (progress > .02 && progress < .985) {
+        final open = _lastSheetDragDirection < 0
+            ? true
+            : _lastSheetDragDirection > 0
+            ? false
+            : progress >= _proxyPanelOpenThreshold;
+        unawaited(_animateTo(open: open));
+        return;
+      }
+      _interactionActive = false;
+      _lastSheetDragDirection = 0;
+      widget.onInteractionActiveChanged?.call(false);
+      _publishMetrics();
     });
-    controller.animateWith(
-      SpringSimulation(_proxyPanelSpring, startHeight, target, heightVelocity),
-    );
   }
 
-  void _completeAnimationTarget(double target) {
-    if (target <= proxyPanelMinHeight + 0.5) {
-      _openForBack = false;
-      _backCloseInProgress = false;
-      _removeHistoryEntry();
-      _resetListScroll();
-    } else {
-      _backCloseInProgress = false;
-    }
-  }
-
-  void _finishSettle({
-    required double viewportHeight,
-    required double maxHeight,
-  }) {
-    final closeThreshold = _closeThreshold(
-      viewportHeight: viewportHeight,
-      maxHeight: maxHeight,
-    );
-    final target = _height <= closeThreshold ? proxyPanelMinHeight : maxHeight;
-    _animateTo(target: target, heightVelocity: 0, maxHeight: maxHeight);
-  }
-
-  double _closeThreshold({
-    required double viewportHeight,
-    required double maxHeight,
-  }) {
-    final viewportThreshold = viewportHeight * _proxyPanelSettleCloseRatio;
-    if (maxHeight > viewportThreshold) {
-      return viewportThreshold;
-    }
-    return proxyPanelMinHeight +
-        (maxHeight - proxyPanelMinHeight) * _proxyPanelCompactSettleCloseRatio;
-  }
-
-  void _cancelInertia() {
-    final controller = _inertiaController;
-    if (controller == null) {
+  void _handlePointerDown(PointerDownEvent event) {
+    if (_sheetPointer != null) {
       return;
     }
-    final currentHeight = controller.value
-        .clamp(proxyPanelMinHeight, double.infinity)
-        .toDouble();
-    final currentDirection = controller.velocity > 0
-        ? 1
-        : controller.velocity < 0
-        ? -1
-        : _dragDirection;
-    _inertiaController = null;
-    controller.stop();
-    controller.dispose();
-    if (!mounted) {
-      return;
-    }
-    _setDragging(true);
-    _dragDirection = currentDirection;
-    _height = currentHeight;
-    _publishCurrentMetrics();
+    _sheetPointer = event.pointer;
+    _rawSheetDragMoved = false;
+    _rawSheetOpenRequested = false;
+    _rawSheetTotalDeltaY = 0;
+    final progress = _currentMetrics().progress;
+    _rawSheetStartProgress = progress;
+    _rawSheetDragControlsExtent =
+        progress <= .22 || event.localPosition.dy <= _proxyPanelHeaderHeight;
+    _rawSheetCanDirectionalSettle =
+        _rawSheetDragControlsExtent || (progress >= .985 && _listIsAtTop);
+    _markInteractionActive();
   }
 
-  void _toggle(double viewportHeight, {double topInset = 0}) {
-    _cancelInertia();
-    if (viewportHeight <= 0) {
+  void _handlePointerMove(PointerMoveEvent event) {
+    if (event.pointer != _sheetPointer) {
       return;
     }
-    final maxHeight = _maxHeight(viewportHeight, topInset: topInset);
-    if (maxHeight <= proxyPanelMinHeight + 0.5) {
+    final deltaY = event.delta.dy;
+    if (deltaY.abs() < 0.01) {
       return;
     }
-    final target = _height <= proxyPanelMinHeight + 8
-        ? maxHeight
-        : proxyPanelMinHeight;
-    if (target > proxyPanelMinHeight + 0.5) {
+    _rawSheetTotalDeltaY += deltaY;
+    _lastSheetDragDirection = deltaY.sign;
+    _rawSheetDragMoved = _rawSheetTotalDeltaY.abs() >= 2;
+    if (!_rawSheetDragControlsExtent ||
+        !_layoutReady ||
+        !_sheetController.isAttached ||
+        _parentHeight <= 0) {
+      return;
+    }
+    if (!_rawSheetOpenRequested && deltaY < 0 && _isClosed) {
+      _rawSheetOpenRequested = true;
       widget.onOpenRequested?.call();
     }
-    _animateTo(target: target, heightVelocity: 0, maxHeight: maxHeight);
+    _markInteractionActive();
+    final target = (_sheetController.size - deltaY / _parentHeight)
+        .clamp(_minSize, _maxSize)
+        .toDouble();
+    _sheetController.jumpTo(target);
   }
 
-  void _ensureHistoryEntry() {
-    if (_historyEntry != null || !mounted) {
+  void _handlePointerEnd(PointerEvent event) {
+    if (event.pointer != _sheetPointer) {
       return;
     }
-    final route = _route;
-    if (route == null) {
+    final totalDeltaY = _rawSheetTotalDeltaY;
+    final extentChanged =
+        (_currentMetrics().progress - _rawSheetStartProgress).abs() >= .015;
+    final directionalSettle =
+        (_rawSheetCanDirectionalSettle || extentChanged) &&
+        totalDeltaY.abs() >= 12;
+    final shouldSettle =
+        _rawSheetDragMoved &&
+        _layoutReady &&
+        (directionalSettle || _rawSheetDragControlsExtent);
+    _sheetPointer = null;
+    _rawSheetDragControlsExtent = false;
+    _rawSheetCanDirectionalSettle = false;
+    _rawSheetDragMoved = false;
+    _rawSheetOpenRequested = false;
+    _rawSheetStartProgress = 0;
+    _rawSheetTotalDeltaY = 0;
+    if (shouldSettle) {
+      _settleAfterPointer(
+        open: directionalSettle
+            ? totalDeltaY < 0
+            : _currentMetrics().progress >= _proxyPanelOpenThreshold,
+      );
       return;
     }
-    late final LocalHistoryEntry entry;
-    entry = LocalHistoryEntry(
-      onRemove: () {
-        if (identical(_historyEntry, entry)) {
-          _historyEntry = null;
-        }
-        if (_historyRemovalInProgress || !mounted) {
-          return;
-        }
-        final routeContext = _routeContext;
-        if (routeContext == null) {
-          return;
-        }
-        final viewportHeight = _layoutViewportHeight(routeContext);
-        final topInset = MediaQuery.paddingOf(routeContext).top;
-        final maxHeight = _maxHeight(viewportHeight, topInset: topInset);
-        _backCloseInProgress = true;
-        _animateTo(
-          target: proxyPanelMinHeight,
-          heightVelocity: 0,
-          maxHeight: maxHeight,
-        );
-      },
-    );
-    _historyEntry = entry;
-    route.addLocalHistoryEntry(entry);
+    _scheduleInteractionIdle();
   }
 
-  void _removeHistoryEntry() {
-    final entry = _historyEntry;
-    if (entry == null) {
-      return;
+  bool get _listIsAtTop {
+    final controller = _listController;
+    if (controller == null || !controller.hasClients) {
+      return true;
     }
-    _historyEntry = null;
-    _historyRemovalInProgress = true;
-    entry.remove();
-    _historyRemovalInProgress = false;
-  }
-
-  void _closeFromBack() {
-    final routeContext = _routeContext;
-    if (routeContext == null) {
-      return;
-    }
-    final viewportHeight = _layoutViewportHeight(routeContext);
-    final topInset = MediaQuery.paddingOf(routeContext).top;
-    final maxHeight = _maxHeight(viewportHeight, topInset: topInset);
-    _backCloseInProgress = true;
-    _animateTo(
-      target: proxyPanelMinHeight,
-      heightVelocity: 0,
-      maxHeight: maxHeight,
+    return controller.positions.every(
+      (position) => position.pixels <= position.minScrollExtent + 0.5,
     );
   }
 
-  void _scheduleHistorySync(bool panelOpen) {
+  void _settleAfterPointer({required bool open}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
-        return;
-      }
-      if (panelOpen) {
-        if (!_backCloseInProgress) {
-          _ensureHistoryEntry();
-        }
-      } else if (_historyEntry != null) {
-        _removeHistoryEntry();
+      if (mounted) {
+        unawaited(_animateTo(open: open));
       }
     });
   }
 
   void _resetListScroll() {
-    if (!_listController.hasClients) {
+    final controller = _listController;
+    if (controller == null || !controller.hasClients) {
       return;
     }
-    for (final position in _listController.positions) {
+    for (final position in controller.positions) {
       if ((position.pixels - position.minScrollExtent).abs() > 0.5) {
         position.jumpTo(position.minScrollExtent);
       }
     }
+  }
+
+  double _viewportLimit(double viewportHeight, {double topInset = 0}) {
+    if (viewportHeight <= proxyPanelMinHeight) {
+      return proxyPanelMinHeight;
+    }
+    final topReserve = (topInset + _proxyPanelStatusBarGap)
+        .clamp(0.0, viewportHeight - proxyPanelMinHeight)
+        .toDouble();
+    return viewportHeight - topReserve;
   }
 
   double _maxHeight(double viewportHeight, {double topInset = 0}) {
@@ -688,48 +404,107 @@ class _ProxyPanelShellState extends State<ProxyPanelShell>
     return maxForContent >= viewportLimit * .88 ? viewportLimit : maxForContent;
   }
 
-  double _viewportLimit(double viewportHeight, {double topInset = 0}) {
-    if (viewportHeight <= proxyPanelMinHeight) {
-      return proxyPanelMinHeight;
-    }
-    final topReserve = (topInset + _proxyPanelStatusBarGap)
-        .clamp(0.0, viewportHeight - proxyPanelMinHeight)
-        .toDouble();
-    return viewportHeight - topReserve;
-  }
-
-  double _layoutViewportHeight(BuildContext context) {
-    final size = MediaQuery.sizeOf(context).height;
-    final bottomInset = appSystemNavigationBarInset(context);
-    return (size - bottomInset)
+  void _updateLayout(BuildContext context, BoxConstraints constraints) {
+    final mediaSize = MediaQuery.sizeOf(context);
+    final nextParentHeight = constraints.maxHeight.isFinite
+        ? constraints.maxHeight
+        : mediaSize.height;
+    final nextBottomInset = appSystemNavigationBarInset(
+      context,
+    ).clamp(0.0, nextParentHeight - proxyPanelMinHeight).toDouble();
+    final nextViewportHeight = (nextParentHeight - nextBottomInset)
         .clamp(proxyPanelMinHeight, double.infinity)
         .toDouble();
+    final nextTopInset = MediaQuery.paddingOf(context).top;
+    final nextMaxHeight = _maxHeight(
+      nextViewportHeight,
+      topInset: nextTopInset,
+    );
+    final nextMinTotalHeight = (proxyPanelMinHeight + nextBottomInset)
+        .clamp(0.0, nextParentHeight)
+        .toDouble();
+    final nextMaxTotalHeight = (nextMaxHeight + nextBottomInset)
+        .clamp(nextMinTotalHeight, nextParentHeight)
+        .toDouble();
+    final nextMinSize = nextParentHeight <= 0
+        ? 1.0
+        : nextMinTotalHeight / nextParentHeight;
+    final nextMaxSize = nextParentHeight <= 0
+        ? 1.0
+        : nextMaxTotalHeight / nextParentHeight;
+
+    final layoutChanged =
+        !_layoutReady ||
+        (nextParentHeight - _parentHeight).abs() > 0.5 ||
+        (nextViewportHeight - _viewportHeight).abs() > 0.5 ||
+        (nextTopInset - _topInset).abs() > 0.5 ||
+        (nextBottomInset - _bottomInset).abs() > 0.5 ||
+        (nextMinSize - _minSize).abs() > 0.0001 ||
+        (nextMaxSize - _maxSize).abs() > 0.0001;
+    if (!layoutChanged) {
+      return;
+    }
+
+    final previousProgress = _layoutReady
+        ? _normalizedProgress(_currentSize())
+        : 0.0;
+    _parentHeight = nextParentHeight;
+    _viewportHeight = nextViewportHeight;
+    _topInset = nextTopInset;
+    _bottomInset = nextBottomInset;
+    _minSize = nextMinSize;
+    _maxSize = nextMaxSize;
+    _lastSize = _minSize + (_maxSize - _minSize) * previousProgress;
+    _layoutReady = true;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      if (_sheetController.isAttached) {
+        final current = _sheetController.size;
+        final target = current.clamp(_minSize, _maxSize).toDouble();
+        if ((target - current).abs() > 0.0001) {
+          _sheetController.jumpTo(target);
+        }
+        _lastSize = target;
+      }
+      _publishMetrics();
+    });
   }
 
-  ProxyPanelMetrics _metricsForCurrentLayout() {
-    final maxPanelHeight = _maxHeight(
-      _lastViewportHeight,
-      topInset: _lastTopInset,
-    );
-    final viewportLimit = _viewportLimit(
-      _lastViewportHeight,
-      topInset: _lastTopInset,
-    );
-    final panelHeight = _height
+  double _currentSize() {
+    if (_sheetController.isAttached) {
+      return _sheetController.size.clamp(_minSize, _maxSize).toDouble();
+    }
+    return _lastSize.clamp(_minSize, _maxSize).toDouble();
+  }
+
+  double _normalizedProgress(double size) {
+    final range = _maxSize - _minSize;
+    if (range <= 0.0001) {
+      return 0;
+    }
+    return ((size - _minSize) / range).clamp(0.0, 1.0).toDouble();
+  }
+
+  ProxyPanelMetrics _currentMetrics() {
+    if (!_layoutReady) {
+      return _fallbackMetrics;
+    }
+    final maxPanelHeight = _maxHeight(_viewportHeight, topInset: _topInset);
+    final viewportLimit = _viewportLimit(_viewportHeight, topInset: _topInset);
+    final size = _currentSize();
+    final totalHeight = size * _parentHeight;
+    final panelHeight = (totalHeight - _bottomInset)
         .clamp(proxyPanelMinHeight, maxPanelHeight)
         .toDouble();
-    final progressDenominator = maxPanelHeight - proxyPanelMinHeight;
-    final progress = progressDenominator <= 0
-        ? 0.0
-        : ((panelHeight - proxyPanelMinHeight) / progressDenominator)
-              .clamp(0.0, 1.0)
-              .toDouble();
-    final animating = _inertiaController != null;
+    final progress = _normalizedProgress(size);
     return ProxyPanelMetrics(
-      bottomInset: _lastBottomInset,
+      bottomInset: _bottomInset,
       panelHeight: panelHeight,
       maxPanelHeight: maxPanelHeight,
-      viewportHeight: _lastViewportHeight,
+      viewportHeight: _viewportHeight,
       viewportLimit: viewportLimit,
       progress: progress,
       backdropProgress: Curves.easeOutCubic.transform(progress),
@@ -737,60 +512,130 @@ class _ProxyPanelShellState extends State<ProxyPanelShell>
       canFillScreen: maxPanelHeight >= viewportLimit - 0.5,
       collapseOnAnyDownwardDrag:
           maxPanelHeight < viewportLimit - 0.5 || widget.visibleRows <= 3,
-      dragging: _dragging,
-      animating: animating,
+      dragging: _interactionActive,
+      animating: _animating,
     );
   }
 
-  void _publishCurrentMetrics() {
-    _metricsNotifier.value = _metricsForCurrentLayout();
+  void _publishMetrics() {
+    final metrics = _currentMetrics();
+    if (_metricsNotifier.value != metrics) {
+      _metricsNotifier.value = metrics;
+    }
+  }
+
+  Future<void> _animateTo({
+    required bool open,
+    bool retryIfDetached = true,
+  }) async {
+    if (!_layoutReady) {
+      return;
+    }
+    if (!_sheetController.isAttached) {
+      if (retryIfDetached) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            unawaited(_animateTo(open: open, retryIfDetached: false));
+          }
+        });
+      }
+      return;
+    }
+    if (open) {
+      widget.onOpenRequested?.call();
+    }
+    final target = open ? _maxSize : _minSize;
+    final current = _currentSize();
+    if ((target - current).abs() <= 0.0001) {
+      if (!open) {
+        _resetListScroll();
+      }
+      return;
+    }
+
+    final generation = ++_animationGeneration;
+    _interactionIdleTimer?.cancel();
+    _animating = true;
+    _markInteractionActive();
+    _publishMetrics();
+    try {
+      await _sheetController.animateTo(
+        target,
+        duration: _proxyPanelAnimationDuration,
+        curve: Curves.easeOutCubic,
+      );
+    } catch (_) {
+      // The sheet can detach while the app route or onboarding state changes.
+    } finally {
+      if (mounted && generation == _animationGeneration) {
+        _animating = false;
+        if (_sheetController.isAttached) {
+          _lastSize = _sheetController.size
+              .clamp(_minSize, _maxSize)
+              .toDouble();
+        }
+        if (!open) {
+          _resetListScroll();
+        }
+        final progress = _currentMetrics().progress;
+        if (progress <= .02 || progress >= .985) {
+          _lastSheetDragDirection = 0;
+        }
+        _publishMetrics();
+        _scheduleInteractionIdle();
+      }
+    }
+  }
+
+  void _handleHeaderDragUpdate(DragUpdateDetails details) {
+    if (!_layoutReady || !_sheetController.isAttached || _parentHeight <= 0) {
+      return;
+    }
+    if (_isClosed && !_externalOpenRequested) {
+      _externalOpenRequested = true;
+      widget.onOpenRequested?.call();
+    }
+    _markInteractionActive();
+    final deltaY = details.primaryDelta ?? details.delta.dy;
+    _externalDragDeltaY += deltaY;
+    _lastSheetDragDirection = deltaY.sign;
+    final target = (_sheetController.size - deltaY / _parentHeight)
+        .clamp(_minSize, _maxSize)
+        .toDouble();
+    _sheetController.jumpTo(target);
+  }
+
+  void _handleHeaderDragEnd(DragEndDetails details) {
+    _externalPointerActive = false;
+    _externalOpenRequested = false;
+    final totalDeltaY = _externalDragDeltaY;
+    _externalDragDeltaY = 0;
+    final velocity = details.primaryVelocity ?? 0;
+    final progress = _currentMetrics().progress;
+    final open = totalDeltaY.abs() >= 12
+        ? totalDeltaY < 0
+        : velocity < -_proxyPanelSettleVelocity
+        ? true
+        : velocity > _proxyPanelSettleVelocity
+        ? false
+        : progress >= _proxyPanelOpenThreshold;
+    _settleAfterPointer(open: open);
+  }
+
+  void _toggle() {
+    unawaited(_animateTo(open: _currentMetrics().progress <= .02));
   }
 
   @override
   Widget build(BuildContext context) {
-    _routeContext = context;
-    _route = ModalRoute.of(context);
-    _lastViewportHeight = _layoutViewportHeight(context);
-    _lastTopInset = MediaQuery.paddingOf(context).top;
-    _lastBottomInset = appSystemNavigationBarInset(context);
-    final metrics = _metricsForCurrentLayout();
-    if (_metricsNotifier.value != metrics) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _metricsNotifier.value = metrics;
-        }
-      });
-    }
-    final openForBack =
-        metrics.panelHeight > proxyPanelMinHeight + 8 || metrics.animating;
-    if (openForBack != (_historyEntry != null)) {
-      _scheduleHistorySync(openForBack);
-    }
-    final gestures = ProxyPanelGestures(
-      onInteractionStart: _cancelInertia,
-      onDragUpdate: (details) {
-        _drag(details.delta.dy, _lastViewportHeight, topInset: _lastTopInset);
-      },
-      onDragEnd: (details) {
-        _settle(details, _lastViewportHeight, topInset: _lastTopInset);
-      },
-      onHeaderTap: () => _toggle(_lastViewportHeight, topInset: _lastTopInset),
-    );
-
     final rootChild = !widget.ready
         ? widget.loading
         : !widget.onboardingCompleted
         ? widget.welcome
-        : _buildShell(context, metrics, gestures);
+        : _buildShell(context);
 
-    return PopScope(
-      canPop: !_openForBack,
-      onPopInvokedWithResult: (didPop, _) {
-        if (didPop || !_openForBack) {
-          return;
-        }
-        _closeFromBack();
-      },
+    return ValueListenableBuilder<ProxyPanelMetrics>(
+      valueListenable: _metricsNotifier,
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 360),
         switchInCurve: Curves.easeOutCubic,
@@ -809,84 +654,110 @@ class _ProxyPanelShellState extends State<ProxyPanelShell>
         },
         child: rootChild,
       ),
+      builder: (context, metrics, child) {
+        final panelOpen = metrics.progress > .02 || metrics.animating;
+        return PopScope(
+          canPop: !panelOpen,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop && panelOpen) {
+              unawaited(_animateTo(open: false));
+            }
+          },
+          child: child!,
+        );
+      },
     );
   }
 
-  Widget _buildShell(
-    BuildContext context,
-    ProxyPanelMetrics metrics,
-    ProxyPanelGestures gestures,
-  ) {
+  Widget _buildShell(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
       key: const ValueKey('shell'),
       extendBody: true,
-      body: Stack(
-        children: [
-          RepaintBoundary(
-            child: widget.homeBuilder(context, metrics, gestures),
-          ),
-          ValueListenableBuilder<ProxyPanelMetrics>(
-            valueListenable: _metricsNotifier,
-            builder: (context, metrics, _) {
-              return IgnorePointer(
-                ignoring: metrics.progress <= .02 && !metrics.animating,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onPanDown: (_) => _cancelInertia(),
-                  onVerticalDragStart: (_) => _cancelInertia(),
-                  onVerticalDragUpdate: gestures.onDragUpdate,
-                  onVerticalDragEnd: gestures.onDragEnd,
-                  onTap: () {
-                    if (metrics.progress <= .02 && !metrics.animating) {
-                      return;
-                    }
-                    _animateTo(
-                      target: proxyPanelMinHeight,
-                      heightVelocity: 0,
-                      maxHeight: metrics.maxPanelHeight,
-                    );
-                  },
-                  child: ColoredBox(
-                    color: Colors.black.withValues(
-                      alpha:
-                          metrics.backdropProgress *
-                          (theme.brightness == Brightness.dark ? .22 : .16),
-                    ),
-                    child: const SizedBox.expand(),
-                  ),
-                ),
-              );
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          _updateLayout(context, constraints);
+          final metrics = _currentMetrics();
+          if (_metricsNotifier.value != metrics) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                _publishMetrics();
+              }
+            });
+          }
+          final gestures = ProxyPanelGestures(
+            onInteractionStart: () {
+              _externalPointerActive = true;
+              _externalOpenRequested = false;
+              _externalDragDeltaY = 0;
+              _markInteractionActive();
             },
-          ),
-          ValueListenableBuilder<ProxyPanelMetrics>(
-            valueListenable: _metricsNotifier,
-            child: RepaintBoundary(
-              child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(proxyPanelScreenCornerRadius),
-                ),
-                clipBehavior: Clip.hardEdge,
-                child: widget.sheetBuilder(
-                  context,
-                  metrics,
-                  _metricsNotifier,
-                  _listController,
-                  gestures,
-                ),
+            onDragUpdate: _handleHeaderDragUpdate,
+            onDragEnd: _handleHeaderDragEnd,
+            onHeaderTap: _toggle,
+          );
+
+          return Stack(
+            children: [
+              RepaintBoundary(
+                child: widget.homeBuilder(context, metrics, gestures),
               ),
-            ),
-            builder: (context, metrics, child) {
-              return Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                height: metrics.panelHeight + metrics.bottomInset,
-                child: child!,
-              );
-            },
-          ),
-        ],
+              ValueListenableBuilder<ProxyPanelMetrics>(
+                valueListenable: _metricsNotifier,
+                builder: (context, liveMetrics, _) {
+                  final visible =
+                      liveMetrics.progress > .02 || liveMetrics.animating;
+                  return IgnorePointer(
+                    ignoring: !visible,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => unawaited(_animateTo(open: false)),
+                      child: ColoredBox(
+                        color: Colors.black.withValues(
+                          alpha:
+                              liveMetrics.backdropProgress *
+                              (theme.brightness == Brightness.dark ? .22 : .16),
+                        ),
+                        child: const SizedBox.expand(),
+                      ),
+                    ),
+                  );
+                },
+              ),
+              DraggableScrollableSheet(
+                controller: _sheetController,
+                initialChildSize: _minSize,
+                minChildSize: _minSize,
+                maxChildSize: _maxSize,
+                snap: false,
+                shouldCloseOnMinExtent: false,
+                builder: (context, scrollController) {
+                  _listController = scrollController;
+                  return Listener(
+                    behavior: HitTestBehavior.translucent,
+                    onPointerDown: _handlePointerDown,
+                    onPointerMove: _handlePointerMove,
+                    onPointerUp: _handlePointerEnd,
+                    onPointerCancel: _handlePointerEnd,
+                    child: ClipRRect(
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(proxyPanelScreenCornerRadius),
+                      ),
+                      clipBehavior: Clip.hardEdge,
+                      child: widget.sheetBuilder(
+                        context,
+                        metrics,
+                        _metricsNotifier,
+                        scrollController,
+                        gestures,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
+          );
+        },
       ),
     );
   }

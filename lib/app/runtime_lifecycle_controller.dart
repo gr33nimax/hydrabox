@@ -440,8 +440,7 @@ class RuntimeLifecycleController {
   }) async {
     try {
       logCall('stop', 'reason=$reason before runtime restart useVpn=$useVpn');
-      await _runtime.stop(reason: reason).timeout(stopTimeout);
-      final stopConfirmed = await _waitForStoppedRuntime();
+      final stopConfirmed = await stopRuntime(reason: reason);
       if (!stopConfirmed) {
         AppLogStore.error(
           'runtime',
@@ -482,6 +481,27 @@ class RuntimeLifecycleController {
         error: error.toString(),
       );
     }
+  }
+
+  Future<bool> stopRuntime({required String reason}) async {
+    cancelStartWatchdog();
+    try {
+      await _runtime.stop(reason: reason).timeout(stopTimeout);
+    } catch (error, stackTrace) {
+      AppLogStore.warning(
+        'runtime',
+        'native runtime stop call failed reason=$reason error=$error\n'
+            '$stackTrace',
+      );
+    }
+    final stopped = await _waitForStoppedRuntime();
+    if (!stopped) {
+      AppLogStore.error(
+        'runtime',
+        'native runtime stop was not confirmed reason=$reason',
+      );
+    }
+    return stopped;
   }
 
   Future<bool> _waitForStoppedRuntime() async {

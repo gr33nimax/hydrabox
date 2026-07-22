@@ -67,21 +67,27 @@ void main() {
     expect(result.changes, <String>['vpn_tun_implementation:mixed->gvisor']);
   });
 
-  test('unsupported mixed routing selection migrates to lowest', () {
-    final original = _loadVersion021Fixture(
-      store,
-    ).copyWith(selectedProxyTag: mixedProxyTag);
-    final result = CoreConfigMigration.plan(
-      state: original,
-      capabilities: _versionedCapabilities(
-        tunStacks: const <String>{'system', 'gvisor', 'mixed'},
-      ),
-    );
+  for (final legacyTag in const <String>[
+    mixedProxyTag,
+    lowestOpenProxyTag,
+    lowestFreeProxyTag,
+  ]) {
+    test('legacy $legacyTag selection migrates to lowest', () {
+      final original = _loadVersion021Fixture(
+        store,
+      ).copyWith(selectedProxyTag: legacyTag);
+      final result = CoreConfigMigration.plan(
+        state: original,
+        capabilities: _versionedCapabilities(
+          tunStacks: const <String>{'system', 'gvisor', 'mixed'},
+        ),
+      );
 
-    expect(result.status, CoreConfigMigrationStatus.readyForValidation);
-    expect(result.state.selectedProxyTag, lowestProxyTag);
-    expect(result.changes, contains('selected_proxy_tag:mixed->lowest'));
-  });
+      expect(result.status, CoreConfigMigrationStatus.readyForValidation);
+      expect(result.state.selectedProxyTag, lowestProxyTag);
+      expect(result.changes, contains('selected_proxy_tag:$legacyTag->lowest'));
+    });
+  }
 
   test('schema marker is local-only and survives storage round trips', () {
     final original = _loadVersion021Fixture(
@@ -122,6 +128,7 @@ LibboxCapabilities _versionedCapabilities({required Set<String> tunStacks}) {
     urlTestCompletionModel: UrlTestCompletionModel.groupEvents,
     supportsConfigCheck: true,
     supportsCloseConnections: true,
+    supportsRealitySpiderX: false,
     tunStacks: tunStacks,
   );
 }

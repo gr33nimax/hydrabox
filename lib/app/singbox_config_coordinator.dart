@@ -196,8 +196,24 @@ class SingboxConfigCoordinator {
   Timer? _fullServiceRestartDebounceTimer;
 
   void dispose() {
+    _runtimeConfigApplyGeneration++;
+    _singboxConfigBuildGeneration++;
     _fullServiceRestartDebounceTimer?.cancel();
     _fullServiceRestartDebounceTimer = null;
+  }
+
+  /// Invalidates config work that has not reached the native runtime yet.
+  ///
+  /// The worker isolate itself cannot be interrupted, but its result is
+  /// discarded as soon as it returns. Runtime apply jobs use a separate
+  /// generation so a queued settings update cannot restart a VPN after the
+  /// user explicitly pressed stop.
+  void cancelPendingWork({required String reason}) {
+    _singboxConfigBuildGeneration++;
+    _runtimeConfigApplyGeneration++;
+    _fullServiceRestartDebounceTimer?.cancel();
+    _fullServiceRestartDebounceTimer = null;
+    AppLogStore.info('runtime', 'pending config work cancelled: $reason');
   }
 
   void emitCurrentConfigLog(
@@ -247,10 +263,32 @@ class SingboxConfigCoordinator {
     if (applyToRuntime && _isMounted()) {
       _setPhase(SingboxConfigCoordinatorPhase.reconfiguring);
     }
-    final build = await buildCurrentSingboxConfigInBackground(
-      prepareConfig: applyToRuntime,
-      returnConfig: applyToRuntime,
-    );
+    final SingboxConfigBuildResult? build;
+    try {
+      build = await buildCurrentSingboxConfigInBackground(
+        prepareConfig: applyToRuntime,
+        returnConfig: applyToRuntime,
+      );
+    } catch (error, stackTrace) {
+      AppLogStore.error(
+        'sing-box config',
+        'Failed to build or validate config reason=$reason: $error\n'
+            '$stackTrace',
+      );
+      if (applyToRuntime && _isMounted() && _isCurrentApply(generation)) {
+        // The old native runtime is still alive because configuration is
+        // validated before it is promoted. Keep the UI attached to it.
+        final status = await _runtimeStatusSnapshot(
+          reason: 'config_emit_failed',
+        );
+        _setPhase(
+          status['running'] == true
+              ? SingboxConfigCoordinatorPhase.connected
+              : SingboxConfigCoordinatorPhase.failed,
+        );
+      }
+      return;
+    }
     if (build == null) {
       if (applyToRuntime && _isMounted() && _isCurrentApply(generation)) {
         _setPhase(SingboxConfigCoordinatorPhase.connected);
@@ -408,6 +446,7 @@ class SingboxConfigCoordinator {
     bool dropStale = true,
     bool prepareConfig = true,
     bool returnConfig = false,
+    bool validateConfig = true,
   }) async {
     if (!await _ensureActiveSubscriptionHydrated()) {
       return null;
@@ -425,12 +464,15 @@ class SingboxConfigCoordinator {
         : '$configPath.pending.$generation';
     final input = _currentSingboxConfigBuildInput(
       outputConfigPath: stagedConfigPath,
-      returnConfig: returnConfig || (prepareConfig && configPath == null),
+      // A validation-only build has no file to read back. Always return JSON
+      // in that mode so checkConfig/logging cannot fail with an artificial
+      // "Generated config is unavailable" error.
+      returnConfig: returnConfig || stagedConfigPath == null,
     );
     late final SingboxConfigBuildResult result;
     try {
       result = await buildSingboxConfigInBackground(input);
-      if (input.capabilities.supportsConfigCheck) {
+      if (validateConfig && input.capabilities.supportsConfigCheck) {
         await SingboxRuntime.instance.checkConfig(
           await _configContentForValidation(result),
         );
@@ -489,6 +531,7 @@ class SingboxConfigCoordinator {
   Future<void> logCurrentSingboxConfig(String reason) async {
     final build = await buildCurrentSingboxConfigInBackground(
       prepareConfig: false,
+      returnConfig: true,
     );
     if (build == null) {
       return;

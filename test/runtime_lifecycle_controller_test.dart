@@ -214,6 +214,27 @@ void main() {
       expect(runtime.startPreparedCalls, 0);
     },
   );
+
+  test(
+    'explicit stop waits until service and runtime ownership are gone',
+    () async {
+      final runtime = _FakeRuntime();
+      final controller = RuntimeLifecycleController(
+        runtime: runtime,
+        stopSettleDelay: Duration.zero,
+      );
+      addTearDown(controller.dispose);
+
+      final stopped = await controller.stopRuntime(reason: 'profile_switch');
+
+      expect(stopped, isTrue);
+      expect(runtime.stopCalls, 1);
+      expect(runtime.statusCalls, greaterThanOrEqualTo(1));
+      expect(runtime.running, isFalse);
+      expect(runtime.recordedServiceAlive, isFalse);
+      expect(runtime.activeRuntimeOwner, isFalse);
+    },
+  );
 }
 
 SingboxConfigBuildResult _build() {

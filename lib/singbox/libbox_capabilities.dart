@@ -22,6 +22,7 @@ class LibboxCapabilities {
     required this.urlTestCompletionModel,
     required this.supportsConfigCheck,
     required this.supportsCloseConnections,
+    required this.supportsRealitySpiderX,
     required this.tunStacks,
   });
 
@@ -43,6 +44,8 @@ class LibboxCapabilities {
     urlTestCompletionModel: UrlTestCompletionModel.groupEvents,
     supportsConfigCheck: false,
     supportsCloseConnections: false,
+    // The unversioned libbox bundled with Etonify 0.2.1 accepted spider_x.
+    supportsRealitySpiderX: true,
     tunStacks: <String>{'system', 'gvisor', 'mixed'},
   );
 
@@ -106,6 +109,7 @@ class LibboxCapabilities {
         urlTestCompletionModel: completionModel,
         supportsConfigCheck: _readBool(json, 'supports_config_check'),
         supportsCloseConnections: _readBool(json, 'supports_close_connections'),
+        supportsRealitySpiderX: _readBool(json, 'supports_reality_spider_x'),
         tunStacks: _readStringSet(json, 'tun_stacks'),
       );
     } on FormatException {
@@ -156,6 +160,7 @@ class LibboxCapabilities {
   final UrlTestCompletionModel urlTestCompletionModel;
   final bool supportsConfigCheck;
   final bool supportsCloseConnections;
+  final bool supportsRealitySpiderX;
   final Set<String> tunStacks;
 
   bool get hasVersionedContract => apiVersion > 0;

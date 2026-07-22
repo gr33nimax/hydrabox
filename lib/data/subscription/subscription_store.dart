@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
@@ -42,7 +43,7 @@ class SubscriptionStore {
   static const _legacyPayloadBoxName = 'subscription_payloads';
   static const _legacySummaryBoxName = 'subscription_summaries';
   static const _storageSchemaVersionKey = '__etonify_storage_schema_version__';
-  static const _storageSchemaVersion = 1;
+  static const _storageSchemaVersion = 2;
   static const _localFileImportScheme = 'meow-file';
   static Box? _metaBox;
   static Box? _payloadBox;
@@ -114,6 +115,7 @@ class SubscriptionStore {
     await _migratePlaintextBox(_legacyMetaBoxName, _metaStore);
     await _migratePlaintextBox(_legacyPayloadBoxName, _payloadStore);
     await _migrateLegacyData();
+    await _compressStoredPayloads();
     await _cleanupLegacySummaryBox();
     await _metaStore.put(_storageSchemaVersionKey, _storageSchemaVersion);
     await _metaStore.flush();
@@ -162,6 +164,46 @@ class SubscriptionStore {
       'SubscriptionStore.init() must be called first',
     );
     return _payloadBox!;
+  }
+
+  static Future<void> _compressStoredPayloads() async {
+    final rawPayloads = <dynamic, String>{};
+    for (final key in _payloadStore.keys) {
+      final raw = _payloadStore.get(key);
+      if (raw is String && !_isCompressedPayload(raw)) {
+        rawPayloads[key] = raw;
+      }
+    }
+    if (rawPayloads.isEmpty) {
+      return;
+    }
+    final stopwatch = Stopwatch()..start();
+    final compressed = await Isolate.run(
+      () => <dynamic, String>{
+        for (final entry in rawPayloads.entries)
+          entry.key: _encodeStoredPayload(entry.value),
+      },
+      debugName: 'meow-compress-subscription-payloads',
+    );
+    await _payloadStore.putAll(compressed);
+    // Rewriting values only appends new frames. Compact immediately so the
+    // old multi-megabyte plaintext frames do not keep slowing every startup.
+    await _payloadStore.compact();
+    await _payloadStore.flush();
+    stopwatch.stop();
+    final beforeBytes = rawPayloads.values.fold<int>(
+      0,
+      (total, value) => total + value.length,
+    );
+    final afterBytes = compressed.values.fold<int>(
+      0,
+      (total, value) => total + value.length,
+    );
+    AppLogStore.info(
+      'subscription storage',
+      'compressedPayloads=${compressed.length} beforeBytes=$beforeBytes '
+          'afterBytes=$afterBytes elapsedMs=${stopwatch.elapsedMilliseconds}',
+    );
   }
 
   static Future<T> _withSubscriptionWriteLock<T>(
@@ -234,6 +276,30 @@ class SubscriptionStore {
     return indexedResults
         .map((entry) => entry.subscription)
         .toList(growable: false);
+  }
+
+  /// Loads all complete subscriptions while decoding large payload JSON away
+  /// from the UI isolate. Hive values are copied before the worker starts.
+  static Future<List<Subscription>> getAllInBackground() async {
+    final metadataSnapshot = _metadataJsonSnapshot();
+    if (metadataSnapshot.isEmpty) {
+      return const <Subscription>[];
+    }
+    final payloadSnapshot = <String, String>{};
+    for (final key in _payloadStore.keys) {
+      final raw = _payloadStore.get(key);
+      if (raw is String) {
+        payloadSnapshot[key.toString()] = raw;
+      }
+    }
+    return Isolate.run(() {
+      return _decodeMetadataSnapshot(metadataSnapshot)
+          .map((metadata) {
+            final raw = payloadSnapshot[metadata.id];
+            return raw == null ? metadata : _withPayloadFromRaw(metadata, raw);
+          })
+          .toList(growable: false);
+    }, debugName: 'meow-subscriptions-full');
   }
 
   /// Returns metadata-only subscriptions without loading raw content/outbounds.
@@ -333,6 +399,23 @@ class SubscriptionStore {
   }
 
   static String? payloadJsonFor(String id) {
+    final snapshot = payloadSnapshotFor(id);
+    if (snapshot == null) {
+      return null;
+    }
+    try {
+      return _decodeStoredPayload(snapshot);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Returns the stored payload representation without decompression.
+  ///
+  /// Pass this snapshot to a worker isolate and hydrate it there. Calling
+  /// [payloadJsonFor] for a multi-megabyte profile on the UI isolate would
+  /// undo the startup benefit of compressed storage.
+  static String? payloadSnapshotFor(String id) {
     final raw = _payloadStore.get(id);
     return raw is String ? raw : null;
   }
@@ -362,8 +445,12 @@ class SubscriptionStore {
   }
 
   static Future<void> _saveUnlocked(Subscription sub) async {
+    final payload = await Isolate.run(
+      () => _encodeStoredPayload(jsonEncode(sub.toPayloadMap())),
+      debugName: 'meow-encode-subscription-payload',
+    );
     await _metaStore.put(sub.id, jsonEncode(sub.toMetadataMap()));
-    await _payloadStore.put(sub.id, jsonEncode(sub.toPayloadMap()));
+    await _payloadStore.put(sub.id, payload);
   }
 
   /// Saves only lightweight subscription metadata.
@@ -877,13 +964,12 @@ class SubscriptionStore {
     if (outbounds.length == 1) {
       return outbounds.first.tag;
     }
-    final normalizedPreferred = preferredTag?.trim() ?? '';
+    final normalizedPreferred = normalizeProxySelectionTag(preferredTag ?? '');
     if (normalizedPreferred.isEmpty) {
       return lowestProxyTag;
     }
-    if (isLowestProxyTag(normalizedPreferred) ||
-        isMixedProxyTag(normalizedPreferred)) {
-      return normalizedPreferred;
+    if (isLowestProxyTag(normalizedPreferred)) {
+      return lowestProxyTag;
     }
     final liveOutboundTags = outbounds
         .where(
@@ -1363,7 +1449,7 @@ class SubscriptionStore {
 
   static Subscription _withPayloadFromRaw(Subscription metadata, String raw) {
     try {
-      final map = jsonDecode(raw) as Map<String, dynamic>;
+      final map = jsonDecode(_decodeStoredPayload(raw)) as Map<String, dynamic>;
       return metadata.copyWith(
         rawContent: map['raw_content'] as String? ?? '',
         outbounds:
@@ -1909,7 +1995,7 @@ String? _rewriteOutboundRuntimeInfoPayload(
   Map<String, Map<String, Object?>> updatesByTag,
 ) {
   try {
-    final map = jsonDecode(raw) as Map<String, dynamic>;
+    final map = jsonDecode(_decodeStoredPayload(raw)) as Map<String, dynamic>;
     final rawOutbounds = map['outbounds'];
     if (rawOutbounds is! List || rawOutbounds.isEmpty) {
       return null;
@@ -1971,10 +2057,29 @@ String? _rewriteOutboundRuntimeInfoPayload(
     }
     final updated = Map<String, dynamic>.from(map);
     updated['outbounds'] = outbounds;
-    return jsonEncode(updated);
+    return _encodeStoredPayload(jsonEncode(updated));
   } catch (_) {
     return null;
   }
+}
+
+const _compressedPayloadPrefix = 'gzip-base64-v1:';
+
+bool _isCompressedPayload(String value) =>
+    value.startsWith(_compressedPayloadPrefix);
+
+String _encodeStoredPayload(String json) {
+  final compressed = gzip.encode(utf8.encode(json));
+  final encoded = '$_compressedPayloadPrefix${base64Encode(compressed)}';
+  return encoded.length < json.length ? encoded : json;
+}
+
+String _decodeStoredPayload(String value) {
+  if (!_isCompressedPayload(value)) {
+    return value;
+  }
+  final encoded = value.substring(_compressedPayloadPrefix.length);
+  return utf8.decode(gzip.decode(base64Decode(encoded)));
 }
 
 Map<String, dynamic> _buildSubscriptionPayloadWorker(

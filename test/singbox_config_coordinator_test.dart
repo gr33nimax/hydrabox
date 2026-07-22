@@ -68,6 +68,34 @@ void main() {
     expect(runtime.maxConcurrentApplies, 1);
   });
 
+  test('explicit stop invalidates a queued config apply', () async {
+    final runtime = _BlockingRuntime();
+    final lifecycle = RuntimeLifecycleController(
+      runtime: runtime,
+      healthCheckTimeout: const Duration(milliseconds: 20),
+    );
+    addTearDown(lifecycle.dispose);
+    final coordinator = _coordinator(runtimeLifecycle: lifecycle);
+
+    final first = coordinator.applyRuntimeConfig(
+      build: _build('first'),
+      useVpn: true,
+      restartRuntime: true,
+    );
+    await runtime.firstApplyStarted.future.timeout(const Duration(seconds: 5));
+
+    final queued = coordinator.applyRuntimeConfig(
+      build: _build('must-not-start'),
+      useVpn: true,
+      restartRuntime: true,
+    );
+    coordinator.cancelPendingWork(reason: 'test explicit stop');
+    runtime.releaseFirstApply.complete();
+
+    await Future.wait([first, queued]).timeout(const Duration(seconds: 5));
+    expect(runtime.appliedConfigs, ['first']);
+  });
+
   test('split routing apply forces a full VPN service restart', () async {
     final runtime = _BlockingRuntime();
     final lifecycle = RuntimeLifecycleController(

@@ -1,22 +1,14 @@
 const String lowestProxyTag = 'lowest';
+// Legacy synthetic tags are kept only so settings saved by older Etonify
+// builds can be migrated without losing the user's selection. They are no
+// longer emitted into a sing-box config or shown in the proxy list.
 const String lowestOpenProxyTag = 'lowest-open';
 const String lowestFreeProxyTag = 'lowest-free';
 const String mixedProxyTag = 'mixed';
 
-const List<String> lowestProxyTags = <String>[
-  lowestProxyTag,
-  lowestOpenProxyTag,
-  lowestFreeProxyTag,
-];
-
+const List<String> lowestProxyTags = <String>[lowestProxyTag];
 const List<String> baseLowestProxyTags = <String>[lowestProxyTag];
-
-const List<String> pinnedProxyTags = <String>[
-  lowestProxyTag,
-  lowestOpenProxyTag,
-  lowestFreeProxyTag,
-  mixedProxyTag,
-];
+const List<String> pinnedProxyTags = <String>[lowestProxyTag];
 
 const Set<String> reservedProxyTags = <String>{
   'select',
@@ -27,38 +19,29 @@ const Set<String> reservedProxyTags = <String>{
   lowestFreeProxyTag,
 };
 
-const Set<String> _openExcludedCountryCodes = <String>{
-  'RU',
-  'IR',
-  'IQ',
-  'CN',
-  'TM',
-};
-
-const Set<String> _cisCountryCodes = <String>{
-  'AM',
-  'AZ',
-  'BY',
-  'KZ',
-  'KG',
-  'MD',
-  'TJ',
-  'UZ',
-};
-
-bool isLowestProxyTag(String tag) => lowestProxyTags.contains(tag);
+bool isLowestProxyTag(String tag) => tag == lowestProxyTag;
 
 bool isMixedProxyTag(String tag) => tag == mixedProxyTag;
 
+bool isLegacySyntheticProxyTag(String tag) =>
+    tag == lowestOpenProxyTag ||
+    tag == lowestFreeProxyTag ||
+    tag == mixedProxyTag;
+
 bool isSyntheticProxyTag(String tag) =>
-    isLowestProxyTag(tag) || isMixedProxyTag(tag);
+    isLowestProxyTag(tag) || isLegacySyntheticProxyTag(tag);
+
+String normalizeProxySelectionTag(String tag) {
+  final normalized = tag.trim();
+  return isLegacySyntheticProxyTag(normalized) ? lowestProxyTag : normalized;
+}
 
 bool isPinnedProxyTag(String tag) => pinnedProxyTags.contains(tag);
 
 bool isReservedProxyTag(String tag) => reservedProxyTags.contains(tag);
 
 List<String> activeLowestProxyTags({required bool russiaRouteDataEnabled}) =>
-    russiaRouteDataEnabled ? lowestProxyTags : baseLowestProxyTags;
+    baseLowestProxyTags;
 
 int lowestProxyTagOrder(String tag) {
   final index = lowestProxyTags.indexOf(tag);
@@ -71,11 +54,7 @@ int pinnedProxyTagOrder(String tag) {
 }
 
 String lowestProxyBaseLabel(String tag) {
-  return switch (tag) {
-    lowestOpenProxyTag => 'lowest · open',
-    lowestFreeProxyTag => 'lowest · free',
-    _ => 'lowest',
-  };
+  return 'lowest';
 }
 
 String lowestProxyDisplayName(String tag, [String? selectedName]) {
@@ -90,18 +69,5 @@ String normalizeLowestCountryCode(String? countryCode) {
 }
 
 bool lowestProxyAllowsCountry(String tag, String? countryCode) {
-  if (tag == lowestProxyTag) {
-    return true;
-  }
-  final normalized = normalizeLowestCountryCode(countryCode);
-  if (normalized.isEmpty) {
-    return true;
-  }
-  if (_openExcludedCountryCodes.contains(normalized)) {
-    return false;
-  }
-  if (tag == lowestFreeProxyTag && _cisCountryCodes.contains(normalized)) {
-    return false;
-  }
   return true;
 }

@@ -55,6 +55,15 @@ void main() {
     expect(migrated?.url, subscription.url);
     expect(migrated?.rawContent, subscription.rawContent);
     expect(migrated?.outbounds.single.config['uuid'], isNotEmpty);
+    final storedPayload = Hive.box(
+      'subscription_payloads_secure_v1',
+    ).get(subscription.id);
+    expect(storedPayload, isA<String>());
+    expect(
+      jsonDecode(SubscriptionStore.payloadJsonFor(subscription.id)!)
+          as Map<String, dynamic>,
+      containsPair('raw_content', subscription.rawContent),
+    );
     expect(await Hive.boxExists('subscriptions'), isFalse);
     expect(await Hive.boxExists('subscription_payloads'), isFalse);
     expect(await Hive.boxExists('subscriptions_secure_v1'), isTrue);

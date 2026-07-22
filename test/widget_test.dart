@@ -199,61 +199,75 @@ void main() {
   ) async {
     await tester.pumpWidget(
       MaterialApp(
-        home: ProxyPanelShell(
-          ready: true,
-          onboardingCompleted: true,
-          loading: const SizedBox.shrink(),
-          welcome: const SizedBox.shrink(),
-          visibleRows: 20,
-          hasActiveProfile: true,
-          homeBuilder: (context, metrics, gestures) {
-            return ColoredBox(
-              color: Colors.white,
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: Text('home:${metrics.progress.toStringAsFixed(2)}'),
-              ),
-            );
-          },
-          sheetBuilder:
-              (
-                context,
-                metrics,
-                metricsListenable,
-                scrollController,
-                gestures,
-              ) {
-                return Material(
-                  child: ValueListenableBuilder<ProxyPanelMetrics>(
-                    valueListenable: metricsListenable,
-                    builder: (context, liveMetrics, _) {
-                      return GestureDetector(
-                        key: const ValueKey('proxy-panel-header'),
-                        behavior: HitTestBehavior.opaque,
-                        onTap: gestures.onHeaderTap,
-                        onVerticalDragUpdate: gestures.onDragUpdate,
-                        onVerticalDragEnd: gestures.onDragEnd,
-                        child: ListView.builder(
-                          controller: scrollController,
-                          padding: EdgeInsets.zero,
-                          itemCount: 24,
-                          itemBuilder: (context, index) => SizedBox(
-                            height: index == 0 ? proxyPanelMinHeight : 48,
-                            child: Text(
-                              index == 0
-                                  ? 'panel:${liveMetrics.progress.toStringAsFixed(2)}'
-                                  : 'proxy-$index',
+        home: StatefulBuilder(
+          builder: (context, rebuildHost) => ProxyPanelShell(
+            ready: true,
+            onboardingCompleted: true,
+            loading: const SizedBox.shrink(),
+            welcome: const SizedBox.shrink(),
+            visibleRows: 20,
+            hasActiveProfile: true,
+            onOpenRequested: () => rebuildHost(() {}),
+            homeBuilder: (context, metrics, gestures) {
+              return ColoredBox(
+                color: Colors.white,
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  child: Text('home:${metrics.progress.toStringAsFixed(2)}'),
+                ),
+              );
+            },
+            sheetBuilder:
+                (
+                  context,
+                  metrics,
+                  metricsListenable,
+                  scrollController,
+                  gestures,
+                ) {
+                  return Material(
+                    child: ValueListenableBuilder<ProxyPanelMetrics>(
+                      valueListenable: metricsListenable,
+                      builder: (context, liveMetrics, _) {
+                        return GestureDetector(
+                          key: const ValueKey('proxy-panel-header'),
+                          behavior: HitTestBehavior.opaque,
+                          onTap: gestures.onHeaderTap,
+                          child: ListView.builder(
+                            controller: scrollController,
+                            padding: EdgeInsets.zero,
+                            itemCount: 24,
+                            itemBuilder: (context, index) => SizedBox(
+                              height: index == 0 ? proxyPanelMinHeight : 48,
+                              child: Text(
+                                index == 0
+                                    ? 'panel:${liveMetrics.progress.toStringAsFixed(2)}'
+                                    : 'proxy-$index',
+                              ),
                             ),
                           ),
-                        ),
-                      );
-                    },
-                  ),
-                );
-              },
+                        );
+                      },
+                    ),
+                  );
+                },
+          ),
         ),
       ),
     );
+
+    expect(find.text('panel:0.00'), findsOneWidget);
+
+    await tester.drag(
+      find.byKey(const ValueKey('proxy-panel-header')),
+      const Offset(0, -420),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('panel:1.00'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('proxy-panel-header')));
+    await tester.pumpAndSettle();
 
     expect(find.text('panel:0.00'), findsOneWidget);
 
@@ -268,14 +282,109 @@ void main() {
     expect(find.text('panel:0.00'), findsOneWidget);
   });
 
+  testWidgets('real proxy panel opens from the collapsed header swipe', (
+    tester,
+  ) async {
+    final proxies = <AppProxySummary>[
+      _proxy('proxy-1', 'Amsterdam', latency: 42),
+      _proxy('proxy-2', 'Paris', latency: 58),
+    ];
+    var panelProgress = 0.0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        supportedLocales: AppLocalizations.supportedLocales,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        home: ProxyPanelShell(
+          ready: true,
+          onboardingCompleted: true,
+          loading: const SizedBox.shrink(),
+          welcome: const SizedBox.shrink(),
+          visibleRows: proxies.length,
+          hasActiveProfile: true,
+          homeBuilder: (_, metrics, _) {
+            panelProgress = metrics.progress;
+            return const ColoredBox(color: Colors.white);
+          },
+          sheetBuilder:
+              (
+                context,
+                metrics,
+                metricsListenable,
+                scrollController,
+                gestures,
+              ) => ValueListenableBuilder<ProxyPanelMetrics>(
+                valueListenable: metricsListenable,
+                builder: (context, liveMetrics, _) {
+                  panelProgress = liveMetrics.progress;
+                  return ProxiesPage(
+                    proxies: proxies,
+                    selectedTag: proxies.first.tag,
+                    activeProxy: proxies.first,
+                    connected: false,
+                    progressiveBlurEnabled: false,
+                    onSelected: (_) {},
+                    onUrlTest: () async {},
+                    embedded: true,
+                    sheetMetricsListenable: metricsListenable,
+                    scrollController: scrollController,
+                    sheetAtMaxExtent: metrics.atMaxExtent,
+                    sheetCanFillScreen: metrics.canFillScreen,
+                    sheetExtent: metrics.progress,
+                    collapsedSheetExtent: 0,
+                    expandedHeaderExtent: 1,
+                    onHeaderTap: gestures.onHeaderTap,
+                  );
+                },
+              ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Amsterdam'), findsOneWidget);
+    expect(find.text('Paris'), findsNothing);
+
+    final openGesture = await tester.startGesture(
+      tester.getCenter(find.text('Amsterdam')),
+    );
+    var previousProgress = panelProgress;
+    for (var step = 0; step < 8; step++) {
+      await openGesture.moveBy(const Offset(0, -10));
+      await tester.pump();
+      expect(panelProgress, greaterThan(previousProgress));
+      previousProgress = panelProgress;
+    }
+    await openGesture.up();
+    await tester.pumpAndSettle();
+
+    expect(panelProgress, greaterThan(.95));
+    expect(find.text('Proxies'), findsOneWidget);
+    expect(find.text('Paris'), findsOneWidget);
+
+    await tester.drag(find.text('Proxies'), const Offset(0, 80));
+    await tester.pumpAndSettle();
+
+    expect(panelProgress, closeTo(0, .01));
+    expect(find.text('Paris'), findsNothing);
+
+    await tester.tap(find.text('Amsterdam'));
+    await tester.pumpAndSettle();
+    expect(panelProgress, greaterThan(.95));
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    expect(panelProgress, closeTo(0, .01));
+    expect(find.text('Paris'), findsNothing);
+  });
+
   testWidgets(
-    'embedded proxy sheet localizes automatic groups and collapses extras',
+    'embedded proxy sheet exposes one lowest and pinned chain actions',
     (tester) async {
       String? selectedTag;
       final proxies = <AppProxySummary>[
         _proxy(lowestProxyTag, 'lowest'),
-        _proxy(lowestOpenProxyTag, 'lowest open'),
-        _proxy(lowestFreeProxyTag, 'lowest free'),
         for (var i = 0; i < 80; i++)
           _proxy('proxy-$i', 'proxy $i', latency: i + 1),
         _proxy('chain-test', 'chain · Germany', latency: 999),
@@ -290,7 +399,6 @@ void main() {
               height: 720,
               child: ProxiesPage(
                 proxies: proxies,
-                totalTopLevelProxies: proxies.length,
                 selectedTag: lowestProxyTag,
                 connected: false,
                 progressiveBlurEnabled: false,
@@ -309,77 +417,54 @@ void main() {
         ),
       );
 
-      expect(find.text('Fastest'), findsOneWidget);
-      expect(find.text('Fastest · open access'), findsNothing);
-      expect(find.text('Fastest · unrestricted'), findsNothing);
-      expect(
-        find.byIcon(FluentIcons.more_horizontal_24_regular),
-        findsOneWidget,
-      );
-      expect(find.text('chain · Germany'), findsNothing);
-      expect(find.text('+ Add proxy chain'), findsNothing);
-
-      await tester.tap(find.text('Fastest'));
-      await tester.pump();
-      expect(selectedTag, lowestProxyTag);
-
-      await tester.tap(find.byIcon(FluentIcons.more_horizontal_24_regular));
-      await tester.pump();
-
-      expect(find.text('Fastest · open access'), findsOneWidget);
-      expect(find.text('Fastest · unrestricted'), findsOneWidget);
+      expect(find.text('Lowest'), findsOneWidget);
+      expect(find.text('Lowest · open access'), findsNothing);
+      expect(find.text('Lowest · unrestricted'), findsNothing);
       expect(find.text('chain · Germany'), findsOneWidget);
       expect(find.text('+ Add proxy chain'), findsOneWidget);
+
+      await tester.tap(find.text('Lowest'));
+      await tester.pump();
+      expect(selectedTag, lowestProxyTag);
     },
   );
 
-  testWidgets('Russian proxy labels hide internal routing names', (
-    tester,
-  ) async {
-    final fastest = _proxy(lowestProxyTag, 'lowest · Finland', latency: 73)
-        .copyWith(
-          selectedChildName: 'Финляндия',
-          protocolLabel: 'URLTest · VLESS · TLS',
-        );
-    final smartRouting = _proxy(
-      mixedProxyTag,
-      'mixed',
-      latency: 999,
-    ).copyWith(protocolLabel: 'Routing');
+  testWidgets(
+    'Russian proxy labels describe lowest without calling it fastest',
+    (tester) async {
+      final lowest = _proxy(lowestProxyTag, 'lowest · Finland', latency: 73)
+          .copyWith(
+            selectedChildName: 'Финляндия',
+            protocolLabel: 'URLTest · VLESS · TLS',
+          );
 
-    await tester.pumpWidget(
-      MaterialApp(
-        locale: const Locale('ru'),
-        supportedLocales: AppLocalizations.supportedLocales,
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
-        home: Scaffold(
-          body: Column(
-            children: [
-              ProxyTile(proxy: fastest, selected: false, onTap: () {}),
-              ProxyTile(proxy: smartRouting, selected: false, onTap: () {}),
-            ],
+      await tester.pumpWidget(
+        MaterialApp(
+          locale: const Locale('ru'),
+          supportedLocales: AppLocalizations.supportedLocales,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          home: Scaffold(
+            body: Column(
+              children: [
+                ProxyTile(proxy: lowest, selected: false, onTap: () {}),
+              ],
+            ),
           ),
         ),
-      ),
-    );
+      );
 
-    expect(find.text('Самый быстрый · Финляндия'), findsOneWidget);
-    expect(find.text('Автовыбор · VLESS · TLS'), findsOneWidget);
-    expect(find.text('Умная маршрутизация'), findsOneWidget);
-    expect(find.text('Маршрут зависит от назначения'), findsOneWidget);
-    expect(find.text('авто'), findsOneWidget);
-    expect(find.text('999 ms'), findsNothing);
-  });
+      expect(find.text('Lowest · Финляндия'), findsOneWidget);
+      expect(find.text('Автовыбор · VLESS · TLS'), findsOneWidget);
+    },
+  );
 
-  testWidgets('more proxies expands a virtualized large server list', (
+  testWidgets('large proxy list exposes every server through lazy scrolling', (
     tester,
   ) async {
     final proxies = <AppProxySummary>[
       for (var i = 0; i < 80; i++)
         _proxy('proxy-$i', 'proxy $i', latency: i + 1),
     ];
-    final l10n = await AppLocalizations.delegate.load(const Locale('en'));
-
     await tester.pumpWidget(
       MaterialApp(
         supportedLocales: AppLocalizations.supportedLocales,
@@ -389,7 +474,6 @@ void main() {
             height: 720,
             child: ProxiesPage(
               proxies: proxies,
-              totalTopLevelProxies: proxies.length,
               selectedTag: 'proxy-0',
               connected: false,
               progressiveBlurEnabled: false,
@@ -404,16 +488,7 @@ void main() {
       ),
     );
 
-    final more = find.text(l10n.moreProxies(30));
-    await tester.scrollUntilVisible(
-      more,
-      600,
-      scrollable: find.byType(Scrollable).last,
-    );
-    await tester.tap(more);
-    await tester.pump();
-
-    expect(find.text(l10n.moreProxies(30)), findsNothing);
+    expect(find.text('proxy 79'), findsNothing);
     await tester.scrollUntilVisible(
       find.text('proxy 79'),
       600,
@@ -439,7 +514,6 @@ void main() {
             height: 720,
             child: ProxiesPage(
               proxies: proxies,
-              totalTopLevelProxies: proxies.length,
               selectedTag: 'proxy-1',
               connected: false,
               progressiveBlurEnabled: false,
@@ -458,7 +532,7 @@ void main() {
     expect(find.text('proxy 1'), findsOneWidget);
   });
 
-  testWidgets('proxy sheet header never overlaps active proxy and title', (
+  testWidgets('proxy sheet header crossfades active proxy and title', (
     tester,
   ) async {
     final activeProxy = _proxy(
@@ -481,7 +555,6 @@ void main() {
               height: 720,
               child: ProxiesPage(
                 proxies: proxies,
-                totalTopLevelProxies: proxies.length,
                 selectedTag: 'proxy-1',
                 activeProxy: activeProxy,
                 connected: true,
@@ -501,17 +574,28 @@ void main() {
       await tester.pump();
     }
 
+    double opacityFor(String label) {
+      return tester
+          .widget<Opacity>(
+            find
+                .ancestor(of: find.text(label), matching: find.byType(Opacity))
+                .first,
+          )
+          .opacity;
+    }
+
     await pumpAt(.20);
     expect(find.text('Active Poland'), findsOneWidget);
-    expect(find.text('Proxies'), findsNothing);
+    expect(opacityFor('Active Poland'), greaterThan(0));
+    expect(opacityFor('Proxies'), 0);
 
     await pumpAt(.42);
-    expect(find.text('Active Poland'), findsNothing);
-    expect(find.text('Proxies'), findsNothing);
+    expect(opacityFor('Active Poland'), 0);
+    expect(opacityFor('Proxies'), 0);
 
     await pumpAt(.70);
-    expect(find.text('Active Poland'), findsNothing);
-    expect(find.text('Proxies'), findsOneWidget);
+    expect(opacityFor('Active Poland'), 0);
+    expect(opacityFor('Proxies'), greaterThan(0));
   });
 
   testWidgets('closed proxy panel does not build proxy rows', (tester) async {
@@ -529,7 +613,6 @@ void main() {
             height: 720,
             child: ProxiesPage(
               proxies: proxies,
-              totalTopLevelProxies: proxies.length,
               selectedTag: 'proxy-1',
               activeProxy: proxies.first,
               connected: false,
@@ -567,7 +650,6 @@ void main() {
               height: 720,
               child: ProxiesPage(
                 proxies: proxies,
-                totalTopLevelProxies: proxies.length,
                 selectedTag: 'proxy-1',
                 connected: false,
                 progressiveBlurEnabled: false,
@@ -630,7 +712,6 @@ void main() {
               height: 720,
               child: ProxiesPage(
                 proxies: proxies,
-                totalTopLevelProxies: proxies.length,
                 selectedTag: 'proxy-1',
                 connected: true,
                 progressiveBlurEnabled: false,
@@ -676,7 +757,6 @@ void main() {
               height: 720,
               child: ProxiesPage(
                 proxies: proxies,
-                totalTopLevelProxies: proxies.length,
                 selectedTag: 'proxy-1',
                 connected: true,
                 progressiveBlurEnabled: false,
@@ -717,7 +797,6 @@ void main() {
             height: 720,
             child: ProxiesPage(
               proxies: proxies,
-              totalTopLevelProxies: proxies.length,
               selectedTag: 'proxy-1',
               connected: false,
               progressiveBlurEnabled: false,
@@ -745,7 +824,6 @@ void main() {
         home: Scaffold(
           body: ProxiesPage(
             proxies: const [],
-            totalTopLevelProxies: 0,
             selectedTag: '',
             connected: false,
             progressiveBlurEnabled: false,
