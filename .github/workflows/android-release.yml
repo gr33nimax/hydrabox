@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  FLUTTER_VERSION: "3.44.6"
+  FLUTTER_VERSION: "3.44.7"
   JAVA_VERSION: "21"
   KEYSTORE_PATH: "android/app/etonify-release.jks"
   BUILD_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.build_name || '' }}
@@ -34,7 +34,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7.0.1
 
       - name: Verify pinned libbox binary
         run: python3 scripts/verify_libbox.py
@@ -91,13 +91,13 @@ jobs:
           fi
 
       - name: Set up JDK
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v5.6.0
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
 
       - name: Set up Flutter
-        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
@@ -290,7 +290,7 @@ jobs:
           cat build/release-apks/etonify-update.json
 
       - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6.0.0
         with:
           name: etonify-release-apks-${{ github.run_number }}
           path: |
@@ -300,7 +300,7 @@ jobs:
           retention-days: 14
 
       - name: Upload Dart debug symbols
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6.0.0
         with:
           name: etonify-dart-debug-info-${{ github.run_number }}
           path: build/debug-info/android/**
