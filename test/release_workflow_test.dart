@@ -21,7 +21,7 @@ void main() {
       );
       expect(workflow, contains(r'etonify-v${RELEASE_VERSION}-x86_64.apk'));
       expect(workflow, contains('--draft'));
-      expect(workflow, contains('uses: uses: actions/checkout@v7.0.1'));
+      expect(workflow, contains('uses: actions/checkout@v7.0.1'));
       expect(workflow, contains('uses: actions/setup-java@v5.6.0'));
       expect(workflow, contains('python3 scripts/verify_libbox.py'));
       expect(workflow, isNot(contains('uses: actions/checkout@v4')));
