@@ -95,7 +95,9 @@ class _SettingsAboutPageState extends State<SettingsAboutPage> {
     if (_performanceBusy) return;
     setState(() => _performanceBusy = true);
     try {
-      final snapshot = await SingboxRuntime.instance.getPerformanceSnapshot();
+      final snapshot = _withFlutterMemoryStats(
+        await SingboxRuntime.instance.getPerformanceSnapshot(),
+      );
       if (!mounted) return;
       setState(() => _performanceSnapshot = snapshot);
     } finally {
@@ -831,7 +833,9 @@ class _RuntimeFlagsTogglesState extends State<_RuntimeFlagsToggles> {
     if (_busy) return;
     setState(() => _busy = true);
     try {
-      final snapshot = await SingboxRuntime.instance.getPerformanceSnapshot();
+      final snapshot = _withFlutterMemoryStats(
+        await SingboxRuntime.instance.getPerformanceSnapshot(),
+      );
       AppLogStore.info('performance snapshot', snapshot.toString());
       if (!mounted) return;
       AppNotice.show(
@@ -883,4 +887,15 @@ class _RuntimeFlagsTogglesState extends State<_RuntimeFlagsToggles> {
       ],
     );
   }
+}
+
+Map<String, dynamic> _withFlutterMemoryStats(Map<String, dynamic> snapshot) {
+  final imageCache = PaintingBinding.instance.imageCache;
+  return <String, dynamic>{
+    ...snapshot,
+    'flutterImageCacheBytes': imageCache.currentSizeBytes,
+    'flutterImageCacheEntries': imageCache.currentSize,
+    'flutterLiveImages': imageCache.liveImageCount,
+    'flutterPendingImages': imageCache.pendingImageCount,
+  };
 }

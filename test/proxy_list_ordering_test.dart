@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:meow_client/core/lowest_proxy_groups.dart';
 import 'package:meow_client/features/proxies/proxy_list_ordering.dart';
 import 'package:meow_client/models/app_view_models.dart';
+import 'package:meow_client/models/proxy_runtime_visual_state.dart';
 
 void main() {
   test('source ordering preserves provider order', () {
@@ -47,6 +48,65 @@ void main() {
       'stale',
       'unavailable',
     ]);
+  });
+
+  test('unavailable state wins over a stale successful latency', () {
+    final items = [
+      _proxy(
+        'failed-with-old-ping',
+        'Failed',
+        latency: 1,
+        fresh: true,
+        unavailable: true,
+      ),
+      _proxy('healthy', 'Healthy', latency: 50, fresh: true),
+    ];
+
+    sortProxySummaries(items, ProxySort.latency, keepPinnedFirst: false);
+
+    expect(items.map((item) => item.tag), ['healthy', 'failed-with-old-ping']);
+  });
+
+  test('latency ordering uses the latest runtime visual state', () {
+    final items = [
+      _proxy('old-fast', 'Old fast', latency: 1, fresh: true),
+      _proxy('healthy', 'Healthy', latency: 50, fresh: true),
+    ];
+    const runtimeStates = <String, ProxyRuntimeVisualState>{
+      'old-fast': ProxyRuntimeVisualState(
+        latencyUnavailable: true,
+        latencyError: 'i/o timeout',
+      ),
+      'healthy': ProxyRuntimeVisualState(latency: 25, latencyFresh: true),
+    };
+
+    sortProxySummaries(
+      items,
+      ProxySort.latency,
+      keepPinnedFirst: false,
+      runtimeStateFor: (tag) => runtimeStates[tag],
+    );
+
+    expect(items.map((item) => item.tag), ['healthy', 'old-fast']);
+  });
+
+  test('runtime state can clear an old latency without marking it dead', () {
+    final items = [
+      _proxy('old-fast', 'Old fast', latency: 1, fresh: true),
+      _proxy('stale', 'Stale', latency: 50),
+    ];
+    const runtimeStates = <String, ProxyRuntimeVisualState>{
+      'old-fast': ProxyRuntimeVisualState(latencyError: 'unexpected EOF'),
+    };
+
+    sortProxySummaries(
+      items,
+      ProxySort.latency,
+      keepPinnedFirst: false,
+      runtimeStateFor: (tag) => runtimeStates[tag],
+    );
+
+    expect(items.map((item) => item.tag), ['stale', 'old-fast']);
   });
 }
 

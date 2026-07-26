@@ -114,6 +114,9 @@ class _SettingsDnsPageState extends State<SettingsDnsPage> {
   late final TextEditingController _directController;
   late final TextEditingController _proxyController;
   late final TextEditingController _russiaDirectController;
+  late final FocusNode _directFocusNode;
+  late final FocusNode _proxyFocusNode;
+  late final FocusNode _russiaDirectFocusNode;
 
   static const _directPresets = <_DnsPreset>[
     _DnsPreset(
@@ -165,23 +168,45 @@ class _SettingsDnsPageState extends State<SettingsDnsPage> {
     _russiaDirectController = TextEditingController(
       text: dnsResolverFieldText(widget.currentRussiaDnsDirectResolver),
     );
+    _directFocusNode = FocusNode(debugLabel: 'dnsDirectResolver')
+      ..addListener(_handleDirectFocusChanged);
+    _proxyFocusNode = FocusNode(debugLabel: 'dnsProxyResolver')
+      ..addListener(_handleProxyFocusChanged);
+    _russiaDirectFocusNode = FocusNode(debugLabel: 'dnsRussiaDirectResolver')
+      ..addListener(_handleRussiaDirectFocusChanged);
   }
 
   @override
   void didUpdateWidget(covariant SettingsDnsPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    _syncResolverController(_directController, widget.currentDirectResolver);
-    _syncResolverController(_proxyController, widget.currentProxyResolver);
+    _syncResolverController(
+      _directController,
+      _directFocusNode,
+      widget.currentDirectResolver,
+    );
+    _syncResolverController(
+      _proxyController,
+      _proxyFocusNode,
+      widget.currentProxyResolver,
+    );
     _syncResolverController(
       _russiaDirectController,
+      _russiaDirectFocusNode,
       widget.currentRussiaDnsDirectResolver,
     );
   }
 
   void _syncResolverController(
     TextEditingController controller,
+    FocusNode focusNode,
     String resolver,
   ) {
+    // Traffic updates and other parent rebuilds must not overwrite a DNS draft
+    // while the user is typing. The draft is committed when the field loses
+    // focus or the keyboard submits it.
+    if (focusNode.hasFocus) {
+      return;
+    }
     if (normalizeDnsResolverInput(controller.text) ==
         normalizeDnsResolverInput(resolver)) {
       return;
@@ -191,6 +216,15 @@ class _SettingsDnsPageState extends State<SettingsDnsPage> {
 
   @override
   void dispose() {
+    _directFocusNode
+      ..removeListener(_handleDirectFocusChanged)
+      ..dispose();
+    _proxyFocusNode
+      ..removeListener(_handleProxyFocusChanged)
+      ..dispose();
+    _russiaDirectFocusNode
+      ..removeListener(_handleRussiaDirectFocusChanged)
+      ..dispose();
     _directController.dispose();
     _proxyController.dispose();
     _russiaDirectController.dispose();
@@ -221,6 +255,24 @@ class _SettingsDnsPageState extends State<SettingsDnsPage> {
     );
     if (result != null) {
       onSelected(result);
+    }
+  }
+
+  void _handleDirectFocusChanged() {
+    if (!_directFocusNode.hasFocus) {
+      _commitDirectResolver();
+    }
+  }
+
+  void _handleProxyFocusChanged() {
+    if (!_proxyFocusNode.hasFocus) {
+      _commitProxyResolver();
+    }
+  }
+
+  void _handleRussiaDirectFocusChanged() {
+    if (!_russiaDirectFocusNode.hasFocus) {
+      _commitRussiaDirectResolver();
     }
   }
 
@@ -322,15 +374,10 @@ class _SettingsDnsPageState extends State<SettingsDnsPage> {
                   if (directIsCustom)
                     TextField(
                       controller: _directController,
-                      onTapOutside: (_) {
-                        FocusScope.of(context).unfocus();
-                        _commitDirectResolver();
-                      },
-                      onSubmitted: (_) => _commitDirectResolver(),
-                      onEditingComplete: () {
-                        FocusScope.of(context).unfocus();
-                        _commitDirectResolver();
-                      },
+                      focusNode: _directFocusNode,
+                      textInputAction: TextInputAction.done,
+                      onTapOutside: (_) => _directFocusNode.unfocus(),
+                      onSubmitted: (_) => _directFocusNode.unfocus(),
                       inputFormatters: [_kDnsSingleLineFormatter],
                       decoration: InputDecoration(
                         labelText: l10n.dnsResolverTitle,
@@ -380,15 +427,10 @@ class _SettingsDnsPageState extends State<SettingsDnsPage> {
                   if (proxyIsCustom)
                     TextField(
                       controller: _proxyController,
-                      onTapOutside: (_) {
-                        FocusScope.of(context).unfocus();
-                        _commitProxyResolver();
-                      },
-                      onSubmitted: (_) => _commitProxyResolver(),
-                      onEditingComplete: () {
-                        FocusScope.of(context).unfocus();
-                        _commitProxyResolver();
-                      },
+                      focusNode: _proxyFocusNode,
+                      textInputAction: TextInputAction.done,
+                      onTapOutside: (_) => _proxyFocusNode.unfocus(),
+                      onSubmitted: (_) => _proxyFocusNode.unfocus(),
                       inputFormatters: [_kDnsSingleLineFormatter],
                       decoration: InputDecoration(
                         labelText: l10n.dnsResolverTitle,
@@ -424,15 +466,10 @@ class _SettingsDnsPageState extends State<SettingsDnsPage> {
                   const Gap(12),
                   TextField(
                     controller: _russiaDirectController,
-                    onTapOutside: (_) {
-                      FocusScope.of(context).unfocus();
-                      _commitRussiaDirectResolver();
-                    },
-                    onSubmitted: (_) => _commitRussiaDirectResolver(),
-                    onEditingComplete: () {
-                      FocusScope.of(context).unfocus();
-                      _commitRussiaDirectResolver();
-                    },
+                    focusNode: _russiaDirectFocusNode,
+                    textInputAction: TextInputAction.done,
+                    onTapOutside: (_) => _russiaDirectFocusNode.unfocus(),
+                    onSubmitted: (_) => _russiaDirectFocusNode.unfocus(),
                     inputFormatters: [_kDnsSingleLineFormatter],
                     decoration: InputDecoration(
                       labelText: l10n.dnsResolverTitle,

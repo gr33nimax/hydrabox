@@ -27,6 +27,9 @@ class AppLocalizationsRu extends AppLocalizations {
   String get proxySwitching => 'Переключение';
 
   @override
+  String get proxyUnavailable => 'Недоступен';
+
+  @override
   String get proxySelectorTitle => 'Выбор';
 
   @override
@@ -953,6 +956,10 @@ class AppLocalizationsRu extends AppLocalizations {
   String get proxyUsernameTitle => 'Логин';
 
   @override
+  String get proxyUsernameSubtitle =>
+      'От 1 до 64 символов, без пробелов и двоеточия';
+
+  @override
   String get proxyPasswordTitle => 'Пароль';
 
   @override
@@ -1268,6 +1275,20 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get subscriptionUrl => 'URL подписки';
+
+  @override
+  String get editSubscriptionUrlAction => 'Изменить URL';
+
+  @override
+  String get saveAction => 'Сохранить';
+
+  @override
+  String get subscriptionUrlEditHint =>
+      'Профиль обновляется по одному URL. Если старый импорт склеил несколько ссылок, оставьте нужную строку, а остальные источники добавьте отдельными профилями. После сохранения обновите подписку.';
+
+  @override
+  String get subscriptionUrlSingleSourceRequired =>
+      'Оставьте один URL. Остальные источники добавьте отдельными профилями.';
 
   @override
   String get subscriptionUrlOrContent => 'URL или содержимое';

@@ -23,6 +23,7 @@ class SingboxConfigBuilder {
     required this.proxyInboundEnabled,
     required this.proxyMixedListen,
     required this.proxyMixedPort,
+    this.proxyUsername = defaultProxyUsername,
     this.proxyPassword = '',
     required this.dnsDirectResolver,
     required this.dnsProxyResolver,
@@ -71,6 +72,7 @@ class SingboxConfigBuilder {
   final bool proxyInboundEnabled;
   final String proxyMixedListen;
   final int proxyMixedPort;
+  final String proxyUsername;
   final String proxyPassword;
   final String dnsDirectResolver;
   final String dnsProxyResolver;
@@ -113,8 +115,10 @@ class SingboxConfigBuilder {
   }
 
   SingboxBuildPlan buildPlan() {
-    if (proxyInboundEnabled && !isValidProxyPassword(proxyPassword)) {
-      throw StateError('Local proxy requires a valid access password');
+    if (proxyInboundEnabled &&
+        (!isValidProxyUsername(proxyUsername) ||
+            !isValidProxyPassword(proxyPassword))) {
+      throw StateError('Local proxy requires valid access credentials');
     }
     final outbounds = _visibleOutbounds();
     final outboundTags = outbounds
@@ -331,7 +335,7 @@ class SingboxConfigBuilder {
               'listen': proxyMixedListen,
               'listen_port': proxyMixedPort,
               'users': [
-                {'username': defaultProxyUsername, 'password': proxyPassword},
+                {'username': proxyUsername, 'password': proxyPassword},
               ],
             },
         ],

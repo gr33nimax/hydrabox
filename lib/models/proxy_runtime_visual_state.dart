@@ -48,8 +48,11 @@ class ProxyRuntimeVisualState {
 class ProxyRuntimeVisualStore {
   final Map<String, ValueNotifier<ProxyRuntimeVisualState?>> _notifiers =
       <String, ValueNotifier<ProxyRuntimeVisualState?>>{};
+  final ValueNotifier<int> _revision = ValueNotifier<int>(0);
   Map<String, ProxyRuntimeVisualState> _states =
       const <String, ProxyRuntimeVisualState>{};
+
+  ValueListenable<int> get revision => _revision;
 
   ValueListenable<ProxyRuntimeVisualState?> listenableFor(String tag) {
     return _notifiers.putIfAbsent(
@@ -59,6 +62,9 @@ class ProxyRuntimeVisualStore {
   }
 
   void replaceAll(Map<String, ProxyRuntimeVisualState> next) {
+    if (mapEquals(_states, next)) {
+      return;
+    }
     final previousKeys = _states.keys.toSet();
     _states = Map.unmodifiable(next);
     final changed = <String>{...previousKeys, ...next.keys};
@@ -72,15 +78,28 @@ class ProxyRuntimeVisualStore {
         notifier.value = value;
       }
     }
+    for (final tag
+        in _notifiers.keys
+            .where((tag) => !next.containsKey(tag))
+            .toList(growable: false)) {
+      // The old row can finish its current frame. Removing our strong
+      // reference is enough for the notifier and row to be collected later.
+      _notifiers.remove(tag);
+    }
+    _revision.value++;
   }
 
   ProxyRuntimeVisualState? valueFor(String tag) => _states[tag];
+
+  @visibleForTesting
+  int get retainedNotifierCount => _notifiers.length;
 
   void dispose() {
     for (final notifier in _notifiers.values) {
       notifier.dispose();
     }
     _notifiers.clear();
+    _revision.dispose();
   }
 }
 

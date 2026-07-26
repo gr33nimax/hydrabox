@@ -110,8 +110,9 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   static const _runtimeRecoveryStatusLogInterval = Duration(seconds: 5);
   static const _subscriptionOperationSoftWarningDelay = Duration(seconds: 15);
   static const _subscriptionOperationTimeout = Duration(seconds: 30);
-  static const _androidImageCacheMaximumBytes = 48 * 1024 * 1024;
-  static const _androidImageCacheMaximumEntries = 80;
+  static const _androidImageCacheMaximumBytes = 32 * 1024 * 1024;
+  static const _androidImageCacheMaximumEntries = 64;
+  static const _proxyChainTargetSourceCacheMaximumEntries = 2;
   static const _subscriptionAutoRefreshMinDelay = Duration(seconds: 30);
   static const _subscriptionAutoRefreshMaxDelay = Duration(hours: 6);
   static const _splitRoutingTemporarilyDisabled = false;
@@ -296,6 +297,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   bool get _proxyAllowLan => _settings.proxyAllowLan;
   String get _proxyMixedListen => _settings.proxyMixedListen;
   int get _proxyMixedPort => _settings.proxyMixedPort;
+  String get _proxyUsername => _settings.proxyUsername;
   String get _proxyPassword => _settings.proxyPassword;
   String get _dnsDirectPreset => _settings.dnsDirectPreset;
   String get _dnsDirectResolver => _settings.dnsDirectResolver;
@@ -812,7 +814,10 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     if (normalizedId.isEmpty) {
       return const [];
     }
-    var subscription = _proxyChainTargetSourceCache[normalizedId];
+    var subscription = _proxyChainTargetSourceCache.remove(normalizedId);
+    if (subscription != null) {
+      _proxyChainTargetSourceCache[normalizedId] = subscription;
+    }
     if (subscription == null) {
       for (final metadata in _subscriptions) {
         if (metadata.id != normalizedId) {
@@ -821,7 +826,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         subscription = metadata.outbounds.isNotEmpty
             ? metadata
             : await SubscriptionStore.withPayloadInBackground(metadata);
-        _proxyChainTargetSourceCache[normalizedId] = subscription;
+        _cacheProxyChainTargetSource(normalizedId, subscription);
         break;
       }
     }
@@ -838,6 +843,20 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
           ),
         )
         .toList(growable: false);
+  }
+
+  void _cacheProxyChainTargetSource(
+    String subscriptionId,
+    Subscription subscription,
+  ) {
+    _proxyChainTargetSourceCache.remove(subscriptionId);
+    _proxyChainTargetSourceCache[subscriptionId] = subscription;
+    while (_proxyChainTargetSourceCache.length >
+        _proxyChainTargetSourceCacheMaximumEntries) {
+      _proxyChainTargetSourceCache.remove(
+        _proxyChainTargetSourceCache.keys.first,
+      );
+    }
   }
 
   AppProxySummary _proxyChainTargetSummary({
@@ -1768,6 +1787,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     final groupCacheBefore = _activeGroupChildrenByTagCache.length;
     final samplesBefore = _trafficSamples.length;
     final installedAppsBefore = _installedAppsCache.length;
+    final proxyChainSourcesBefore = _proxyChainTargetSourceCache.length;
 
     cache.clear();
     cache.clearLiveImages();
@@ -1803,6 +1823,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       'reason=$reason imageBytesBefore=$imageBytesBefore '
           'imageEntriesBefore=$imageEntriesBefore '
           'proxyRowsBefore=$proxyCacheBefore groupCachesBefore=$groupCacheBefore '
+          'proxyChainSourcesBefore=$proxyChainSourcesBefore '
           'trafficSamplesBefore=$samplesBefore '
           'installedAppsBefore=$installedAppsBefore',
     );
@@ -2581,6 +2602,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         (!state.vpnInboundEnabled && !state.proxyInboundEnabled) ||
         state.proxyMixedListen !=
             (state.proxyAllowLan ? '0.0.0.0' : '127.0.0.1') ||
+        !isValidProxyUsername(state.proxyUsername) ||
         !isValidProxyPassword(state.proxyPassword);
     if (normalized.activeSubscriptionId != state.activeProfileId ||
         normalized.selectedProxyTag != state.selectedProxyTag ||
@@ -2924,6 +2946,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
 
   void _suspendForegroundWork() {
     unawaited(_syncRuntimeUiForeground(false));
+    _proxyChainTargetSourceCache.clear();
     _resumeForegroundSyncTimer?.cancel();
     _subscriptionAutoRefreshTimer?.cancel();
     _activeProxyIpController.cancelPending();
@@ -4049,6 +4072,10 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     _applySettingsChange(() => _settings.setProxyPassword(value));
   }
 
+  void _setProxyUsername(String value) {
+    _applySettingsChange(() => _settings.setProxyUsername(value));
+  }
+
   void _setDnsDirectPreset(String value) {
     _applySettingsChange(() => _settings.setDnsDirectPreset(value));
   }
@@ -4671,6 +4698,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
           currentProxyAllowLan: _proxyAllowLan,
           currentProxyMixedListen: _proxyMixedListen,
           currentProxyMixedPort: _proxyMixedPort,
+          currentProxyUsername: _proxyUsername,
           currentProxyPassword: _proxyPassword,
           onVpnMtuChanged: _setVpnMtu,
           onVpnStrictRouteChanged: _setVpnStrictRoute,
@@ -4679,6 +4707,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
           onProxyAllowLanChanged: _setProxyAllowLan,
           onProxyMixedPortChanged: _setProxyMixedPort,
           onConnectionModeChanged: _setInboundConnectionMode,
+          onProxyUsernameChanged: _setProxyUsername,
           onProxyPasswordChanged: _setProxyPassword,
         ),
       ),
@@ -5395,6 +5424,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       proxyInboundEnabled: _proxyInboundEnabled,
       proxyMixedListen: _proxyMixedListen,
       proxyMixedPort: _proxyMixedPort,
+      proxyUsername: _proxyUsername,
       proxyPassword: _proxyPassword,
       dnsDirectResolver: _dnsDirectResolver,
       dnsProxyResolver: _dnsProxyResolver,

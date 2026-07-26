@@ -19,6 +19,7 @@ class SettingsInboundPage extends StatefulWidget {
     required this.currentProxyAllowLan,
     required this.currentProxyMixedListen,
     required this.currentProxyMixedPort,
+    required this.currentProxyUsername,
     required this.currentProxyPassword,
     required this.onConnectionModeChanged,
     required this.onVpnMtuChanged,
@@ -27,6 +28,7 @@ class SettingsInboundPage extends StatefulWidget {
     required this.onProxyInboundEnabledChanged,
     required this.onProxyAllowLanChanged,
     required this.onProxyMixedPortChanged,
+    required this.onProxyUsernameChanged,
     required this.onProxyPasswordChanged,
   });
 
@@ -38,6 +40,7 @@ class SettingsInboundPage extends StatefulWidget {
   final bool currentProxyAllowLan;
   final String currentProxyMixedListen;
   final int currentProxyMixedPort;
+  final String currentProxyUsername;
   final String currentProxyPassword;
   final ValueChanged<InboundConnectionMode> onConnectionModeChanged;
   final ValueChanged<int> onVpnMtuChanged;
@@ -46,6 +49,7 @@ class SettingsInboundPage extends StatefulWidget {
   final ValueChanged<bool> onProxyInboundEnabledChanged;
   final ValueChanged<bool> onProxyAllowLanChanged;
   final ValueChanged<int> onProxyMixedPortChanged;
+  final ValueChanged<String> onProxyUsernameChanged;
   final ValueChanged<String> onProxyPasswordChanged;
 
   @override
@@ -58,6 +62,7 @@ class _SettingsInboundPageState extends State<SettingsInboundPage> {
   late InboundConnectionMode _connectionMode;
   late bool _proxyEnabled;
   late bool _proxyAllowLan;
+  late String _proxyUsername;
   late String _proxyPassword;
   bool _passwordVisible = false;
 
@@ -72,6 +77,7 @@ class _SettingsInboundPageState extends State<SettingsInboundPage> {
         : InboundConnectionMode.proxy;
     _proxyEnabled = widget.currentProxyInboundEnabled;
     _proxyAllowLan = widget.currentProxyAllowLan;
+    _proxyUsername = normalizeProxyUsername(widget.currentProxyUsername);
     _proxyPassword = widget.currentProxyPassword;
     if (!isValidProxyPassword(_proxyPassword)) {
       _proxyPassword = generateProxyPassword();
@@ -89,6 +95,10 @@ class _SettingsInboundPageState extends State<SettingsInboundPage> {
         : InboundConnectionMode.proxy;
     _proxyEnabled = widget.currentProxyInboundEnabled;
     _proxyAllowLan = widget.currentProxyAllowLan;
+    if (widget.currentProxyUsername != oldWidget.currentProxyUsername &&
+        isValidProxyUsername(widget.currentProxyUsername)) {
+      _proxyUsername = widget.currentProxyUsername.trim();
+    }
     if (widget.currentProxyPassword != oldWidget.currentProxyPassword &&
         isValidProxyPassword(widget.currentProxyPassword)) {
       _proxyPassword = widget.currentProxyPassword;
@@ -194,6 +204,11 @@ class _SettingsInboundPageState extends State<SettingsInboundPage> {
   void _setConnectionMode(InboundConnectionMode mode) {
     if (_connectionMode == mode) return;
     if (mode == InboundConnectionMode.proxy &&
+        !isValidProxyUsername(_proxyUsername)) {
+      _proxyUsername = defaultProxyUsername;
+      widget.onProxyUsernameChanged(_proxyUsername);
+    }
+    if (mode == InboundConnectionMode.proxy &&
         !isValidProxyPassword(_proxyPassword)) {
       _proxyPassword = generateProxyPassword();
       widget.onProxyPasswordChanged(_proxyPassword);
@@ -206,6 +221,10 @@ class _SettingsInboundPageState extends State<SettingsInboundPage> {
   }
 
   void _setProxyEnabled(bool value) {
+    if (value && !isValidProxyUsername(_proxyUsername)) {
+      _proxyUsername = defaultProxyUsername;
+      widget.onProxyUsernameChanged(_proxyUsername);
+    }
     if (value && !isValidProxyPassword(_proxyPassword)) {
       _proxyPassword = generateProxyPassword();
       widget.onProxyPasswordChanged(_proxyPassword);
@@ -215,6 +234,10 @@ class _SettingsInboundPageState extends State<SettingsInboundPage> {
   }
 
   void _setProxyAllowLan(bool value) {
+    if (value && !isValidProxyUsername(_proxyUsername)) {
+      _proxyUsername = defaultProxyUsername;
+      widget.onProxyUsernameChanged(_proxyUsername);
+    }
     if (value && !isValidProxyPassword(_proxyPassword)) {
       _proxyPassword = generateProxyPassword();
       widget.onProxyPasswordChanged(_proxyPassword);
@@ -232,6 +255,66 @@ class _SettingsInboundPageState extends State<SettingsInboundPage> {
     widget.onProxyPasswordChanged(password);
   }
 
+  Future<void> _editProxyUsername(AppLocalizations l10n) async {
+    var draft = _proxyUsername;
+    var valid = isValidProxyUsername(draft);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: Text(l10n.proxyUsernameTitle),
+          content: TextFormField(
+            initialValue: draft,
+            autofocus: true,
+            maxLength: proxyUsernameMaxLength,
+            textInputAction: TextInputAction.done,
+            inputFormatters: [
+              FilteringTextInputFormatter.deny(RegExp(r'[\s:]')),
+              LengthLimitingTextInputFormatter(proxyUsernameMaxLength),
+            ],
+            decoration: InputDecoration(
+              labelText: l10n.proxyUsernameTitle,
+              helperText: l10n.proxyUsernameSubtitle,
+              errorText: valid ? null : l10n.proxyUsernameSubtitle,
+            ),
+            onChanged: (value) {
+              draft = value;
+              final nextValid = isValidProxyUsername(value);
+              if (nextValid != valid) {
+                setDialogState(() => valid = nextValid);
+              }
+            },
+            onFieldSubmitted: (value) {
+              if (isValidProxyUsername(value)) {
+                Navigator.of(dialogContext).pop(value.trim());
+              }
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text(l10n.cancel),
+            ),
+            FilledButton(
+              onPressed: valid
+                  ? () => Navigator.of(dialogContext).pop(draft.trim())
+                  : null,
+              child: Text(l10n.saveAction),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted ||
+        result == null ||
+        !isValidProxyUsername(result) ||
+        result == _proxyUsername) {
+      return;
+    }
+    setState(() => _proxyUsername = result);
+    widget.onProxyUsernameChanged(result);
+  }
+
   Future<void> _copyProxyCredentials(AppLocalizations l10n) async {
     final host = _proxyAllowLan ? l10n.proxyLanAddressHint : '127.0.0.1';
     final buffer = StringBuffer(
@@ -239,7 +322,7 @@ class _SettingsInboundPageState extends State<SettingsInboundPage> {
     );
     buffer
       ..writeln()
-      ..writeln('${l10n.proxyUsernameTitle}: $defaultProxyUsername')
+      ..writeln('${l10n.proxyUsernameTitle}: $_proxyUsername')
       ..write('${l10n.proxyPasswordTitle}: $_proxyPassword');
     await SensitiveClipboard.copy(buffer.toString());
     if (!mounted) return;
@@ -460,13 +543,20 @@ class _SettingsInboundPageState extends State<SettingsInboundPage> {
                         ),
                         ListTile(
                           title: Text(l10n.proxyUsernameTitle),
-                          subtitle: const Text(defaultProxyUsername),
-                          trailing: IconButton(
-                            tooltip: l10n.copyProxyCredentialsTitle,
-                            icon: const Icon(Icons.copy_rounded),
-                            onPressed: () =>
-                                _copyProxyValue(defaultProxyUsername, l10n),
+                          subtitle: Text(_proxyUsername),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                tooltip: l10n.copyProxyCredentialsTitle,
+                                icon: const Icon(Icons.copy_rounded),
+                                onPressed: () =>
+                                    _copyProxyValue(_proxyUsername, l10n),
+                              ),
+                              const Icon(Icons.edit_rounded),
+                            ],
                           ),
+                          onTap: () => _editProxyUsername(l10n),
                         ),
                         ListTile(
                           title: Text(l10n.proxyPasswordTitle),

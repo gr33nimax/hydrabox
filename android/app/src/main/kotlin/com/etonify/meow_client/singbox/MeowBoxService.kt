@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
 import android.os.PowerManager
+import android.os.SystemClock
 import android.util.Log
 import io.nekohasekai.libbox.CommandServer
 import io.nekohasekai.libbox.CommandServerHandler
@@ -46,6 +47,7 @@ class MeowBoxService(
         private const val NETWORK_WAIT_RETRY_DELAY_MS = 1_500L
         private const val NETWORK_WAIT_MAX_RETRIES = 5
         private const val POST_START_INTERFACE_REASSERT_DELAY_MS = 500L
+        private const val RUNTIME_RECOVERY_MIN_INTERVAL_MS = 1_000L
         private val activeServices = CopyOnWriteArraySet<MeowBoxService>()
 
         fun requestStopAll(source: String) {
@@ -80,6 +82,10 @@ class MeowBoxService(
     private val retryExecutor = Executors.newSingleThreadScheduledExecutor { runnable ->
         Thread(runnable, "MeowBoxStartRetry").apply { isDaemon = true }
     }
+    private val recoveryExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "MeowBoxRecovery").apply { isDaemon = true }
+    }
+    private val recoveryGate = RuntimeRecoveryGate(RUNTIME_RECOVERY_MIN_INTERVAL_MS)
 
     @Volatile
     private var commandServer: CommandServer? = null
@@ -109,6 +115,8 @@ class MeowBoxService(
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
                 PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED -> updateDeviceIdleMode()
+                Intent.ACTION_SCREEN_ON -> requestRuntimeRecovery("screen_on")
+                Intent.ACTION_USER_PRESENT -> requestRuntimeRecovery("user_present")
             }
         }
     }
@@ -197,6 +205,8 @@ class MeowBoxService(
         startRequestGeneration.set(Long.MIN_VALUE)
         cancelPendingStartRetry("service_onDestroy")
         retryExecutor.shutdownNow()
+        recoveryGate.reset()
+        recoveryExecutor.shutdownNow()
         submitServiceTask("service_onDestroy", allowAfterDestroy = true) {
             stopInternal("service_onDestroy", stopSelf = false, cancelStarts = false)
         }
@@ -205,6 +215,66 @@ class MeowBoxService(
 
     fun requestStop(source: String) {
         submitServiceTask("requestStop:$source") { stopInternal(source) }
+    }
+
+    fun requestRuntimeRecovery(source: String) {
+        val server = commandServer
+        val ownsRuntime = ownsActiveRuntime()
+        if (destroyed || !SingboxController.running || !ownsRuntime || server == null) {
+            MeowDiagnostics.log(
+                TAG,
+                "runtime recovery skipped source=$source destroyed=$destroyed " +
+                    "running=${SingboxController.running} owner=$ownsRuntime server=${server != null}",
+            )
+            return
+        }
+        val now = SystemClock.elapsedRealtime()
+        if (!recoveryGate.tryAcquire(now)) {
+            MeowDiagnostics.log(TAG, "runtime recovery coalesced source=$source")
+            return
+        }
+        MeowDiagnostics.log(
+            TAG,
+            "runtime recovery requested source=$source " +
+                "current=${MeowDefaultNetworkMonitor.describeCurrentState()}",
+        )
+
+        // Re-apply Android's physical upstream immediately. This path remains
+        // owned by the foreground service and therefore does not depend on a
+        // Flutter Activity or command-event subscription being attached.
+        MeowDefaultNetworkMonitor.start()
+        MeowDefaultNetworkMonitor.reassertDefaultInterface(
+            "runtime_recovery_before_wake:$source",
+        )
+
+        try {
+            recoveryExecutor.execute {
+                if (
+                    destroyed ||
+                    commandServer !== server ||
+                    !SingboxController.running ||
+                    !ownsActiveRuntime()
+                ) {
+                    return@execute
+                }
+                runCatching {
+                    server.wake()
+                }.onSuccess {
+                    MeowDiagnostics.log(TAG, "runtime recovery wake completed source=$source")
+                    MeowDefaultNetworkMonitor.reassertDefaultInterface(
+                        "runtime_recovery_after_wake:$source",
+                    )
+                }.onFailure { error ->
+                    MeowDiagnostics.log(TAG, "runtime recovery wake failed source=$source", error)
+                    SingboxController.log(
+                        "error",
+                        "runtime recovery wake failed source=$source error=${error.message}",
+                    )
+                }
+            }
+        } catch (_: RejectedExecutionException) {
+            MeowDiagnostics.log(TAG, "runtime recovery rejected source=$source destroyed=$destroyed")
+        }
     }
 
     override fun getSystemProxyStatus(): SystemProxyStatus =
@@ -345,6 +415,9 @@ class MeowBoxService(
                 "startInternal ignored source=$source already running mode=$mode " +
                     "current=${MeowDefaultNetworkMonitor.describeCurrentState()}",
             )
+            registerRuntimeReceiver()
+            MeowDefaultNetworkMonitor.start()
+            requestRuntimeRecovery("existing_runtime:$source")
             showForeground("Connected")
             MeowApplication.writeServiceState(mode)
             MeowQuickSettingsTileService.requestRefresh(service)
@@ -892,7 +965,11 @@ class MeowBoxService(
         if (receiverRegistered) {
             return
         }
-        val filter = IntentFilter(PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED)
+        val filter = IntentFilter().apply {
+            addAction(PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED)
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_USER_PRESENT)
+        }
         runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 service.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
@@ -926,35 +1003,17 @@ class MeowBoxService(
         val powerManager = service.getSystemService(Context.POWER_SERVICE) as PowerManager
         val idle = powerManager.isDeviceIdleMode
         MeowDiagnostics.log(TAG, "device idle mode changed idle=$idle")
-        val server = commandServer
-        if (server == null) {
-            val level = if (SingboxController.running) "warning" else "debug"
+        if (idle) {
             SingboxController.log(
-                level,
-                "device idle update skipped idle=$idle: command server is missing " +
-                    "running=${SingboxController.running} mode=${SingboxController.serviceMode}",
+                "info",
+                "Android device idle/doze entered; keeping VPN core active",
             )
             return
         }
-        runCatching {
-            if (idle) {
-                SingboxController.log(
-                    "info",
-                    "Android device idle/doze entered; keeping VPN core active",
-                )
-            } else {
-                SingboxController.log(
-                    "info",
-                    "core wake requested by Android device idle exit",
-                )
-                server.wake()
-            }
-        }.onFailure {
-            MeowDiagnostics.log(TAG, "device idle mode update failed idle=$idle", it)
-            SingboxController.log(
-                "error",
-                "device idle mode update failed idle=$idle error=${it.message}",
-            )
-        }
+        SingboxController.log(
+            "info",
+            "core wake requested by Android device idle exit",
+        )
+        requestRuntimeRecovery("device_idle_exit")
     }
 }

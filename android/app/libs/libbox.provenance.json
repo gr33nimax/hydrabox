@@ -1,8 +1,8 @@
 {
   "artifact": "libbox.aar",
-  "sha256": "e8c4e178e0c0ca8002fced11e87f72281e9305852a9065d42aac944c0a3a4541",
-  "source_commit": "f7d0be9da47622e9d3a22a0acdd066dc992ebf58",
-  "source_version": "v1.13.14-16-gf7d0be9d",
+  "sha256": "c576c99da4a1feb696d0a3a299e2c9709f0d915659e7417ab7aea49aa255e240",
+  "source_commit": "b443a7cf8857a925fd2bbdd3c793c97028a3b263",
+  "source_version": "v1.13.14-17-gb443a7cf",
   "etonify_version": "v1.13.14-etonify.1",
   "upstream_commit": "7067276170f03034017eb1887f671b7c9f11a5fd",
   "go": "go version go1.25.10 linux/amd64",

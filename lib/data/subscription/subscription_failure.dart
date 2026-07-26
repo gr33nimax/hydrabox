@@ -68,6 +68,13 @@ class SubscriptionContentException implements Exception {
   };
 }
 
+class SubscriptionImportCancelledException implements Exception {
+  const SubscriptionImportCancelledException();
+
+  @override
+  String toString() => 'Subscription import was cancelled';
+}
+
 SubscriptionFailure classifySubscriptionFailure(Object error) {
   if (error is SubscriptionHttpStatusException) {
     return SubscriptionFailure(

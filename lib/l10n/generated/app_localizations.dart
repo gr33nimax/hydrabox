@@ -134,6 +134,12 @@ abstract class AppLocalizations {
   /// **'Switching'**
   String get proxySwitching;
 
+  /// No description provided for @proxyUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Unavailable'**
+  String get proxyUnavailable;
+
   /// No description provided for @proxySelectorTitle.
   ///
   /// In en, this message translates to:
@@ -1778,6 +1784,12 @@ abstract class AppLocalizations {
   /// **'Username'**
   String get proxyUsernameTitle;
 
+  /// No description provided for @proxyUsernameSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'1–64 characters, without spaces or a colon'**
+  String get proxyUsernameSubtitle;
+
   /// No description provided for @proxyPasswordTitle.
   ///
   /// In en, this message translates to:
@@ -2347,6 +2359,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Subscription URL'**
   String get subscriptionUrl;
+
+  /// No description provided for @editSubscriptionUrlAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit URL'**
+  String get editSubscriptionUrlAction;
+
+  /// No description provided for @saveAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get saveAction;
+
+  /// No description provided for @subscriptionUrlEditHint.
+  ///
+  /// In en, this message translates to:
+  /// **'A profile can update from one URL. If an old import glued several links together, keep the required line and add the other sources as separate profiles. Refresh the subscription after saving.'**
+  String get subscriptionUrlEditHint;
+
+  /// No description provided for @subscriptionUrlSingleSourceRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep one URL. Add the other sources as separate profiles.'**
+  String get subscriptionUrlSingleSourceRequired;
 
   /// No description provided for @subscriptionUrlOrContent.
   ///

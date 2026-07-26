@@ -199,17 +199,27 @@ void main() {
     );
   });
 
-  test('stores proxy password locally but excludes it from safe export', () {
+  test('stores proxy credentials and exports only the username', () {
     final store = _TestSettingsStore();
     final state = store.mapState(const <String, dynamic>{
+      'proxy_username': 'sergey',
       'proxy_password': 'LocalOnlyPassword123456',
     });
 
+    expect(state.proxyUsername, 'sergey');
     expect(state.proxyPassword, 'LocalOnlyPassword123456');
+    expect(store.stateToMap(state)['proxy_username'], state.proxyUsername);
     expect(store.stateToMap(state)['proxy_password'], state.proxyPassword);
+    expect(store.stateToSafeExportMap(state)['proxy_username'], 'sergey');
     expect(
       store.stateToSafeExportMap(state),
       isNot(contains('proxy_password')),
+    );
+    expect(
+      store.mapState(const <String, dynamic>{
+        'proxy_username': 'bad username',
+      }).proxyUsername,
+      defaultProxyUsername,
     );
   });
 

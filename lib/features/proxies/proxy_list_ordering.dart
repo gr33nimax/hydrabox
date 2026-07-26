@@ -1,10 +1,15 @@
 import 'package:meow_client/core/lowest_proxy_groups.dart';
 import 'package:meow_client/models/app_view_models.dart';
+import 'package:meow_client/models/proxy_runtime_visual_state.dart';
+
+typedef ProxyRuntimeStateResolver =
+    ProxyRuntimeVisualState? Function(String tag);
 
 void sortProxySummaries(
   List<AppProxySummary> items,
   ProxySort sort, {
   bool keepPinnedFirst = true,
+  ProxyRuntimeStateResolver? runtimeStateFor,
 }) {
   if (sort == ProxySort.source || items.length < 2) {
     return;
@@ -15,6 +20,7 @@ void sortProxySummaries(
       b,
       sort: sort,
       keepPinnedFirst: keepPinnedFirst,
+      runtimeStateFor: runtimeStateFor,
     ),
   );
 }
@@ -24,6 +30,7 @@ int compareProxySummaries(
   AppProxySummary b, {
   required ProxySort sort,
   bool keepPinnedFirst = true,
+  ProxyRuntimeStateResolver? runtimeStateFor,
 }) {
   final pinnedOrder = _comparePinned(a, b, keepPinnedFirst);
   if (pinnedOrder != null) {
@@ -33,18 +40,34 @@ int compareProxySummaries(
     ProxySort.source => 0,
     ProxySort.name => a.displayName.compareTo(b.displayName),
     ProxySort.country => a.countryCode.compareTo(b.countryCode),
-    ProxySort.latency => _compareLatency(a, b),
+    ProxySort.latency => _compareLatency(
+      a,
+      b,
+      aState: runtimeStateFor?.call(a.tag),
+      bState: runtimeStateFor?.call(b.tag),
+    ),
   };
 }
 
-int _compareLatency(AppProxySummary a, AppProxySummary b) {
-  final rankOrder = _latencyRank(a).compareTo(_latencyRank(b));
+int _compareLatency(
+  AppProxySummary a,
+  AppProxySummary b, {
+  ProxyRuntimeVisualState? aState,
+  ProxyRuntimeVisualState? bState,
+}) {
+  final aRank = _latencyRank(a, aState);
+  final bRank = _latencyRank(b, bState);
+  final rankOrder = aRank.compareTo(bRank);
   if (rankOrder != 0) {
     return rankOrder;
   }
-  final latencyOrder = (a.latency ?? 1 << 30).compareTo(b.latency ?? 1 << 30);
-  if (latencyOrder != 0) {
-    return latencyOrder;
+  if (aRank == 0 || aRank == 2) {
+    final aLatency = aState == null ? a.latency : aState.latency;
+    final bLatency = bState == null ? b.latency : bState.latency;
+    final latencyOrder = (aLatency ?? 1 << 30).compareTo(bLatency ?? 1 << 30);
+    if (latencyOrder != 0) {
+      return latencyOrder;
+    }
   }
   return a.displayName.compareTo(b.displayName);
 }
@@ -71,18 +94,23 @@ int? _comparePinned(
   return null;
 }
 
-int _latencyRank(AppProxySummary proxy) {
-  if (proxy.latencyFresh && proxy.latency != null) {
-    return 0;
-  }
-  if (proxy.latencyChecking) {
+int _latencyRank(AppProxySummary proxy, ProxyRuntimeVisualState? runtimeState) {
+  final checking = runtimeState?.latencyChecking ?? proxy.latencyChecking;
+  final unavailable =
+      runtimeState?.latencyUnavailable ?? proxy.latencyUnavailable;
+  final fresh = runtimeState?.latencyFresh ?? proxy.latencyFresh;
+  final latency = runtimeState == null ? proxy.latency : runtimeState.latency;
+  if (checking) {
     return 1;
   }
-  if (!proxy.latencyUnavailable && proxy.latency != null) {
+  if (unavailable) {
+    return 4;
+  }
+  if (fresh && latency != null) {
+    return 0;
+  }
+  if (latency != null) {
     return 2;
   }
-  if (!proxy.latencyUnavailable) {
-    return 3;
-  }
-  return 4;
+  return 3;
 }

@@ -63,6 +63,7 @@ class AppSettingsController {
   bool proxyAllowLan = false;
   String proxyMixedListen = '127.0.0.1';
   int proxyMixedPort = 1080;
+  String proxyUsername = defaultProxyUsername;
   String proxyPassword = '';
   String dnsDirectPreset = 'cloudflare';
   String dnsDirectResolver = 'udp://1.1.1.1';
@@ -149,6 +150,7 @@ class AppSettingsController {
       proxyAllowLan: proxyAllowLan,
       proxyMixedListen: proxyMixedListen,
       proxyMixedPort: proxyMixedPort,
+      proxyUsername: proxyUsername,
       proxyPassword: proxyPassword,
       dnsDirectPreset: dnsDirectPreset,
       dnsDirectResolver: dnsDirectResolver,
@@ -211,6 +213,7 @@ class AppSettingsController {
     proxyAllowLan = state.proxyAllowLan;
     proxyMixedListen = proxyAllowLan ? '0.0.0.0' : '127.0.0.1';
     proxyMixedPort = state.proxyMixedPort;
+    proxyUsername = normalizeProxyUsername(state.proxyUsername);
     proxyPassword = state.proxyPassword.trim();
     if (!isValidProxyPassword(proxyPassword)) {
       proxyPassword = generateProxyPassword();
@@ -398,6 +401,9 @@ class AppSettingsController {
       return const AppSettingsChange.none();
     }
     proxyInboundEnabled = value;
+    if (proxyInboundEnabled && !isValidProxyUsername(proxyUsername)) {
+      proxyUsername = defaultProxyUsername;
+    }
     if (proxyInboundEnabled && !isValidProxyPassword(proxyPassword)) {
       proxyPassword = generateProxyPassword();
     }
@@ -416,6 +422,9 @@ class AppSettingsController {
     }
     proxyAllowLan = value;
     proxyMixedListen = value ? '0.0.0.0' : '127.0.0.1';
+    if (value && !isValidProxyUsername(proxyUsername)) {
+      proxyUsername = defaultProxyUsername;
+    }
     if (value && !isValidProxyPassword(proxyPassword)) {
       proxyPassword = generateProxyPassword();
     }
@@ -445,6 +454,9 @@ class AppSettingsController {
     }
     vpnInboundEnabled = nextVpnEnabled;
     proxyInboundEnabled = nextProxyEnabled;
+    if (proxyInboundEnabled && !isValidProxyUsername(proxyUsername)) {
+      proxyUsername = defaultProxyUsername;
+    }
     if (proxyInboundEnabled && !isValidProxyPassword(proxyPassword)) {
       proxyPassword = generateProxyPassword();
     }
@@ -459,7 +471,19 @@ class AppSettingsController {
     proxyPassword = generateProxyPassword();
     return AppSettingsChange(
       changed: true,
-      configReason: proxyAllowLan ? 'proxy credentials changed' : null,
+      configReason: proxyInboundEnabled ? 'proxy credentials changed' : null,
+    );
+  }
+
+  AppSettingsChange setProxyUsername(String value) {
+    final normalized = value.trim();
+    if (!isValidProxyUsername(normalized) || proxyUsername == normalized) {
+      return const AppSettingsChange.none();
+    }
+    proxyUsername = normalized;
+    return AppSettingsChange(
+      changed: true,
+      configReason: proxyInboundEnabled ? 'proxy credentials changed' : null,
     );
   }
 
@@ -471,7 +495,7 @@ class AppSettingsController {
     proxyPassword = normalized;
     return AppSettingsChange(
       changed: true,
-      configReason: proxyAllowLan ? 'proxy credentials changed' : null,
+      configReason: proxyInboundEnabled ? 'proxy credentials changed' : null,
     );
   }
 

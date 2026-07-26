@@ -535,9 +535,11 @@ class SubscriptionStore {
     int autoRefreshMinutes = 360,
     SubscriptionInfo? requestInfo,
     Duration? operationTimeout,
+    bool Function()? isCancelled,
   }) async {
     final id = SubscriptionFetcher.generateId();
     final deadline = _operationDeadline(operationTimeout);
+    _throwIfImportCancelled(isCancelled);
     try {
       final result = await _withDeadline(
         SubscriptionFetcher.fetch(
@@ -548,6 +550,7 @@ class SubscriptionStore {
         deadline,
         'subscription import',
       );
+      _throwIfImportCancelled(isCancelled);
 
       final payload = await _withDeadline(
         _buildSubscriptionPayloadAsync(
@@ -560,6 +563,7 @@ class SubscriptionStore {
         deadline,
         'subscription import',
       );
+      _throwIfImportCancelled(isCancelled);
       final outbounds = payload.outbounds;
       if (!_hasUsableOutbounds(outbounds)) {
         throw const SubscriptionContentException(
@@ -604,9 +608,18 @@ class SubscriptionStore {
       );
 
       _logLikelyHwidWarning(sub);
+      _throwIfImportCancelled(isCancelled);
       await save(sub);
+      if (isCancelled?.call() ?? false) {
+        await delete(id);
+        throw const SubscriptionImportCancelledException();
+      }
       return SubscriptionImportResult(subscription: sub);
     } catch (error) {
+      if (error is SubscriptionImportCancelledException ||
+          (isCancelled?.call() ?? false)) {
+        throw const SubscriptionImportCancelledException();
+      }
       if (error is TimeoutException) {
         AppLogStore.warning(
           'subscription',
@@ -628,7 +641,12 @@ class SubscriptionStore {
         urlTestConfig: const UrlTestConfig(),
         info: requestInfo,
       );
+      _throwIfImportCancelled(isCancelled);
       await save(sub);
+      if (isCancelled?.call() ?? false) {
+        await delete(id);
+        throw const SubscriptionImportCancelledException();
+      }
       AppLogStore.warning(
         'subscription',
         'Initial subscription import failed for "$url", '
@@ -643,13 +661,16 @@ class SubscriptionStore {
     String? customName,
     String? sourceName,
     Duration? operationTimeout,
+    bool Function()? isCancelled,
   }) async {
     final deadline = _operationDeadline(operationTimeout);
+    _throwIfImportCancelled(isCancelled);
     final parseResult = await _withDeadline(
       SubscriptionParser.parseInBackground(content),
       deadline,
       'subscription file import',
     );
+    _throwIfImportCancelled(isCancelled);
     final payload = await _withDeadline(
       _buildSubscriptionPayloadAsync(
         parseResult,
@@ -661,6 +682,7 @@ class SubscriptionStore {
       deadline,
       'subscription file import',
     );
+    _throwIfImportCancelled(isCancelled);
     final outbounds = payload.outbounds;
     if (!_hasUsableOutbounds(outbounds)) {
       throw const SubscriptionContentException(
@@ -692,8 +714,19 @@ class SubscriptionStore {
       urlTestConfig: const UrlTestConfig(),
     );
 
+    _throwIfImportCancelled(isCancelled);
     await save(sub);
+    if (isCancelled?.call() ?? false) {
+      await delete(sub.id);
+      throw const SubscriptionImportCancelledException();
+    }
     return SubscriptionImportResult(subscription: sub);
+  }
+
+  static void _throwIfImportCancelled(bool Function()? isCancelled) {
+    if (isCancelled?.call() ?? false) {
+      throw const SubscriptionImportCancelledException();
+    }
   }
 
   /// Refreshes an existing subscription (re-fetches from URL).

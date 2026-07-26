@@ -138,6 +138,90 @@ void main() {
       expect(find.byType(BottomSheet), findsOneWidget);
     },
   );
+
+  test('URL metadata repair preserves the subscription payload', () async {
+    const subscriptionId = 'legacy-url-metadata';
+    await SubscriptionStore.save(
+      const Subscription(
+        id: subscriptionId,
+        name: 'Legacy profile',
+        url:
+            'https://example.com/source-one\n'
+            'https://example.com/source-two',
+        lastUpdated: 123,
+        rawContent: 'vless://payload',
+        outbounds: [
+          Outbound(
+            tag: 'proxy-one',
+            name: 'Proxy one',
+            config: {'type': 'vless'},
+          ),
+        ],
+      ),
+    );
+
+    final subscription = SubscriptionStore.get(subscriptionId)!;
+    await SubscriptionStore.saveMetadata(
+      subscription.copyWith(url: 'https://example.com/working', lastUpdated: 0),
+    );
+
+    final updated = SubscriptionStore.get(subscriptionId);
+    expect(updated?.url, 'https://example.com/working');
+    expect(updated?.lastUpdated, 0);
+    expect(updated?.rawContent, 'vless://payload');
+    expect(updated?.outbounds.single.tag, 'proxy-one');
+  });
+
+  testWidgets('the URL editor rejects a merged legacy source list', (
+    tester,
+  ) async {
+    const subscriptionId = 'legacy-merged-url';
+    await tester.runAsync(
+      () => SubscriptionStore.save(
+        const Subscription(
+          id: subscriptionId,
+          name: 'Legacy profile',
+          url:
+              'https://example.com/source-one\n'
+              'https://example.com/source-two',
+          lastUpdated: 123,
+        ),
+      ),
+    );
+
+    await _openSheet(tester, activeSubscriptionId: subscriptionId);
+    await _pumpUntilFound(tester, find.text('Legacy profile'));
+    await tester.tap(find.byIcon(Icons.more_vert_rounded).first);
+    await tester.pump();
+    await tester.tap(find.text('Subscription'));
+    await _pumpUi(tester);
+
+    await tester.tap(
+      find.byKey(const ValueKey('edit_subscription_url_button')),
+    );
+    await _pumpUi(tester, const Duration(milliseconds: 200));
+
+    final editor = find.byKey(const ValueKey('subscription_url_editor'));
+    expect(editor, findsOneWidget);
+    await tester.tap(find.text('Save'));
+    await tester.pump();
+    expect(
+      find.text('Keep one URL. Add the other sources as separate profiles.'),
+      findsOneWidget,
+    );
+
+    await tester.enterText(editor, '  https://example.com/working  \n');
+    await tester.pump();
+    expect(
+      find.text('Keep one URL. Add the other sources as separate profiles.'),
+      findsNothing,
+    );
+    await tester.tap(find.text('Cancel'));
+    await tester.pump(const Duration(milliseconds: 250));
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
 }
 
 Future<void> _openSheet(

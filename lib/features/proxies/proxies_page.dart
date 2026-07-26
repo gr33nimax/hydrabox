@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:math';
@@ -161,6 +162,8 @@ class _ProxyLatencyLabel extends StatelessWidget {
     required this.text,
     required this.color,
     required this.checking,
+    required this.unavailable,
+    required this.unavailableLabel,
     required this.emphasized,
     this.tooltip,
   });
@@ -168,6 +171,8 @@ class _ProxyLatencyLabel extends StatelessWidget {
   final String text;
   final Color color;
   final bool checking;
+  final bool unavailable;
+  final String unavailableLabel;
   final bool emphasized;
   final String? tooltip;
 
@@ -180,6 +185,22 @@ class _ProxyLatencyLabel extends StatelessWidget {
     if (checking) {
       return Center(child: _LatencyDots(color: color));
     }
+    final content = unavailable
+        ? Icon(
+            Icons.warning_amber_rounded,
+            key: const ValueKey('proxy-latency-unavailable'),
+            color: color,
+            size: 25,
+            semanticLabel: unavailableLabel,
+          )
+        : Text(
+            text,
+            key: ValueKey(text),
+            textAlign: TextAlign.end,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: style,
+          );
     final child = AnimatedSwitcher(
       duration: const Duration(milliseconds: 160),
       switchInCurve: Curves.easeOutCubic,
@@ -187,14 +208,7 @@ class _ProxyLatencyLabel extends StatelessWidget {
       transitionBuilder: (child, animation) {
         return FadeTransition(opacity: animation, child: child);
       },
-      child: Text(
-        text,
-        key: ValueKey(text),
-        textAlign: TextAlign.end,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: style,
-      ),
+      child: content,
     );
     final message = tooltip?.trim();
     if (message == null || message.isEmpty) {
@@ -202,36 +216,6 @@ class _ProxyLatencyLabel extends StatelessWidget {
     }
     return Tooltip(message: message, child: child);
   }
-}
-
-String _latencyErrorLabel(String? error) {
-  final text = error?.trim();
-  if (text == null || text.isEmpty) {
-    return '-';
-  }
-  final normalized = text.toLowerCase();
-  if (normalized.contains('tls') || normalized.contains('handshake')) {
-    return 'TLS';
-  }
-  if (normalized.contains('timeout') || normalized.contains('deadline')) {
-    return 'timeout';
-  }
-  if (normalized.contains('refused')) {
-    return 'refused';
-  }
-  if (normalized.contains('eof')) {
-    return 'EOF';
-  }
-  if (normalized.contains('dns') ||
-      normalized.contains('lookup') ||
-      normalized.contains('resolve')) {
-    return 'DNS';
-  }
-  if (normalized.contains('network is unreachable') ||
-      normalized.contains('no route')) {
-    return 'network';
-  }
-  return 'error';
 }
 
 String? _latencyErrorTooltip(String? error) {
@@ -380,6 +364,7 @@ class ProxiesPage extends StatefulWidget {
 class _ProxiesPageState extends State<ProxiesPage> {
   late ProxySort _sort;
   List<AppProxySummary> _visibleItems = const [];
+  Timer? _runtimeResortTimer;
   double _proxySheetHeaderScrollCollapse = 0;
   bool _groupSheetOpen = false;
   List<_ProxyListEntry>? _visibleEntriesCache;
@@ -401,14 +386,20 @@ class _ProxiesPageState extends State<ProxiesPage> {
   void initState() {
     super.initState();
     _sort = widget.initialSort;
+    widget.runtimeStates?.revision.addListener(_onRuntimeStatesChanged);
     _rebuildVisibleItems();
   }
 
   @override
   void didUpdateWidget(covariant ProxiesPage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.runtimeStates != widget.runtimeStates) {
+      oldWidget.runtimeStates?.revision.removeListener(_onRuntimeStatesChanged);
+      widget.runtimeStates?.revision.addListener(_onRuntimeStatesChanged);
+    }
     if (oldWidget.proxies != widget.proxies ||
-        oldWidget.isProxyChainTag != widget.isProxyChainTag) {
+        oldWidget.isProxyChainTag != widget.isProxyChainTag ||
+        oldWidget.runtimeStates != widget.runtimeStates) {
       _rebuildVisibleItems();
     }
     if (oldWidget.initialSort != widget.initialSort &&
@@ -419,6 +410,28 @@ class _ProxiesPageState extends State<ProxiesPage> {
     if (!_effectiveSheetAtMaxExtent && _proxySheetHeaderScrollCollapse != 0) {
       _proxySheetHeaderScrollCollapse = 0;
     }
+  }
+
+  @override
+  void dispose() {
+    _runtimeResortTimer?.cancel();
+    widget.runtimeStates?.revision.removeListener(_onRuntimeStatesChanged);
+    super.dispose();
+  }
+
+  void _onRuntimeStatesChanged() {
+    if (!mounted || _sort != ProxySort.latency) {
+      return;
+    }
+    if (_runtimeResortTimer?.isActive ?? false) {
+      return;
+    }
+    _runtimeResortTimer = Timer(const Duration(milliseconds: 80), () {
+      if (!mounted || _sort != ProxySort.latency) {
+        return;
+      }
+      setState(_rebuildVisibleItems);
+    });
   }
 
   void _setSort(ProxySort value) {
@@ -622,7 +635,12 @@ class _ProxiesPageState extends State<ProxiesPage> {
   }
 
   void _sortItems(List<AppProxySummary> items, {bool keepLowestFirst = true}) {
-    sortProxySummaries(items, _sort, keepPinnedFirst: keepLowestFirst);
+    sortProxySummaries(
+      items,
+      _sort,
+      keepPinnedFirst: keepLowestFirst,
+      runtimeStateFor: widget.runtimeStates?.valueFor,
+    );
   }
 
   @override
@@ -2104,6 +2122,7 @@ class _GroupOutboundsSheetBody extends StatefulWidget {
 class _GroupOutboundsSheetBodyState extends State<_GroupOutboundsSheetBody> {
   late ProxySort _sort;
   late String _selectedTag;
+  Timer? _runtimeResortTimer;
   List<AppProxySummary>? _sortedChildrenCache;
   ProxySort? _sortedChildrenSort;
 
@@ -2112,11 +2131,16 @@ class _GroupOutboundsSheetBodyState extends State<_GroupOutboundsSheetBody> {
     super.initState();
     _sort = widget.initialSort;
     _selectedTag = widget.selectedTag;
+    widget.runtimeStates?.revision.addListener(_onRuntimeStatesChanged);
   }
 
   @override
   void didUpdateWidget(covariant _GroupOutboundsSheetBody oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.runtimeStates != widget.runtimeStates) {
+      oldWidget.runtimeStates?.revision.removeListener(_onRuntimeStatesChanged);
+      widget.runtimeStates?.revision.addListener(_onRuntimeStatesChanged);
+    }
     if (oldWidget.children != widget.children) {
       _sortedChildrenCache = null;
       _sortedChildrenSort = null;
@@ -2124,6 +2148,31 @@ class _GroupOutboundsSheetBodyState extends State<_GroupOutboundsSheetBody> {
     if (oldWidget.selectedTag != widget.selectedTag) {
       _selectedTag = widget.selectedTag;
     }
+  }
+
+  @override
+  void dispose() {
+    _runtimeResortTimer?.cancel();
+    widget.runtimeStates?.revision.removeListener(_onRuntimeStatesChanged);
+    super.dispose();
+  }
+
+  void _onRuntimeStatesChanged() {
+    if (!mounted || _sort != ProxySort.latency) {
+      return;
+    }
+    if (_runtimeResortTimer?.isActive ?? false) {
+      return;
+    }
+    _runtimeResortTimer = Timer(const Duration(milliseconds: 80), () {
+      if (!mounted || _sort != ProxySort.latency) {
+        return;
+      }
+      setState(() {
+        _sortedChildrenCache = null;
+        _sortedChildrenSort = null;
+      });
+    });
   }
 
   void _setSort(ProxySort value) {
@@ -2144,7 +2193,12 @@ class _GroupOutboundsSheetBodyState extends State<_GroupOutboundsSheetBody> {
       return cached;
     }
     final children = widget.children.toList(growable: false);
-    sortProxySummaries(children, _sort, keepPinnedFirst: false);
+    sortProxySummaries(
+      children,
+      _sort,
+      keepPinnedFirst: false,
+      runtimeStateFor: widget.runtimeStates?.valueFor,
+    );
     _sortedChildrenCache = children;
     _sortedChildrenSort = _sort;
     return children;
@@ -3181,12 +3235,14 @@ class ProxyTile extends StatelessWidget {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
     final state = runtimeState;
-    final latency = state?.latency ?? proxy.latency;
+    final latency = state == null ? proxy.latency : state.latency;
     final latencyFresh = state?.latencyFresh ?? proxy.latencyFresh;
     final latencyChecking = state?.latencyChecking ?? proxy.latencyChecking;
     final latencyUnavailable =
         state?.latencyUnavailable ?? proxy.latencyUnavailable;
-    final latencyError = state?.latencyError ?? proxy.latencyError;
+    final latencyError = state == null
+        ? proxy.latencyError
+        : state.latencyError;
     final hasLatencyError = latencyError?.trim().isNotEmpty == true;
     final highlighted = state?.highlighted ?? this.highlighted;
     final selecting = state?.selecting ?? false;
@@ -3194,10 +3250,8 @@ class ProxyTile extends StatelessWidget {
         ? l10n.proxySwitching
         : latencyChecking
         ? '... ms'
-        : latencyUnavailable
-        ? _latencyErrorLabel(latencyError)
-        : latency == null && hasLatencyError
-        ? _latencyErrorLabel(latencyError)
+        : hasLatencyError
+        ? '—'
         : latency == null
         ? '—'
         : '$latency ms';
@@ -3207,8 +3261,6 @@ class ProxyTile extends StatelessWidget {
         ? theme.colorScheme.primary
         : latencyUnavailable
         ? theme.colorScheme.error
-        : latency == null && hasLatencyError
-        ? theme.colorScheme.tertiary
         : !latencyFresh || latency == null
         ? theme.colorScheme.onSurfaceVariant
         : latency < 800
@@ -3224,6 +3276,8 @@ class ProxyTile extends StatelessWidget {
       text: latencyText,
       color: delayColor,
       checking: latencyChecking && !selecting,
+      unavailable: latencyUnavailable && !latencyChecking && !selecting,
+      unavailableLabel: l10n.proxyUnavailable,
       emphasized:
           selecting || latencyFresh || latencyUnavailable || hasLatencyError,
       tooltip: hasLatencyError ? _latencyErrorTooltip(latencyError) : null,

@@ -706,9 +706,11 @@ void main() {
   );
 
   testWidgets(
-    'embedded proxy row shows URLTest error without marking it dead',
+    'embedded proxy row hides transient URLTest details from the list',
     (tester) async {
-      final proxies = <AppProxySummary>[_proxy('proxy-1', 'proxy 1')];
+      final proxies = <AppProxySummary>[
+        _proxy('proxy-1', 'proxy 1', latency: 42),
+      ];
       final runtimeStates = ProxyRuntimeVisualStore();
       addTearDown(runtimeStates.dispose);
 
@@ -744,7 +746,109 @@ void main() {
       });
       await tester.pump();
 
-      expect(find.text('EOF'), findsOneWidget);
+      expect(find.text('EOF'), findsNothing);
+      expect(find.text('—'), findsOneWidget);
+      expect(find.byIcon(Icons.warning_amber_rounded), findsNothing);
+    },
+  );
+
+  testWidgets('embedded proxy row marks a confirmed unavailable server', (
+    tester,
+  ) async {
+    final proxies = <AppProxySummary>[_proxy('proxy-1', 'proxy 1')];
+    final runtimeStates = ProxyRuntimeVisualStore();
+    addTearDown(runtimeStates.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        supportedLocales: AppLocalizations.supportedLocales,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        home: Scaffold(
+          body: SizedBox(
+            height: 720,
+            child: ProxiesPage(
+              proxies: proxies,
+              selectedTag: 'proxy-1',
+              connected: true,
+              progressiveBlurEnabled: false,
+              onSelected: (_) {},
+              onUrlTest: () async {},
+              embedded: true,
+              sheetAtMaxExtent: true,
+              sheetExtent: 1,
+              runtimeStates: runtimeStates,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    runtimeStates.replaceAll(const <String, ProxyRuntimeVisualState>{
+      'proxy-1': ProxyRuntimeVisualState(
+        latencyError: 'lookup failed',
+        latencyUnavailable: true,
+      ),
+    });
+    await tester.pump();
+
+    expect(find.text('DNS'), findsNothing);
+    expect(find.byIcon(Icons.warning_amber_rounded), findsOneWidget);
+  });
+
+  testWidgets(
+    'latency sort follows runtime updates without replacing the proxy list',
+    (tester) async {
+      final proxies = <AppProxySummary>[
+        _proxy('old-fast', 'Old fast', latency: 1),
+        _proxy('healthy', 'Healthy', latency: 50),
+      ];
+      final runtimeStates = ProxyRuntimeVisualStore();
+      addTearDown(runtimeStates.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          supportedLocales: AppLocalizations.supportedLocales,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          home: Scaffold(
+            body: SizedBox(
+              height: 720,
+              child: ProxiesPage(
+                proxies: proxies,
+                selectedTag: 'healthy',
+                connected: true,
+                initialSort: ProxySort.latency,
+                progressiveBlurEnabled: false,
+                onSelected: (_) {},
+                onUrlTest: () async {},
+                embedded: true,
+                sheetAtMaxExtent: true,
+                sheetExtent: 1,
+                runtimeStates: runtimeStates,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(
+        tester.getTopLeft(find.text('Old fast')).dy,
+        lessThan(tester.getTopLeft(find.text('Healthy')).dy),
+      );
+
+      runtimeStates.replaceAll(const <String, ProxyRuntimeVisualState>{
+        'old-fast': ProxyRuntimeVisualState(
+          latencyUnavailable: true,
+          latencyError: 'i/o timeout',
+        ),
+        'healthy': ProxyRuntimeVisualState(latency: 25, latencyFresh: true),
+      });
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump();
+
+      expect(
+        tester.getTopLeft(find.text('Healthy')).dy,
+        lessThan(tester.getTopLeft(find.text('Old fast')).dy),
+      );
     },
   );
 

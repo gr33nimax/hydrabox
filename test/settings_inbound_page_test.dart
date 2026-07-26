@@ -10,6 +10,7 @@ void main() {
     tester,
   ) async {
     InboundConnectionMode? selectedMode;
+    String? changedUsername;
 
     await tester.binding.setSurfaceSize(const Size(420, 860));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -32,6 +33,7 @@ void main() {
           currentProxyAllowLan: false,
           currentProxyMixedListen: '127.0.0.1',
           currentProxyMixedPort: 1080,
+          currentProxyUsername: defaultProxyUsername,
           currentProxyPassword: '',
           onConnectionModeChanged: (mode) => selectedMode = mode,
           onVpnMtuChanged: (_) {},
@@ -40,6 +42,7 @@ void main() {
           onProxyInboundEnabledChanged: (_) {},
           onProxyAllowLanChanged: (_) {},
           onProxyMixedPortChanged: (_) {},
+          onProxyUsernameChanged: (value) => changedUsername = value,
           onProxyPasswordChanged: (_) {},
         ),
       ),
@@ -54,5 +57,25 @@ void main() {
     expect(selectedMode, InboundConnectionMode.proxy);
     expect(find.text('Активно: Прокси'), findsOneWidget);
     expect(find.text('Активно: VPN TUN'), findsNothing);
+
+    await tester.scrollUntilVisible(
+      find.text(defaultProxyUsername),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(defaultProxyUsername));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('От 1 до 64 символов, без пробелов и двоеточия'),
+      findsOne,
+    );
+    await tester.enterText(find.byType(TextField).last, 'sergey');
+    await tester.tap(find.text('Сохранить').last);
+    await tester.pumpAndSettle();
+
+    expect(changedUsername, 'sergey');
+    expect(find.text('sergey'), findsOneWidget);
   });
 }

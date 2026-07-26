@@ -1054,6 +1054,9 @@ class MainActivity : FlutterFragmentActivity() {
         val batteryTemperatureTenths = batteryIntent
             ?.getIntExtra("temperature", Int.MIN_VALUE)
             ?: Int.MIN_VALUE
+        fun memoryStatKb(name: String): Long? {
+            return processMemory?.getMemoryStat(name)?.toLongOrNull()
+        }
         return linkedMapOf(
             "pid" to android.os.Process.myPid(),
             "runtimeMode" to MeowApplication.performanceMode,
@@ -1065,6 +1068,14 @@ class MainActivity : FlutterFragmentActivity() {
             "runtimeIntent" to MeowApplication.describeRuntimeIntent(),
             "totalPssKb" to processMemory?.totalPss,
             "totalPrivateDirtyKb" to processMemory?.totalPrivateDirty,
+            "dalvikPssKb" to processMemory?.dalvikPss,
+            "nativePssKb" to processMemory?.nativePss,
+            "otherPssKb" to processMemory?.otherPss,
+            "graphicsPssKb" to memoryStatKb("summary.graphics"),
+            "codePssKb" to memoryStatKb("summary.code"),
+            "stackPssKb" to memoryStatKb("summary.stack"),
+            "privateOtherPssKb" to memoryStatKb("summary.private-other"),
+            "systemPssKb" to memoryStatKb("summary.system"),
             "nativeHeapAllocatedKb" to (Debug.getNativeHeapAllocatedSize() / 1024L),
             "nativeHeapSizeKb" to (Debug.getNativeHeapSize() / 1024L),
             "javaHeapUsedKb" to ((runtime.totalMemory() - runtime.freeMemory()) / 1024L),

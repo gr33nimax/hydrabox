@@ -183,9 +183,11 @@ class MeowVpnService : VpnService() {
         }
         Log.i(TAG, "onTaskRemoved – scheduling service restart")
         MeowDiagnostics.log(TAG, "onTaskRemoved – scheduling service restart")
+        boxService.requestRuntimeRecovery("task_removed")
         // Arm a foreground-service recovery so the VPN survives an OEM killing
         // the process together with the task. If the service stayed alive,
-        // startInternal() recognizes the existing runtime and leaves TUN alone.
+        // startInternal() wakes the existing runtime and re-applies its physical
+        // upstream without rebuilding TUN.
         val restartIntent = Intent(this, MeowVpnService::class.java)
             .setAction(MeowBoxService.ACTION_START)
         val flags = PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_ONE_SHOT or
@@ -197,7 +199,7 @@ class MeowVpnService : VpnService() {
             flags,
         )
         val alarm = getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        alarm.set(
+        alarm.setAndAllowWhileIdle(
             AlarmManager.ELAPSED_REALTIME_WAKEUP,
             SystemClock.elapsedRealtime() + 1_000,
             pending,

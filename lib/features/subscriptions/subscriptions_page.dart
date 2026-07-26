@@ -1,7 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
-import 'dart:isolate';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -13,10 +11,12 @@ import 'package:meow_client/core/security/sensitive_clipboard.dart';
 import 'package:meow_client/core/widgets/app_notice.dart';
 import 'package:meow_client/data/backup/etonify_backup_service.dart';
 import 'package:meow_client/data/subscription/happ_crypto_link.dart';
+import 'package:meow_client/data/subscription/subscription_failure.dart';
 import 'package:meow_client/data/subscription/subscription_fetcher.dart';
 import 'package:meow_client/data/subscription/subscription_store.dart';
 import 'package:meow_client/features/settings/settings_ui.dart';
 import 'package:meow_client/features/subscriptions/subscription_error_message.dart';
+import 'package:meow_client/features/subscriptions/subscription_file_reader.dart';
 import 'package:meow_client/l10n/generated/app_localizations.dart';
 import 'package:meow_client/logging/app_log_store.dart';
 import 'package:meow_client/models/subscription.dart';
@@ -452,6 +452,7 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
                 customName: result.name.isNotEmpty ? result.name : null,
                 sourceName: prepared.sourceName,
                 operationTimeout: _kSubscriptionOperationTimeout,
+                isCancelled: result.isCancelled,
               )
             : SubscriptionStore.addFromUrl(
                 prepared.url!,
@@ -459,6 +460,7 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
                 autoRefreshMinutes: result.autoRefreshMinutes,
                 requestInfo: prepared.requestInfo,
                 operationTimeout: _kSubscriptionOperationTimeout,
+                isCancelled: result.isCancelled,
               ),
       );
       final created = createdResult.subscription;
@@ -487,6 +489,8 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
         });
       }
       return true;
+    } on SubscriptionImportCancelledException {
+      rethrow;
     } catch (e) {
       AppLogStore.warning(
         'subscription',
@@ -2037,6 +2041,64 @@ class _SubscriptionDetailsPageState extends State<_SubscriptionDetailsPage> {
     }
   }
 
+  ({String? url, String? error}) _validateEditedSubscriptionUrl(
+    String input,
+    AppLocalizations l10n,
+  ) {
+    final urls = input
+        .split(RegExp(r'[\r\n]+'))
+        .map((value) => value.trim())
+        .where((value) => value.isNotEmpty)
+        .toList(growable: false);
+    if (urls.isEmpty) {
+      return (url: null, error: l10n.invalidUrl);
+    }
+    if (urls.length > 1) {
+      return (url: null, error: l10n.subscriptionUrlSingleSourceRequired);
+    }
+
+    try {
+      final uri = SubscriptionFetcher.parseRequestUri(urls.single);
+      final scheme = uri.scheme.toLowerCase();
+      if ((scheme != 'http' && scheme != 'https') || uri.host.isEmpty) {
+        return (url: null, error: l10n.invalidUrl);
+      }
+      return (url: uri.toString(), error: null);
+    } on FormatException {
+      return (url: null, error: l10n.invalidUrl);
+    }
+  }
+
+  Future<void> _editSubscriptionUrl(Subscription subscription) async {
+    final l10n = AppLocalizations.of(context);
+    final editedUrl = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => _SubscriptionUrlEditDialog(
+        initialValue: subscription.url,
+        validate: (input) => _validateEditedSubscriptionUrl(input, l10n),
+      ),
+    );
+
+    if (!mounted || editedUrl == null || editedUrl == subscription.url) {
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      await SubscriptionStore.saveMetadata(
+        subscription.copyWith(
+          url: editedUrl,
+          lastUpdated: 0,
+          info: subscription.info?.copyWith(ignoreSubscriptionMoved: false),
+        ),
+      );
+      _reloadCurrentSubscription();
+    } finally {
+      if (mounted) {
+        setState(() => _busy = false);
+      }
+    }
+  }
+
   Future<void> _openUrl(String value) async {
     final uri = Uri.tryParse(value);
     if (uri == null) {
@@ -2384,6 +2446,19 @@ class _SubscriptionDetailsPageState extends State<_SubscriptionDetailsPage> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           if (!isLocalFileImport) ...[
+                            IconButton(
+                              key: const ValueKey(
+                                'edit_subscription_url_button',
+                              ),
+                              onPressed: _busy
+                                  ? null
+                                  : () async {
+                                      _haptic();
+                                      await _editSubscriptionUrl(subscription);
+                                    },
+                              tooltip: l10n.editSubscriptionUrlAction,
+                              icon: const Icon(Icons.edit_rounded),
+                            ),
                             FilledButton.tonal(
                               onPressed: () async {
                                 _haptic();
@@ -2436,14 +2511,18 @@ class _SubscriptionDetailsPageState extends State<_SubscriptionDetailsPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            isLocalFileImport
-                                ? l10n.importedFromFileLabel(
-                                    localFileImportName ?? subscription.name,
-                                  )
-                                : subscription.url,
-                            style: theme.textTheme.bodyMedium,
-                          ),
+                          if (isLocalFileImport)
+                            Text(
+                              l10n.importedFromFileLabel(
+                                localFileImportName ?? subscription.name,
+                              ),
+                              style: theme.textTheme.bodyMedium,
+                            )
+                          else
+                            SelectableText(
+                              subscription.url,
+                              style: theme.textTheme.bodyMedium,
+                            ),
                           if (happCryptoLink != null &&
                               happCryptoLink.isNotEmpty) ...[
                             Divider(
@@ -2912,41 +2991,125 @@ class _DetailsBlock extends StatelessWidget {
     final theme = Theme.of(context);
     final trailingWidget = trailing;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Material(
         color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: theme.colorScheme.outlineVariant.withValues(alpha: .42),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(
+            color: theme.colorScheme.outlineVariant.withValues(alpha: .42),
+          ),
         ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    title,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
+        clipBehavior: Clip.antiAlias,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
-                ),
-                ...switch (trailingWidget) {
-                  final widget? => [widget],
-                  null => const <Widget>[],
-                },
-              ],
-            ),
-            const Gap(10),
-            child,
-          ],
+                  ...switch (trailingWidget) {
+                    final widget? => [widget],
+                    null => const <Widget>[],
+                  },
+                ],
+              ),
+              const Gap(10),
+              child,
+            ],
+          ),
         ),
       ),
+    );
+  }
+}
+
+class _SubscriptionUrlEditDialog extends StatefulWidget {
+  const _SubscriptionUrlEditDialog({
+    required this.initialValue,
+    required this.validate,
+  });
+
+  final String initialValue;
+  final ({String? url, String? error}) Function(String input) validate;
+
+  @override
+  State<_SubscriptionUrlEditDialog> createState() =>
+      _SubscriptionUrlEditDialogState();
+}
+
+class _SubscriptionUrlEditDialogState
+    extends State<_SubscriptionUrlEditDialog> {
+  late final TextEditingController _controller;
+  String? _errorText;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialValue);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final result = widget.validate(_controller.text);
+    if (result.error case final error?) {
+      setState(() => _errorText = error);
+      return;
+    }
+    Navigator.of(context).pop(result.url);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return AlertDialog(
+      title: Text(l10n.editSubscriptionUrlAction),
+      content: SizedBox(
+        width: 520,
+        child: TextField(
+          key: const ValueKey('subscription_url_editor'),
+          controller: _controller,
+          autofocus: true,
+          minLines: 4,
+          maxLines: 10,
+          keyboardType: TextInputType.multiline,
+          textInputAction: TextInputAction.newline,
+          decoration: InputDecoration(
+            labelText: l10n.subscriptionUrl,
+            helperText: l10n.subscriptionUrlEditHint,
+            helperMaxLines: 4,
+            errorText: _errorText,
+            errorMaxLines: 3,
+            border: const OutlineInputBorder(),
+          ),
+          onChanged: (_) {
+            if (_errorText != null) {
+              setState(() => _errorText = null);
+            }
+          },
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(l10n.cancel),
+        ),
+        FilledButton(onPressed: _save, child: Text(l10n.saveAction)),
+      ],
     );
   }
 }
@@ -3158,6 +3321,7 @@ class _AddResult {
     this.name, {
     this.requestInfo,
     this.autoRefreshMinutes = 360,
+    this.isCancelled,
   }) : fileContent = null,
        sourceName = null;
 
@@ -3165,6 +3329,7 @@ class _AddResult {
     required this.name,
     required this.fileContent,
     required this.sourceName,
+    this.isCancelled,
   }) : url = '',
        requestInfo = null,
        autoRefreshMinutes = 0;
@@ -3175,6 +3340,25 @@ class _AddResult {
   final int autoRefreshMinutes;
   final String? fileContent;
   final String? sourceName;
+  final bool Function()? isCancelled;
+
+  _AddResult withCancellation(bool Function() isCancelled) {
+    if (fileContent != null) {
+      return _AddResult.file(
+        name: name,
+        fileContent: fileContent!,
+        sourceName: sourceName,
+        isCancelled: isCancelled,
+      );
+    }
+    return _AddResult.url(
+      url,
+      name,
+      requestInfo: requestInfo,
+      autoRefreshMinutes: autoRefreshMinutes,
+      isCancelled: isCancelled,
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -3216,6 +3400,7 @@ class _AddSubscriptionSheetState extends State<_AddSubscriptionSheet> {
   bool _useCustomHwid = false;
   int _autoRefreshMinutes = 360;
   String? _stage;
+  bool _cancelRequested = false;
 
   @override
   void dispose() {
@@ -3270,7 +3455,9 @@ class _AddSubscriptionSheetState extends State<_AddSubscriptionSheet> {
       });
     }
     try {
-      final added = await widget.onAdd(result);
+      final added = await widget.onAdd(
+        result.withCancellation(() => _cancelRequested),
+      );
       if (!mounted) {
         return;
       }
@@ -3285,6 +3472,13 @@ class _AddSubscriptionSheetState extends State<_AddSubscriptionSheet> {
       await Future<void>.delayed(const Duration(milliseconds: 260));
       if (mounted) {
         widget.onClose(true);
+      }
+    } on SubscriptionImportCancelledException {
+      if (mounted && !_cancelRequested) {
+        setState(() {
+          _busy = false;
+          _stage = null;
+        });
       }
     } on _LocalizedSubscriptionPageError catch (e) {
       if (mounted) {
@@ -3395,54 +3589,49 @@ class _AddSubscriptionSheetState extends State<_AddSubscriptionSheet> {
       return;
     }
     FocusScope.of(context).unfocus();
-    final result = await FilePicker.pickFiles(withData: false);
-    if (!mounted || result == null || result.files.isEmpty) return;
     final l10n = AppLocalizations.of(context);
-    setState(() {
-      _busy = true;
-      _stage = l10n.addSubscriptionReadingFile;
-    });
-    final file = result.files.single;
-    final bytes =
-        file.bytes ??
-        (file.path != null ? await File(file.path!).readAsBytes() : null);
-    if (!mounted) return;
-    if (bytes == null || bytes.isEmpty) {
-      _setError(AppLocalizations.of(context).invalidSubscriptionFile);
-      return;
+    try {
+      final result = await FilePicker.pickFiles(
+        withData: false,
+        withReadStream: true,
+      );
+      if (!mounted || result == null || result.files.isEmpty) return;
+      _cancelRequested = false;
+      setState(() {
+        _busy = true;
+        _stage = l10n.addSubscriptionReadingFile;
+      });
+      final file = result.files.single;
+      final content = await readSubscriptionFile(file);
+      if (!mounted || _cancelRequested) return;
+      if (content.contains(EtonifyBackupService.profileMagic) ||
+          content.contains(EtonifyBackupService.settingsMagic)) {
+        _setError(l10n.backupUseSettingsImport);
+        return;
+      }
+      await _submitResult(
+        _AddResult.file(
+          name: _nameController.text.trim(),
+          fileContent: content,
+          sourceName: file.name,
+        ),
+        keepCurrentStage: true,
+      );
+    } catch (error) {
+      AppLogStore.warning(
+        'subscription',
+        'Selected subscription file could not be read: '
+            '${error.runtimeType}: $error',
+      );
+      if (mounted && !_cancelRequested) {
+        _setError(l10n.invalidSubscriptionFile);
+      }
     }
-    final decodedHead = utf8.decode(
-      bytes.take(256).toList(growable: false),
-      allowMalformed: true,
-    );
-    if (decodedHead.contains(EtonifyBackupService.profileMagic) ||
-        decodedHead.contains(EtonifyBackupService.settingsMagic)) {
-      _setError(AppLocalizations.of(context).backupUseSettingsImport);
-      return;
-    }
-    final transferable = TransferableTypedData.fromList([bytes]);
-    final content = await Isolate.run(
-      () => utf8
-          .decode(
-            transferable.materialize().asUint8List(),
-            allowMalformed: true,
-          )
-          .trim(),
-      debugName: 'meow-read-subscription-file',
-    );
-    if (!mounted) return;
-    if (content.isEmpty) {
-      _setError(AppLocalizations.of(context).invalidSubscriptionFile);
-      return;
-    }
-    await _submitResult(
-      _AddResult.file(
-        name: _nameController.text.trim(),
-        fileContent: content,
-        sourceName: file.name,
-      ),
-      keepCurrentStage: true,
-    );
+  }
+
+  void _cancelAndClose() {
+    _cancelRequested = true;
+    widget.onClose(false);
   }
 
   void _showManual() {
@@ -3509,8 +3698,12 @@ class _AddSubscriptionSheetState extends State<_AddSubscriptionSheet> {
         final quickButtonHeight = ((constraints.maxWidth - 18 * 2 - 10 * 2) / 3)
             .clamp(124.0, 132.0);
         return PopScope(
-          canPop: _mode == _AddSubscriptionSheetMode.quick && !_busy,
+          canPop: _mode == _AddSubscriptionSheetMode.quick || _busy,
           onPopInvokedWithResult: (didPop, result) {
+            if (didPop) {
+              _cancelRequested = true;
+              return;
+            }
             if (!didPop && !_busy) {
               _showQuick();
             }
@@ -3697,9 +3890,7 @@ class _AddSubscriptionSheetState extends State<_AddSubscriptionSheet> {
                                 ),
                                 IconButton(
                                   tooltip: l10n.close,
-                                  onPressed: _busy
-                                      ? null
-                                      : () => widget.onClose(false),
+                                  onPressed: _cancelAndClose,
                                   icon: const Icon(Icons.close_rounded),
                                 ),
                               ],

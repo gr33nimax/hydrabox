@@ -27,6 +27,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get proxySwitching => 'Switching';
 
   @override
+  String get proxyUnavailable => 'Unavailable';
+
+  @override
   String get proxySelectorTitle => 'Selector';
 
   @override
@@ -955,6 +958,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get proxyUsernameTitle => 'Username';
 
   @override
+  String get proxyUsernameSubtitle =>
+      '1–64 characters, without spaces or a colon';
+
+  @override
   String get proxyPasswordTitle => 'Password';
 
   @override
@@ -1269,6 +1276,20 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get subscriptionUrl => 'Subscription URL';
+
+  @override
+  String get editSubscriptionUrlAction => 'Edit URL';
+
+  @override
+  String get saveAction => 'Save';
+
+  @override
+  String get subscriptionUrlEditHint =>
+      'A profile can update from one URL. If an old import glued several links together, keep the required line and add the other sources as separate profiles. Refresh the subscription after saving.';
+
+  @override
+  String get subscriptionUrlSingleSourceRequired =>
+      'Keep one URL. Add the other sources as separate profiles.';
 
   @override
   String get subscriptionUrlOrContent => 'URL or content';

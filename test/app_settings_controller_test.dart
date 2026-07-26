@@ -127,8 +127,15 @@ void main() {
     controller.setProxyInboundEnabled(true);
 
     expect(controller.proxyMixedListen, '127.0.0.1');
+    expect(controller.proxyUsername, defaultProxyUsername);
     expect(isValidProxyPassword(controller.proxyPassword), isTrue);
     expect(controller.proxyPassword.length, proxyPasswordLength);
+
+    final usernameChange = controller.setProxyUsername('sergey');
+    expect(usernameChange.changed, isTrue);
+    expect(usernameChange.restartRuntime, isTrue);
+    expect(controller.proxyUsername, 'sergey');
+    expect(controller.setProxyUsername('bad username').changed, isFalse);
   });
 
   test('proxy sorting changes persist without restarting runtime', () {

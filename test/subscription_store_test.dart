@@ -86,6 +86,21 @@ void main() {
     expect(metadata.hasRawPayload, isTrue);
   });
 
+  test('cancelled file import does not persist a subscription', () async {
+    var cancellationChecks = 0;
+
+    await expectLater(
+      SubscriptionStore.addFromContent(
+        'vless://uuid@server.com:443?type=tcp&security=tls#Node1',
+        sourceName: 'nodes.txt',
+        isCancelled: () => ++cancellationChecks >= 3,
+      ),
+      throwsA(isA<SubscriptionImportCancelledException>()),
+    );
+
+    expect(SubscriptionStore.getAllMetadata(), isEmpty);
+  });
+
   test(
     'stores payloads compressed without changing hydrated profiles',
     () async {

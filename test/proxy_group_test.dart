@@ -2076,6 +2076,7 @@ void main() {
       subscription,
       proxyInboundEnabled: true,
       proxyMixedListen: '0.0.0.0',
+      proxyUsername: 'sergey',
       proxyPassword: 'LocalOnlyPassword123456',
     ).build();
     final mixed = (config['inbounds'] as List).cast<Map>().firstWhere(
@@ -2083,7 +2084,7 @@ void main() {
     );
 
     expect(mixed['users'], [
-      {'username': defaultProxyUsername, 'password': 'LocalOnlyPassword123456'},
+      {'username': 'sergey', 'password': 'LocalOnlyPassword123456'},
     ]);
     expect(
       () => _defaultBuilder(
@@ -2336,6 +2337,7 @@ SingboxConfigBuilder _defaultBuilder(
   bool vpnInboundEnabled = false,
   bool proxyInboundEnabled = false,
   String proxyMixedListen = '127.0.0.1',
+  String proxyUsername = defaultProxyUsername,
   String proxyPassword = '',
   SplitRoutingMode splitRoutingMode = SplitRoutingMode.disabled,
   List<String> splitRoutingPackages = const <String>[],
@@ -2357,6 +2359,7 @@ SingboxConfigBuilder _defaultBuilder(
     proxyInboundEnabled: proxyInboundEnabled,
     proxyMixedListen: proxyMixedListen,
     proxyMixedPort: 1080,
+    proxyUsername: proxyUsername,
     proxyPassword: proxyPassword,
     dnsDirectResolver: dnsDirectResolver,
     dnsProxyResolver: dnsProxyResolver,

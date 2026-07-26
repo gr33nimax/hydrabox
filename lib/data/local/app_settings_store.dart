@@ -26,7 +26,20 @@ const int maxSplitRoutingPackageCount = 128;
 const String defaultUrlTestUrl = 'https://www.gstatic.com/generate_204';
 const String defaultRussiaDnsDirectResolver = 'udp://77.88.8.8';
 const String defaultProxyUsername = 'etonify';
+const int proxyUsernameMaxLength = 64;
 const int proxyPasswordLength = 24;
+
+bool isValidProxyUsername(String value) {
+  final normalized = value.trim();
+  return normalized.isNotEmpty &&
+      normalized.length <= proxyUsernameMaxLength &&
+      !RegExp(r'[\s:\x00-\x1F\x7F]').hasMatch(normalized);
+}
+
+String normalizeProxyUsername(String value) {
+  final normalized = value.trim();
+  return isValidProxyUsername(normalized) ? normalized : defaultProxyUsername;
+}
 
 bool isValidProxyPassword(String value) {
   final normalized = value.trim();
@@ -143,6 +156,7 @@ class AppSettingsState {
     required this.proxyAllowLan,
     required this.proxyMixedListen,
     required this.proxyMixedPort,
+    this.proxyUsername = defaultProxyUsername,
     this.proxyPassword = '',
     required this.dnsDirectPreset,
     required this.dnsDirectResolver,
@@ -198,6 +212,7 @@ class AppSettingsState {
   final bool proxyAllowLan;
   final String proxyMixedListen;
   final int proxyMixedPort;
+  final String proxyUsername;
   final String proxyPassword;
   final String dnsDirectPreset;
   final String dnsDirectResolver;
@@ -253,6 +268,7 @@ class AppSettingsState {
     bool? proxyAllowLan,
     String? proxyMixedListen,
     int? proxyMixedPort,
+    String? proxyUsername,
     String? proxyPassword,
     String? dnsDirectPreset,
     String? dnsDirectResolver,
@@ -313,6 +329,7 @@ class AppSettingsState {
       proxyAllowLan: proxyAllowLan ?? this.proxyAllowLan,
       proxyMixedListen: proxyMixedListen ?? this.proxyMixedListen,
       proxyMixedPort: proxyMixedPort ?? this.proxyMixedPort,
+      proxyUsername: proxyUsername ?? this.proxyUsername,
       proxyPassword: proxyPassword ?? this.proxyPassword,
       dnsDirectPreset: dnsDirectPreset ?? this.dnsDirectPreset,
       dnsDirectResolver: dnsDirectResolver ?? this.dnsDirectResolver,
@@ -391,6 +408,7 @@ abstract class AppSettingsStore {
   static const _proxyAllowLanKey = 'proxy_allow_lan';
   static const _proxyMixedListenKey = 'proxy_mixed_listen';
   static const _proxyMixedPortKey = 'proxy_mixed_port';
+  static const _proxyUsernameKey = 'proxy_username';
   static const _proxyPasswordKey = 'proxy_password';
   static const _dnsDirectPresetKey = 'dns_direct_preset';
   static const _dnsDirectResolverKey = 'dns_direct_resolver';
@@ -448,6 +466,7 @@ abstract class AppSettingsStore {
     _proxyAllowLanKey,
     _proxyMixedListenKey,
     _proxyMixedPortKey,
+    _proxyUsernameKey,
     _dnsDirectPresetKey,
     _dnsDirectResolverKey,
     _dnsProxyPresetKey,
@@ -619,6 +638,9 @@ abstract class AppSettingsStore {
               : '127.0.0.1'),
       proxyMixedPort:
           int.tryParse(map[_proxyMixedPortKey]?.toString() ?? '') ?? 1080,
+      proxyUsername: normalizeProxyUsername(
+        map[_proxyUsernameKey]?.toString() ?? '',
+      ),
       proxyPassword: map[_proxyPasswordKey]?.toString() ?? '',
       dnsDirectPreset: map[_dnsDirectPresetKey]?.toString() ?? 'cloudflare',
       dnsDirectResolver:
@@ -759,6 +781,7 @@ abstract class AppSettingsStore {
       _proxyAllowLanKey: state.proxyAllowLan ? '1' : '0',
       _proxyMixedListenKey: state.proxyMixedListen,
       _proxyMixedPortKey: state.proxyMixedPort.toString(),
+      _proxyUsernameKey: normalizeProxyUsername(state.proxyUsername),
       _proxyPasswordKey: state.proxyPassword,
       _dnsDirectPresetKey: state.dnsDirectPreset,
       _dnsDirectResolverKey: state.dnsDirectResolver,

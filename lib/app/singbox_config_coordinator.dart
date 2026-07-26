@@ -31,6 +31,7 @@ class SingboxConfigCoordinatorSnapshot {
     required this.proxyInboundEnabled,
     required this.proxyMixedListen,
     required this.proxyMixedPort,
+    this.proxyUsername = defaultProxyUsername,
     this.proxyPassword = '',
     required this.dnsDirectResolver,
     required this.dnsProxyResolver,
@@ -84,6 +85,7 @@ class SingboxConfigCoordinatorSnapshot {
   final bool proxyInboundEnabled;
   final String proxyMixedListen;
   final int proxyMixedPort;
+  final String proxyUsername;
   final String proxyPassword;
   final String dnsDirectResolver;
   final String dnsProxyResolver;
@@ -651,6 +653,7 @@ class SingboxConfigCoordinator {
       proxyInboundEnabled: snapshot.proxyInboundEnabled,
       proxyMixedListen: snapshot.proxyMixedListen,
       proxyMixedPort: snapshot.proxyMixedPort,
+      proxyUsername: snapshot.proxyUsername,
       proxyPassword: snapshot.proxyPassword,
       dnsDirectResolver: snapshot.dnsDirectResolver,
       dnsProxyResolver: snapshot.dnsProxyResolver,
