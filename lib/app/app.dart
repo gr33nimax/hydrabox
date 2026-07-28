@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import 'package:gap/gap.dart';
 import 'package:meow_client/app/active_proxy_ip_controller.dart';
 import 'package:meow_client/app/app_background_tasks.dart';
+import 'package:meow_client/app/app_bootstrap_controller.dart';
 import 'package:meow_client/app/app_settings_controller.dart';
 import 'package:meow_client/app/deep_link_import.dart';
 import 'package:meow_client/app/group_url_test_scheduler.dart';
@@ -30,7 +31,6 @@ import 'package:meow_client/data/adblock/ad_block_rule_set_service.dart';
 import 'package:meow_client/data/local/app_settings_store.dart';
 import 'package:meow_client/data/routing/russia_route_data_service.dart';
 import 'package:meow_client/data/subscription/happ_crypto_link.dart';
-import 'package:meow_client/data/subscription/subscription_fetcher.dart';
 import 'package:meow_client/data/subscription/subscription_store.dart';
 import 'package:meow_client/data/update/app_update_service.dart';
 import 'package:meow_client/features/home/home_page.dart';
@@ -94,13 +94,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   static final RegExp _quickTileCountryCodePattern = RegExp(r'^[A-Z]{2}$');
   static const _lowestProxyTag = lowestProxyTag;
   static const _derivedCacheBuildDebounce = Duration(milliseconds: 160);
-  static const _defaultUrlTestTimeoutSeconds = 15;
-  static const _defaultLocationLookupTimeoutSeconds = 5;
-  static const _coolUrlTestIntervalSeconds = 1800;
-  static const _coolUrlTestConcurrency = 8;
-  static const _coolUrlTestUnavailableCheckIntervalSeconds = 120;
-  static const _coolLocationLookupLimit = 2;
-  static const _coolLocationLookupConcurrency = 2;
   static const _coolNetworkHeartbeatIntervalSeconds = 240;
   static const _economyNetworkHeartbeatIntervalSeconds = 300;
   static const _trafficUiUpdateInterval = Duration(seconds: 1);
@@ -216,6 +209,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   final ProxySelectionController _proxySelection = ProxySelectionController();
   final ActiveProxyIpController _activeProxyIpController =
       ActiveProxyIpController();
+  late final AppBootstrapController _bootstrapController;
   final RuntimeLifecycleController _runtimeLifecycle =
       RuntimeLifecycleController();
   final RuntimeOperationCoordinator _runtimeOperations =
@@ -1716,6 +1710,9 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    _bootstrapController = AppBootstrapController(
+      fallbackClientVersionLabel: _fallbackClientVersionLabel,
+    );
     _runtimeCommands = RuntimeCommandCoordinator(
       selectOutbound: (groupTag, outboundTag) => SingboxRuntime.instance
           .selectOutbound(groupTag: groupTag, outboundTag: outboundTag),
@@ -1779,33 +1776,11 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     _configureImageCacheForAndroid();
     _refreshThemeCache();
     _startDeepLinkHandling();
-    unawaited(_refreshAppVersionInfo());
     unawaited(_bootstrap());
   }
 
-  Future<AppVersionInfo> _readAppVersionInfo() async {
-    try {
-      final info = await SingboxRuntime.instance.getAppVersionInfo();
-      if (info.versionName.trim().isEmpty) {
-        SubscriptionFetcher.configureAppVersion(_fallbackClientVersionLabel);
-        return const AppVersionInfo(
-          packageName: '',
-          versionName: _fallbackClientVersionLabel,
-          versionCode: 0,
-        );
-      }
-      SubscriptionFetcher.configureAppVersion(info.versionName);
-      return info;
-    } catch (error) {
-      SubscriptionFetcher.configureAppVersion(_fallbackClientVersionLabel);
-      AppLogStore.warning('app version', 'Failed to read app version: $error');
-      return const AppVersionInfo(
-        packageName: '',
-        versionName: _fallbackClientVersionLabel,
-        versionCode: 0,
-      );
-    }
-  }
+  Future<AppVersionInfo> _readAppVersionInfo() =>
+      _bootstrapController.readAppVersionInfo();
 
   Future<void> _refreshAppVersionInfo() async {
     final info = await _readAppVersionInfo();
@@ -2506,133 +2481,24 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
 
   Future<void> _bootstrap() async {
     final bootstrapStopwatch = Stopwatch()..start();
-    AppSettingsStore? store;
-    var ownsStore = false;
-    late AppSettingsState state;
-    var adBlockStatus = const AdBlockRuleSetStatus.unavailable();
-    var russiaRouteDataStatus = const RussiaRouteDataStatus.unavailable();
-    final appVersionInfoFuture = _readAppVersionInfo();
-    final coreCapabilitiesFuture = SingboxRuntime.instance
-        .getCoreCapabilities();
-    final useInMemoryBootstrap = widget.store is MemoryAppSettingsStore;
-    try {
-      if (useInMemoryBootstrap) {
-        store = widget.store!;
-      } else {
-        await HiveAppSettingsStore.initHive();
-        final subscriptionInitFuture = SubscriptionStore.init();
-        final storeFuture = widget.store == null
-            ? HiveAppSettingsStore.open()
-            : Future<AppSettingsStore>.value(widget.store!);
-        await subscriptionInitFuture;
-        store = await storeFuture;
-        ownsStore = widget.store == null;
-      }
-      state = await store.loadState();
-      final adBlockStatusFuture = AdBlockRuleSetService.instance
-          .loadStatus()
-          .catchError((_) => const AdBlockRuleSetStatus.unavailable());
-      final russiaRouteStatusFuture = RussiaRouteDataService.instance
-          .loadStatus()
-          .catchError((_) => const RussiaRouteDataStatus.unavailable());
-      adBlockStatus = await adBlockStatusFuture;
-      russiaRouteDataStatus = await russiaRouteStatusFuture;
-    } catch (error, stackTrace) {
-      AppLogStore.error(
-        'bootstrap',
-        'Failed to bootstrap app, using in-memory defaults: '
-            '$error\n$stackTrace',
-      );
-      if (widget.store == null && store != null) {
-        try {
-          await store.close();
-        } catch (_) {}
-      }
-      store = MemoryAppSettingsStore();
-      ownsStore = widget.store == null;
-      state = const AppSettingsState(
-        onboardingCompleted: false,
-        activeProfileId: '',
-        selectedProxyTag: '',
-        localeCode: 'system',
-        themePreference: AppThemePreference.system,
-        accentColorHex: 'default',
-        hapticEnabled: true,
-        hideServerIp: false,
-        progressiveBlurEnabled: false,
-        performanceMode: AppPerformanceMode.standard,
-        tlsFragmentationMode: TlsFragmentationMode.disabled,
-        vpnInboundEnabled: true,
-        vpnMtu: 1500,
-        vpnStrictRoute: true,
-        vpnTunImplementation: TunImplementationPreference.mixed,
-        proxyInboundEnabled: false,
-        proxyAllowLan: false,
-        proxyMixedListen: '127.0.0.1',
-        proxyMixedPort: 1080,
-        dnsDirectPreset: 'cloudflare',
-        dnsDirectResolver: 'udp://1.1.1.1',
-        dnsProxyPreset: 'cloudflare',
-        dnsProxyResolver: 'https://dns.cloudflare.com/dns-query',
-        dnsPreferIpv6: false,
-        russiaDnsDirectResolver: defaultRussiaDnsDirectResolver,
-        urlTestUrl: defaultUrlTestUrl,
-        urlTestIntervalSeconds: _coolUrlTestIntervalSeconds,
-        urlTestTimeoutSeconds: _defaultUrlTestTimeoutSeconds,
-        urlTestConcurrency: _coolUrlTestConcurrency,
-        urlTestUnavailableCheckIntervalSeconds:
-            _coolUrlTestUnavailableCheckIntervalSeconds,
-        locationLookupLimit: _coolLocationLookupLimit,
-        locationLookupTimeoutSeconds: _defaultLocationLookupTimeoutSeconds,
-        locationLookupConcurrency: _coolLocationLookupConcurrency,
-        blockLeaks: false,
-        adBlockEnabled: false,
-        useRussiaRouteData: false,
-        bypassLocalNetwork: true,
-        splitRoutingMode: SplitRoutingMode.disabled,
-        splitRoutingPackages: <String>[],
-        singBoxLogLevel: 'warning',
-        experimentalTcpFastOpen: true,
-        experimentalTcpMultiPath: false,
-        experimentalInterruptExistingConnections: true,
-        experimentalUrlTestStrictTolerance: true,
-      );
-    }
-
-    final appVersionInfo = await appVersionInfoFuture;
-    final coreCapabilities = await coreCapabilitiesFuture;
+    final bootstrap = await _bootstrapController.load(
+      providedStore: widget.store,
+    );
+    final store = bootstrap.store;
+    final ownsStore = bootstrap.ownsStore;
+    final state = bootstrap.state;
+    final adBlockStatus = bootstrap.adBlockStatus;
+    final russiaRouteDataStatus = bootstrap.russiaRouteDataStatus;
+    final appVersionInfo = bootstrap.appVersionInfo;
+    final coreCapabilities = bootstrap.coreCapabilities;
+    final pendingCoreConfigMigration = bootstrap.pendingCoreConfigMigration;
+    final useInMemoryBootstrap = bootstrap.usesInMemoryStore;
     _latencyCoordinator.updateCapabilities(coreCapabilities);
     AppLogStore.info(
       'sing-box',
       'core capabilities api=${coreCapabilities.apiVersion} '
           'version=${coreCapabilities.coreVersion.isEmpty ? 'legacy' : coreCapabilities.coreVersion}',
     );
-    final coreConfigMigration = CoreConfigMigration.plan(
-      state: state,
-      capabilities: coreCapabilities,
-    );
-    CoreConfigMigrationResult? pendingCoreConfigMigration;
-    if (coreConfigMigration.requiresValidation) {
-      pendingCoreConfigMigration = coreConfigMigration;
-      final persistedSchemaVersion = state.coreConfigSchemaVersion;
-      state = coreConfigMigration.state.copyWith(
-        coreConfigSchemaVersion: persistedSchemaVersion,
-      );
-      AppLogStore.info(
-        'sing-box',
-        'core config migration prepared '
-            'from=$persistedSchemaVersion '
-            'to=${coreConfigMigration.state.coreConfigSchemaVersion} '
-            'changes=${coreConfigMigration.changes.join(',')}',
-      );
-    } else if (coreConfigMigration.status ==
-        CoreConfigMigrationStatus.blocked) {
-      AppLogStore.warning(
-        'sing-box',
-        'core config migration blocked: '
-            '${coreConfigMigration.blockReason}',
-      );
-    }
 
     const progressiveBlurEnabled = false;
 

@@ -1,0 +1,247 @@
+import 'package:meow_client/data/adblock/ad_block_rule_set_service.dart';
+import 'package:meow_client/data/local/app_settings_store.dart';
+import 'package:meow_client/data/routing/russia_route_data_service.dart';
+import 'package:meow_client/data/subscription/subscription_fetcher.dart';
+import 'package:meow_client/data/subscription/subscription_store.dart';
+import 'package:meow_client/logging/app_log_store.dart';
+import 'package:meow_client/singbox/core_config_migration.dart';
+import 'package:meow_client/singbox/libbox_capabilities.dart';
+import 'package:meow_client/singbox/singbox_runtime.dart';
+
+typedef BootstrapAction = Future<void> Function();
+typedef SettingsStoreLoader = Future<AppSettingsStore> Function();
+typedef AppVersionInfoLoader = Future<AppVersionInfo> Function();
+typedef CoreCapabilitiesLoader = Future<LibboxCapabilities> Function();
+typedef AdBlockStatusLoader = Future<AdBlockRuleSetStatus> Function();
+typedef RussiaRouteStatusLoader = Future<RussiaRouteDataStatus> Function();
+
+class AppBootstrapResult {
+  const AppBootstrapResult({
+    required this.store,
+    required this.ownsStore,
+    required this.state,
+    required this.adBlockStatus,
+    required this.russiaRouteDataStatus,
+    required this.appVersionInfo,
+    required this.coreCapabilities,
+    required this.pendingCoreConfigMigration,
+    required this.usesInMemoryStore,
+  });
+
+  final AppSettingsStore store;
+  final bool ownsStore;
+  final AppSettingsState state;
+  final AdBlockRuleSetStatus adBlockStatus;
+  final RussiaRouteDataStatus russiaRouteDataStatus;
+  final AppVersionInfo appVersionInfo;
+  final LibboxCapabilities coreCapabilities;
+  final CoreConfigMigrationResult? pendingCoreConfigMigration;
+  final bool usesInMemoryStore;
+}
+
+/// Loads the durable application state without owning any Flutter UI state.
+///
+/// Keeping storage, native metadata and core compatibility checks here makes
+/// bootstrap independently testable and prevents the root widget from becoming
+/// the owner of every startup dependency.
+class AppBootstrapController {
+  AppBootstrapController({
+    required this.fallbackClientVersionLabel,
+    BootstrapAction? initializeHive,
+    BootstrapAction? initializeSubscriptions,
+    SettingsStoreLoader? openSettingsStore,
+    AppVersionInfoLoader? loadAppVersionInfo,
+    CoreCapabilitiesLoader? loadCoreCapabilities,
+    AdBlockStatusLoader? loadAdBlockStatus,
+    RussiaRouteStatusLoader? loadRussiaRouteStatus,
+  }) : _initializeHive = initializeHive ?? HiveAppSettingsStore.initHive,
+       _initializeSubscriptions =
+           initializeSubscriptions ?? SubscriptionStore.init,
+       _openSettingsStore = openSettingsStore ?? HiveAppSettingsStore.open,
+       _loadAppVersionInfo =
+           loadAppVersionInfo ??
+           (() => SingboxRuntime.instance.getAppVersionInfo()),
+       _loadCoreCapabilities =
+           loadCoreCapabilities ??
+           (() => SingboxRuntime.instance.getCoreCapabilities()),
+       _loadAdBlockStatus =
+           loadAdBlockStatus ?? AdBlockRuleSetService.instance.loadStatus,
+       _loadRussiaRouteStatus =
+           loadRussiaRouteStatus ?? RussiaRouteDataService.instance.loadStatus;
+
+  final String fallbackClientVersionLabel;
+  final BootstrapAction _initializeHive;
+  final BootstrapAction _initializeSubscriptions;
+  final SettingsStoreLoader _openSettingsStore;
+  final AppVersionInfoLoader _loadAppVersionInfo;
+  final CoreCapabilitiesLoader _loadCoreCapabilities;
+  final AdBlockStatusLoader _loadAdBlockStatus;
+  final RussiaRouteStatusLoader _loadRussiaRouteStatus;
+
+  Future<AppBootstrapResult> load({AppSettingsStore? providedStore}) async {
+    AppSettingsStore? store;
+    var ownsStore = false;
+    late AppSettingsState state;
+    var adBlockStatus = const AdBlockRuleSetStatus.unavailable();
+    var russiaRouteDataStatus = const RussiaRouteDataStatus.unavailable();
+    final appVersionInfoFuture = readAppVersionInfo();
+    final coreCapabilitiesFuture = _readCoreCapabilities();
+    final usesInMemoryStore = providedStore is MemoryAppSettingsStore;
+
+    try {
+      if (usesInMemoryStore) {
+        store = providedStore;
+      } else {
+        await _initializeHive();
+        final subscriptionInitFuture = _initializeSubscriptions();
+        final storeFuture = providedStore == null
+            ? _openSettingsStore()
+            : Future<AppSettingsStore>.value(providedStore);
+        await subscriptionInitFuture;
+        store = await storeFuture;
+        ownsStore = providedStore == null;
+      }
+      state = await store.loadState();
+      final adBlockStatusFuture = _loadAdBlockStatus().catchError(
+        (_) => const AdBlockRuleSetStatus.unavailable(),
+      );
+      final russiaRouteStatusFuture = _loadRussiaRouteStatus().catchError(
+        (_) => const RussiaRouteDataStatus.unavailable(),
+      );
+      adBlockStatus = await adBlockStatusFuture;
+      russiaRouteDataStatus = await russiaRouteStatusFuture;
+    } catch (error, stackTrace) {
+      AppLogStore.error(
+        'bootstrap',
+        'Failed to bootstrap app, using in-memory defaults: '
+            '$error\n$stackTrace',
+      );
+      if (providedStore == null && store != null) {
+        try {
+          await store.close();
+        } catch (_) {}
+      }
+      store = MemoryAppSettingsStore();
+      ownsStore = providedStore == null;
+      state = _fallbackSettingsState();
+    }
+
+    final appVersionInfo = await appVersionInfoFuture;
+    final coreCapabilities = await coreCapabilitiesFuture;
+    final migration = CoreConfigMigration.plan(
+      state: state,
+      capabilities: coreCapabilities,
+    );
+    CoreConfigMigrationResult? pendingCoreConfigMigration;
+    if (migration.requiresValidation) {
+      pendingCoreConfigMigration = migration;
+      final persistedSchemaVersion = state.coreConfigSchemaVersion;
+      state = migration.state.copyWith(
+        coreConfigSchemaVersion: persistedSchemaVersion,
+      );
+      AppLogStore.info(
+        'sing-box',
+        'core config migration prepared '
+            'from=$persistedSchemaVersion '
+            'to=${migration.state.coreConfigSchemaVersion} '
+            'changes=${migration.changes.join(',')}',
+      );
+    } else if (migration.status == CoreConfigMigrationStatus.blocked) {
+      AppLogStore.warning(
+        'sing-box',
+        'core config migration blocked: ${migration.blockReason}',
+      );
+    }
+
+    return AppBootstrapResult(
+      store: store,
+      ownsStore: ownsStore,
+      state: state,
+      adBlockStatus: adBlockStatus,
+      russiaRouteDataStatus: russiaRouteDataStatus,
+      appVersionInfo: appVersionInfo,
+      coreCapabilities: coreCapabilities,
+      pendingCoreConfigMigration: pendingCoreConfigMigration,
+      usesInMemoryStore: usesInMemoryStore,
+    );
+  }
+
+  Future<AppVersionInfo> readAppVersionInfo() async {
+    try {
+      final info = await _loadAppVersionInfo();
+      if (info.versionName.trim().isNotEmpty) {
+        SubscriptionFetcher.configureAppVersion(info.versionName);
+        return info;
+      }
+    } catch (error) {
+      AppLogStore.warning('app version', 'Failed to read app version: $error');
+    }
+    SubscriptionFetcher.configureAppVersion(fallbackClientVersionLabel);
+    return AppVersionInfo(
+      packageName: '',
+      versionName: fallbackClientVersionLabel,
+      versionCode: 0,
+    );
+  }
+
+  Future<LibboxCapabilities> _readCoreCapabilities() async {
+    try {
+      return await _loadCoreCapabilities();
+    } catch (error) {
+      AppLogStore.warning(
+        'sing-box',
+        'Failed to read core capabilities, using legacy contract: $error',
+      );
+      return LibboxCapabilities.bundledLegacy;
+    }
+  }
+
+  AppSettingsState _fallbackSettingsState() {
+    return const AppSettingsState(
+      onboardingCompleted: false,
+      activeProfileId: '',
+      selectedProxyTag: '',
+      localeCode: 'system',
+      themePreference: AppThemePreference.system,
+      accentColorHex: 'default',
+      hapticEnabled: true,
+      hideServerIp: false,
+      progressiveBlurEnabled: false,
+      performanceMode: AppPerformanceMode.standard,
+      tlsFragmentationMode: TlsFragmentationMode.disabled,
+      vpnInboundEnabled: true,
+      vpnMtu: 1500,
+      vpnStrictRoute: true,
+      vpnTunImplementation: TunImplementationPreference.mixed,
+      proxyInboundEnabled: false,
+      proxyAllowLan: false,
+      proxyMixedListen: '127.0.0.1',
+      proxyMixedPort: 1080,
+      dnsDirectPreset: 'cloudflare',
+      dnsDirectResolver: 'udp://1.1.1.1',
+      dnsProxyPreset: 'cloudflare',
+      dnsProxyResolver: 'https://dns.cloudflare.com/dns-query',
+      dnsPreferIpv6: false,
+      russiaDnsDirectResolver: defaultRussiaDnsDirectResolver,
+      urlTestUrl: defaultUrlTestUrl,
+      urlTestIntervalSeconds: 1800,
+      urlTestTimeoutSeconds: 15,
+      urlTestConcurrency: 8,
+      urlTestUnavailableCheckIntervalSeconds: 120,
+      locationLookupLimit: 2,
+      locationLookupTimeoutSeconds: 5,
+      locationLookupConcurrency: 2,
+      blockLeaks: false,
+      adBlockEnabled: false,
+      useRussiaRouteData: false,
+      bypassLocalNetwork: true,
+      splitRoutingMode: SplitRoutingMode.disabled,
+      splitRoutingPackages: <String>[],
+      singBoxLogLevel: 'warning',
+      experimentalTcpFastOpen: true,
+      experimentalTcpMultiPath: false,
+      experimentalInterruptExistingConnections: true,
+      experimentalUrlTestStrictTolerance: true,
+    );
+  }
+}
