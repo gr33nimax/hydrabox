@@ -119,7 +119,11 @@ class MeowVpnService : VpnService() {
                 boxService.onDestroy()
             }
         } finally {
-            if (!SingboxController.running) {
+            if (
+                VpnServiceLifecyclePolicy.shouldCancelScheduledRestartOnDestroy(
+                    runtimeRunning = SingboxController.running,
+                )
+            ) {
                 cancelScheduledRestart("service_destroyed_runtime_stopped")
             }
             releaseWakeLock()
@@ -185,7 +189,11 @@ class MeowVpnService : VpnService() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
-        if (!SingboxController.running || !MeowBoxService.hasActiveRuntimeOwner("vpn")) {
+        val action = VpnServiceLifecyclePolicy.taskRemovalAction(
+            runtimeRunning = SingboxController.running,
+            activeRuntimeOwner = MeowBoxService.hasActiveRuntimeOwner("vpn"),
+        )
+        if (action == VpnTaskRemovalAction.STOP_LINGERING_SERVICE) {
             Log.i(TAG, "onTaskRemoved – runtime is stopped; stopping lingering VPN service")
             MeowDiagnostics.log(TAG, "onTaskRemoved – runtime is stopped; stopping lingering VPN service")
             cancelScheduledRestart("task_removed_without_vpn_runtime")
