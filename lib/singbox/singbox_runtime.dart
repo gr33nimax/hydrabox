@@ -40,7 +40,7 @@ class AppVersionInfo {
 
   String get displayVersion {
     final normalized = versionName.trim();
-    return normalized.isEmpty ? '0.2.3' : normalized;
+    return normalized.isEmpty ? '0.3.0-beta.1' : normalized;
   }
 
   int get updateBuildNumber => normalizeSplitApkVersionCode(versionCode);

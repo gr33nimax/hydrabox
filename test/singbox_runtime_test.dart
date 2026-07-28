@@ -13,6 +13,17 @@ void main() {
       expect(info.displayVersion, '0.2.1');
       expect(info.updateBuildNumber, 5);
     });
+
+    test('uses the current release label when native metadata is empty', () {
+      const info = AppVersionInfo(
+        packageName: 'com.etonify.meow_client',
+        versionName: '',
+        versionCode: 2012,
+      );
+
+      expect(info.displayVersion, '0.3.0-beta.1');
+      expect(info.updateBuildNumber, 12);
+    });
   });
 
   group('SingboxRuntime Pigeon normalization', () {
