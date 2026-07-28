@@ -27,6 +27,7 @@ import 'package:meow_client/app/runtime_operation_coordinator.dart';
 import 'package:meow_client/app/runtime_recovery_policy.dart';
 import 'package:meow_client/app/singbox_config_coordinator.dart';
 import 'package:meow_client/app/subscription_runtime_controller.dart';
+import 'package:meow_client/app/subscription_profile_import_controller.dart';
 import 'package:meow_client/core/lowest_proxy_groups.dart';
 import 'package:meow_client/core/widgets/app_notice.dart';
 import 'package:meow_client/data/adblock/ad_block_rule_set_service.dart';
@@ -2624,49 +2625,16 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   Future<void> _importBackupSubscriptions(
     List<Subscription> importedSubscriptions,
   ) async {
-    if (importedSubscriptions.isEmpty) {
-      return;
-    }
-    final existing = await SubscriptionStore.getAllMetadataInBackground();
-    final byIdentity = <String, Subscription>{};
-    for (final subscription in existing) {
-      if (subscription.id.trim().isNotEmpty) {
-        byIdentity['id:${subscription.id}'] = subscription;
-      }
-      if (subscription.url.trim().isNotEmpty) {
-        byIdentity['url:${subscription.url}'] = subscription;
-      }
-    }
-    final nextSortOrder =
-        existing
-            .map((subscription) => subscription.sortOrder ?? 0)
-            .fold<int>(0, max) +
-        1;
-    var appended = 0;
-    for (final imported in importedSubscriptions) {
-      final matched =
-          byIdentity['id:${imported.id}'] ??
-          (imported.url.trim().isEmpty
-              ? null
-              : byIdentity['url:${imported.url}']);
-      final normalized = matched == null
-          ? imported.copyWith(
-              sortOrder: imported.sortOrder ?? nextSortOrder + appended++,
-            )
-          : imported.copyWith(
-              id: matched.id,
-              sortOrder: matched.sortOrder,
-              selectedProxyTag: imported.selectedProxyTag.isNotEmpty
-                  ? imported.selectedProxyTag
-                  : matched.selectedProxyTag,
-            );
-      await SubscriptionStore.save(normalized);
-    }
-    await _reloadSubscriptions(
-      preferredSubscriptionId: _activeProfileId,
-      preferredProxyTag: _selectedProxyTag,
-      applyRuntime: false,
+    final controller = SubscriptionProfileImportController(
+      loadExisting: SubscriptionStore.getAllMetadataInBackground,
+      save: SubscriptionStore.save,
+      onApplied: () => _reloadSubscriptions(
+        preferredSubscriptionId: _activeProfileId,
+        preferredProxyTag: _selectedProxyTag,
+        applyRuntime: false,
+      ),
     );
+    await controller.apply(importedSubscriptions);
   }
 
   void _haptic() {
