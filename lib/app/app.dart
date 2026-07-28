@@ -19,6 +19,7 @@ import 'package:meow_client/app/latency_coordinator.dart';
 import 'package:meow_client/app/proxy_runtime_controller.dart';
 import 'package:meow_client/app/proxy_selection_controller.dart';
 import 'package:meow_client/app/runtime_lifecycle_controller.dart';
+import 'package:meow_client/app/runtime_connection_controller.dart';
 import 'package:meow_client/app/runtime_command_coordinator.dart';
 import 'package:meow_client/app/runtime_event_controller.dart';
 import 'package:meow_client/app/runtime_operation_coordinator.dart';
@@ -76,18 +77,6 @@ class MeowClient extends StatefulWidget {
   State<MeowClient> createState() => _MeowClientState();
 }
 
-enum AppConnectionPhase {
-  idle,
-  preparing,
-  configuring,
-  reconfiguring,
-  starting,
-  connected,
-  stopping,
-  recovering,
-  failed,
-}
-
 class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   static const _fallbackClientVersionLabel = '0.2.3';
   static const _requiredLegalVersion = '0.2.1';
@@ -129,13 +118,10 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   bool _onboardingCompleted = false;
   String _acceptedLegalVersion = '';
   int? _acceptedLegalAtMillis;
-  bool _connected = false;
   bool _runtimeErrorDialogVisible = false;
   bool _noValidOutboundsDialogVisible = false;
   bool _trafficAvailable = false;
   bool _activeProfileRefreshInFlight = false;
-  bool _starting = false;
-  bool _runtimeTransitionInProgress = false;
   bool _startAfterStopRequested = false;
   bool _suppressStartAfterStop = false;
   Future<bool>? _runtimeStopInFlight;
@@ -212,6 +198,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   late final AppBootstrapController _bootstrapController;
   final RuntimeLifecycleController _runtimeLifecycle =
       RuntimeLifecycleController();
+  final RuntimeConnectionController _runtimeConnection =
+      RuntimeConnectionController();
   final RuntimeOperationCoordinator _runtimeOperations =
       RuntimeOperationCoordinator();
   late final RuntimeCommandCoordinator _runtimeCommands;
@@ -251,7 +239,12 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   DateTime? _lastRuntimeRecoveryStatusLogAt;
   Set<String> _preloadedProxyFlagCodes = const <String>{};
   AppLifecycleState _appLifecycleState = AppLifecycleState.resumed;
-  AppConnectionPhase _connectionPhase = AppConnectionPhase.idle;
+
+  AppConnectionPhase get _connectionPhase => _runtimeConnection.phase;
+  bool get _connected => _runtimeConnection.connected;
+  bool get _starting => _runtimeConnection.starting;
+  bool get _runtimeTransitionInProgress =>
+      _runtimeConnection.transitionInProgress;
 
   bool get _legalAccepted => _acceptedLegalVersion == _requiredLegalVersion;
 
@@ -2845,14 +2838,9 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     AppConnectionPhase phase, {
     bool retryScheduled = false,
   }) {
-    final wasConnected = _connected;
-    final wasTransitioning = _runtimeTransitionInProgress;
     _runtimeOperations.synchronizeSelection(_selectedProxyTag);
-    _connectionPhase = phase;
-    _connected =
-        phase == AppConnectionPhase.connected ||
-        phase == AppConnectionPhase.reconfiguring;
-    if (_connected && !wasConnected) {
+    final transition = _runtimeConnection.transitionTo(phase);
+    if (transition.becameConnected) {
       _connectedSince = DateTime.now();
     } else if (!_connected &&
         (phase == AppConnectionPhase.idle ||
@@ -2860,27 +2848,10 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       _connectedSince = null;
       _resetActiveProxyIpState();
     }
-    _starting = switch (phase) {
-      AppConnectionPhase.preparing ||
-      AppConnectionPhase.configuring ||
-      AppConnectionPhase.reconfiguring ||
-      AppConnectionPhase.starting ||
-      AppConnectionPhase.recovering => true,
-      _ => false,
-    };
-    _runtimeTransitionInProgress = switch (phase) {
-      AppConnectionPhase.preparing ||
-      AppConnectionPhase.configuring ||
-      AppConnectionPhase.reconfiguring ||
-      AppConnectionPhase.starting ||
-      AppConnectionPhase.stopping ||
-      AppConnectionPhase.recovering => true,
-      _ => false,
-    };
-    if (_runtimeTransitionInProgress && !wasTransitioning) {
+    if (transition.transitionStarted) {
       _runtimeCommands.invalidate();
       _runtimeOperations.beginRuntimeTransition();
-    } else if (!_runtimeTransitionInProgress && wasTransitioning) {
+    } else if (transition.transitionFinished) {
       _runtimeOperations.finishRuntimeTransition(running: _connected);
     }
     if (!_connected) {
