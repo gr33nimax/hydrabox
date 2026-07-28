@@ -37,6 +37,7 @@ import 'package:meow_client/data/subscription/happ_crypto_link.dart';
 import 'package:meow_client/data/subscription/subscription_store.dart';
 import 'package:meow_client/data/update/app_update_service.dart';
 import 'package:meow_client/features/home/home_page.dart';
+import 'package:meow_client/features/home/home_presentation.dart';
 import 'package:meow_client/features/home/traffic_dashboard_page.dart';
 import 'package:meow_client/features/legal/legal_consent_page.dart';
 import 'package:meow_client/features/proxies/proxies_page.dart';
@@ -7087,42 +7088,45 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
                     activeSubscription.url,
                   );
               return HomePage(
-                connected: _connected,
-                connecting: _connectionBusy,
-                resolvingProxy: _resolvingLowestProxy,
-                connectionStatusLabel: _connectionButtonStatusLabel(context),
-                activeProfile: _activeProfile,
-                activeProxy: _displayProxy,
-                runtimeStates: _proxyRuntimeVisualStates,
-                hideServerIp: _hideServerIp,
-                hapticEnabled: _hapticEnabled,
-                speedBytesPerSecond: _connected && _trafficAvailable
-                    ? _downlinkBytesPerSecond.toDouble()
-                    : 0,
-                trafficBytes: _connected && _trafficAvailable
-                    ? (_uplinkTotalBytes + _downlinkTotalBytes).toDouble()
-                    : 0,
-                trafficListenable: _trafficUiSnapshot,
-                onToggleConnection: () => unawaited(
-                  _toggleConnection(source: 'home.connection_button'),
+                state: HomeViewState(
+                  connected: _connected,
+                  connecting: _connectionBusy,
+                  resolvingProxy: _resolvingLowestProxy,
+                  connectionStatusLabel: _connectionButtonStatusLabel(context),
+                  activeProfile: _activeProfile,
+                  activeProxy: _displayProxy,
+                  runtimeStates: _proxyRuntimeVisualStates,
+                  hideServerIp: _hideServerIp,
+                  hapticEnabled: _hapticEnabled,
+                  speedBytesPerSecond: _connected && _trafficAvailable
+                      ? _downlinkBytesPerSecond.toDouble()
+                      : 0,
+                  trafficBytes: _connected && _trafficAvailable
+                      ? (_uplinkTotalBytes + _downlinkTotalBytes).toDouble()
+                      : 0,
+                  trafficListenable: _trafficUiSnapshot,
+                  activeProfileRefreshing: _activeProfileRefreshInFlight,
+                  showActiveProfileRefreshAction: activeSubscription != null,
+                  brandName: 'Etonify',
+                  versionLabel: _clientVersionLabel,
                 ),
-                onRefreshLatency: () => unawaited(_runActiveProxyUrlTest()),
-                onRefreshActiveProxyIp: _refreshActiveProxyIp,
-                onHideServerIpChanged: _setHideServerIp,
-                onOpenSubscriptions: _showSubscriptionsPage,
-                onAddSubscription: () =>
-                    _showSubscriptionsPage(openAddOnStart: true),
-                onOpenSettings: _showSettingsPage,
-                onOpenChangelog: () => unawaited(_showChangelogSheet()),
-                onOpenTrafficDashboard: () =>
-                    unawaited(_showTrafficDashboard()),
-                onRefreshActiveSubscription: canRefreshActiveSubscription
-                    ? _refreshActiveSubscription
-                    : null,
-                activeProfileRefreshing: _activeProfileRefreshInFlight,
-                showActiveProfileRefreshAction: activeSubscription != null,
-                brandName: 'Etonify',
-                versionLabel: _clientVersionLabel,
+                actions: HomeViewActions(
+                  toggleConnection: () => unawaited(
+                    _toggleConnection(source: 'home.connection_button'),
+                  ),
+                  refreshLatency: () => unawaited(_runActiveProxyUrlTest()),
+                  refreshActiveProxyIp: _refreshActiveProxyIp,
+                  openSubscriptions: _showSubscriptionsPage,
+                  addSubscription: () =>
+                      _showSubscriptionsPage(openAddOnStart: true),
+                  openSettings: _showSettingsPage,
+                  openChangelog: () => unawaited(_showChangelogSheet()),
+                  openTrafficDashboard: () =>
+                      unawaited(_showTrafficDashboard()),
+                  refreshActiveSubscription: canRefreshActiveSubscription
+                      ? _refreshActiveSubscription
+                      : null,
+                ),
                 bottomInset: metrics.bottomInset + proxyPanelMinHeight + 20,
                 onProxyPanelInteractionStart: gestures.onInteractionStart,
                 onProxyPanelDragUpdate: gestures.onDragUpdate,
