@@ -26,6 +26,7 @@ import 'package:meow_client/app/runtime_intent_controller.dart';
 import 'package:meow_client/app/runtime_operation_coordinator.dart';
 import 'package:meow_client/app/runtime_recovery_policy.dart';
 import 'package:meow_client/app/singbox_config_coordinator.dart';
+import 'package:meow_client/app/subscription_coordinator.dart';
 import 'package:meow_client/app/subscription_runtime_controller.dart';
 import 'package:meow_client/app/subscription_profile_import_controller.dart';
 import 'package:meow_client/core/lowest_proxy_groups.dart';
@@ -180,8 +181,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   DateTime? _lastRuntimeInterfaceIssueRecoveryAt;
   final Queue<DateTime> _runtimeInterfaceIssueTimes = Queue<DateTime>();
   int _derivedCacheBuildGeneration = 0;
-  int _activeSubscriptionHydrationGeneration = 0;
-  Future<bool>? _activeSubscriptionHydrationInFlight;
   bool _derivedCacheBuildInFlight = false;
   bool _derivedCacheBuildQueued = false;
   String? _lastEmptyAfterDropInvalidWarningSubscriptionId;
@@ -210,10 +209,12 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   final GroupUrlTestScheduler _groupUrlTestScheduler = GroupUrlTestScheduler();
   final RuntimeStartupUrlTestGate _runtimeStartupUrlTestGate =
       RuntimeStartupUrlTestGate();
-  final SubscriptionRuntimeController _subscriptionRuntime =
-      SubscriptionRuntimeController(
-        autoRefreshMinDelay: _subscriptionAutoRefreshMinDelay,
-        autoRefreshMaxDelay: _subscriptionAutoRefreshMaxDelay,
+  final SubscriptionCoordinator _subscriptionCoordinator =
+      SubscriptionCoordinator(
+        runtime: SubscriptionRuntimeController(
+          autoRefreshMinDelay: _subscriptionAutoRefreshMinDelay,
+          autoRefreshMaxDelay: _subscriptionAutoRefreshMaxDelay,
+        ),
       );
   List<Subscription> _subscriptions = const [];
   AppProfileSummary? _activeProfileCache;
@@ -2282,7 +2283,9 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     }
 
     _haptic();
-    final beforeFingerprint = _subscriptionRuntimeFingerprint(subscription);
+    final beforeFingerprint = _subscriptionCoordinator.runtimeFingerprint(
+      subscription,
+    );
     setState(() {
       _activeProfileRefreshInFlight = true;
     });
@@ -2295,7 +2298,9 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         slowMessage: l10n.subscriptionOperationSlowWarning,
         timeoutMessage: l10n.subscriptionOperationTimeout,
       );
-      final afterFingerprint = _subscriptionRuntimeFingerprint(updated);
+      final afterFingerprint = _subscriptionCoordinator.runtimeFingerprint(
+        updated,
+      );
       final runtimeChanged = beforeFingerprint != afterFingerprint;
       final preferredTag = _validSelectedProxyTagForSubscription(
         updated,
@@ -2335,29 +2340,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     return _proxySelection.validSelectedProxyTagForSubscription(
       subscription,
       preferredTag,
-    );
-  }
-
-  String _subscriptionRuntimeFingerprint(Subscription subscription) {
-    return _subscriptionRuntime.subscriptionRuntimeFingerprint(subscription);
-  }
-
-  Future<String?> _subscriptionRuntimeFingerprintFromStore(
-    String subscriptionId,
-  ) async {
-    final id = subscriptionId.trim();
-    if (id.isEmpty) {
-      return null;
-    }
-    final subscription = await SubscriptionStore.getInBackground(id);
-    return subscription == null
-        ? null
-        : _subscriptionRuntime.subscriptionRuntimeFingerprint(subscription);
-  }
-
-  Future<String> _subscriptionsMetadataFingerprint() async {
-    return _subscriptionRuntime.subscriptionsMetadataFingerprint(
-      await SubscriptionStore.getAllMetadataInBackground(),
     );
   }
 
@@ -2431,7 +2413,9 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       return;
     }
     final wasActive = current.id == _activeProfileId;
-    final beforeFingerprint = _subscriptionRuntimeFingerprint(current);
+    final beforeFingerprint = _subscriptionCoordinator.runtimeFingerprint(
+      current,
+    );
     final info = current.info ?? const SubscriptionInfo();
     await SubscriptionStore.save(
       current.copyWith(info: info.copyWith(requireHwid: true)),
@@ -2454,7 +2438,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     );
     final runtimeChanged =
         wasActive &&
-        beforeFingerprint != _subscriptionRuntimeFingerprint(updated);
+        beforeFingerprint !=
+            _subscriptionCoordinator.runtimeFingerprint(updated);
     await _reloadSubscriptions(
       preferredSubscriptionId: updated.id,
       preferredProxyTag: wasActive
@@ -2504,7 +2489,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
               selectedProxyTag: '',
             ),
           )
-        : await _resolveSubscriptionMetadata(
+        : await _subscriptionCoordinator.resolveMetadata(
             activeSubscriptionId: state.activeProfileId,
             selectedProxyTag: state.selectedProxyTag,
             preferSelectedProxyTag: state.selectedProxyTag.trim().isNotEmpty,
@@ -3010,7 +2995,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         _subscriptions.isEmpty) {
       return;
     }
-    final delay = _nextSubscriptionAutoRefreshDelay();
+    final delay = _subscriptionCoordinator.nextAutoRefreshDelay(_subscriptions);
     if (delay == null) {
       return;
     }
@@ -3023,10 +3008,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     });
   }
 
-  Duration? _nextSubscriptionAutoRefreshDelay() {
-    return _subscriptionRuntime.nextAutoRefreshDelay(_subscriptions);
-  }
-
   Future<void> _runSubscriptionAutoRefresh() async {
     if (_autoRefreshInFlight) {
       return;
@@ -3035,73 +3016,30 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       _startSubscriptionAutoRefresh();
       return;
     }
-    final dueSubscriptions = _subscriptionRuntime.dueAutoRefreshSubscriptions(
-      _subscriptions,
-    );
-    if (dueSubscriptions.isEmpty) {
-      _startSubscriptionAutoRefresh();
-      return;
-    }
-    AppLogStore.info(
-      'subscription refresh',
-      'auto-refresh begin due=${dueSubscriptions.length} '
-          'ids=${dueSubscriptions.map((s) => s.id).take(6).join(', ')}',
-    );
     _autoRefreshInFlight = true;
     try {
       final activeBefore = _activeSubscription;
-      final activeBeforeFingerprint = activeBefore == null
-          ? null
-          : _subscriptionRuntimeFingerprint(activeBefore);
-      Subscription? refreshedActiveSubscription;
       final refreshLimit = _coolMode
           ? 1
           : _balancedMode
           ? 2
-          : dueSubscriptions.length;
-      for (
-        var offset = 0;
-        offset < dueSubscriptions.length;
-        offset += refreshLimit
-      ) {
-        final batch = dueSubscriptions.skip(offset).take(refreshLimit);
-        await Future.wait(
-          batch.map((subscription) async {
-            try {
-              AppLogStore.info(
-                'subscription refresh',
-                'refreshing id=${subscription.id} name=${subscription.name}',
-              );
-              final updated = await SubscriptionStore.refresh(subscription.id);
-              _subscriptionRuntime.clearAutoRefreshFailure(subscription.id);
-              if (updated.id == activeBefore?.id) {
-                refreshedActiveSubscription = updated;
-              }
-            } catch (error) {
-              final backoff = _subscriptionRuntime.recordAutoRefreshFailure(
-                subscription.id,
-              );
-              AppLogStore.warning(
-                'subscription refresh',
-                'refresh failed id=${subscription.id} name=${subscription.name} '
-                    'failures=${backoff.failures} '
-                    'backoff=${backoff.backoffMinutes}m: $error',
-              );
-            }
-          }),
-        );
+          : _subscriptions.length;
+      final result = await _subscriptionCoordinator.refreshDue(
+        subscriptions: _subscriptions,
+        activeSubscription: activeBefore,
+        concurrency: refreshLimit,
+      );
+      if (result.dueCount == 0) {
+        return;
       }
-      final activeRuntimeChanged =
-          refreshedActiveSubscription != null &&
-          activeBeforeFingerprint != null &&
-          activeBeforeFingerprint !=
-              _subscriptionRuntimeFingerprint(refreshedActiveSubscription!);
+      final refreshedActiveSubscription = result.refreshedActiveSubscription;
+      final activeRuntimeChanged = result.activeRuntimeChanged;
       await _reloadSubscriptions(
         preferredSubscriptionId: refreshedActiveSubscription?.id,
         preferredProxyTag: refreshedActiveSubscription == null
             ? null
             : _validSelectedProxyTagForSubscription(
-                refreshedActiveSubscription!,
+                refreshedActiveSubscription,
                 _selectedProxyTag,
               ),
         applyRuntime: activeRuntimeChanged,
@@ -4101,7 +4039,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     bool restartRuntimeOnApply = false,
     bool urlTestAfterApply = false,
   }) async {
-    final resolved = await _resolveSubscriptionMetadata(
+    final resolved = await _subscriptionCoordinator.resolveMetadata(
       activeSubscriptionId: preferredSubscriptionId ?? _activeProfileId,
       selectedProxyTag: preferredProxyTag ?? _selectedProxyTag,
       preferSelectedProxyTag: preferredProxyTag?.trim().isNotEmpty == true,
@@ -4181,21 +4119,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     }
   }
 
-  Future<ResolvedSubscriptions> _resolveSubscriptionMetadata({
-    required String activeSubscriptionId,
-    required String selectedProxyTag,
-    bool preferSelectedProxyTag = false,
-  }) {
-    return SubscriptionStore.getAllMetadataInBackground().then(
-      (metadataSubscriptions) => _subscriptionRuntime.resolveMetadata(
-        metadataSubscriptions: metadataSubscriptions,
-        activeSubscriptionId: activeSubscriptionId,
-        selectedProxyTag: selectedProxyTag,
-        preferSelectedProxyTag: preferSelectedProxyTag,
-      ),
-    );
-  }
-
   void _scheduleActiveSubscriptionHydration({
     required String activeSubscriptionId,
     required String selectedProxyTag,
@@ -4204,14 +4127,18 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     bool restartRuntimeOnApply = false,
     bool urlTestAfterApply = false,
   }) {
-    final generation = ++_activeSubscriptionHydrationGeneration;
+    final generation = _subscriptionCoordinator.beginHydration();
     unawaited(() async {
-      final resolved = await _resolveSubscriptions(
+      final resolved = await _subscriptionCoordinator.resolveSubscriptions(
         activeSubscriptionId: activeSubscriptionId,
         selectedProxyTag: selectedProxyTag,
         preserveRuntimeState: preserveRuntimeState,
+        runtimeSnapshot: _currentSubscriptionRuntimeSnapshot(
+          preserveRuntimeState: preserveRuntimeState,
+        ),
       );
-      if (!mounted || generation != _activeSubscriptionHydrationGeneration) {
+      if (!mounted ||
+          !_subscriptionCoordinator.isHydrationCurrent(generation)) {
         return;
       }
       final normalized = resolved.normalized;
@@ -4308,72 +4235,27 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     );
   }
 
-  Future<ResolvedSubscriptions> _resolveSubscriptions({
-    required String activeSubscriptionId,
-    required String selectedProxyTag,
-    required bool preserveRuntimeState,
-  }) async {
-    final metadataSubscriptions =
-        await SubscriptionStore.getAllMetadataInBackground();
-    return _subscriptionRuntime.resolveSubscriptions(
-      metadataSubscriptions: metadataSubscriptions,
-      activeSubscriptionId: activeSubscriptionId,
-      selectedProxyTag: selectedProxyTag,
-      preserveRuntimeState: preserveRuntimeState,
-      runtimeSnapshot: _currentSubscriptionRuntimeSnapshot(
-        preserveRuntimeState: preserveRuntimeState,
-      ),
-      payloadSnapshotFor: SubscriptionStore.payloadSnapshotFor,
-    );
-  }
-
-  Future<HydratedActiveSubscription>
-  _hydrateActiveSubscriptionAndBuildProxyCache(
-    Subscription metadata, {
-    required String selectedProxyTag,
-    required bool preferSelectedProxyTag,
-    required bool preserveRuntimeState,
-  }) {
-    return _subscriptionRuntime.hydrateActiveSubscriptionAndBuildProxyCache(
-      metadata: metadata,
-      selectedProxyTag: selectedProxyTag,
-      preferSelectedProxyTag: preferSelectedProxyTag,
-      preserveRuntimeState: preserveRuntimeState,
-      runtimeSnapshot: _currentSubscriptionRuntimeSnapshot(
-        preserveRuntimeState: preserveRuntimeState,
-      ),
-      payloadSnapshot: SubscriptionStore.payloadSnapshotFor(metadata.id),
-    );
-  }
-
   Future<bool> _ensureActiveSubscriptionHydratedForRuntime() {
-    final inFlight = _activeSubscriptionHydrationInFlight;
-    if (inFlight != null) {
-      return inFlight;
-    }
-    late final Future<bool> hydration;
-    hydration = _hydrateActiveSubscriptionForUse().whenComplete(() {
-      if (identical(_activeSubscriptionHydrationInFlight, hydration)) {
-        _activeSubscriptionHydrationInFlight = null;
-      }
-    });
-    _activeSubscriptionHydrationInFlight = hydration;
-    return hydration;
+    return _subscriptionCoordinator.ensureActiveHydrated(
+      _hydrateActiveSubscriptionForUse,
+    );
   }
 
-  Future<bool> _hydrateActiveSubscriptionForUse() async {
+  Future<bool> _hydrateActiveSubscriptionForUse(int generation) async {
     final activeSubscription = _activeSubscription;
     if (activeSubscription == null || activeSubscription.outbounds.isNotEmpty) {
       return true;
     }
-    final generation = ++_activeSubscriptionHydrationGeneration;
-    final hydrated = await _hydrateActiveSubscriptionAndBuildProxyCache(
-      activeSubscription,
+    final hydrated = await _subscriptionCoordinator.hydrateActiveSubscription(
+      metadata: activeSubscription,
       selectedProxyTag: _selectedProxyTag,
       preferSelectedProxyTag: _selectedProxyTag.trim().isNotEmpty,
       preserveRuntimeState: true,
+      runtimeSnapshot: _currentSubscriptionRuntimeSnapshot(
+        preserveRuntimeState: true,
+      ),
     );
-    if (!mounted || generation != _activeSubscriptionHydrationGeneration) {
+    if (!mounted || !_subscriptionCoordinator.isHydrationCurrent(generation)) {
       return false;
     }
     if (_activeProfileId != activeSubscription.id) {
@@ -4391,9 +4273,10 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   Future<void> _showSubscriptionsPage({bool openAddOnStart = false}) async {
     if (_navigatorKey.currentContext == null) return;
 
-    final beforeMetadataFingerprint = await _subscriptionsMetadataFingerprint();
-    final beforeActiveRuntimeFingerprint =
-        await _subscriptionRuntimeFingerprintFromStore(_activeProfileId);
+    final beforeMetadataFingerprint = await _subscriptionCoordinator
+        .metadataFingerprint();
+    final beforeActiveRuntimeFingerprint = await _subscriptionCoordinator
+        .runtimeFingerprintFromStore(_activeProfileId);
     final context = _navigatorKey.currentContext;
     if (!mounted || context == null || !context.mounted) return;
     final subscriptionPageResult = await showModalBottomSheet<Object?>(
@@ -4419,10 +4302,10 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     final openedWithoutSelection =
         selectedSubscriptionId == null || selectedSubscriptionId.isEmpty;
     if (openedWithoutSelection) {
-      final afterMetadataFingerprint =
-          await _subscriptionsMetadataFingerprint();
-      final afterActiveRuntimeFingerprint =
-          await _subscriptionRuntimeFingerprintFromStore(_activeProfileId);
+      final afterMetadataFingerprint = await _subscriptionCoordinator
+          .metadataFingerprint();
+      final afterActiveRuntimeFingerprint = await _subscriptionCoordinator
+          .runtimeFingerprintFromStore(_activeProfileId);
       final subscriptionsChanged =
           beforeMetadataFingerprint != afterMetadataFingerprint;
       final activeRuntimeChanged =
