@@ -24,6 +24,7 @@ import 'package:meow_client/app/runtime_command_coordinator.dart';
 import 'package:meow_client/app/runtime_event_controller.dart';
 import 'package:meow_client/app/runtime_intent_controller.dart';
 import 'package:meow_client/app/runtime_operation_coordinator.dart';
+import 'package:meow_client/app/runtime_recovery_controller.dart';
 import 'package:meow_client/app/runtime_recovery_policy.dart';
 import 'package:meow_client/app/singbox_config_coordinator.dart';
 import 'package:meow_client/app/subscription_coordinator.dart';
@@ -64,7 +65,6 @@ import 'package:meow_client/models/app_view_models.dart';
 import 'package:meow_client/models/proxy_runtime_visual_state.dart';
 import 'package:meow_client/models/subscription.dart';
 import 'package:meow_client/singbox/core_config_migration.dart';
-import 'package:meow_client/singbox/runtime_start_error.dart';
 import 'package:meow_client/singbox/singbox_config_builder.dart';
 import 'package:meow_client/singbox/singbox_runtime.dart';
 import 'package:meow_client/theme/demo_app_theme.dart';
@@ -109,7 +109,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   StreamSubscription<DeepLinkImportRequest>? _deepLinkImportSubscription;
   AppSettingsStore? _store;
   Timer? _subscriptionAutoRefreshTimer;
-  Timer? _invalidOutboundRetryTimer;
   Timer? _locationLookupTimer;
   Timer? _derivedCacheBuildTimer;
   Timer? _trafficUiUpdateTimer;
@@ -127,12 +126,10 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   bool _trafficAvailable = false;
   bool _activeProfileRefreshInFlight = false;
   Future<bool>? _runtimeStopInFlight;
-  bool _invalidOutboundRetryScheduled = false;
   bool _deepLinkImportInFlight = false;
   bool _settingsBackupOperationInFlight = false;
   bool _locationLookupInFlight = false;
   bool _proxyPanelInteractionActive = false;
-  int _invalidOutboundRetryGeneration = 0;
   String _activeProfileId = '';
   String _selectedProxyTag = '';
   String _clientVersionLabel = _fallbackClientVersionLabel;
@@ -143,7 +140,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   bool _notificationPermissionPromptAttempted = false;
   bool _notificationPermissionRequestInFlight = false;
   String _lastVpnNotificationPresentationSignature = '';
-  String? _lastRuntimeError;
   final AppSettingsController _settings = AppSettingsController();
   int _locationLookupActiveRequests = 0;
   int _locationLookupGeneration = 0;
@@ -184,10 +180,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   bool _derivedCacheBuildInFlight = false;
   bool _derivedCacheBuildQueued = false;
   String? _lastEmptyAfterDropInvalidWarningSubscriptionId;
-  final Set<String> _excludedRuntimeOutboundTags = <String>{};
-  Map<int, String>? _lastStartedProxyOutboundTagsByIndex;
-  Map<String, dynamic>? _lastStartedConfig;
-  String? _pendingMutationExcludedTag;
   ActiveProxyIpSnapshot _activeProxyIp = const ActiveProxyIpSnapshot.idle();
   final ProxySelectionController _proxySelection = ProxySelectionController();
   final ActiveProxyIpController _activeProxyIpController =
@@ -200,6 +192,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   final RuntimeIntentController _runtimeIntent = RuntimeIntentController();
   final RuntimeOperationCoordinator _runtimeOperations =
       RuntimeOperationCoordinator();
+  final RuntimeRecoveryController _runtimeRecovery =
+      RuntimeRecoveryController();
   late final RuntimeCommandCoordinator _runtimeCommands;
   late final SingboxConfigCoordinator _configCoordinator;
   late final RuntimeEventController _runtimeEvents;
@@ -247,6 +241,9 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       _runtimeConnection.transitionInProgress;
   bool get _runtimeDesiredByUser => _runtimeIntent.desiredByUser;
   bool get _retryRuntimeOnResume => _runtimeIntent.retryOnResume;
+  bool get _invalidOutboundRetryScheduled => _runtimeRecovery.retryScheduled;
+  Set<String> get _excludedRuntimeOutboundTags =>
+      _runtimeRecovery.excludedOutboundTags;
 
   bool get _legalAccepted => _acceptedLegalVersion == _requiredLegalVersion;
 
@@ -1799,7 +1796,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _subscriptionAutoRefreshTimer?.cancel();
     _latencyCoordinator.dispose();
-    _invalidOutboundRetryTimer?.cancel();
+    _runtimeRecovery.dispose();
     _locationLookupTimer?.cancel();
     _resumeForegroundSyncTimer?.cancel();
     _groupUrlTestScheduler.dispose();
@@ -2821,7 +2818,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     } else {
       _proxyRuntime.endTransition();
     }
-    _invalidOutboundRetryScheduled = retryScheduled;
+    _runtimeRecovery.setRetryScheduled(retryScheduled);
   }
 
   void _applyActiveProxyIpSnapshot(ActiveProxyIpSnapshot snapshot) {
@@ -2871,9 +2868,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     if (_invalidOutboundRetryScheduled && _runtimeDesiredByUser) {
       _runtimeIntent.deferRetryUntilResume();
     }
-    _invalidOutboundRetryTimer?.cancel();
-    _invalidOutboundRetryTimer = null;
-    _invalidOutboundRetryScheduled = false;
+    _runtimeRecovery.cancelRetry();
   }
 
   void _resumeForegroundWork() {
@@ -3206,10 +3201,9 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       _locationLookupInFlight = false;
       _locationLookupRefreshRequested = false;
       _cancelQueuedLocationLookups();
-      _excludedRuntimeOutboundTags.clear();
+      _runtimeRecovery.clearExcludedOutbounds();
       _clearLastStartedBuildCache();
-      _invalidOutboundRetryScheduled = false;
-      _invalidOutboundRetryTimer?.cancel();
+      _runtimeRecovery.cancelRetry();
       _lowestLatency = null;
       _runtimeLowestOutboundTag = null;
       _runtimeLowestSelections.clear();
@@ -5194,10 +5188,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   }
 
   void _cacheLastStartedBuild(SingboxConfigBuildResult build) {
-    _lastStartedProxyOutboundTagsByIndex = Map<int, String>.from(
-      build.plan.proxyOutboundTagsByIndex,
-    );
-    _lastStartedConfig = build.plan.config.isEmpty ? null : build.plan.config;
+    _runtimeRecovery.cacheStartedBuild(build);
     final migration = _pendingCoreConfigMigration;
     if (migration != null) {
       _settings.coreConfigSchemaVersion =
@@ -5213,9 +5204,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   }
 
   void _clearLastStartedBuildCache() {
-    _lastStartedProxyOutboundTagsByIndex = null;
-    _lastStartedConfig = null;
-    _pendingMutationExcludedTag = null;
+    _runtimeRecovery.clearBuildCache();
   }
 
   SingboxConfigCoordinatorSnapshot _currentSingboxConfigSnapshot() {
@@ -5225,7 +5214,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       runtimeTransitionInProgress: _runtimeTransitionInProgress,
       activeSubscription: _activeSubscription,
       selectedProxyTag: _selectedProxyTag,
-      excludedOutboundTags: Set<String>.from(_excludedRuntimeOutboundTags),
+      excludedOutboundTags: _excludedRuntimeOutboundTags,
       vpnInboundEnabled: _vpnInboundEnabled,
       vpnMtu: _vpnMtu,
       vpnStrictRoute: _vpnStrictRoute,
@@ -5630,21 +5619,20 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       }
       return;
     }
-    if (wasRetryScheduled && _isTransientConfigRetryError(error)) {
+    if (wasRetryScheduled &&
+        _runtimeRecovery.isTransientConfigRetryError(error)) {
       AppLogStore.warning(
         'sing-box',
         'Retrying after transient config decode failure: $error',
       );
-      _invalidOutboundRetryScheduled = false;
-      _invalidOutboundRetryTimer?.cancel();
+      _runtimeRecovery.cancelRetry();
       _scheduleInvalidOutboundRetry(
         'retry after transient config decode failure',
       );
       return;
     }
     if (wasRetryScheduled) {
-      _invalidOutboundRetryScheduled = false;
-      _invalidOutboundRetryTimer?.cancel();
+      _runtimeRecovery.cancelRetry();
     }
     if (await _tryRecoverFromInvalidOutbound(error)) {
       if (mounted) {
@@ -5666,49 +5654,37 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       _runtimeIntent.clearRuntimeDesired();
       _setConnectionPhase(AppConnectionPhase.failed);
     }
-    if (_lastRuntimeError != error) {
-      _lastRuntimeError = error;
+    if (_runtimeRecovery.shouldPresentRuntimeError(error)) {
       unawaited(_showCoreStartFailedDialog(error));
     }
   }
 
   Future<bool> _tryRecoverFromInvalidOutbound(String error) async {
-    final runtimeError = parseRuntimeInvalidOutboundError(error);
-    if (runtimeError == null) {
+    final recovery = await _runtimeRecovery.registerInvalidOutboundError(
+      error,
+      loadFallbackTagsByIndex: () async {
+        // Cache miss: fall back to a one-off build to map index→tag.
+        final build = await _configCoordinator
+            .buildCurrentSingboxConfigInBackground(
+              dropStale: false,
+              prepareConfig: false,
+              validateConfig: false,
+            );
+        return build?.plan.proxyOutboundTagsByIndex;
+      },
+    );
+    if (recovery == null) {
       return false;
     }
-    String? tag =
-        _lastStartedProxyOutboundTagsByIndex?[runtimeError.outboundIndex];
-    if (tag == null) {
-      // Cache miss: fall back to a one-off build to map index→tag.
-      final build = await _configCoordinator
-          .buildCurrentSingboxConfigInBackground(
-            dropStale: false,
-            prepareConfig: false,
-            validateConfig: false,
-          );
-      if (build == null) {
-        return false;
-      }
-      tag = build.plan.proxyOutboundTagsByIndex[runtimeError.outboundIndex];
-    }
-    if (tag == null || _excludedRuntimeOutboundTags.contains(tag)) {
-      return false;
-    }
-    _excludedRuntimeOutboundTags.add(tag);
-    _pendingMutationExcludedTag = tag;
     AppLogStore.warning(
       'sing-box',
-      'Skipping invalid outbound "$tag": ${runtimeError.reason}',
+      'Skipping invalid outbound "${recovery.tag}": ${recovery.reason}',
     );
     _warnIfNoOutboundsRemainAfterDropInvalid();
-    _scheduleInvalidOutboundRetry('retry without invalid outbound $tag');
+    _scheduleInvalidOutboundRetry(
+      'retry without invalid outbound ${recovery.tag}',
+    );
     return true;
-  }
-
-  bool _isTransientConfigRetryError(String error) {
-    final normalized = error.toLowerCase();
-    return normalized.contains('decode config: unexpected eof');
   }
 
   void _warnIfNoOutboundsRemainAfterDropInvalid() {
@@ -5716,10 +5692,10 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     if (subscription == null) {
       return;
     }
-    final hasRemainingOutbounds = subscription.outbounds.any(
-      (outbound) =>
-          !outbound.info.deleted &&
-          !_excludedRuntimeOutboundTags.contains(outbound.tag),
+    final hasRemainingOutbounds = _runtimeRecovery.hasRemainingOutbounds(
+      subscription.outbounds
+          .where((outbound) => !outbound.info.deleted)
+          .map((outbound) => outbound.tag),
     );
     if (hasRemainingOutbounds) {
       if (_lastEmptyAfterDropInvalidWarningSubscriptionId == subscription.id) {
@@ -5752,29 +5728,15 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     SingboxConfigBuildResult build,
     String reason,
   ) {
-    if (build.invalidOutboundCount > 0) {
-      final sample = build.invalidOutbounds
-          .take(5)
-          .map((outbound) {
-            final label = outbound.name.trim().isEmpty
-                ? outbound.tag
-                : outbound.name.trim();
-            return '"$label": ${outbound.reason}';
-          })
-          .join('; ');
-      final sampleText = sample.isEmpty ? 'no sample' : sample;
-      final suffix = build.invalidOutboundCount > build.invalidOutbounds.length
-          ? '; +${build.invalidOutboundCount - build.invalidOutbounds.length} more'
-          : '';
-      AppLogStore.warning(
-        'sing-box',
-        'Skipped ${build.invalidOutboundCount} invalid outbounds before start ($reason): $sampleText$suffix',
-      );
-      if (build.selectedProxyInvalid) {
+    final validation = _runtimeRecovery.validateStartupBuild(build, reason);
+    final warning = validation.warning;
+    if (warning != null) {
+      AppLogStore.warning('sing-box', warning);
+      if (validation.selectedProxyInvalid) {
         _selectedProxyTag = _lowestProxyTag;
       }
     }
-    return build.startableOutboundCount > 0;
+    return validation.canStart;
   }
 
   void _scheduleInvalidOutboundRetry(String reason) {
@@ -5796,99 +5758,96 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     } else {
       _setConnectionPhase(AppConnectionPhase.recovering, retryScheduled: true);
     }
-    final retryGeneration = ++_invalidOutboundRetryGeneration;
-    _invalidOutboundRetryTimer?.cancel();
-    _invalidOutboundRetryTimer = Timer(const Duration(milliseconds: 300), () {
-      _invalidOutboundRetryTimer = null;
-      if (!_automaticRuntimeRecoveryCurrent(retryGeneration)) {
-        return;
-      }
-      AppLogStore.info('sing-box', reason);
-      unawaited(() async {
-        try {
-          try {
-            await SingboxRuntime.instance.stop(
-              reason: 'invalid_outbound_retry',
-            );
-          } catch (_) {}
-          if (!_automaticRuntimeRecoveryCurrent(retryGeneration)) {
-            return;
-          }
-          await Future<void>.delayed(const Duration(milliseconds: 150));
-          if (!_automaticRuntimeRecoveryCurrent(retryGeneration)) {
-            return;
-          }
-          if (await _tryFastRetryViaMutation(reason, retryGeneration)) {
-            return;
-          }
-          if (!_automaticRuntimeRecoveryCurrent(retryGeneration)) {
-            return;
-          }
-          final build = await _configCoordinator
-              .buildCurrentSingboxConfigInBackground(
-                dropStale: false,
-                returnConfig: true,
-              );
-          if (build == null) {
-            if (mounted) {
-              setState(() {
-                _setConnectionPhase(AppConnectionPhase.failed);
-              });
-            } else {
-              _setConnectionPhase(AppConnectionPhase.failed);
-            }
-            return;
-          }
-          if (!_automaticRuntimeRecoveryCurrent(retryGeneration)) {
-            _configCoordinator.discardPreparedConfigCandidate(build);
-            return;
-          }
-          if (!_applyStartupValidationResult(build, reason)) {
-            _configCoordinator.discardPreparedConfigCandidate(build);
-            if (mounted) {
-              setState(() {
-                _setConnectionPhase(AppConnectionPhase.failed);
-              });
-            } else {
-              _setConnectionPhase(AppConnectionPhase.failed);
-            }
-            _showNoValidOutboundsWarning();
-            return;
-          }
-          await _startRuntimeWithBuild(
-            build,
-            useVpn: _vpnInboundEnabled,
-            automaticRecoveryGeneration: retryGeneration,
-          );
-        } catch (error, stackTrace) {
-          if (!_automaticRuntimeRecoveryCurrent(retryGeneration)) {
-            return;
-          }
-          AppLogStore.error(
-            'sing-box',
-            'automatic outbound recovery failed: $error\n$stackTrace',
-          );
-          await _handleRuntimeError(error.toString(), true);
-        }
-      }());
+    _runtimeRecovery.scheduleRetry((retryGeneration) {
+      unawaited(_runInvalidOutboundRetry(reason, retryGeneration));
     });
   }
 
+  Future<void> _runInvalidOutboundRetry(
+    String reason,
+    int retryGeneration,
+  ) async {
+    if (!_automaticRuntimeRecoveryCurrent(retryGeneration)) {
+      return;
+    }
+    AppLogStore.info('sing-box', reason);
+    try {
+      try {
+        await SingboxRuntime.instance.stop(reason: 'invalid_outbound_retry');
+      } catch (_) {}
+      if (!_automaticRuntimeRecoveryCurrent(retryGeneration)) {
+        return;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      if (!_automaticRuntimeRecoveryCurrent(retryGeneration)) {
+        return;
+      }
+      if (await _tryFastRetryViaMutation(reason, retryGeneration)) {
+        return;
+      }
+      if (!_automaticRuntimeRecoveryCurrent(retryGeneration)) {
+        return;
+      }
+      final build = await _configCoordinator
+          .buildCurrentSingboxConfigInBackground(
+            dropStale: false,
+            returnConfig: true,
+          );
+      if (build == null) {
+        if (mounted) {
+          setState(() {
+            _setConnectionPhase(AppConnectionPhase.failed);
+          });
+        } else {
+          _setConnectionPhase(AppConnectionPhase.failed);
+        }
+        return;
+      }
+      if (!_automaticRuntimeRecoveryCurrent(retryGeneration)) {
+        _configCoordinator.discardPreparedConfigCandidate(build);
+        return;
+      }
+      if (!_applyStartupValidationResult(build, reason)) {
+        _configCoordinator.discardPreparedConfigCandidate(build);
+        if (mounted) {
+          setState(() {
+            _setConnectionPhase(AppConnectionPhase.failed);
+          });
+        } else {
+          _setConnectionPhase(AppConnectionPhase.failed);
+        }
+        _showNoValidOutboundsWarning();
+        return;
+      }
+      await _startRuntimeWithBuild(
+        build,
+        useVpn: _vpnInboundEnabled,
+        automaticRecoveryGeneration: retryGeneration,
+      );
+    } catch (error, stackTrace) {
+      if (!_automaticRuntimeRecoveryCurrent(retryGeneration)) {
+        return;
+      }
+      AppLogStore.error(
+        'sing-box',
+        'automatic outbound recovery failed: $error\n$stackTrace',
+      );
+      await _handleRuntimeError(error.toString(), true);
+    }
+  }
+
   bool _automaticRuntimeRecoveryCurrent(int generation) {
-    return mounted &&
-        _runtimeDesiredByUser &&
-        _invalidOutboundRetryScheduled &&
-        generation == _invalidOutboundRetryGeneration;
+    return _runtimeRecovery.isCurrent(
+      generation,
+      ownerActive: mounted && _runtimeDesiredByUser,
+    );
   }
 
   void _cancelAutomaticRuntimeRecovery(String reason) {
     final hadPendingRecovery =
         _invalidOutboundRetryScheduled || _retryRuntimeOnResume;
-    _invalidOutboundRetryGeneration++;
     _runtimeIntent.clearRetryOnResume();
-    _invalidOutboundRetryScheduled = false;
-    _invalidOutboundRetryTimer?.cancel();
-    _invalidOutboundRetryTimer = null;
+    _runtimeRecovery.cancelRetry();
     if (hadPendingRecovery) {
       AppLogStore.info('runtime', 'automatic recovery cancelled: $reason');
     }
@@ -5901,12 +5860,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     if (!_automaticRuntimeRecoveryCurrent(retryGeneration)) {
       return true;
     }
-    final cachedConfig = _lastStartedConfig;
-    final cachedIndexMap = _lastStartedProxyOutboundTagsByIndex;
-    final excludedTag = _pendingMutationExcludedTag;
-    if (cachedConfig == null || cachedIndexMap == null || excludedTag == null) {
-      return false;
-    }
     final configPath = await _configCoordinator.ensureSingboxConfigPath();
     if (!_automaticRuntimeRecoveryCurrent(retryGeneration)) {
       return true;
@@ -5914,29 +5867,25 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     if (configPath == null || configPath.trim().isEmpty) {
       return false;
     }
+    final mutationInput = _runtimeRecovery.createMutationInput(configPath);
+    if (mutationInput == null) {
+      return false;
+    }
     final ConfigMutationResult mutation;
     try {
-      mutation = await mutateSingboxConfigInBackground(
-        ConfigMutationInput(
-          config: cachedConfig,
-          proxyOutboundTagsByIndex: cachedIndexMap,
-          tagToRemove: excludedTag,
-          outputPath: configPath,
-        ),
-      );
+      mutation = await mutateSingboxConfigInBackground(mutationInput);
     } catch (error) {
       AppLogStore.warning(
         'sing-box',
-        'Fast retry mutation failed for "$excludedTag", falling back to rebuild: $error',
+        'Fast retry mutation failed for "${mutationInput.tagToRemove}", '
+            'falling back to rebuild: $error',
       );
       return false;
     }
     if (!_automaticRuntimeRecoveryCurrent(retryGeneration)) {
       return true;
     }
-    _pendingMutationExcludedTag = null;
-    _lastStartedConfig = mutation.config;
-    _lastStartedProxyOutboundTagsByIndex = mutation.proxyOutboundTagsByIndex;
+    _runtimeRecovery.applyMutation(mutation);
     if (mutation.startableProxyCount == 0) {
       if (mounted) {
         setState(() {
@@ -5970,7 +5919,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     );
     AppLogStore.info(
       'sing-box',
-      'Fast retry: applied in-memory mutation excluding "$excludedTag" '
+      'Fast retry: applied in-memory mutation excluding '
+          '"${mutationInput.tagToRemove}" '
           '(${mutation.outboundCount} outbounds remain)',
     );
     if (!_automaticRuntimeRecoveryCurrent(retryGeneration)) {
