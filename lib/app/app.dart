@@ -26,6 +26,7 @@ import 'package:meow_client/app/runtime_intent_controller.dart';
 import 'package:meow_client/app/runtime_operation_coordinator.dart';
 import 'package:meow_client/app/runtime_recovery_controller.dart';
 import 'package:meow_client/app/runtime_recovery_policy.dart';
+import 'package:meow_client/app/runtime_session_coordinator.dart';
 import 'package:meow_client/app/singbox_config_coordinator.dart';
 import 'package:meow_client/app/subscription_coordinator.dart';
 import 'package:meow_client/app/subscription_runtime_controller.dart';
@@ -125,7 +126,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   bool _noValidOutboundsDialogVisible = false;
   bool _trafficAvailable = false;
   bool _activeProfileRefreshInFlight = false;
-  Future<bool>? _runtimeStopInFlight;
   bool _deepLinkImportInFlight = false;
   bool _settingsBackupOperationInFlight = false;
   bool _locationLookupInFlight = false;
@@ -194,6 +194,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       RuntimeOperationCoordinator();
   final RuntimeRecoveryController _runtimeRecovery =
       RuntimeRecoveryController();
+  final RuntimeSessionCoordinator _runtimeSession = RuntimeSessionCoordinator();
   late final RuntimeCommandCoordinator _runtimeCommands;
   late final SingboxConfigCoordinator _configCoordinator;
   late final RuntimeEventController _runtimeEvents;
@@ -230,7 +231,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   ColorScheme? _dynamicDarkScheme;
   int _groupsEventsSinceLastDiagnosticsLog = 0;
   DateTime? _lastGroupsDiagnosticsLogAt;
-  DateTime? _lastRuntimeRecoveryStatusLogAt;
   Set<String> _preloadedProxyFlagCodes = const <String>{};
   AppLifecycleState _appLifecycleState = AppLifecycleState.resumed;
 
@@ -3142,27 +3142,14 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     required String reason,
     bool allowQueuedRestart = true,
   }) {
-    if (!allowQueuedRestart) {
-      _runtimeIntent.suppressQueuedRestart();
-    }
-    final inFlight = _runtimeStopInFlight;
-    if (inFlight != null) {
-      return inFlight;
-    }
-    if (!_runtimeActiveOrRequested) {
-      _runtimeIntent.clearQueuedRestartSuppression();
-      return Future<bool>.value(true);
-    }
-
-    late final Future<bool> operation;
-    operation = _performRuntimeStop(reason: reason).whenComplete(() {
-      if (identical(_runtimeStopInFlight, operation)) {
-        _runtimeStopInFlight = null;
-        _runtimeIntent.clearQueuedRestartSuppression();
-      }
-    });
-    _runtimeStopInFlight = operation;
-    return operation;
+    return _runtimeSession.stop(
+      activeOrRequested: _runtimeActiveOrRequested,
+      allowQueuedRestart: allowQueuedRestart,
+      suppressQueuedRestart: _runtimeIntent.suppressQueuedRestart,
+      clearQueuedRestartSuppression:
+          _runtimeIntent.clearQueuedRestartSuppression,
+      performStop: () => _performRuntimeStop(reason: reason),
+    );
   }
 
   Future<bool> _performRuntimeStop({required String reason}) async {
@@ -5010,33 +4997,42 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     final automaticRecoveryCancelled =
         automaticRecoveryGeneration != null &&
         !_automaticRuntimeRecoveryCurrent(automaticRecoveryGeneration);
-    if (manualStartCancelled || automaticRecoveryCancelled) {
-      if (result.success && !_runtimeDesiredByUser) {
-        try {
-          await SingboxRuntime.instance
-              .stop(reason: 'cancelled_runtime_start_completed')
-              .timeout(const Duration(seconds: 7));
-        } catch (error, stackTrace) {
-          AppLogStore.error(
-            'sing-box',
-            'late cancelled start cleanup failed: $error\n$stackTrace',
-          );
-        }
+    final disposition = _runtimeSession.classifyStartResult(
+      result: result,
+      manualStartCancelled: manualStartCancelled,
+      automaticRecoveryCancelled: automaticRecoveryCancelled,
+      runtimeDesiredByUser: _runtimeDesiredByUser,
+    );
+    if (disposition == RuntimeStartDisposition.cancelledNeedsCleanup) {
+      try {
+        await SingboxRuntime.instance
+            .stop(reason: 'cancelled_runtime_start_completed')
+            .timeout(const Duration(seconds: 7));
+      } catch (error, stackTrace) {
+        AppLogStore.error(
+          'sing-box',
+          'late cancelled start cleanup failed: $error\n$stackTrace',
+        );
       }
       return;
     }
-    if (result.success) {
+    if (disposition == RuntimeStartDisposition.cancelled) {
+      return;
+    }
+    if (disposition == RuntimeStartDisposition.success) {
       await _reassertPendingRuntimeProxySelectionAfterStart();
       return;
     }
-    _clearRuntimeProxySelectionGuard();
-    _runtimeIntent.clearRuntimeDesired();
-    setState(() {
-      _setConnectionPhase(AppConnectionPhase.failed);
-    });
-    _showAppSnackBar(
-      result.timedOut ? _vpnStartTimedOutMessage : _vpnStartFailedMessage,
-    );
+    if (disposition == RuntimeStartDisposition.failed) {
+      _clearRuntimeProxySelectionGuard();
+      _runtimeIntent.clearRuntimeDesired();
+      setState(() {
+        _setConnectionPhase(AppConnectionPhase.failed);
+      });
+      _showAppSnackBar(
+        result.timedOut ? _vpnStartTimedOutMessage : _vpnStartFailedMessage,
+      );
+    }
   }
 
   void _setConfigCoordinatorPhase(SingboxConfigCoordinatorPhase phase) {
@@ -5289,45 +5285,26 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     final error = event.error;
     final hasError = event.hasError;
     final wasRetryScheduled = _invalidOutboundRetryScheduled;
+    final decision = _runtimeSession.decideStateEvent(
+      running: running,
+      hasError: hasError,
+      transitionInProgress: _runtimeTransitionInProgress,
+      retryScheduled: _invalidOutboundRetryScheduled,
+      starting: _starting,
+    );
     if (!mounted) return;
     var shouldSyncQuickSettingsTile = false;
     var shouldCancelLatency = false;
     setState(() {
-      final keepStateDuringError =
-          hasError &&
-          (_runtimeTransitionInProgress ||
-              _invalidOutboundRetryScheduled ||
-              _starting);
-      final keepConnecting =
-          !running &&
-          (!hasError || keepStateDuringError) &&
-          (_runtimeTransitionInProgress ||
-              _invalidOutboundRetryScheduled ||
-              _starting);
       if (running) {
         _runtimeIntent.restoreDesiredFromObservedRuntime();
-        _setConnectionPhase(AppConnectionPhase.connected);
         _lastLocationLookupSignature = '';
-      } else if (hasError) {
-        if (keepStateDuringError) {
-          _setConnectionPhase(
-            AppConnectionPhase.recovering,
-            retryScheduled: _invalidOutboundRetryScheduled,
-          );
-        } else {
-          _setConnectionPhase(AppConnectionPhase.failed);
-        }
-      } else {
-        _setConnectionPhase(
-          keepConnecting
-              ? (_invalidOutboundRetryScheduled
-                    ? AppConnectionPhase.recovering
-                    : AppConnectionPhase.starting)
-              : AppConnectionPhase.idle,
-          retryScheduled: keepConnecting && _invalidOutboundRetryScheduled,
-        );
       }
-      if (!running && !keepConnecting) {
+      _setConnectionPhase(
+        decision.phase,
+        retryScheduled: decision.retryScheduled,
+      );
+      if (decision.clearDisconnectedState) {
         shouldCancelLatency = true;
         shouldSyncQuickSettingsTile = true;
         _resetActiveProxyIpState();
@@ -5533,6 +5510,12 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
           _starting ||
           _invalidOutboundRetryScheduled ||
           _runtimeLifecycle.startWatchdogActive;
+      final decision = _runtimeSession.decideStatus(
+        running: running,
+        nativeRecoveryPending: nativeRecoveryPending,
+        localTransitionPending: localTransitionPending,
+        retryScheduled: _invalidOutboundRetryScheduled,
+      );
       if (nativeRecoveryPending) {
         _logRuntimeRecoveryStatus(status);
       }
@@ -5542,14 +5525,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
           _runtimeIntent.restoreDesiredFromObservedRuntime();
         }
         _setConnectionPhase(
-          running
-              ? AppConnectionPhase.connected
-              : (nativeRecoveryPending ||
-                        localTransitionPending ||
-                        _invalidOutboundRetryScheduled
-                    ? AppConnectionPhase.recovering
-                    : AppConnectionPhase.idle),
-          retryScheduled: !running && _invalidOutboundRetryScheduled,
+          decision.phase,
+          retryScheduled: decision.retryScheduled,
         );
         _uplinkBytesPerSecond = (status['uplink'] as num?)?.toInt() ?? 0;
         _downlinkBytesPerSecond = (status['downlink'] as num?)?.toInt() ?? 0;
@@ -5585,12 +5562,12 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
 
   void _logRuntimeRecoveryStatus(Map<String, dynamic> status) {
     final now = DateTime.now();
-    final previous = _lastRuntimeRecoveryStatusLogAt;
-    if (previous != null &&
-        now.difference(previous) < _runtimeRecoveryStatusLogInterval) {
+    if (!_runtimeSession.shouldLogRecoveryStatus(
+      now: now,
+      interval: _runtimeRecoveryStatusLogInterval,
+    )) {
       return;
     }
-    _lastRuntimeRecoveryStatusLogAt = now;
     AppLogStore.warning(
       'runtime',
       'runtime sync pending native recovery '
