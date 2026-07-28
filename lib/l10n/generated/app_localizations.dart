@@ -1436,6 +1436,48 @@ abstract class AppLocalizations {
   /// **'Light vibration for important actions'**
   String get hapticSubtitle;
 
+  /// No description provided for @statusNotificationTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Notification status'**
+  String get statusNotificationTitle;
+
+  /// No description provided for @statusNotificationSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Shows the selected server, speed, and latency while VPN is active.'**
+  String get statusNotificationSubtitle;
+
+  /// No description provided for @notificationConnected.
+  ///
+  /// In en, this message translates to:
+  /// **'VPN connected'**
+  String get notificationConnected;
+
+  /// No description provided for @notificationPingChecking.
+  ///
+  /// In en, this message translates to:
+  /// **'...'**
+  String get notificationPingChecking;
+
+  /// No description provided for @notificationPingUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Latency unavailable'**
+  String get notificationPingUnavailable;
+
+  /// No description provided for @notificationRefreshPingAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh latency'**
+  String get notificationRefreshPingAction;
+
+  /// No description provided for @notificationStopAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop'**
+  String get notificationStopAction;
+
   /// No description provided for @hideServerIpTitle.
   ///
   /// In en, this message translates to:

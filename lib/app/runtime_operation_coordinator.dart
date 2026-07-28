@@ -42,6 +42,7 @@ class RuntimeOperationCoordinator {
   bool _transitioning = false;
   bool _running = false;
   bool _networkUsable = false;
+  bool _networkStateKnown = false;
   bool _groupsReady = false;
   String _selectedTag = '';
 
@@ -49,6 +50,8 @@ class RuntimeOperationCoordinator {
   int get nativeRuntimeGeneration => _nativeRuntimeGeneration;
   String get selectedTag => _selectedTag;
   bool get transitioning => _transitioning;
+  bool get networkUsable => _networkUsable;
+  bool get networkStateKnown => _networkStateKnown;
   bool get diagnosticsReady =>
       _running &&
       !_transitioning &&
@@ -101,6 +104,7 @@ class RuntimeOperationCoordinator {
   void updateNetwork({required int generation, required bool usable}) {
     final changed = generation != _networkGeneration;
     _networkGeneration = generation;
+    _networkStateKnown = true;
     _networkUsable = usable;
     if (changed || !usable) {
       invalidateDiagnostics();

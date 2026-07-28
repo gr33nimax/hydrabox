@@ -24,4 +24,17 @@ void main() {
       expect(store.valueFor('new-server')?.latency, 80);
     },
   );
+
+  test('visual store publishes the offline network state', () {
+    final store = ProxyRuntimeVisualStore();
+    addTearDown(store.dispose);
+
+    final listenable = store.listenableFor('server');
+    store.replaceAll(const {'server': ProxyRuntimeVisualState(latency: 120)});
+    store.replaceAll(const {
+      'server': ProxyRuntimeVisualState(latency: 120, networkUnavailable: true),
+    });
+
+    expect(listenable.value?.networkUnavailable, isTrue);
+  });
 }

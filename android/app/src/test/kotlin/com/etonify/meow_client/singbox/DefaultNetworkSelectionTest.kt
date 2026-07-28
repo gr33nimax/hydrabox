@@ -31,6 +31,20 @@ class DefaultNetworkSelectionTest {
     }
 
     @Test
+    fun `prefers a callback transport over a stale unvalidated interface`() {
+        val selected = selectDefaultNetworkCandidate(
+            candidates = listOf(
+                candidate("wifi", hasInterface = true, score = 30),
+                candidate("cell", hasInterface = true, score = 10),
+            ),
+            current = "wifi",
+            preferred = "cell",
+        )
+
+        assertEquals("cell", selected?.value)
+    }
+
+    @Test
     fun `uses connected physical fallback when current network was lost`() {
         val selected = selectDefaultNetworkCandidate(
             candidates = listOf(

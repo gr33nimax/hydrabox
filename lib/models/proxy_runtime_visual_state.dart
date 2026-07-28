@@ -9,6 +9,7 @@ class ProxyRuntimeVisualState {
     this.latencyChecking = false,
     this.latencyUnavailable = false,
     this.latencyError,
+    this.networkUnavailable = false,
     this.highlighted = false,
     this.selecting = false,
   });
@@ -18,6 +19,7 @@ class ProxyRuntimeVisualState {
   final bool latencyChecking;
   final bool latencyUnavailable;
   final String? latencyError;
+  final bool networkUnavailable;
   final bool highlighted;
   final bool selecting;
 
@@ -29,6 +31,7 @@ class ProxyRuntimeVisualState {
         other.latencyChecking == latencyChecking &&
         other.latencyUnavailable == latencyUnavailable &&
         other.latencyError == latencyError &&
+        other.networkUnavailable == networkUnavailable &&
         other.highlighted == highlighted &&
         other.selecting == selecting;
   }
@@ -40,6 +43,7 @@ class ProxyRuntimeVisualState {
     latencyChecking,
     latencyUnavailable,
     latencyError,
+    networkUnavailable,
     highlighted,
     selecting,
   );

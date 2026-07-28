@@ -754,6 +754,28 @@ class AppLocalizationsRu extends AppLocalizations {
   String get hapticSubtitle => 'Лёгкая вибрация для важных действий';
 
   @override
+  String get statusNotificationTitle => 'Статус в уведомлении';
+
+  @override
+  String get statusNotificationSubtitle =>
+      'Показывает выбранный сервер, скорость и пинг при активном VPN.';
+
+  @override
+  String get notificationConnected => 'VPN подключён';
+
+  @override
+  String get notificationPingChecking => '...';
+
+  @override
+  String get notificationPingUnavailable => 'Пинг недоступен';
+
+  @override
+  String get notificationRefreshPingAction => 'Проверить пинг';
+
+  @override
+  String get notificationStopAction => 'Остановить';
+
+  @override
   String get hideServerIpTitle => 'Скрывать IP сервера';
 
   @override

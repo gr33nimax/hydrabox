@@ -1,6 +1,7 @@
 package com.etonify.meow_client
 
 import android.app.ActivityManager
+import android.Manifest
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ApplicationInfo
@@ -88,6 +89,7 @@ class MainActivity : FlutterFragmentActivity() {
     private var pendingExportContent: String? = null
     private var pendingInstallSettingsResult: MethodChannel.Result? = null
     private var pendingApkInstallResult: MethodChannel.Result? = null
+    private var pendingNotificationPermissionResult: MethodChannel.Result? = null
     private var deepLinkEventSink: EventChannel.EventSink? = null
     @Volatile
     private var singboxEventSinkRegistration = 0L
@@ -121,6 +123,13 @@ class MainActivity : FlutterFragmentActivity() {
             val result = pendingApkInstallResult
             pendingApkInstallResult = null
             result?.success(true)
+        }
+
+    private val notificationPermissionLauncher: ActivityResultLauncher<String> =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            val result = pendingNotificationPermissionResult
+            pendingNotificationPermissionResult = null
+            result?.success(granted)
         }
 
     private class PigeonMethodResult<T>(
@@ -209,6 +218,33 @@ class MainActivity : FlutterFragmentActivity() {
         }.getOrDefault("")
 
     private fun canRequestApkInstalls(): Boolean = packageManager.canRequestPackageInstalls()
+
+    private fun notificationsGranted(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
+                PackageManager.PERMISSION_GRANTED
+
+    private fun ensureNotificationPermission(result: MethodChannel.Result) {
+        if (notificationsGranted()) {
+            result.success(true)
+            return
+        }
+        if (pendingNotificationPermissionResult != null) {
+            result.error(
+                "notification_permission_in_progress",
+                "A notification permission request is already active.",
+                null,
+            )
+            return
+        }
+        pendingNotificationPermissionResult = result
+        runCatching {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }.onFailure { error ->
+            pendingNotificationPermissionResult = null
+            result.error("notification_permission_launch_failed", error.message, null)
+        }
+    }
 
     private fun launchVpnPermission(intent: Intent, result: MethodChannel.Result) {
         if (pendingPrepareResult != null) {
@@ -1885,6 +1921,15 @@ class MainActivity : FlutterFragmentActivity() {
                         )
                         result.success(true)
                     }
+                }
+
+                "ensureNotificationPermission" -> {
+                    ensureNotificationPermission(result)
+                }
+
+                "updateVpnNotificationPresentation" -> {
+                    val arguments = call.arguments as? Map<*, *> ?: emptyMap<String, Any?>()
+                    result.success(MeowBoxService.updateNotificationPresentation(arguments))
                 }
 
                 "getPerformanceSnapshot" -> {

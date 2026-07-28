@@ -140,6 +140,7 @@ class AppSettingsState {
     required this.themePreference,
     required this.accentColorHex,
     required this.hapticEnabled,
+    this.statusNotificationEnabled = true,
     required this.hideServerIp,
     required this.progressiveBlurEnabled,
     this.progressiveBlurConfigured = false,
@@ -196,6 +197,7 @@ class AppSettingsState {
   final AppThemePreference themePreference;
   final String accentColorHex; // e.g. "2D5BFF" or "default"
   final bool hapticEnabled;
+  final bool statusNotificationEnabled;
   final bool hideServerIp;
   final bool progressiveBlurEnabled;
   final bool progressiveBlurConfigured;
@@ -252,6 +254,7 @@ class AppSettingsState {
     AppThemePreference? themePreference,
     String? accentColorHex,
     bool? hapticEnabled,
+    bool? statusNotificationEnabled,
     bool? hideServerIp,
     bool? progressiveBlurEnabled,
     bool? progressiveBlurConfigured,
@@ -310,6 +313,8 @@ class AppSettingsState {
       themePreference: themePreference ?? this.themePreference,
       accentColorHex: accentColorHex ?? this.accentColorHex,
       hapticEnabled: hapticEnabled ?? this.hapticEnabled,
+      statusNotificationEnabled:
+          statusNotificationEnabled ?? this.statusNotificationEnabled,
       hideServerIp: hideServerIp ?? this.hideServerIp,
       progressiveBlurEnabled:
           progressiveBlurEnabled ?? this.progressiveBlurEnabled,
@@ -392,6 +397,7 @@ abstract class AppSettingsStore {
   static const _themePreferenceKey = 'theme_preference';
   static const _accentColorHexKey = 'accent_color_hex';
   static const _hapticEnabledKey = 'haptic_enabled';
+  static const _statusNotificationEnabledKey = 'status_notification_enabled';
   static const _hideServerIpKey = 'hide_server_ip';
   static const _progressiveBlurEnabledKey = 'progressive_blur_enabled';
   static const _performanceModeKey = 'performance_mode';
@@ -451,6 +457,7 @@ abstract class AppSettingsStore {
     _themePreferenceKey,
     _accentColorHexKey,
     _hapticEnabledKey,
+    _statusNotificationEnabledKey,
     _hideServerIpKey,
     _proxySortKey,
     _performanceModeKey,
@@ -593,6 +600,10 @@ abstract class AppSettingsStore {
       },
       accentColorHex: map[_accentColorHexKey] ?? 'default',
       hapticEnabled: boolValue(_hapticEnabledKey, defaultValue: true),
+      statusNotificationEnabled: boolValue(
+        _statusNotificationEnabledKey,
+        defaultValue: true,
+      ),
       hideServerIp: boolValue(_hideServerIpKey, defaultValue: false),
       progressiveBlurEnabled: boolValue(
         _progressiveBlurEnabledKey,
@@ -764,6 +775,9 @@ abstract class AppSettingsStore {
       _themePreferenceKey: state.themePreference.name,
       _accentColorHexKey: state.accentColorHex,
       _hapticEnabledKey: state.hapticEnabled ? '1' : '0',
+      _statusNotificationEnabledKey: state.statusNotificationEnabled
+          ? '1'
+          : '0',
       _hideServerIpKey: state.hideServerIp ? '1' : '0',
       _progressiveBlurEnabledKey: state.progressiveBlurEnabled ? '1' : '0',
       _performanceModeKey: state.performanceMode.name,

@@ -63,6 +63,7 @@ class SettingsGeneralPage extends StatelessWidget {
     required this.currentAccentColorHex,
     this.dynamicLightScheme,
     required this.currentHapticEnabled,
+    required this.currentStatusNotificationEnabled,
     required this.currentHideServerIp,
     required this.currentPerformanceMode,
     required this.currentMemoryLimitEnabled,
@@ -72,6 +73,7 @@ class SettingsGeneralPage extends StatelessWidget {
     required this.onThemePreferenceChanged,
     required this.onAccentColorChanged,
     required this.onHapticChanged,
+    required this.onStatusNotificationChanged,
     required this.onHideServerIpChanged,
     required this.onPerformanceModeChanged,
     required this.onMemoryLimitChanged,
@@ -83,6 +85,7 @@ class SettingsGeneralPage extends StatelessWidget {
   final String currentAccentColorHex;
   final ColorScheme? dynamicLightScheme;
   final bool currentHapticEnabled;
+  final bool currentStatusNotificationEnabled;
   final bool currentHideServerIp;
   final AppPerformanceMode currentPerformanceMode;
   final bool currentMemoryLimitEnabled;
@@ -92,6 +95,7 @@ class SettingsGeneralPage extends StatelessWidget {
   final ValueChanged<AppThemePreference> onThemePreferenceChanged;
   final ValueChanged<String> onAccentColorChanged;
   final ValueChanged<bool> onHapticChanged;
+  final ValueChanged<bool> onStatusNotificationChanged;
   final ValueChanged<bool> onHideServerIpChanged;
   final ValueChanged<AppPerformanceMode> onPerformanceModeChanged;
   final void Function(bool value, {bool warningDismissed}) onMemoryLimitChanged;
@@ -320,6 +324,25 @@ class SettingsGeneralPage extends StatelessWidget {
                   subtitle: Text(l10n.hapticSubtitle),
                   value: currentHapticEnabled,
                   onChanged: onHapticChanged,
+                ),
+              ),
+            ),
+
+            const Gap(settingsIslandGap),
+
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Card(
+                margin: EdgeInsets.zero,
+                child: SwitchListTile(
+                  secondary: SettingsLeadingIcon(
+                    icon: Icons.notifications_active_rounded,
+                    color: cs.primary,
+                  ),
+                  title: Text(l10n.statusNotificationTitle),
+                  subtitle: Text(l10n.statusNotificationSubtitle),
+                  value: currentStatusNotificationEnabled,
+                  onChanged: onStatusNotificationChanged,
                 ),
               ),
             ),

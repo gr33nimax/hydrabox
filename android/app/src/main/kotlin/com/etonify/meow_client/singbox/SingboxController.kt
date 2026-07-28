@@ -200,6 +200,15 @@ object SingboxController {
                         error = error,
                         errorCode = errorCode,
                     )
+                    // A notification action can outlive Flutter's event sink.
+                    // Feed its targeted URLTest from the same native stream that
+                    // backs the proxy list, never from a synthetic TCP probe.
+                    MeowBoxService.publishNotificationUrlTestResult(
+                        tag = item.tag,
+                        delayMillis = delay.toLong(),
+                        timeSeconds = time,
+                        status = status,
+                    )
                 }
                 groups += mapOf(
                     "tag" to group.tag,
@@ -260,6 +269,11 @@ object SingboxController {
             uplinkTotal = message.uplinkTotal
             downlinkTotal = message.downlinkTotal
             trafficAvailable = message.trafficAvailable
+            MeowBoxService.publishNotificationTraffic(
+                uplink = uplink,
+                downlink = downlink,
+                trafficAvailable = trafficAvailable,
+            )
             emitCoalescedStatus(
                 mapOf(
                     "type" to "status",

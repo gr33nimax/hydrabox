@@ -19,6 +19,16 @@ void main() {
     );
   });
 
+  test('notification status can be changed without a config rebuild', () {
+    final controller = AppSettingsController();
+
+    final change = controller.setStatusNotificationEnabled(false);
+
+    expect(change.changed, isTrue);
+    expect(change.configReason, isNull);
+    expect(controller.statusNotificationEnabled, isFalse);
+  });
+
   test('DNS preset updates resolver together with preset', () {
     final controller = AppSettingsController();
 

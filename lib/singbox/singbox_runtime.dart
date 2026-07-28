@@ -318,6 +318,68 @@ class SingboxRuntime {
     }
   }
 
+  Future<bool> ensureNotificationPermission() async {
+    if (!Platform.isAndroid) {
+      return true;
+    }
+    try {
+      return await _methods.invokeMethod<bool>(
+            'ensureNotificationPermission',
+          ) ??
+          false;
+    } on MissingPluginException {
+      // Android versions before the notification-status bridge continue to use
+      // their existing foreground-service notification.
+      return true;
+    }
+  }
+
+  Future<void> updateVpnNotificationPresentation({
+    required bool detailed,
+    required String title,
+    int? latencyMillis,
+    required String groupTag,
+    required String targetOutboundTag,
+    required String priorityOutboundTag,
+    required String excludeOutboundTag,
+    required String url,
+    required int timeoutMillis,
+    required int concurrency,
+    required int deadlineMillis,
+    required String connectedText,
+    required String checkingText,
+    required String unavailableText,
+    required String refreshLabel,
+    required String stopLabel,
+  }) async {
+    if (!Platform.isAndroid) {
+      return;
+    }
+    try {
+      await _methods.invokeMethod<void>('updateVpnNotificationPresentation', {
+        'detailed': detailed,
+        'title': title,
+        'latencyMillis': latencyMillis,
+        'groupTag': groupTag,
+        'targetOutboundTag': targetOutboundTag,
+        'priorityOutboundTag': priorityOutboundTag,
+        'excludeOutboundTag': excludeOutboundTag,
+        'url': url,
+        'timeoutMillis': timeoutMillis,
+        'concurrency': concurrency,
+        'deadlineMillis': deadlineMillis,
+        'connectedText': connectedText,
+        'checkingText': checkingText,
+        'unavailableText': unavailableText,
+        'refreshLabel': refreshLabel,
+        'stopLabel': stopLabel,
+      });
+    } on MissingPluginException {
+      // Keep compatibility with a previously installed Android host during a
+      // Flutter hot restart or an in-place development upgrade.
+    }
+  }
+
   Future<void> stop({String reason = 'unspecified'}) {
     return _withMethodChannelFallback(
       () => _hostApi.stop(reason),

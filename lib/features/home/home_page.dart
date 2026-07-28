@@ -291,6 +291,7 @@ class HomePage extends StatelessWidget {
         proxy: proxy == null
             ? null
             : applyProxyRuntimeVisualState(proxy, state),
+        networkUnavailable: state?.networkUnavailable ?? false,
         onRefresh: onRefreshLatency,
       );
     }
@@ -929,11 +930,13 @@ class ActiveProxyDelayIndicator extends StatelessWidget {
     super.key,
     required this.connected,
     required this.proxy,
+    this.networkUnavailable = false,
     required this.onRefresh,
   });
 
   final bool connected;
   final AppProxySummary? proxy;
+  final bool networkUnavailable;
   final VoidCallback onRefresh;
 
   @override
@@ -945,9 +948,11 @@ class ActiveProxyDelayIndicator extends StatelessWidget {
     final latencyChecking = proxy?.latencyChecking == true;
     final latencyUnavailable = proxy?.latencyUnavailable == true;
     final latencyUnknown = !latencyUnavailable && latency == null;
-    final showCheckingIndicator = latencyChecking;
+    final showCheckingIndicator = latencyChecking && !networkUnavailable;
     final hidden = !connected || proxy == null;
-    final color = latencyChecking
+    final color = networkUnavailable
+        ? theme.colorScheme.onSurfaceVariant
+        : latencyChecking
         ? theme.colorScheme.primary
         : latencyUnavailable
         ? theme.colorScheme.onSurfaceVariant
@@ -958,14 +963,18 @@ class ActiveProxyDelayIndicator extends StatelessWidget {
         : latency < 900
         ? theme.colorScheme.tertiary
         : theme.colorScheme.error;
-    final valueText = latencyChecking
+    final valueText = networkUnavailable
+        ? '—'
+        : latencyChecking
         ? l10n.checkingLatencyShort
         : latencyUnavailable
         ? '—'
         : latency != null
         ? '$latency'
         : '—';
-    final icon = showCheckingIndicator
+    final icon = networkUnavailable
+        ? Icon(Icons.wifi_off_rounded, color: color)
+        : showCheckingIndicator
         ? SizedBox(
             width: 18,
             height: 18,
@@ -979,7 +988,11 @@ class ActiveProxyDelayIndicator extends StatelessWidget {
         : !latencyFresh || latencyUnknown
         ? Icon(FluentIcons.history_24_regular, color: color)
         : Icon(FluentIcons.wifi_1_24_regular, color: color);
-    final unitText = latencyChecking || latencyUnavailable || latency == null
+    final unitText =
+        networkUnavailable ||
+            latencyChecking ||
+            latencyUnavailable ||
+            latency == null
         ? ''
         : l10n.millisecondsUnit;
     final tooltip = latencyChecking
@@ -1013,7 +1026,9 @@ class ActiveProxyDelayIndicator extends StatelessWidget {
                       switchOutCurve: Curves.easeOutCubic,
                       child: KeyedSubtree(
                         key: ValueKey(
-                          showCheckingIndicator
+                          networkUnavailable
+                              ? 'offline'
+                              : showCheckingIndicator
                               ? 'checking'
                               : latencyUnavailable
                               ? 'unavailable'

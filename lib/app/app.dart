@@ -127,6 +127,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   Timer? _locationLookupTimer;
   Timer? _derivedCacheBuildTimer;
   Timer? _trafficUiUpdateTimer;
+  Timer? _vpnNotificationSyncTimer;
   Timer? _resumeForegroundSyncTimer;
   Timer? _networkRecoveryDecisionTimer;
   bool _autoRefreshInFlight = false;
@@ -161,6 +162,9 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   String _clientPackageName = '';
   String? _lastUpdateCleanupNoticeVersion;
   bool _updateCleanupInFlight = false;
+  bool _notificationPermissionPromptAttempted = false;
+  bool _notificationPermissionRequestInFlight = false;
+  String _lastVpnNotificationPresentationSignature = '';
   String? _lastRuntimeError;
   final AppSettingsController _settings = AppSettingsController();
   int _locationLookupActiveRequests = 0;
@@ -283,6 +287,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   TlsFragmentationMode get _tlsFragmentationMode =>
       _settings.tlsFragmentationMode;
   bool get _hapticEnabled => _settings.hapticEnabled;
+  bool get _statusNotificationEnabled => _settings.statusNotificationEnabled;
   bool get _hideServerIp => _settings.hideServerIp;
   ProxySort get _proxySort => ProxySort.values.firstWhere(
     (value) => value.name == _settings.proxySort,
@@ -542,6 +547,10 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       latencyChecking: proxy.latencyChecking,
       latencyUnavailable: proxy.latencyUnavailable,
       latencyError: proxy.latencyError,
+      networkUnavailable:
+          _connected &&
+          _runtimeOperations.networkStateKnown &&
+          !_runtimeOperations.networkUsable,
       highlighted: proxy.highlighted,
       selecting: selecting,
     );
@@ -577,11 +586,15 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   Future<bool> _networkInterfaceUsable({String reason = 'dart_check'}) async {
     try {
       final state = await SingboxRuntime.instance.getNetworkInterfaceState();
+      final wasUsable = _runtimeOperations.networkUsable;
       _networkInterfaceGeneration = state.generation;
       _runtimeOperations.updateNetwork(
         generation: state.generation,
         usable: state.usable,
       );
+      if (wasUsable != state.usable) {
+        _applyRuntimeStateToDerivedCaches();
+      }
       return state.usable;
     } catch (error) {
       AppLogStore.warning(
@@ -1059,6 +1072,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         : _withRuntimeProxyState(currentDisplay, summariesByTag);
     _publishProxyRuntimeVisualStates();
     _publishTrafficDashboardSnapshot();
+    _scheduleVpnNotificationSync();
   }
 
   AppProxySummary? _displayProxyForSelectedTag(String tag) {
@@ -1598,6 +1612,107 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     await SingboxRuntime.instance.setQuickSettingsTileLabel(nextLabel);
   }
 
+  String _buildVpnNotificationTitle() {
+    final proxy = _displayProxy;
+    final name = proxy?.displayName.trim();
+    if (name != null && name.isNotEmpty) {
+      final flag = _countryFlagEmoji(proxy?.countryCode);
+      return flag == null ? name : '$flag $name';
+    }
+    final profileName = _activeProfile?.name.trim();
+    return profileName == null || profileName.isEmpty ? 'Etonify' : profileName;
+  }
+
+  void _scheduleVpnNotificationSync() {
+    if (!Platform.isAndroid) {
+      return;
+    }
+    _vpnNotificationSyncTimer?.cancel();
+    _vpnNotificationSyncTimer = Timer(const Duration(milliseconds: 80), () {
+      _vpnNotificationSyncTimer = null;
+      unawaited(_syncVpnNotificationPresentation());
+    });
+  }
+
+  Future<void> _syncVpnNotificationPresentation() async {
+    if (!mounted || !_ready || !Platform.isAndroid) {
+      return;
+    }
+    final context = _navigatorKey.currentContext;
+    if (context == null) {
+      return;
+    }
+    final l10n = AppLocalizations.of(context);
+    final proxy = _displayProxy;
+    final latency = proxy != null && !proxy.latencyUnavailable
+        ? proxy.latency
+        : null;
+    final targetTag = _connected
+        ? (_currentResolvedActiveOutboundTag()?.trim() ?? '')
+        : '';
+    final title = _buildVpnNotificationTitle();
+    final timeoutMillis = _urlTestTimeoutSeconds * 1000;
+    final signature = <Object?>[
+      _statusNotificationEnabled,
+      title,
+      latency,
+      targetTag,
+      _urlTestUrl,
+      timeoutMillis,
+      _connected,
+      _locale?.languageCode ?? 'system',
+    ].join('|');
+    if (signature == _lastVpnNotificationPresentationSignature) {
+      return;
+    }
+    _lastVpnNotificationPresentationSignature = signature;
+    try {
+      await SingboxRuntime.instance.updateVpnNotificationPresentation(
+        detailed: _statusNotificationEnabled,
+        title: title,
+        latencyMillis: latency,
+        groupTag: 'select',
+        targetOutboundTag: targetTag,
+        priorityOutboundTag: targetTag,
+        excludeOutboundTag: '',
+        url: _urlTestUrl,
+        timeoutMillis: timeoutMillis,
+        concurrency: 1,
+        deadlineMillis: timeoutMillis + 5000,
+        connectedText: l10n.notificationConnected,
+        checkingText: l10n.notificationPingChecking,
+        unavailableText: l10n.notificationPingUnavailable,
+        refreshLabel: l10n.notificationRefreshPingAction,
+        stopLabel: l10n.notificationStopAction,
+      );
+    } catch (error) {
+      // A notification must never affect the VPN lifecycle. The Android
+      // foreground service still supplies its minimal required notification.
+      AppLogStore.warning('notification', 'failed to sync VPN status: $error');
+    }
+  }
+
+  Future<void> _requestNotificationPermissionIfNeeded({
+    bool force = false,
+  }) async {
+    if (!Platform.isAndroid ||
+        !_statusNotificationEnabled ||
+        !_connected ||
+        _notificationPermissionRequestInFlight ||
+        (_notificationPermissionPromptAttempted && !force)) {
+      return;
+    }
+    _notificationPermissionPromptAttempted = true;
+    _notificationPermissionRequestInFlight = true;
+    try {
+      await SingboxRuntime.instance.ensureNotificationPermission();
+    } catch (error) {
+      AppLogStore.warning('notification', 'permission request failed: $error');
+    } finally {
+      _notificationPermissionRequestInFlight = false;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1734,6 +1849,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     _externalInfoLookups.clear();
     _derivedCacheBuildTimer?.cancel();
     _trafficUiUpdateTimer?.cancel();
+    _vpnNotificationSyncTimer?.cancel();
     unawaited(_runtimeEvents.dispose());
     _deepLinkImportSubscription?.cancel();
     final store = _store;
@@ -2972,6 +3088,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
 
   void _resumeForegroundWork() {
     unawaited(_syncRuntimeUiForeground(true));
+    _scheduleVpnNotificationSync();
     if (!mounted || !_ready) {
       return;
     }
@@ -4028,6 +4145,15 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     _applySettingsChange(() => _settings.setHapticEnabled(value));
   }
 
+  void _setStatusNotificationEnabled(bool value) {
+    _applySettingsChange(() => _settings.setStatusNotificationEnabled(value));
+    _lastVpnNotificationPresentationSignature = '';
+    _scheduleVpnNotificationSync();
+    if (value) {
+      unawaited(_requestNotificationPermissionIfNeeded(force: true));
+    }
+  }
+
   void _setHideServerIp(bool value) {
     _applySettingsChange(() => _settings.setHideServerIp(value));
   }
@@ -4668,6 +4794,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
           onLocaleChanged: _setLocale,
           onThemePreferenceChanged: _setThemePreference,
           currentHapticEnabled: _hapticEnabled,
+          currentStatusNotificationEnabled: _statusNotificationEnabled,
           currentHideServerIp: _hideServerIp,
           currentPerformanceMode: _performanceMode,
           currentMemoryLimitEnabled: _memoryLimitEnabled,
@@ -4675,6 +4802,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
           currentUpdateInstallMode: _updateInstallMode,
           onAccentColorChanged: _setAccentColor,
           onHapticChanged: _setHapticEnabled,
+          onStatusNotificationChanged: _setStatusNotificationEnabled,
           onHideServerIpChanged: _setHideServerIp,
           onPerformanceModeChanged: _setPerformanceMode,
           onMemoryLimitChanged: _setMemoryLimitEnabled,
@@ -5277,6 +5405,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     }
     _selectedProxyTag = tag;
     _displayProxyCache = _displayProxyForSelectedTag(tag) ?? _displayProxyCache;
+    _scheduleVpnNotificationSync();
   }
 
   int _beginLocalProxySelection() {
@@ -5475,6 +5604,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       // initial lifecycle state is already `resumed` and therefore produces no
       // didChangeAppLifecycleState callback.
       unawaited(_syncRuntimeUiForeground(true));
+      _scheduleVpnNotificationSync();
     }
     unawaited(_syncRuntimeState());
   }
@@ -5560,9 +5690,11 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     if (shouldSyncQuickSettingsTile) {
       unawaited(_syncQuickSettingsTileLabel());
     }
+    _scheduleVpnNotificationSync();
     if (hasError) {
       unawaited(_handleRuntimeError(error ?? '', wasRetryScheduled));
     } else if (running) {
+      unawaited(_requestNotificationPermissionIfNeeded());
       unawaited(_refreshRuntimeDiagnosticsNetworkState());
       _scheduleActiveOutboundIpRefresh();
       if (!_coolMode) {

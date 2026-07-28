@@ -333,7 +333,12 @@ object MeowDefaultNetworkMonitor {
             notifyListener(force = true)
             return
         }
-        val preferredNetwork = resolveBestNetwork()
+        // A callback for a newly available physical transport must be allowed
+        // to replace an old, no-longer-validated interface. While a VPN is
+        // active ConnectivityManager.activeNetwork is often the VPN itself,
+        // so keeping currentNetwork unconditionally can pin libbox to dead
+        // Wi-Fi after a Wi-Fi -> cellular handover.
+        val preferredNetwork = resolveBestNetwork(preferred = network)
         var shouldNotify = false
         var shouldForceNotify = false
         var previousNetwork: Network? = null
@@ -499,10 +504,19 @@ object MeowDefaultNetworkMonitor {
                 index,
                 notificationGeneration.get(),
             )
+            // The monitor belongs to the foreground VPN service. Wake the
+            // runtime here rather than waiting for Flutter to resume, so a
+            // transport handover also recovers while the app is backgrounded.
+            MeowVpnService.requestRuntimeRecoveryAfterNetworkChange(
+                "default_interface:$interfaceName",
+            )
         }
     }
 
-    private fun resolveBestNetwork(exclude: Network? = null): Network? {
+    private fun resolveBestNetwork(
+        exclude: Network? = null,
+        preferred: Network? = null,
+    ): Network? {
         val connectivity = MeowApplication.connectivity
         val active = connectivity.activeNetwork
         val candidates = connectivity.allNetworks
@@ -533,6 +547,7 @@ object MeowDefaultNetworkMonitor {
                 )
             },
             current = current,
+            preferred = preferred,
         )?.value
         val selected = candidates.firstOrNull { it.network == selectedNetwork }
         if (selected == null && candidates.isNotEmpty()) {

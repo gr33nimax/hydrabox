@@ -756,6 +756,28 @@ class AppLocalizationsEn extends AppLocalizations {
   String get hapticSubtitle => 'Light vibration for important actions';
 
   @override
+  String get statusNotificationTitle => 'Notification status';
+
+  @override
+  String get statusNotificationSubtitle =>
+      'Shows the selected server, speed, and latency while VPN is active.';
+
+  @override
+  String get notificationConnected => 'VPN connected';
+
+  @override
+  String get notificationPingChecking => '...';
+
+  @override
+  String get notificationPingUnavailable => 'Latency unavailable';
+
+  @override
+  String get notificationRefreshPingAction => 'Refresh latency';
+
+  @override
+  String get notificationStopAction => 'Stop';
+
+  @override
   String get hideServerIpTitle => 'Hide server IP';
 
   @override

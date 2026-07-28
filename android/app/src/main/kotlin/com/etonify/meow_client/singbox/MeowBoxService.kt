@@ -1,8 +1,5 @@
 package com.etonify.meow_client.singbox
 
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.Service
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -20,7 +17,6 @@ import io.nekohasekai.libbox.PlatformInterface
 import io.nekohasekai.libbox.SystemProxyStatus
 import com.etonify.meow_client.MeowApplication
 import com.etonify.meow_client.MeowQuickSettingsTileService
-import com.etonify.meow_client.R
 import org.json.JSONObject
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.Executors
@@ -40,7 +36,6 @@ class MeowBoxService(
         const val ACTION_RELOAD = "com.etonify.meow_client.singbox.RELOAD"
         const val ACTION_RESTART_CORE = "com.etonify.meow_client.singbox.RESTART_CORE"
         const val EXTRA_STOP_REASON = "stop_reason"
-        private const val NOTIFICATION_CHANNEL_ID = "meow_singbox"
         private const val NOTIFICATION_ID = 42
         private const val CLEANUP_STEP_TIMEOUT_MS = 1_200L
         private const val NETWORK_WAIT_TIMEOUT_MS = 2_500L
@@ -76,6 +71,48 @@ class MeowBoxService(
                 service.ownsActiveRuntime(mode)
             }
         }
+
+        /**
+         * Flutter may be paused or its event sink detached while the VPN keeps
+         * running. Keep the notification snapshot with the foreground service.
+         */
+        fun updateNotificationPresentation(arguments: Map<*, *>): Boolean {
+            var updated = false
+            for (boxService in activeServices) {
+                updated = boxService.foregroundNotification.updatePresentation(arguments) || updated
+            }
+            return updated
+        }
+
+        fun publishNotificationTraffic(
+            uplink: Long,
+            downlink: Long,
+            trafficAvailable: Boolean,
+        ) {
+            for (boxService in activeServices) {
+                boxService.foregroundNotification.updateTraffic(
+                    uplink = uplink,
+                    downlink = downlink,
+                    trafficAvailable = trafficAvailable,
+                )
+            }
+        }
+
+        fun publishNotificationUrlTestResult(
+            tag: String?,
+            delayMillis: Long,
+            timeSeconds: Long,
+            status: String?,
+        ) {
+            for (boxService in activeServices) {
+                boxService.foregroundNotification.onUrlTestResult(
+                    tag = tag,
+                    delayMillis = delayMillis,
+                    timeSeconds = timeSeconds,
+                    status = status,
+                )
+            }
+        }
     }
 
     private val executor = Executors.newSingleThreadExecutor()
@@ -86,6 +123,10 @@ class MeowBoxService(
         Thread(runnable, "MeowBoxRecovery").apply { isDaemon = true }
     }
     private val recoveryGate = RuntimeRecoveryGate(RUNTIME_RECOVERY_MIN_INTERVAL_MS)
+    private val foregroundNotification = MeowForegroundNotification(
+        service = service,
+        notificationId = NOTIFICATION_ID,
+    )
 
     @Volatile
     private var commandServer: CommandServer? = null
@@ -165,9 +206,18 @@ class MeowBoxService(
                 val reason = intent.getStringExtra(EXTRA_STOP_REASON)?.takeIf { it.isNotBlank() }
                     ?: "unspecified"
                 MeowApplication.clearRuntimeIntent()
+                showForeground("Stopping")
                 submitServiceTask("action_stop:$reason") {
                     stopInternal("action_stop:$reason", startId = startId)
                 }
+            }
+            MeowForegroundNotification.ACTION_REFRESH_LATENCY -> {
+                val accepted = foregroundNotification.requestLatencyRefresh()
+                MeowDiagnostics.log(
+                    TAG,
+                    "notification_latency_refresh accepted=$accepted running=${SingboxController.running}",
+                )
+                return Service.START_STICKY
             }
             ACTION_RESTART_CORE -> {
                 showForeground("Restarting")
@@ -813,20 +863,7 @@ class MeowBoxService(
     }
 
     private fun showForeground(status: String) {
-        val manager = service.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.createNotificationChannel(
-            NotificationChannel(
-                NOTIFICATION_CHANNEL_ID,
-                "Etonify sing-box",
-                NotificationManager.IMPORTANCE_LOW,
-            ),
-        )
-        val notification = Notification.Builder(service, NOTIFICATION_CHANNEL_ID)
-            .setContentTitle("Etonify")
-            .setContentText(status)
-            .setSmallIcon(R.drawable.ic_meow_status)
-            .setOngoing(true)
-            .build()
+        val notification = foregroundNotification.buildForForeground(status)
         service.startForeground(NOTIFICATION_ID, notification)
     }
 

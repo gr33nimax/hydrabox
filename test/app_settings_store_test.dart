@@ -17,6 +17,7 @@ void main() {
     expect(state.russiaDnsDirectResolver, defaultRussiaDnsDirectResolver);
     expect(state.memoryLimitEnabled, isTrue);
     expect(state.memoryLimitWarningDismissed, isFalse);
+    expect(state.statusNotificationEnabled, isTrue);
   });
 
   test('migrates legacy aggressive performance mode to standard', () {
@@ -174,6 +175,20 @@ void main() {
     expect(state.memoryLimitWarningDismissed, isTrue);
     expect(map['memory_limit_enabled'], '0');
     expect(map['memory_limit_warning_dismissed'], '1');
+  });
+
+  test('persists notification status setting and keeps it in safe exports', () {
+    final store = _TestSettingsStore();
+    final state = store.mapState(const <String, dynamic>{
+      'status_notification_enabled': '0',
+    });
+
+    expect(state.statusNotificationEnabled, isFalse);
+    expect(store.stateToMap(state)['status_notification_enabled'], '0');
+    expect(
+      store.stateToSafeExportMap(state)['status_notification_enabled'],
+      '0',
+    );
   });
 
   test('persists TLS fragmentation mode', () {

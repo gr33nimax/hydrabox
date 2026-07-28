@@ -51,6 +51,7 @@ class AppSettingsController {
   AppUpdateInstallMode updateInstallMode = AppUpdateInstallMode.ask;
   TlsFragmentationMode tlsFragmentationMode = TlsFragmentationMode.disabled;
   bool hapticEnabled = true;
+  bool statusNotificationEnabled = true;
   bool hideServerIp = false;
   String proxySort = 'source';
   bool progressiveBlurEnabled = false;
@@ -134,6 +135,7 @@ class AppSettingsController {
       themePreference: themePreference,
       accentColorHex: accentColorHex,
       hapticEnabled: hapticEnabled,
+      statusNotificationEnabled: statusNotificationEnabled,
       hideServerIp: hideServerIp,
       progressiveBlurEnabled: progressiveBlurEnabled,
       progressiveBlurConfigured: true,
@@ -191,6 +193,7 @@ class AppSettingsController {
     themePreference = state.themePreference;
     accentColorHex = normalizeAccentColorHex(state.accentColorHex);
     hapticEnabled = state.hapticEnabled;
+    statusNotificationEnabled = state.statusNotificationEnabled;
     hideServerIp = state.hideServerIp;
     proxySort =
         const {'source', 'latency', 'name', 'country'}.contains(state.proxySort)
@@ -277,6 +280,14 @@ class AppSettingsController {
       return const AppSettingsChange.none();
     }
     hapticEnabled = value;
+    return const AppSettingsChange(changed: true);
+  }
+
+  AppSettingsChange setStatusNotificationEnabled(bool value) {
+    if (statusNotificationEnabled == value) {
+      return const AppSettingsChange.none();
+    }
+    statusNotificationEnabled = value;
     return const AppSettingsChange(changed: true);
   }
 
