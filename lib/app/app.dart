@@ -22,6 +22,7 @@ import 'package:meow_client/app/runtime_lifecycle_controller.dart';
 import 'package:meow_client/app/runtime_connection_controller.dart';
 import 'package:meow_client/app/runtime_command_coordinator.dart';
 import 'package:meow_client/app/runtime_event_controller.dart';
+import 'package:meow_client/app/runtime_intent_controller.dart';
 import 'package:meow_client/app/runtime_operation_coordinator.dart';
 import 'package:meow_client/app/runtime_recovery_policy.dart';
 import 'package:meow_client/app/singbox_config_coordinator.dart';
@@ -122,17 +123,12 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   bool _noValidOutboundsDialogVisible = false;
   bool _trafficAvailable = false;
   bool _activeProfileRefreshInFlight = false;
-  bool _startAfterStopRequested = false;
-  bool _suppressStartAfterStop = false;
   Future<bool>? _runtimeStopInFlight;
   bool _invalidOutboundRetryScheduled = false;
-  bool _runtimeDesiredByUser = false;
-  int _manualRuntimeStartGeneration = 0;
   bool _deepLinkImportInFlight = false;
   bool _settingsBackupOperationInFlight = false;
   bool _locationLookupInFlight = false;
   bool _proxyPanelInteractionActive = false;
-  bool _retryRuntimeOnResume = false;
   int _invalidOutboundRetryGeneration = 0;
   String _activeProfileId = '';
   String _selectedProxyTag = '';
@@ -200,6 +196,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       RuntimeLifecycleController();
   final RuntimeConnectionController _runtimeConnection =
       RuntimeConnectionController();
+  final RuntimeIntentController _runtimeIntent = RuntimeIntentController();
   final RuntimeOperationCoordinator _runtimeOperations =
       RuntimeOperationCoordinator();
   late final RuntimeCommandCoordinator _runtimeCommands;
@@ -245,6 +242,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   bool get _starting => _runtimeConnection.starting;
   bool get _runtimeTransitionInProgress =>
       _runtimeConnection.transitionInProgress;
+  bool get _runtimeDesiredByUser => _runtimeIntent.desiredByUser;
+  bool get _retryRuntimeOnResume => _runtimeIntent.retryOnResume;
 
   bool get _legalAccepted => _acceptedLegalVersion == _requiredLegalVersion;
 
@@ -2916,7 +2915,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     _networkRecoveryDecisionTimer?.cancel();
     _networkRecoveryDecisionTimer = null;
     if (_invalidOutboundRetryScheduled && _runtimeDesiredByUser) {
-      _retryRuntimeOnResume = true;
+      _runtimeIntent.deferRetryUntilResume();
     }
     _invalidOutboundRetryTimer?.cancel();
     _invalidOutboundRetryTimer = null;
@@ -2954,11 +2953,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
           );
         }
       }
-      if (_retryRuntimeOnResume && !_connected && _runtimeDesiredByUser) {
-        _retryRuntimeOnResume = false;
+      if (_runtimeIntent.consumeRetryOnResume(connected: _connected)) {
         _scheduleInvalidOutboundRetry('resume lifecycle retry');
-      } else {
-        _retryRuntimeOnResume = false;
       }
     });
   }
@@ -2985,7 +2981,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       reason: 'resume_reconcile',
     );
     if (!networkReady) {
-      _retryRuntimeOnResume = true;
+      _runtimeIntent.deferRetryUntilResume();
       AppLogStore.warning(
         'runtime',
         'resume reconcile postponed: no usable network interface',
@@ -3215,7 +3211,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   Future<void> _toggleConnection({String source = 'unknown'}) async {
     _haptic();
     if (_connectionPhase == AppConnectionPhase.stopping) {
-      _startAfterStopRequested = true;
+      _runtimeIntent.queueStartAfterStop();
       AppLogStore.info(
         'runtime',
         'connection start queued while stopping source=$source',
@@ -3245,15 +3241,14 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     bool allowQueuedRestart = true,
   }) {
     if (!allowQueuedRestart) {
-      _suppressStartAfterStop = true;
-      _startAfterStopRequested = false;
+      _runtimeIntent.suppressQueuedRestart();
     }
     final inFlight = _runtimeStopInFlight;
     if (inFlight != null) {
       return inFlight;
     }
     if (!_runtimeActiveOrRequested) {
-      _suppressStartAfterStop = false;
+      _runtimeIntent.clearQueuedRestartSuppression();
       return Future<bool>.value(true);
     }
 
@@ -3261,7 +3256,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     operation = _performRuntimeStop(reason: reason).whenComplete(() {
       if (identical(_runtimeStopInFlight, operation)) {
         _runtimeStopInFlight = null;
-        _suppressStartAfterStop = false;
+        _runtimeIntent.clearQueuedRestartSuppression();
       }
     });
     _runtimeStopInFlight = operation;
@@ -3271,7 +3266,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   Future<bool> _performRuntimeStop({required String reason}) async {
     _cancelAutomaticRuntimeRecovery('stop:$reason');
     _cancelManualRuntimeStart('stop:$reason');
-    _runtimeDesiredByUser = false;
+    _runtimeIntent.beginExplicitStop();
     if (mounted) {
       setState(() {
         _setConnectionPhase(AppConnectionPhase.stopping);
@@ -3285,8 +3280,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       return stopped;
     }
     if (!stopped) {
-      _runtimeDesiredByUser = true;
-      _startAfterStopRequested = false;
+      _runtimeIntent.restoreAfterStopFailure();
       setState(() {
         _setConnectionPhase(AppConnectionPhase.connected);
       });
@@ -3294,8 +3288,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       return false;
     }
 
-    final startAfterStop = !_suppressStartAfterStop && _startAfterStopRequested;
-    _startAfterStopRequested = false;
+    final startAfterStop = _runtimeIntent.completeSuccessfulStop();
     _latencyCoordinator.cancel();
     _groupUrlTestScheduler.cancel();
     setState(() {
@@ -3340,7 +3333,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         _invalidOutboundRetryScheduled) {
       return;
     }
-    final startGeneration = ++_manualRuntimeStartGeneration;
+    final startGeneration = _runtimeIntent.beginManualStart();
     AppLogStore.info(
       'sing-box',
       'manual start requested source=$source\n'
@@ -3361,7 +3354,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     }
 
     SingboxConfigBuildResult? build;
-    _runtimeDesiredByUser = true;
+    _runtimeIntent.markRuntimeDesired();
     try {
       setState(() {
         _setConnectionPhase(AppConnectionPhase.preparing);
@@ -3374,7 +3367,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         return;
       }
       if (!granted) {
-        _runtimeDesiredByUser = false;
+        _runtimeIntent.clearRuntimeDesired();
         setState(() {
           _setConnectionPhase(AppConnectionPhase.idle);
         });
@@ -3399,7 +3392,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         return;
       }
       if (build == null) {
-        _runtimeDesiredByUser = false;
+        _runtimeIntent.clearRuntimeDesired();
         setState(() {
           _setConnectionPhase(AppConnectionPhase.idle);
         });
@@ -3407,7 +3400,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       }
       if (!_applyStartupValidationResult(build, 'manual start')) {
         _configCoordinator.discardPreparedConfigCandidate(build);
-        _runtimeDesiredByUser = false;
+        _runtimeIntent.clearRuntimeDesired();
         setState(() {
           _setConnectionPhase(AppConnectionPhase.failed);
         });
@@ -3454,13 +3447,11 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   }
 
   bool _manualRuntimeStartCurrent(int generation) {
-    return mounted &&
-        _runtimeDesiredByUser &&
-        generation == _manualRuntimeStartGeneration;
+    return mounted && _runtimeIntent.isManualStartCurrent(generation);
   }
 
   void _cancelManualRuntimeStart(String reason) {
-    _manualRuntimeStartGeneration++;
+    _runtimeIntent.invalidateManualStart();
     _configCoordinator.cancelPendingWork(reason: reason);
   }
 
@@ -5193,7 +5184,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       return;
     }
     _clearRuntimeProxySelectionGuard();
-    _runtimeDesiredByUser = false;
+    _runtimeIntent.clearRuntimeDesired();
     setState(() {
       _setConnectionPhase(AppConnectionPhase.failed);
     });
@@ -5473,7 +5464,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
               _invalidOutboundRetryScheduled ||
               _starting);
       if (running) {
-        _runtimeDesiredByUser = true;
+        _runtimeIntent.restoreDesiredFromObservedRuntime();
         _setConnectionPhase(AppConnectionPhase.connected);
         _lastLocationLookupSignature = '';
       } else if (hasError) {
@@ -5657,7 +5648,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       _onRuntimeDiagnosticsReady();
     }
     if (!_foregroundLifecycleActive) {
-      _retryRuntimeOnResume = true;
+      _runtimeIntent.deferRetryUntilResume();
       return;
     }
     if (usable) {
@@ -5707,7 +5698,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       final now = DateTime.now();
       setState(() {
         if (running) {
-          _runtimeDesiredByUser = true;
+          _runtimeIntent.restoreDesiredFromObservedRuntime();
         }
         _setConnectionPhase(
           running
@@ -5816,11 +5807,11 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     }
     if (mounted) {
       setState(() {
-        _runtimeDesiredByUser = false;
+        _runtimeIntent.clearRuntimeDesired();
         _setConnectionPhase(AppConnectionPhase.failed);
       });
     } else {
-      _runtimeDesiredByUser = false;
+      _runtimeIntent.clearRuntimeDesired();
       _setConnectionPhase(AppConnectionPhase.failed);
     }
     if (_lastRuntimeError != error) {
@@ -5939,10 +5930,10 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       return;
     }
     if (!_foregroundLifecycleActive) {
-      _retryRuntimeOnResume = true;
+      _runtimeIntent.deferRetryUntilResume();
       return;
     }
-    _retryRuntimeOnResume = false;
+    _runtimeIntent.clearRetryOnResume();
     if (mounted) {
       setState(() {
         _setConnectionPhase(
@@ -6042,7 +6033,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     final hadPendingRecovery =
         _invalidOutboundRetryScheduled || _retryRuntimeOnResume;
     _invalidOutboundRetryGeneration++;
-    _retryRuntimeOnResume = false;
+    _runtimeIntent.clearRetryOnResume();
     _invalidOutboundRetryScheduled = false;
     _invalidOutboundRetryTimer?.cancel();
     _invalidOutboundRetryTimer = null;
