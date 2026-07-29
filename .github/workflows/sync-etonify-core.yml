@@ -126,7 +126,10 @@ jobs:
           mkdir -p "$libs"
           cp etonify-core/libbox.aar "$libs/libbox.aar"
           cp etonify-core/libbox-sources.jar "$libs/libbox-sources.jar"
-          sha256sum "$libs/libbox.aar" > "$libs/libbox.sha256"
+          (
+            cd "$libs"
+            sha256sum libbox.aar > libbox.sha256
+          )
 
           export LIBBOX_SHA256="$(sha256sum "$libs/libbox.aar" | awk '{print $1}')"
           export CORE_VERSION CORE_COMMIT CORE_SOURCE_VERSION
