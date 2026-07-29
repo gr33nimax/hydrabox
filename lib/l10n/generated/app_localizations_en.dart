@@ -101,10 +101,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sortByLatency => 'By latency';
 
   @override
+  String get sortByWorking => 'Working only';
+
+  @override
   String get sortByName => 'By name';
 
   @override
   String get sortByCountry => 'By country';
+
+  @override
+  String subscriptionWorkingServersCount(int working, int checked) {
+    return 'Working: $working of $checked checked';
+  }
 
   @override
   String get settingsTitle => 'Settings';
@@ -270,11 +278,11 @@ class AppLocalizationsEn extends AppLocalizations {
       'MeowTeam is two developers building Etonify, its core, and networking components together as an independent open-source project.';
 
   @override
-  String get teamTimelineForkTitle => 'Started as a Hiddify fork';
+  String get teamTimelineForkTitle => 'Early client development';
 
   @override
   String get teamTimelineForkBody =>
-      'The early client inherited the UI and a large legacy codebase from Hiddify. A few test versions helped us understand what had to change.';
+      'Early test versions helped define the Android runtime, subscription handling, diagnostics, and interface that Etonify now maintains.';
 
   @override
   String get teamTimelineRefactorTitle => 'Large refactor';
@@ -761,6 +769,22 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get statusNotificationSubtitle =>
       'Shows the selected server, speed, and latency while VPN is active.';
+
+  @override
+  String get notificationTrafficDisplayTitle => 'What to show in notification';
+
+  @override
+  String get notificationTrafficDisplaySubtitle =>
+      'Current speed, total transferred, or both.';
+
+  @override
+  String get notificationTrafficDisplaySpeed => 'Current speed';
+
+  @override
+  String get notificationTrafficDisplayTotal => 'Total transferred';
+
+  @override
+  String get notificationTrafficDisplayBoth => 'Speed and total';
 
   @override
   String get notificationConnected => 'VPN connected';

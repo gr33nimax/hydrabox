@@ -87,12 +87,16 @@ class MeowBoxService(
         fun publishNotificationTraffic(
             uplink: Long,
             downlink: Long,
+            uplinkTotal: Long,
+            downlinkTotal: Long,
             trafficAvailable: Boolean,
         ) {
             for (boxService in activeServices) {
                 boxService.foregroundNotification.updateTraffic(
                     uplink = uplink,
                     downlink = downlink,
+                    uplinkTotal = uplinkTotal,
+                    downlinkTotal = downlinkTotal,
                     trafficAvailable = trafficAvailable,
                 )
             }
@@ -747,6 +751,7 @@ class MeowBoxService(
             SingboxController.markServiceStopped(generation, source)
             MeowApplication.clearServiceState()
             MeowApplication.clearRuntimeIntent()
+            foregroundNotification.clearSavedPresentation()
             MeowQuickSettingsTileService.requestRefresh(service)
         } else {
             MeowDiagnostics.log(

@@ -52,6 +52,8 @@ class AppSettingsController {
   TlsFragmentationMode tlsFragmentationMode = TlsFragmentationMode.disabled;
   bool hapticEnabled = true;
   bool statusNotificationEnabled = true;
+  NotificationTrafficDisplayMode notificationTrafficDisplayMode =
+      NotificationTrafficDisplayMode.speed;
   bool hideServerIp = false;
   String proxySort = 'source';
   bool progressiveBlurEnabled = false;
@@ -136,6 +138,7 @@ class AppSettingsController {
       accentColorHex: accentColorHex,
       hapticEnabled: hapticEnabled,
       statusNotificationEnabled: statusNotificationEnabled,
+      notificationTrafficDisplayMode: notificationTrafficDisplayMode,
       hideServerIp: hideServerIp,
       progressiveBlurEnabled: progressiveBlurEnabled,
       progressiveBlurConfigured: true,
@@ -194,6 +197,7 @@ class AppSettingsController {
     accentColorHex = normalizeAccentColorHex(state.accentColorHex);
     hapticEnabled = state.hapticEnabled;
     statusNotificationEnabled = state.statusNotificationEnabled;
+    notificationTrafficDisplayMode = state.notificationTrafficDisplayMode;
     hideServerIp = state.hideServerIp;
     proxySort =
         const {'source', 'latency', 'name', 'country'}.contains(state.proxySort)
@@ -291,6 +295,16 @@ class AppSettingsController {
     return const AppSettingsChange(changed: true);
   }
 
+  AppSettingsChange setNotificationTrafficDisplayMode(
+    NotificationTrafficDisplayMode value,
+  ) {
+    if (notificationTrafficDisplayMode == value) {
+      return const AppSettingsChange.none();
+    }
+    notificationTrafficDisplayMode = value;
+    return const AppSettingsChange(changed: true);
+  }
+
   AppSettingsChange setHideServerIp(bool value) {
     if (hideServerIp == value) {
       return const AppSettingsChange.none();
@@ -301,7 +315,13 @@ class AppSettingsController {
 
   AppSettingsChange setProxySort(String value) {
     final normalized =
-        const {'source', 'latency', 'name', 'country'}.contains(value)
+        const {
+          'source',
+          'latency',
+          'working',
+          'name',
+          'country',
+        }.contains(value)
         ? value
         : 'source';
     if (proxySort == normalized) {

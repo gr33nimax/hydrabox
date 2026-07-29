@@ -4,7 +4,6 @@ import 'dart:developer' as developer;
 import 'dart:io';
 import 'dart:math';
 
-import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,10 +11,12 @@ import 'package:gap/gap.dart';
 import 'package:meow_client/app/active_proxy_ip_controller.dart';
 import 'package:meow_client/app/app_background_tasks.dart';
 import 'package:meow_client/app/app_bootstrap_controller.dart';
+import 'package:meow_client/app/app_root_shell.dart';
 import 'package:meow_client/app/app_settings_controller.dart';
 import 'package:meow_client/app/deep_link_import.dart';
 import 'package:meow_client/app/group_url_test_scheduler.dart';
 import 'package:meow_client/app/latency_coordinator.dart';
+import 'package:meow_client/app/network_recovery_controller.dart';
 import 'package:meow_client/app/proxy_runtime_controller.dart';
 import 'package:meow_client/app/proxy_selection_controller.dart';
 import 'package:meow_client/app/runtime_lifecycle_controller.dart';
@@ -30,7 +31,9 @@ import 'package:meow_client/app/runtime_session_coordinator.dart';
 import 'package:meow_client/app/singbox_config_coordinator.dart';
 import 'package:meow_client/app/subscription_coordinator.dart';
 import 'package:meow_client/app/subscription_runtime_controller.dart';
+import 'package:meow_client/app/traffic_status_reducer.dart';
 import 'package:meow_client/app/subscription_profile_import_controller.dart';
+import 'package:meow_client/app/subscription_profile_flow_controller.dart';
 import 'package:meow_client/core/lowest_proxy_groups.dart';
 import 'package:meow_client/core/widgets/app_notice.dart';
 import 'package:meow_client/data/adblock/ad_block_rule_set_service.dart';
@@ -39,11 +42,10 @@ import 'package:meow_client/data/routing/russia_route_data_service.dart';
 import 'package:meow_client/data/subscription/happ_crypto_link.dart';
 import 'package:meow_client/data/subscription/subscription_store.dart';
 import 'package:meow_client/data/update/app_update_service.dart';
-import 'package:meow_client/features/home/home_page.dart';
-import 'package:meow_client/features/home/home_presentation.dart';
+import 'package:meow_client/features/home/home_presentation_builder.dart';
 import 'package:meow_client/features/home/traffic_dashboard_page.dart';
 import 'package:meow_client/features/legal/legal_consent_page.dart';
-import 'package:meow_client/features/proxies/proxies_page.dart';
+import 'package:meow_client/features/proxies/proxies_presentation_builder.dart';
 import 'package:meow_client/features/proxies/proxy_panel_shell.dart';
 import 'package:meow_client/features/settings/changelog_sheet.dart';
 import 'package:meow_client/features/settings/settings_about_page.dart';
@@ -54,6 +56,7 @@ import 'package:meow_client/features/settings/settings_general_page.dart';
 import 'package:meow_client/features/settings/settings_inbound_page.dart';
 import 'package:meow_client/features/settings/settings_logs_page.dart';
 import 'package:meow_client/features/settings/settings_page.dart';
+import 'package:meow_client/features/settings/settings_presentation_builder.dart';
 import 'package:meow_client/features/settings/settings_routing_page.dart';
 import 'package:meow_client/features/settings/settings_subscriptions_page.dart';
 import 'package:meow_client/features/settings/settings_update_page.dart';
@@ -69,8 +72,6 @@ import 'package:meow_client/singbox/core_config_migration.dart';
 import 'package:meow_client/singbox/singbox_config_builder.dart';
 import 'package:meow_client/singbox/singbox_runtime.dart';
 import 'package:meow_client/theme/demo_app_theme.dart';
-import 'package:meow_client/widgets/app_scroll_effects.dart';
-import 'package:meow_client/widgets/app_visual_effects.dart';
 import 'package:meow_client/widgets/country_flag_badge.dart';
 
 class MeowClient extends StatefulWidget {
@@ -90,10 +91,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   static const _derivedCacheBuildDebounce = Duration(milliseconds: 160);
   static const _coolNetworkHeartbeatIntervalSeconds = 240;
   static const _economyNetworkHeartbeatIntervalSeconds = 300;
-  static const _trafficUiUpdateInterval = Duration(seconds: 1);
-  static const _networkRecoveryRestartCooldown = Duration(seconds: 60);
-  static const _networkRecoveryWindow = Duration(minutes: 10);
-  static const _networkRecoveryMaxRestartsPerWindow = 2;
+  static const _responsiveTrafficUiUpdateInterval = Duration(milliseconds: 250);
+  static const _balancedTrafficUiUpdateInterval = Duration(seconds: 1);
   static const _runtimeRecoveryStatusLogInterval = Duration(seconds: 5);
   static const _subscriptionOperationSoftWarningDelay = Duration(seconds: 15);
   static const _subscriptionOperationTimeout = Duration(seconds: 30);
@@ -115,7 +114,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   Timer? _trafficUiUpdateTimer;
   Timer? _vpnNotificationSyncTimer;
   Timer? _resumeForegroundSyncTimer;
-  Timer? _networkRecoveryDecisionTimer;
   bool _autoRefreshInFlight = false;
   bool _ownsStore = false;
   bool _ready = false;
@@ -130,6 +128,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   bool _settingsBackupOperationInFlight = false;
   bool _locationLookupInFlight = false;
   bool _proxyPanelInteractionActive = false;
+  int _proxyPanelResetGeneration = 0;
   String _activeProfileId = '';
   String _selectedProxyTag = '';
   String _clientVersionLabel = _fallbackClientVersionLabel;
@@ -170,12 +169,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       ValueNotifier<TrafficUiSnapshot>(TrafficUiSnapshot.zero);
   Map<String, dynamic>? _pendingTrafficStatusEvent;
   DateTime _lastTrafficUiUpdateAt = DateTime.fromMillisecondsSinceEpoch(0);
-  int _networkReconnectGeneration = 0;
   int _networkInterfaceGeneration = 0;
-  DateTime? _lastRecoveryRestartAt;
-  final Queue<DateTime> _networkRecoveryRestartHistory = Queue<DateTime>();
-  DateTime? _lastRuntimeInterfaceIssueRecoveryAt;
-  final Queue<DateTime> _runtimeInterfaceIssueTimes = Queue<DateTime>();
   int _derivedCacheBuildGeneration = 0;
   bool _derivedCacheBuildInFlight = false;
   bool _derivedCacheBuildQueued = false;
@@ -184,6 +178,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   final ProxySelectionController _proxySelection = ProxySelectionController();
   final ActiveProxyIpController _activeProxyIpController =
       ActiveProxyIpController();
+  static const TrafficStatusReducer _trafficStatusReducer =
+      TrafficStatusReducer();
   late final AppBootstrapController _bootstrapController;
   final RuntimeLifecycleController _runtimeLifecycle =
       RuntimeLifecycleController();
@@ -194,6 +190,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       RuntimeOperationCoordinator();
   final RuntimeRecoveryController _runtimeRecovery =
       RuntimeRecoveryController();
+  final NetworkRecoveryController _networkRecovery =
+      NetworkRecoveryController();
   final RuntimeSessionCoordinator _runtimeSession = RuntimeSessionCoordinator();
   late final RuntimeCommandCoordinator _runtimeCommands;
   late final SingboxConfigCoordinator _configCoordinator;
@@ -211,6 +209,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
           autoRefreshMaxDelay: _subscriptionAutoRefreshMaxDelay,
         ),
       );
+  static const SubscriptionProfileFlowController _subscriptionProfileFlow =
+      SubscriptionProfileFlowController();
   List<Subscription> _subscriptions = const [];
   AppProfileSummary? _activeProfileCache;
   AppProxySummary? _displayProxyCache;
@@ -274,6 +274,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       _settings.tlsFragmentationMode;
   bool get _hapticEnabled => _settings.hapticEnabled;
   bool get _statusNotificationEnabled => _settings.statusNotificationEnabled;
+  NotificationTrafficDisplayMode get _notificationTrafficDisplayMode =>
+      _settings.notificationTrafficDisplayMode;
   bool get _hideServerIp => _settings.hideServerIp;
   ProxySort get _proxySort => ProxySort.values.firstWhere(
     (value) => value.name == _settings.proxySort,
@@ -569,6 +571,27 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     _proxyRuntimeVisualStates.replaceAll(next);
   }
 
+  void _publishProxyRuntimeVisualStatesForTags(
+    Iterable<String> tags, {
+    bool notifyRevision = false,
+  }) {
+    final updates = <String, ProxyRuntimeVisualState?>{};
+    for (final rawTag in tags) {
+      final tag = rawTag.trim();
+      if (tag.isEmpty) {
+        continue;
+      }
+      final proxy = _displayProxyForSelectedTag(tag);
+      updates[tag] = proxy == null
+          ? null
+          : _runtimeVisualStateFor(_withDirectRuntimeProxyState(proxy));
+    }
+    _proxyRuntimeVisualStates.updateTags(
+      updates,
+      notifyRevision: notifyRevision,
+    );
+  }
+
   Future<bool> _networkInterfaceUsable({String reason = 'dart_check'}) async {
     try {
       final state = await SingboxRuntime.instance.getNetworkInterfaceState();
@@ -602,33 +625,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     }
   }
 
-  bool _canRunNetworkRecoveryRestart() {
-    final now = DateTime.now();
-    if (_lastRecoveryRestartAt != null &&
-        now.difference(_lastRecoveryRestartAt!) <
-            _networkRecoveryRestartCooldown) {
-      return false;
-    }
-    while (_networkRecoveryRestartHistory.isNotEmpty &&
-        now.difference(_networkRecoveryRestartHistory.first) >
-            _networkRecoveryWindow) {
-      _networkRecoveryRestartHistory.removeFirst();
-    }
-    return _networkRecoveryRestartHistory.length <
-        _networkRecoveryMaxRestartsPerWindow;
-  }
-
-  void _recordNetworkRecoveryRestart() {
-    final now = DateTime.now();
-    _lastRecoveryRestartAt = now;
-    _networkRecoveryRestartHistory.addLast(now);
-  }
-
-  void _clearRuntimeInterfaceIssueWindow() {
-    _runtimeInterfaceIssueTimes.clear();
-    _lastRuntimeInterfaceIssueRecoveryAt = null;
-  }
-
   void _handleRuntimeLogIssue(String reason, String message) {
     if (!mounted ||
         !_connected ||
@@ -637,30 +633,16 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       return;
     }
     final now = DateTime.now();
-    _runtimeInterfaceIssueTimes.addLast(now);
-    while (_runtimeInterfaceIssueTimes.isNotEmpty &&
-        now.difference(_runtimeInterfaceIssueTimes.first) >
-            runtimeInterfaceRecoveryPolicy.issueWindow) {
-      _runtimeInterfaceIssueTimes.removeFirst();
-    }
-    final issueCount = _runtimeInterfaceIssueTimes.length;
-    final lastRecoveryAt = _lastRuntimeInterfaceIssueRecoveryAt;
-    if (!runtimeInterfaceRecoveryPolicy.shouldSchedule(
-      issueCount: issueCount,
-      elapsedSinceLastRecovery: lastRecoveryAt == null
-          ? null
-          : now.difference(lastRecoveryAt),
-    )) {
+    final issue = _networkRecovery.registerInterfaceIssue(now);
+    if (!issue.shouldScheduleRecovery) {
       return;
     }
-    _lastRuntimeInterfaceIssueRecoveryAt = now;
-    _runtimeInterfaceIssueTimes.clear();
     final shortMessage = message.length > 180
         ? message.substring(0, 180)
         : message;
     AppLogStore.warning(
       'network',
-      'runtime_interface_issue_detected reason=$reason count=$issueCount '
+      'runtime_interface_issue_detected reason=$reason count=${issue.issueCount} '
           'selected=$_selectedProxyTag message=$shortMessage',
     );
     _scheduleNetworkRecovery(
@@ -681,19 +663,9 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         _runtimeTransitionInProgress) {
       return;
     }
-    final generation = ++_networkReconnectGeneration;
-    _networkRecoveryDecisionTimer?.cancel();
-    if (!forceRestartOnDecision) {
-      AppLogStore.debug(
-        'network',
-        'network change observed without forced recovery reason=$reason '
-            'networkGeneration=$networkGeneration',
-      );
-      return;
-    }
-    _networkRecoveryDecisionTimer = Timer(
-      runtimeInterfaceRecoveryPolicy.decisionDelay,
-      () {
+    _networkRecovery.scheduleDecision(
+      forceRestartOnDecision: forceRestartOnDecision,
+      onReady: (generation) {
         unawaited(
           _decideNetworkRecovery(
             reason: reason,
@@ -703,6 +675,14 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         );
       },
     );
+    if (!forceRestartOnDecision) {
+      AppLogStore.debug(
+        'network',
+        'network change observed without forced recovery reason=$reason '
+            'networkGeneration=$networkGeneration',
+      );
+      return;
+    }
   }
 
   Future<void> _decideNetworkRecovery({
@@ -711,7 +691,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     required int networkGeneration,
   }) async {
     if (!mounted ||
-        generation != _networkReconnectGeneration ||
+        !_networkRecovery.isCurrentDecision(generation) ||
         !_connected ||
         !_foregroundLifecycleActive ||
         _runtimeTransitionInProgress) {
@@ -725,7 +705,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       );
       return;
     }
-    if (!_canRunNetworkRecoveryRestart()) {
+    if (!_networkRecovery.canRestart(DateTime.now())) {
       AppLogStore.warning(
         'network',
         'recovery restart suppressed reason=$reason '
@@ -733,7 +713,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       );
       return;
     }
-    _recordNetworkRecoveryRestart();
+    _networkRecovery.recordRestart(DateTime.now());
     _groupUrlTestScheduler.cancel();
     _latencyCoordinator.cancel();
     _runtimeStartupUrlTestGate.markRecoveryRestart(
@@ -1509,6 +1489,32 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     return false;
   }
 
+  /// Current-session URLTest summary for the active subscription. A row only
+  /// enters the denominator once this runtime has a terminal result for it;
+  /// old pings from a subscription payload must not be presented as a fresh
+  /// health check.
+  ({int working, int checked})? get _activeServerHealthSummary {
+    _ensureActiveLookupCaches();
+    var working = 0;
+    var checked = 0;
+    for (final outbound in _activeVisibleOutboundsLookup) {
+      final tag = outbound.tag.trim();
+      if (tag.isEmpty || _proxyRuntime.isLatencyInvalidated(tag)) {
+        continue;
+      }
+      final unavailable = _unavailableLatencyTags.contains(tag);
+      final hasLatency = _runtimeLatencies.containsKey(tag);
+      if (!unavailable && !hasLatency) {
+        continue;
+      }
+      checked++;
+      if (hasLatency && !unavailable) {
+        working++;
+      }
+    }
+    return checked == 0 ? null : (working: working, checked: checked);
+  }
+
   void _ensureActiveLookupCaches() {
     final subscription = _activeSubscription;
     if (identical(subscription, _activeLookupSubscription)) {
@@ -1640,6 +1646,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     final timeoutMillis = _urlTestTimeoutSeconds * 1000;
     final signature = <Object?>[
       _statusNotificationEnabled,
+      _notificationTrafficDisplayMode.name,
       title,
       latency,
       targetTag,
@@ -1655,6 +1662,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     try {
       await SingboxRuntime.instance.updateVpnNotificationPresentation(
         detailed: _statusNotificationEnabled,
+        trafficDisplayMode: _notificationTrafficDisplayMode.name,
         title: title,
         latencyMillis: latency,
         groupTag: 'select',
@@ -1800,7 +1808,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     _locationLookupTimer?.cancel();
     _resumeForegroundSyncTimer?.cancel();
     _groupUrlTestScheduler.dispose();
-    _networkRecoveryDecisionTimer?.cancel();
+    _networkRecovery.dispose();
     _configCoordinator.dispose();
     _runtimeLifecycle.dispose();
     _runtimeCommands.dispose();
@@ -2460,6 +2468,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     final bootstrap = await _bootstrapController.load(
       providedStore: widget.store,
     );
+    final criticalBootstrapMs = bootstrapStopwatch.elapsedMilliseconds;
     final store = bootstrap.store;
     final ownsStore = bootstrap.ownsStore;
     final state = bootstrap.state;
@@ -2491,6 +2500,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
             selectedProxyTag: state.selectedProxyTag,
             preferSelectedProxyTag: state.selectedProxyTag.trim().isNotEmpty,
           );
+    final metadataResolveMs =
+        bootstrapStopwatch.elapsedMilliseconds - criticalBootstrapMs;
     final subscriptions = resolvedSubscriptions.subscriptions;
     final normalized = resolvedSubscriptions.normalized;
 
@@ -2529,6 +2540,9 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         clearProxyCache: true,
       );
     });
+    if (!useInMemoryBootstrap) {
+      _scheduleDeferredBootstrapStatuses();
+    }
     if (!useInMemoryBootstrap && normalized.activeSubscriptionId.isNotEmpty) {
       // Keep the first frame metadata-only, then hydrate just the active
       // subscription so the collapsed proxy footer is restored after restart.
@@ -2549,6 +2563,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     AppLogStore.info(
       'bootstrap performance',
       'readyMs=${bootstrapStopwatch.elapsedMilliseconds} '
+          'criticalBootstrapMs=$criticalBootstrapMs '
+          'metadataResolveMs=$metadataResolveMs '
           'metadataSubscriptions=${subscriptions.length} '
           'activePayloadDeferred=${!useInMemoryBootstrap && subscriptions.isNotEmpty}',
     );
@@ -2567,6 +2583,26 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         inboundSettingsMigrated) {
       _saveStateSoon();
     }
+  }
+
+  void _scheduleDeferredBootstrapStatuses() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      unawaited(_refreshDeferredBootstrapStatuses());
+    });
+  }
+
+  Future<void> _refreshDeferredBootstrapStatuses() async {
+    final statuses = await _bootstrapController.loadDeferredStatuses();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _adBlockStatus = statuses.adBlockStatus;
+      _russiaRouteDataStatus = statuses.russiaRouteDataStatus;
+    });
   }
 
   AppSettingsState _currentSettingsState() {
@@ -2676,6 +2712,10 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
 
   bool get _balancedMode => _settings.balancedMode;
 
+  Duration get _trafficUiUpdateInterval => _balancedMode
+      ? _balancedTrafficUiUpdateInterval
+      : _responsiveTrafficUiUpdateInterval;
+
   bool get _connectionBusy => switch (_connectionPhase) {
     AppConnectionPhase.preparing ||
     AppConnectionPhase.configuring ||
@@ -2708,6 +2748,24 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   int get _networkHeartbeatIntervalSeconds => _economyMode
       ? _economyNetworkHeartbeatIntervalSeconds
       : _coolNetworkHeartbeatIntervalSeconds;
+
+  RuntimeTrafficStatus _currentTrafficStatus() {
+    return RuntimeTrafficStatus(
+      uplinkBytesPerSecond: _uplinkBytesPerSecond,
+      downlinkBytesPerSecond: _downlinkBytesPerSecond,
+      uplinkTotalBytes: _uplinkTotalBytes,
+      downlinkTotalBytes: _downlinkTotalBytes,
+      available: _trafficAvailable,
+    );
+  }
+
+  void _applyTrafficStatus(RuntimeTrafficStatus status) {
+    _uplinkBytesPerSecond = status.uplinkBytesPerSecond;
+    _downlinkBytesPerSecond = status.downlinkBytesPerSecond;
+    _uplinkTotalBytes = status.uplinkTotalBytes;
+    _downlinkTotalBytes = status.downlinkTotalBytes;
+    _trafficAvailable = status.available;
+  }
 
   void _recordTrafficSample(DateTime now) {
     if (!_trafficDashboardOpen || !_connected || !_trafficAvailable) {
@@ -2805,7 +2863,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       _runtimeOperations.finishRuntimeTransition(running: _connected);
     }
     if (!_connected) {
-      _clearRuntimeInterfaceIssueWindow();
+      _networkRecovery.clearInterfaceIssueWindow();
     }
     if (phase == AppConnectionPhase.connected ||
         phase == AppConnectionPhase.idle ||
@@ -2863,8 +2921,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     _pendingTrafficStatusEvent = null;
     _groupUrlTestScheduler.cancel();
     _latencyCoordinator.cancel();
-    _networkRecoveryDecisionTimer?.cancel();
-    _networkRecoveryDecisionTimer = null;
+    _networkRecovery.cancelDecision();
     if (_invalidOutboundRetryScheduled && _runtimeDesiredByUser) {
       _runtimeIntent.deferRetryUntilResume();
     }
@@ -2884,11 +2941,10 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       if (!mounted || !_foregroundLifecycleActive) {
         return;
       }
-      unawaited(
-        _refreshAppVersionInfo().then(
-          (_) => _cleanupInstalledUpdateArtifactsIfNeeded(showSnackBar: true),
-        ),
-      );
+      // Android installation starts a new process, and bootstrap already
+      // refreshes version metadata plus stale update artifacts there. Repeating
+      // package and file I/O on every foreground transition competes with the
+      // first interactive frame after returning from recents.
       unawaited(_reconcileRuntimeAfterResume());
       if (_connected) {
         _scheduleActiveOutboundIpRefresh(
@@ -3200,8 +3256,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       _latencyErrors.clear();
       _latencyFailureCounts.clear();
       _runtimeStartupUrlTestGate.reset();
-      _networkRecoveryDecisionTimer?.cancel();
-      _networkRecoveryDecisionTimer = null;
+      _networkRecovery.cancelDecision();
       _applyRuntimeStateToDerivedCaches();
     });
     unawaited(_syncQuickSettingsTileLabel());
@@ -3380,8 +3435,17 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       _selectedProxyTag = tag;
       _displayProxyCache =
           _displayProxyForSelectedTag(tag) ?? _displayProxyCache;
-      _applyRuntimeStateToDerivedCaches();
     });
+    // A selection changes at most the old and the new visible rows. Rebuilding
+    // every proxy summary here turns a Wi-Fi/LTE handover plus one tap into a
+    // multi-thousand-row synchronous allocation burst.
+    final selectedActiveOutboundTag = _currentResolvedActiveOutboundTag();
+    _publishProxyRuntimeVisualStatesForTags(<String>{
+      previousTag,
+      tag,
+      ?selectedActiveOutboundTag,
+    });
+    _scheduleVpnNotificationSync();
     AppLogStore.info(
       'proxy',
       'local selected outbound updated tag=$tag '
@@ -3870,6 +3934,16 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     }
   }
 
+  void _setNotificationTrafficDisplayMode(
+    NotificationTrafficDisplayMode value,
+  ) {
+    _applySettingsChange(
+      () => _settings.setNotificationTrafficDisplayMode(value),
+    );
+    _lastVpnNotificationPresentationSignature = '';
+    _scheduleVpnNotificationSync();
+  }
+
   void _setHideServerIp(bool value) {
     _applySettingsChange(() => _settings.setHideServerIp(value));
   }
@@ -4254,10 +4328,14 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   Future<void> _showSubscriptionsPage({bool openAddOnStart = false}) async {
     if (_navigatorKey.currentContext == null) return;
 
-    final beforeMetadataFingerprint = await _subscriptionCoordinator
-        .metadataFingerprint();
-    final beforeActiveRuntimeFingerprint = await _subscriptionCoordinator
-        .runtimeFingerprintFromStore(_activeProfileId);
+    final activeServerHealth = _activeServerHealthSummary;
+    final session = SubscriptionProfilePageSession(
+      activeProfileId: _activeProfileId,
+      selectedProxyTag: _selectedProxyTag,
+      metadataFingerprint: await _subscriptionCoordinator.metadataFingerprint(),
+      activeRuntimeFingerprint: await _subscriptionCoordinator
+          .runtimeFingerprintFromStore(_activeProfileId),
+    );
     final context = _navigatorKey.currentContext;
     if (!mounted || context == null || !context.mounted) return;
     final subscriptionPageResult = await showModalBottomSheet<Object?>(
@@ -4268,11 +4346,13 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       backgroundColor: Colors.transparent,
       builder: (context) => SubscriptionsPage(
         activeSubscriptionId: _activeProfileId,
+        activeWorkingServerCount: activeServerHealth?.working,
+        activeCheckedServerCount: activeServerHealth?.checked,
         openAddOnStart: openAddOnStart,
         hapticEnabled: _hapticEnabled,
       ),
     );
-    final selectedSubscriptionId = subscriptionPageResult is String
+    final selectedProfileId = subscriptionPageResult is String
         ? subscriptionPageResult
         : null;
 
@@ -4280,37 +4360,25 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       setState(() {});
     }
 
-    final openedWithoutSelection =
-        selectedSubscriptionId == null || selectedSubscriptionId.isEmpty;
-    if (openedWithoutSelection) {
-      final afterMetadataFingerprint = await _subscriptionCoordinator
-          .metadataFingerprint();
-      final afterActiveRuntimeFingerprint = await _subscriptionCoordinator
-          .runtimeFingerprintFromStore(_activeProfileId);
-      final subscriptionsChanged =
-          beforeMetadataFingerprint != afterMetadataFingerprint;
-      final activeRuntimeChanged =
-          beforeActiveRuntimeFingerprint != afterActiveRuntimeFingerprint;
-      if (!subscriptionsChanged && !activeRuntimeChanged) {
-        AppLogStore.info(
-          'subscription',
-          'subscriptions page closed without changes; runtime reload skipped',
-        );
-        return;
-      }
-      await _reloadSubscriptions(
-        preferredSubscriptionId: _activeProfileId,
-        preferredProxyTag: _selectedProxyTag,
-        applyRuntime: activeRuntimeChanged,
-        resetRuntimeState: activeRuntimeChanged,
-        restartRuntimeOnApply: _connected && activeRuntimeChanged,
-        urlTestAfterApply: _connected && activeRuntimeChanged,
+    final decision = _subscriptionProfileFlow.decide(
+      session: session,
+      selectedProfileId: selectedProfileId,
+      afterMetadataFingerprint: await _subscriptionCoordinator
+          .metadataFingerprint(),
+      afterActiveRuntimeFingerprint: await _subscriptionCoordinator
+          .runtimeFingerprintFromStore(_activeProfileId),
+      runtimeActiveOrRequested: _runtimeActiveOrRequested,
+      connected: _connected,
+    );
+    if (!decision.shouldReload) {
+      AppLogStore.info(
+        'subscription',
+        'subscriptions page closed without changes; runtime reload skipped',
       );
       return;
     }
 
-    final switchingProfile = selectedSubscriptionId != _activeProfileId;
-    if (switchingProfile) {
+    if (decision.isProfileSwitch) {
       _haptic();
       await _proxySelection.waitForPersistence();
       if (!mounted) {
@@ -4319,9 +4387,10 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       AppLogStore.info(
         'subscription',
         'profile switch requested from=$_activeProfileId '
-            'to=$selectedSubscriptionId running=$_runtimeActiveOrRequested',
+            'to=${decision.reloadPlan!.preferredSubscriptionId} '
+            'running=$_runtimeActiveOrRequested',
       );
-      if (_runtimeActiveOrRequested) {
+      if (decision.shouldStopRuntime) {
         final stopped = await _stopRuntime(
           reason: 'profile_switch',
           allowQueuedRestart: false,
@@ -4332,10 +4401,14 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       }
     }
 
+    final reloadPlan = decision.reloadPlan!;
     await _reloadSubscriptions(
-      preferredSubscriptionId: selectedSubscriptionId,
-      preferredProxyTag: '',
-      applyRuntime: false,
+      preferredSubscriptionId: reloadPlan.preferredSubscriptionId,
+      preferredProxyTag: reloadPlan.preferredProxyTag,
+      applyRuntime: reloadPlan.applyRuntime,
+      resetRuntimeState: reloadPlan.resetRuntimeState,
+      restartRuntimeOnApply: reloadPlan.restartRuntimeOnApply,
+      urlTestAfterApply: reloadPlan.urlTestAfterApply,
     );
   }
 
@@ -4343,49 +4416,40 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     final navigator = _navigatorKey.currentState;
     if (navigator == null) return;
     await navigator.push(
-      MaterialPageRoute<void>(
-        builder: (context) => SettingsPage(
-          currentLocaleLabel: switch (_locale?.languageCode) {
-            'ru' => AppLocalizations.of(context).languageRussian,
-            'en' => AppLocalizations.of(context).languageEnglish,
-            _ => AppLocalizations.of(context).languageSystem,
-          },
-          currentThemeLabel: switch (_themePreference) {
-            AppThemePreference.light => AppLocalizations.of(context).themeLight,
-            AppThemePreference.dark => AppLocalizations.of(context).themeDark,
-            AppThemePreference.amoled => AppLocalizations.of(
-              context,
-            ).themeAmoled,
-            AppThemePreference.system => AppLocalizations.of(
-              context,
-            ).themeSystem,
-          },
-          onOpenGeneral: _showGeneralSettingsPage,
-          onOpenDns: _showDnsSettingsPage,
-          onOpenSubscriptions: _showSubscriptionsSettingsPage,
-          onOpenInbound: _showInboundSettingsPage,
-          onOpenRouting: _showRoutingSettingsPage,
-          onImportBackup: () => unawaited(
-            _runSettingsBackupAction(SettingsBackupAction.importFile),
-          ),
-          onExportSettings: () => unawaited(
-            _runSettingsBackupAction(SettingsBackupAction.exportSettings),
-          ),
-          onExportEncryptedProfile: () => unawaited(
-            _runSettingsBackupAction(
-              SettingsBackupAction.exportEncryptedProfile,
-            ),
-          ),
-          onExportPlainProfile: () => unawaited(
-            _runSettingsBackupAction(SettingsBackupAction.exportPlainProfile),
-          ),
-          onResetSettings: () => unawaited(_resetSettingsToDefaults()),
-          onOpenExperimental: _showExperimentalSettingsPage,
-          onOpenLogs: _showLogsPage,
-          onOpenAbout: _showAboutSettingsPage,
-        ),
-      ),
+      MaterialPageRoute<void>(builder: _buildSettingsPresentation),
     );
+  }
+
+  SettingsPage _buildSettingsPresentation(BuildContext context) {
+    return SettingsPresentationBuilder(
+      data: SettingsPresentationData(
+        localeCode: _locale?.languageCode ?? 'system',
+        themePreference: _themePreference,
+      ),
+      callbacks: SettingsPresentationCallbacks(
+        openGeneral: _showGeneralSettingsPage,
+        openDns: _showDnsSettingsPage,
+        openSubscriptions: _showSubscriptionsSettingsPage,
+        openInbound: _showInboundSettingsPage,
+        openRouting: _showRoutingSettingsPage,
+        importBackup: () => unawaited(
+          _runSettingsBackupAction(SettingsBackupAction.importFile),
+        ),
+        exportSettings: () => unawaited(
+          _runSettingsBackupAction(SettingsBackupAction.exportSettings),
+        ),
+        exportEncryptedProfile: () => unawaited(
+          _runSettingsBackupAction(SettingsBackupAction.exportEncryptedProfile),
+        ),
+        exportPlainProfile: () => unawaited(
+          _runSettingsBackupAction(SettingsBackupAction.exportPlainProfile),
+        ),
+        resetSettings: () => unawaited(_resetSettingsToDefaults()),
+        openExperimental: _showExperimentalSettingsPage,
+        openLogs: _showLogsPage,
+        openAbout: _showAboutSettingsPage,
+      ),
+    ).build(context);
   }
 
   Future<List<Map<String, dynamic>>> _warmInstalledApps() {
@@ -4419,25 +4483,25 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   }
 
   void _trimRuntimeStartMemory(String reason) {
-    final installedAppsBefore = _installedAppsCache.length;
     final cache = PaintingBinding.instance.imageCache;
     final imageBytesBefore = cache.currentSizeBytes;
     final imageEntriesBefore = cache.currentSize;
 
-    _clearInstalledAppsCache();
-    clearInstalledAppIconCache();
+    // Installed-app metadata and the bounded icon cache are reused by split
+    // routing. Clearing them every time a VPN runtime starts made every visit
+    // to routing re-query PackageManager and re-decode icons on the UI path.
+    // Keep that small bounded cache; actual Android memory pressure still
+    // clears it through _runMemoryPressureCleanup.
     cache.clear();
     cache.clearLiveImages();
     _configureImageCacheForAndroid();
 
-    if (installedAppsBefore > 0 ||
-        imageBytesBefore > 0 ||
-        imageEntriesBefore > 0) {
+    if (imageBytesBefore > 0 || imageEntriesBefore > 0) {
       AppLogStore.info(
         'memory cleanup',
         'reason=$reason imageBytesBefore=$imageBytesBefore '
             'imageEntriesBefore=$imageEntriesBefore '
-            'installedAppsBefore=$installedAppsBefore',
+            'installedAppsRetained=${_installedAppsCache.length}',
       );
     }
   }
@@ -4456,6 +4520,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
           onThemePreferenceChanged: _setThemePreference,
           currentHapticEnabled: _hapticEnabled,
           currentStatusNotificationEnabled: _statusNotificationEnabled,
+          currentNotificationTrafficDisplayMode:
+              _notificationTrafficDisplayMode,
           currentHideServerIp: _hideServerIp,
           currentPerformanceMode: _performanceMode,
           currentMemoryLimitEnabled: _memoryLimitEnabled,
@@ -4464,6 +4530,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
           onAccentColorChanged: _setAccentColor,
           onHapticChanged: _setHapticEnabled,
           onStatusNotificationChanged: _setStatusNotificationEnabled,
+          onNotificationTrafficDisplayModeChanged:
+              _setNotificationTrafficDisplayMode,
           onHideServerIpChanged: _setHideServerIp,
           onPerformanceModeChanged: _setPerformanceMode,
           onMemoryLimitChanged: _setMemoryLimitEnabled,
@@ -4876,7 +4944,9 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         ),
       );
     } finally {
-      _clearInstalledAppsCache();
+      if (mounted) {
+        setState(() => _proxyPanelResetGeneration++);
+      }
     }
   }
 
@@ -5324,8 +5394,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         _latencyFailureCounts.clear();
         _groupUrlTestScheduler.cancel();
         _runtimeStartupUrlTestGate.reset();
-        _networkRecoveryDecisionTimer?.cancel();
-        _networkRecoveryDecisionTimer = null;
+        _networkRecovery.cancelDecision();
         _applyRuntimeStateToDerivedCaches();
       }
     });
@@ -5357,18 +5426,15 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     if (!mounted || !_foregroundLifecycleActive) {
       return;
     }
-    if (!_balancedMode) {
-      _applyTrafficStatusEvent(event);
-      return;
-    }
     _pendingTrafficStatusEvent = event;
     final now = DateTime.now();
+    final interval = _trafficUiUpdateInterval;
     final elapsed = now.difference(_lastTrafficUiUpdateAt);
-    if (elapsed >= _trafficUiUpdateInterval) {
+    if (elapsed >= interval) {
       _flushPendingTrafficStatusEvent();
       return;
     }
-    _trafficUiUpdateTimer ??= Timer(_trafficUiUpdateInterval - elapsed, () {
+    _trafficUiUpdateTimer ??= Timer(interval - elapsed, () {
       _trafficUiUpdateTimer = null;
       _flushPendingTrafficStatusEvent();
     });
@@ -5386,24 +5452,21 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   void _applyTrafficStatusEvent(Map<String, dynamic> event) {
     if (!mounted) return;
     final now = DateTime.now();
-    final uplink = (event['uplink'] as num?)?.toInt() ?? 0;
-    final downlink = (event['downlink'] as num?)?.toInt() ?? 0;
-    final uplinkTotal = (event['uplinkTotal'] as num?)?.toInt() ?? 0;
-    final downlinkTotal = (event['downlinkTotal'] as num?)?.toInt() ?? 0;
-    final trafficAvailable = event['trafficAvailable'] == true;
-    if (_uplinkBytesPerSecond == uplink &&
-        _downlinkBytesPerSecond == downlink &&
-        _uplinkTotalBytes == uplinkTotal &&
-        _downlinkTotalBytes == downlinkTotal &&
-        _trafficAvailable == trafficAvailable) {
+    final current = _currentTrafficStatus();
+    final next = _trafficStatusReducer
+        .reduce(current: current, event: RuntimeTrafficEvent.fromMap(event))
+        .status;
+    if (current == next) {
+      // The graph needs a time sample even while traffic is idle; otherwise a
+      // flat connection leaves its last point frozen until another packet is
+      // transferred. The dashboard is the only consumer, so this stays idle
+      // when it is closed.
+      _recordTrafficSample(now);
+      _publishTrafficDashboardSnapshot();
       return;
     }
     _lastTrafficUiUpdateAt = now;
-    _uplinkBytesPerSecond = uplink;
-    _downlinkBytesPerSecond = downlink;
-    _uplinkTotalBytes = uplinkTotal;
-    _downlinkTotalBytes = downlinkTotal;
-    _trafficAvailable = trafficAvailable;
+    _applyTrafficStatus(next);
     _recordTrafficSample(now);
     _publishTrafficDashboardSnapshot();
   }
@@ -5447,13 +5510,21 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       return;
     }
 
+    // Keep historic results for unrelated servers. Invalidating every proxy
+    // makes the sorted list rebuild and resort thousands of rows exactly when
+    // Android is already handling a network handover. Only the active route
+    // must be revalidated before it can be presented as current again.
+    final activeOutboundTag = _currentResolvedActiveOutboundTag();
     final invalidatedTags = <String>{
-      ..._expectedLatencyTagsForSession(''),
-      ..._runtimeLatencies.keys,
-      ..._unavailableLatencyTags,
-      ..._invalidatedLatencyTags,
+      ?activeOutboundTag,
+      if (!isLowestProxyTag(_selectedProxyTag) &&
+          !_activeGroupByTagLookup.containsKey(_selectedProxyTag))
+        _selectedProxyTag,
     };
-    _proxyRuntime.invalidateNetworkMeasurements(invalidatedTags);
+    final measurementsChanged = _proxyRuntime.invalidateNetworkMeasurements(
+      invalidatedTags,
+      preserveUnrelatedMeasurements: true,
+    );
     _resetActiveProxyIpState(rebuild: false);
     _locationLookupGeneration++;
     _locationLookupTimer?.cancel();
@@ -5461,7 +5532,10 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     _locationLookupRefreshRequested = false;
     _lastLocationLookupSignature = '';
     _cancelQueuedLocationLookups();
-    _applyRuntimeStateToDerivedCaches();
+    if (measurementsChanged) {
+      _publishProxyRuntimeVisualStatesForTags(invalidatedTags);
+    }
+    _scheduleVpnNotificationSync();
     if (!diagnosticsWereReady && _runtimeOperations.diagnosticsReady) {
       _onRuntimeDiagnosticsReady();
     }
@@ -5483,8 +5557,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       );
       return;
     }
-    _networkRecoveryDecisionTimer?.cancel();
-    _networkRecoveryDecisionTimer = null;
+    _networkRecovery.cancelDecision();
   }
 
   Future<void> _syncRuntimeState() async {
@@ -5520,6 +5593,12 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         _logRuntimeRecoveryStatus(status);
       }
       final now = DateTime.now();
+      final syncedTraffic = _trafficStatusReducer
+          .reduce(
+            current: _currentTrafficStatus(),
+            event: RuntimeTrafficEvent.fromMap(status),
+          )
+          .status;
       setState(() {
         if (running) {
           _runtimeIntent.restoreDesiredFromObservedRuntime();
@@ -5528,15 +5607,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
           decision.phase,
           retryScheduled: decision.retryScheduled,
         );
-        _uplinkBytesPerSecond = (status['uplink'] as num?)?.toInt() ?? 0;
-        _downlinkBytesPerSecond = (status['downlink'] as num?)?.toInt() ?? 0;
-        _uplinkTotalBytes = (status['uplinkTotal'] as num?)?.toInt() ?? 0;
-        _downlinkTotalBytes = (status['downlinkTotal'] as num?)?.toInt() ?? 0;
-        _trafficAvailable =
-            _uplinkBytesPerSecond > 0 ||
-            _downlinkBytesPerSecond > 0 ||
-            _uplinkTotalBytes > 0 ||
-            _downlinkTotalBytes > 0;
+        _applyTrafficStatus(syncedTraffic);
         if (running) {
           _recordTrafficSample(now);
         } else if (!nativeRecoveryPending) {
@@ -6794,211 +6865,181 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     return _proxySelection.replaceSubscription(_subscriptions, updated);
   }
 
+  Widget _buildHomePresentation(
+    BuildContext context, {
+    required ProxyPanelMetrics panelMetrics,
+    required ProxyPanelGestures panelGestures,
+  }) {
+    final activeSubscription = _activeSubscription;
+    final canRefreshActiveSubscription =
+        activeSubscription != null &&
+        !SubscriptionStore.isLocalFileImportUrl(activeSubscription.url);
+    return HomePresentationBuilder(
+      data: HomePresentationData(
+        connected: _connected,
+        connecting: _connectionBusy,
+        resolvingProxy: _resolvingLowestProxy,
+        connectionStatusLabel: _connectionButtonStatusLabel(context),
+        activeProfile: _activeProfile,
+        activeProxy: _displayProxy,
+        runtimeStates: _proxyRuntimeVisualStates,
+        hideServerIp: _hideServerIp,
+        hapticEnabled: _hapticEnabled,
+        trafficAvailable: _trafficAvailable,
+        downlinkBytesPerSecond: _downlinkBytesPerSecond,
+        uplinkTotalBytes: _uplinkTotalBytes,
+        downlinkTotalBytes: _downlinkTotalBytes,
+        trafficListenable: _trafficUiSnapshot,
+        activeProfileRefreshing: _activeProfileRefreshInFlight,
+        showActiveProfileRefreshAction: activeSubscription != null,
+        brandName: 'Etonify',
+        versionLabel: _clientVersionLabel,
+      ),
+      callbacks: HomePresentationCallbacks(
+        toggleConnection: () =>
+            unawaited(_toggleConnection(source: 'home.connection_button')),
+        refreshLatency: () => unawaited(_runActiveProxyUrlTest()),
+        refreshActiveProxyIp: _refreshActiveProxyIp,
+        openSubscriptions: _showSubscriptionsPage,
+        addSubscription: () => _showSubscriptionsPage(openAddOnStart: true),
+        openSettings: _showSettingsPage,
+        openChangelog: () => unawaited(_showChangelogSheet()),
+        openTrafficDashboard: () => unawaited(_showTrafficDashboard()),
+        refreshActiveSubscription: canRefreshActiveSubscription
+            ? _refreshActiveSubscription
+            : null,
+      ),
+    ).build(panelMetrics: panelMetrics, panelGestures: panelGestures);
+  }
+
+  Widget _buildProxiesPresentation(
+    BuildContext context, {
+    required ProxyPanelMetrics panelMetrics,
+    required ValueListenable<ProxyPanelMetrics> panelMetricsListenable,
+    required ScrollController scrollController,
+    required ProxyPanelGestures panelGestures,
+  }) {
+    return ProxiesPresentationBuilder(
+      data: ProxiesPresentationData(
+        proxies: _activeProxies,
+        groupChildrenByTag: _activeGroupChildrenByTag,
+        selectedTag: _selectedProxyTag,
+        activeProxy: _displayProxy,
+        hideActiveProxyIp: _hideServerIp,
+        connected: _connected,
+        hapticEnabled: _hapticEnabled,
+        trafficAvailable: _trafficAvailable,
+        downlinkBytesPerSecond: _downlinkBytesPerSecond,
+        uplinkTotalBytes: _uplinkTotalBytes,
+        downlinkTotalBytes: _downlinkTotalBytes,
+        trafficListenable: _trafficUiSnapshot,
+        initialSort: _proxySort,
+        progressiveBlurEnabled: _effectiveProgressiveBlurEnabled,
+        runtimeStates: _proxyRuntimeVisualStates,
+      ),
+      callbacks: ProxiesPresentationCallbacks(
+        changeSort: _setProxySort,
+        selectProxy: _selectProxy,
+        runUrlTest: _runUrlTest,
+        refreshActiveProxyIp: _refreshActiveProxyIp,
+        outboundForTag: _outboundForProxyTag,
+        loadProxyChainTargetSources: _loadProxyChainTargetSources,
+        loadProxyChainTargetsForSource: _loadProxyChainTargetsForSource,
+        addProxyChain: _addProxyChain,
+        changeProxyChainDetour: _changeProxyChainDetour,
+        renameProxyChain: _renameProxyChain,
+        removeProxyChain: _removeProxyChain,
+        isProxyChainTag: _isProxyChainTag,
+        changeHideActiveProxyIp: _setHideServerIp,
+      ),
+    ).build(
+      panelMetrics: panelMetrics,
+      panelMetricsListenable: panelMetricsListenable,
+      scrollController: scrollController,
+      panelGestures: panelGestures,
+    );
+  }
+
+  void _updateDynamicColorSchemes(
+    ColorScheme? lightDynamic,
+    ColorScheme? darkDynamic,
+  ) {
+    if (lightDynamic == _dynamicLightScheme &&
+        darkDynamic == _dynamicDarkScheme) {
+      return;
+    }
+    _dynamicLightScheme = lightDynamic;
+    _dynamicDarkScheme = darkDynamic;
+    if (_accentColorHex == 'default') {
+      _refreshThemeCache();
+    }
+  }
+
+  Widget _buildAppHome() {
+    return ProxyPanelShell(
+      ready: _ready,
+      onboardingCompleted: _onboardingCompleted && _legalAccepted,
+      loading: const Scaffold(
+        key: ValueKey('loading'),
+        body: Center(child: CircularProgressIndicator()),
+      ),
+      welcome: _onboardingCompleted
+          ? LegalConsentPage(
+              key: const ValueKey('legal-consent'),
+              requiredVersion: _requiredLegalVersion,
+              onAccept: _acceptLegalDocuments,
+            )
+          : WelcomePage(
+              key: const ValueKey('welcome'),
+              onContinue: _completeOnboarding,
+              brandName: 'Etonify',
+              versionLabel: _clientVersionLabel,
+            ),
+      visibleRows: _proxyPanelVisibleRows(),
+      hasActiveProfile: _activeProfileCache != null,
+      resetListKey: '$_activeProfileId:$_proxyPanelResetGeneration',
+      onInteractionActiveChanged: (active) {
+        if (_proxyPanelInteractionActive == active) {
+          return;
+        }
+        setState(() {
+          _proxyPanelInteractionActive = active;
+        });
+      },
+      onOpenRequested: () {
+        unawaited(_ensureActiveSubscriptionHydratedForRuntime());
+      },
+      homeBuilder: (context, metrics, gestures) => _buildHomePresentation(
+        context,
+        panelMetrics: metrics,
+        panelGestures: gestures,
+      ),
+      sheetBuilder:
+          (context, metrics, metricsListenable, scrollController, gestures) =>
+              _buildProxiesPresentation(
+                context,
+                panelMetrics: metrics,
+                panelMetricsListenable: metricsListenable,
+                scrollController: scrollController,
+                panelGestures: gestures,
+              ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return DynamicColorBuilder(
-      builder: (ColorScheme? lightDynamic, ColorScheme? darkDynamic) {
-        if (lightDynamic != _dynamicLightScheme ||
-            darkDynamic != _dynamicDarkScheme) {
-          _dynamicLightScheme = lightDynamic;
-          _dynamicDarkScheme = darkDynamic;
-          if (_accentColorHex == 'default') {
-            _refreshThemeCache();
-          }
-        }
-        return MaterialApp(
-          navigatorKey: _navigatorKey,
-          debugShowCheckedModeBanner: false,
-          title: 'Etonify',
-          theme: _lightTheme,
-          darkTheme: _themePreference == AppThemePreference.amoled
-              ? _amoledTheme
-              : _darkTheme,
-          themeMode: _themeMode,
-          locale: _locale,
-          supportedLocales: AppLocalizations.supportedLocales,
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
-          localeResolutionCallback: (locale, supportedLocales) {
-            final forcedLocale = _locale;
-            if (forcedLocale != null) {
-              return forcedLocale;
-            }
-            if (locale?.languageCode.toLowerCase() == 'ru') {
-              return const Locale('ru');
-            }
-            return const Locale('en');
-          },
-          builder: (context, child) {
-            final theme = Theme.of(context);
-            final brightness = theme.brightness;
-            final overlayStyle = SystemUiOverlayStyle(
-              statusBarColor: Colors.transparent,
-              systemNavigationBarColor: Colors.transparent,
-              systemNavigationBarDividerColor: Colors.transparent,
-              systemNavigationBarContrastEnforced: false,
-              statusBarIconBrightness: brightness == Brightness.dark
-                  ? Brightness.light
-                  : Brightness.dark,
-              systemNavigationBarIconBrightness: brightness == Brightness.dark
-                  ? Brightness.light
-                  : Brightness.dark,
-              statusBarBrightness: brightness == Brightness.dark
-                  ? Brightness.dark
-                  : Brightness.light,
-            );
-            return AnnotatedRegion<SystemUiOverlayStyle>(
-              value: overlayStyle,
-              child: AppVisualEffects(
-                progressiveBlurEnabled: _effectiveProgressiveBlurEnabled,
-                hapticEnabled: _hapticEnabled,
-                child: AppScrollEffects(
-                  child: child ?? const SizedBox.shrink(),
-                ),
-              ),
-            );
-          },
-          home: ProxyPanelShell(
-            ready: _ready,
-            onboardingCompleted: _onboardingCompleted && _legalAccepted,
-            loading: const Scaffold(
-              key: ValueKey('loading'),
-              body: Center(child: CircularProgressIndicator()),
-            ),
-            welcome: _onboardingCompleted
-                ? LegalConsentPage(
-                    key: const ValueKey('legal-consent'),
-                    requiredVersion: _requiredLegalVersion,
-                    onAccept: _acceptLegalDocuments,
-                  )
-                : WelcomePage(
-                    key: const ValueKey('welcome'),
-                    onContinue: _completeOnboarding,
-                    brandName: 'Etonify',
-                    versionLabel: _clientVersionLabel,
-                  ),
-            visibleRows: _proxyPanelVisibleRows(),
-            hasActiveProfile: _activeProfileCache != null,
-            resetListKey: _activeProfileId,
-            onInteractionActiveChanged: (active) {
-              if (_proxyPanelInteractionActive == active) {
-                return;
-              }
-              setState(() {
-                _proxyPanelInteractionActive = active;
-              });
-            },
-            onOpenRequested: () {
-              unawaited(_ensureActiveSubscriptionHydratedForRuntime());
-            },
-            homeBuilder: (context, metrics, gestures) {
-              final activeSubscription = _activeSubscription;
-              final canRefreshActiveSubscription =
-                  activeSubscription != null &&
-                  !SubscriptionStore.isLocalFileImportUrl(
-                    activeSubscription.url,
-                  );
-              return HomePage(
-                state: HomeViewState(
-                  connected: _connected,
-                  connecting: _connectionBusy,
-                  resolvingProxy: _resolvingLowestProxy,
-                  connectionStatusLabel: _connectionButtonStatusLabel(context),
-                  activeProfile: _activeProfile,
-                  activeProxy: _displayProxy,
-                  runtimeStates: _proxyRuntimeVisualStates,
-                  hideServerIp: _hideServerIp,
-                  hapticEnabled: _hapticEnabled,
-                  speedBytesPerSecond: _connected && _trafficAvailable
-                      ? _downlinkBytesPerSecond.toDouble()
-                      : 0,
-                  trafficBytes: _connected && _trafficAvailable
-                      ? (_uplinkTotalBytes + _downlinkTotalBytes).toDouble()
-                      : 0,
-                  trafficListenable: _trafficUiSnapshot,
-                  activeProfileRefreshing: _activeProfileRefreshInFlight,
-                  showActiveProfileRefreshAction: activeSubscription != null,
-                  brandName: 'Etonify',
-                  versionLabel: _clientVersionLabel,
-                ),
-                actions: HomeViewActions(
-                  toggleConnection: () => unawaited(
-                    _toggleConnection(source: 'home.connection_button'),
-                  ),
-                  refreshLatency: () => unawaited(_runActiveProxyUrlTest()),
-                  refreshActiveProxyIp: _refreshActiveProxyIp,
-                  openSubscriptions: _showSubscriptionsPage,
-                  addSubscription: () =>
-                      _showSubscriptionsPage(openAddOnStart: true),
-                  openSettings: _showSettingsPage,
-                  openChangelog: () => unawaited(_showChangelogSheet()),
-                  openTrafficDashboard: () =>
-                      unawaited(_showTrafficDashboard()),
-                  refreshActiveSubscription: canRefreshActiveSubscription
-                      ? _refreshActiveSubscription
-                      : null,
-                ),
-                bottomInset: metrics.bottomInset + proxyPanelMinHeight + 20,
-                onProxyPanelInteractionStart: gestures.onInteractionStart,
-                onProxyPanelDragUpdate: gestures.onDragUpdate,
-                onProxyPanelDragEnd: gestures.onDragEnd,
-                showActiveProxyFooter: false,
-              );
-            },
-            sheetBuilder:
-                (
-                  context,
-                  metrics,
-                  metricsListenable,
-                  scrollController,
-                  gestures,
-                ) {
-                  return ProxiesPage(
-                    proxies: _activeProxies,
-                    groupChildrenByTag: _activeGroupChildrenByTag,
-                    selectedTag: _selectedProxyTag,
-                    activeProxy: _displayProxy,
-                    activeProxyHideIp: _hideServerIp,
-                    connected: _connected,
-                    hapticEnabled: _hapticEnabled,
-                    speedBytesPerSecond: _connected && _trafficAvailable
-                        ? _downlinkBytesPerSecond.toDouble()
-                        : 0,
-                    trafficBytes: _connected && _trafficAvailable
-                        ? (_uplinkTotalBytes + _downlinkTotalBytes).toDouble()
-                        : 0,
-                    trafficListenable: _trafficUiSnapshot,
-                    initialSort: _proxySort,
-                    onSortChanged: _setProxySort,
-                    progressiveBlurEnabled: _effectiveProgressiveBlurEnabled,
-                    onSelected: _selectProxy,
-                    onUrlTest: _runUrlTest,
-                    onActiveProxyIpRefresh: _refreshActiveProxyIp,
-                    outboundForTag: _outboundForProxyTag,
-                    loadProxyChainTargetSources: _loadProxyChainTargetSources,
-                    loadProxyChainTargetsForSource:
-                        _loadProxyChainTargetsForSource,
-                    onAddProxyChain: _addProxyChain,
-                    onChangeProxyChainDetour: _changeProxyChainDetour,
-                    onRenameProxyChain: _renameProxyChain,
-                    onRemoveProxyChain: _removeProxyChain,
-                    isProxyChainTag: _isProxyChainTag,
-                    onActiveProxyHideIpChanged: _setHideServerIp,
-                    runtimeStates: _proxyRuntimeVisualStates,
-                    embedded: true,
-                    sheetMetricsListenable: metricsListenable,
-                    scrollController: scrollController,
-                    sheetAtMaxExtent: metrics.atMaxExtent,
-                    sheetCanFillScreen: metrics.canFillScreen,
-                    sheetExtent: metrics.progress,
-                    collapsedSheetExtent: 0,
-                    expandedHeaderExtent: 1,
-                    sheetCornerRadius: proxyPanelScreenCornerRadius,
-                    onHeaderTap: gestures.onHeaderTap,
-                  );
-                },
-          ),
-        );
-      },
+    return AppRootShell(
+      navigatorKey: _navigatorKey,
+      lightTheme: _lightTheme,
+      darkTheme: _themePreference == AppThemePreference.amoled
+          ? _amoledTheme
+          : _darkTheme,
+      themeMode: _themeMode,
+      locale: _locale,
+      progressiveBlurEnabled: _effectiveProgressiveBlurEnabled,
+      hapticEnabled: _hapticEnabled,
+      home: _buildAppHome(),
+      onDynamicColorSchemesChanged: _updateDynamicColorSchemes,
     );
   }
 }

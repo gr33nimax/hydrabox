@@ -75,11 +75,15 @@ class SubscriptionsPage extends StatefulWidget {
   const SubscriptionsPage({
     super.key,
     this.activeSubscriptionId,
+    this.activeWorkingServerCount,
+    this.activeCheckedServerCount,
     this.openAddOnStart = false,
     this.hapticEnabled = true,
   });
 
   final String? activeSubscriptionId;
+  final int? activeWorkingServerCount;
+  final int? activeCheckedServerCount;
   final bool openAddOnStart;
   final bool hapticEnabled;
 
@@ -1130,6 +1134,18 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
                                           return _SubscriptionCard(
                                             subscription: sub,
                                             serverCount: serverCount,
+                                            workingServerCount:
+                                                sub.id ==
+                                                    widget.activeSubscriptionId
+                                                ? widget
+                                                      .activeWorkingServerCount
+                                                : null,
+                                            checkedServerCount:
+                                                sub.id ==
+                                                    widget.activeSubscriptionId
+                                                ? widget
+                                                      .activeCheckedServerCount
+                                                : null,
                                             rawLooksNonEmpty: rawLooksNonEmpty,
                                             active:
                                                 sub.id ==

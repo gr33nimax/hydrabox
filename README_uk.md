@@ -8,14 +8,14 @@
 
 [![Android](https://img.shields.io/badge/platform-Android-3DDC84?style=flat-square&logo=android)](#)
 [![Flutter](https://img.shields.io/badge/built%20with-Flutter-02569B?style=flat-square&logo=flutter)](#)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square)](LICENSE)
+[![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue?style=flat-square)](LICENSE)
 [![Telegram](https://img.shields.io/badge/Telegram-@etonify-26A5E4?style=flat-square&logo=telegram)](https://t.me/etonify)
 
 **Android-first VPN-клієнт з відкритим кодом на базі модифікованого sing-box.**
 
 </div>
 
-Etonify — Android-орієнтований VPN-клієнт для людей, яким потрібна прозора, підтримувана й відкрита альтернатива застарілим або закритим VPN-клієнтам. Проєкт починався в лінії ідей навколо Hiddify, але Android runtime, робота з підписками, інтерфейс, діагностика та супровід поступово перебудовуються навколо Etonify і [**yamixdev/etonify-core**](https://github.com/yamixdev/etonify-core/tree/etonify-dev) — стабільної бази sing-box зі змінами спеціально для клієнта.
+Etonify — Android-орієнтований VPN-клієнт для людей, яким потрібна прозора, підтримувана й відкрита альтернатива застарілим або закритим VPN-клієнтам. Android runtime, робота з підписками, інтерфейс, діагностика та супровід розвиваються навколо Etonify і [**yamixdev/etonify-core**](https://github.com/yamixdev/etonify-core/tree/etonify-dev) — стабільної бази sing-box зі змінами спеціально для клієнта.
 
 Застосунок не надає VPN-сервери. Це клієнт для підписок і конфігурацій, якими ви володієте або маєте право користуватися.
 
@@ -82,9 +82,9 @@ adb install -r build\app\outputs\flutter-apk\app-release.apk
 - `libbox.aar` залишається як є, доки сумісність sing-box API не перевіряється окремо.
 - Згенеровані файли локалізації в `lib/l10n/generated` зберігаються в репозиторії, тому що застосунок імпортує їх напряму.
 - `third_party/flutter_circle_flags` потрібен як local path dependency з `pubspec.yaml`.
-- Нотатки щодо сторонніх компонентів і походження проєкту наведені в [NOTICE.md](NOTICE.md).
+- Нотатки щодо сторонніх компонентів наведені в [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 - Офіційні release-збірки можуть містити приватні Happ crypto compatibility assets, відновлені з GitHub Actions secrets. Ці assets не входять до публічного дерева вихідного коду.
 
 ## Ліцензія
 
-Etonify поширюється за ліцензією [Apache License 2.0](LICENSE).
+Etonify поширюється за [GNU General Public License v3.0 або новішою](LICENSE). Відомості про сторонні й адаптовані компоненти наведені в [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

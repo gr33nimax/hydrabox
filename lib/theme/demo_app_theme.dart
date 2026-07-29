@@ -1,7 +1,7 @@
 import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/material.dart';
-import 'package:meow_client/theme/hiddify_predictive_back_page_transitions.dart';
+import 'package:meow_client/theme/predictive_back_page_transitions.dart';
 import 'package:flutter/services.dart';
 
 // ---------------------------------------------------------------------------
@@ -194,11 +194,11 @@ ThemeData buildDemoTheme(
     textTheme: textTheme,
     pageTransitionsTheme: const PageTransitionsTheme(
       builders: {
-        TargetPlatform.android: HiddifyPredictiveBackPageTransitionsBuilder(),
-        TargetPlatform.iOS: _HiddifySlidePageTransitionsBuilder(),
-        TargetPlatform.macOS: _HiddifySlidePageTransitionsBuilder(),
-        TargetPlatform.linux: _HiddifySlidePageTransitionsBuilder(),
-        TargetPlatform.windows: _HiddifySlidePageTransitionsBuilder(),
+        TargetPlatform.android: EtonifyPredictiveBackPageTransitionsBuilder(),
+        TargetPlatform.iOS: _EtonifySlidePageTransitionsBuilder(),
+        TargetPlatform.macOS: _EtonifySlidePageTransitionsBuilder(),
+        TargetPlatform.linux: _EtonifySlidePageTransitionsBuilder(),
+        TargetPlatform.windows: _EtonifySlidePageTransitionsBuilder(),
       },
     ),
     splashFactory: InkRipple.splashFactory,
@@ -357,8 +357,8 @@ ThemeData buildAmoledTheme({
   );
 }
 
-class _HiddifySlidePageTransitionsBuilder extends PageTransitionsBuilder {
-  const _HiddifySlidePageTransitionsBuilder();
+class _EtonifySlidePageTransitionsBuilder extends PageTransitionsBuilder {
+  const _EtonifySlidePageTransitionsBuilder();
 
   @override
   Widget buildTransitions<T>(

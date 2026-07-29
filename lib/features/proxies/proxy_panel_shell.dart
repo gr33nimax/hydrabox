@@ -149,9 +149,9 @@ class _ProxyPanelShellState extends State<ProxyPanelShell> {
       ValueNotifier<ProxyPanelMetrics>(_fallbackMetrics);
 
   ScrollController? _listController;
-  Timer? _interactionIdleTimer;
   bool _interactionActive = false;
   bool _animating = false;
+  bool _resetAfterWidgetUpdateScheduled = false;
   int _animationGeneration = 0;
   double _parentHeight = proxyPanelMinHeight;
   double _viewportHeight = proxyPanelMinHeight;
@@ -162,15 +162,11 @@ class _ProxyPanelShellState extends State<ProxyPanelShell> {
   double _lastSize = 1;
   bool _layoutReady = false;
   int? _sheetPointer;
-  bool _rawSheetDragControlsExtent = false;
-  bool _rawSheetCanDirectionalSettle = false;
   bool _rawSheetDragMoved = false;
   bool _rawSheetOpenRequested = false;
   double _rawSheetStartProgress = 0;
   double _rawSheetTotalDeltaY = 0;
-  double _lastSheetDragDirection = 0;
   bool _externalOpenRequested = false;
-  bool _externalPointerActive = false;
   double _externalDragDeltaY = 0;
 
   static const ProxyPanelMetrics _fallbackMetrics = ProxyPanelMetrics(
@@ -197,15 +193,18 @@ class _ProxyPanelShellState extends State<ProxyPanelShell> {
   @override
   void didUpdateWidget(covariant ProxyPanelShell oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.resetListKey != widget.resetListKey ||
-        (oldWidget.visibleRows != widget.visibleRows && _isClosed)) {
+    if (oldWidget.resetListKey != widget.resetListKey) {
+      _resetListScroll();
+      _scheduleCollapsedReset();
+      return;
+    }
+    if (oldWidget.visibleRows != widget.visibleRows && _isClosed) {
       _resetListScroll();
     }
   }
 
   @override
   void dispose() {
-    _interactionIdleTimer?.cancel();
     _sheetController
       ..removeListener(_handleSheetExtentChanged)
       ..dispose();
@@ -222,46 +221,49 @@ class _ProxyPanelShellState extends State<ProxyPanelShell> {
       return;
     }
     _lastSize = _sheetController.size.clamp(_minSize, _maxSize).toDouble();
-    _markInteractionActive();
     _publishMetrics();
   }
 
   void _markInteractionActive() {
-    _interactionIdleTimer?.cancel();
     if (!_interactionActive) {
       _interactionActive = true;
       widget.onInteractionActiveChanged?.call(true);
       _publishMetrics();
     }
-    if (!_animating) {
-      _scheduleInteractionIdle();
-    }
   }
 
-  void _scheduleInteractionIdle() {
-    _interactionIdleTimer?.cancel();
-    _interactionIdleTimer = Timer(const Duration(milliseconds: 140), () {
-      if (!mounted || _animating || !_interactionActive) {
+  void _finishInteraction() {
+    if (!_interactionActive) {
+      return;
+    }
+    _interactionActive = false;
+    widget.onInteractionActiveChanged?.call(false);
+    _publishMetrics();
+  }
+
+  void _scheduleCollapsedReset() {
+    if (_resetAfterWidgetUpdateScheduled) {
+      return;
+    }
+    _resetAfterWidgetUpdateScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _resetAfterWidgetUpdateScheduled = false;
+      if (!mounted || !_layoutReady) {
         return;
       }
-      if (_sheetPointer != null || _externalPointerActive) {
-        _scheduleInteractionIdle();
-        return;
+      ++_animationGeneration;
+      _animating = false;
+      _sheetPointer = null;
+      _rawSheetDragMoved = false;
+      _rawSheetOpenRequested = false;
+      _rawSheetTotalDeltaY = 0;
+      _externalDragDeltaY = 0;
+      if (_sheetController.isAttached) {
+        _sheetController.jumpTo(_minSize);
       }
-      final progress = _currentMetrics().progress;
-      if (progress > .02 && progress < .985) {
-        final open = _lastSheetDragDirection < 0
-            ? true
-            : _lastSheetDragDirection > 0
-            ? false
-            : progress >= _proxyPanelOpenThreshold;
-        unawaited(_animateTo(open: open));
-        return;
-      }
-      _interactionActive = false;
-      _lastSheetDragDirection = 0;
-      widget.onInteractionActiveChanged?.call(false);
-      _publishMetrics();
+      _lastSize = _minSize;
+      _resetListScroll();
+      _finishInteraction();
     });
   }
 
@@ -270,15 +272,18 @@ class _ProxyPanelShellState extends State<ProxyPanelShell> {
       return;
     }
     _sheetPointer = event.pointer;
+    if (_animating) {
+      ++_animationGeneration;
+      _animating = false;
+      if (_sheetController.isAttached) {
+        _sheetController.jumpTo(_currentSize());
+      }
+    }
     _rawSheetDragMoved = false;
     _rawSheetOpenRequested = false;
     _rawSheetTotalDeltaY = 0;
     final progress = _currentMetrics().progress;
     _rawSheetStartProgress = progress;
-    _rawSheetDragControlsExtent =
-        progress <= .22 || event.localPosition.dy <= _proxyPanelHeaderHeight;
-    _rawSheetCanDirectionalSettle =
-        _rawSheetDragControlsExtent || (progress >= .985 && _listIsAtTop);
     _markInteractionActive();
   }
 
@@ -291,12 +296,16 @@ class _ProxyPanelShellState extends State<ProxyPanelShell> {
       return;
     }
     _rawSheetTotalDeltaY += deltaY;
-    _lastSheetDragDirection = deltaY.sign;
     _rawSheetDragMoved = _rawSheetTotalDeltaY.abs() >= 2;
-    if (!_rawSheetDragControlsExtent ||
-        !_layoutReady ||
-        !_sheetController.isAttached ||
-        _parentHeight <= 0) {
+    if (!_layoutReady || !_sheetController.isAttached || _parentHeight <= 0) {
+      return;
+    }
+    final progress = _currentMetrics().progress;
+    final controlsExtent =
+        progress < .985 ||
+        event.localPosition.dy <= _proxyPanelHeaderHeight ||
+        (deltaY > 0 && _listIsAtTop);
+    if (!controlsExtent) {
       return;
     }
     if (!_rawSheetOpenRequested && deltaY < 0 && _isClosed) {
@@ -317,29 +326,27 @@ class _ProxyPanelShellState extends State<ProxyPanelShell> {
     final totalDeltaY = _rawSheetTotalDeltaY;
     final extentChanged =
         (_currentMetrics().progress - _rawSheetStartProgress).abs() >= .015;
-    final directionalSettle =
-        (_rawSheetCanDirectionalSettle || extentChanged) &&
-        totalDeltaY.abs() >= 12;
     final shouldSettle =
         _rawSheetDragMoved &&
         _layoutReady &&
-        (directionalSettle || _rawSheetDragControlsExtent);
+        (extentChanged ||
+            (_currentMetrics().progress > .02 &&
+                _currentMetrics().progress < .985 &&
+                totalDeltaY.abs() >= 12));
     _sheetPointer = null;
-    _rawSheetDragControlsExtent = false;
-    _rawSheetCanDirectionalSettle = false;
     _rawSheetDragMoved = false;
     _rawSheetOpenRequested = false;
     _rawSheetStartProgress = 0;
     _rawSheetTotalDeltaY = 0;
     if (shouldSettle) {
       _settleAfterPointer(
-        open: directionalSettle
+        open: totalDeltaY.abs() >= 12
             ? totalDeltaY < 0
             : _currentMetrics().progress >= _proxyPanelOpenThreshold,
       );
       return;
     }
-    _scheduleInteractionIdle();
+    _finishInteraction();
   }
 
   bool get _listIsAtTop {
@@ -353,11 +360,9 @@ class _ProxyPanelShellState extends State<ProxyPanelShell> {
   }
 
   void _settleAfterPointer({required bool open}) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        unawaited(_animateTo(open: open));
-      }
-    });
+    if (mounted) {
+      unawaited(_animateTo(open: open));
+    }
   }
 
   void _resetListScroll() {
@@ -550,11 +555,11 @@ class _ProxyPanelShellState extends State<ProxyPanelShell> {
       if (!open) {
         _resetListScroll();
       }
+      _finishInteraction();
       return;
     }
 
     final generation = ++_animationGeneration;
-    _interactionIdleTimer?.cancel();
     _animating = true;
     _markInteractionActive();
     _publishMetrics();
@@ -577,12 +582,8 @@ class _ProxyPanelShellState extends State<ProxyPanelShell> {
         if (!open) {
           _resetListScroll();
         }
-        final progress = _currentMetrics().progress;
-        if (progress <= .02 || progress >= .985) {
-          _lastSheetDragDirection = 0;
-        }
         _publishMetrics();
-        _scheduleInteractionIdle();
+        _finishInteraction();
       }
     }
   }
@@ -598,7 +599,6 @@ class _ProxyPanelShellState extends State<ProxyPanelShell> {
     _markInteractionActive();
     final deltaY = details.primaryDelta ?? details.delta.dy;
     _externalDragDeltaY += deltaY;
-    _lastSheetDragDirection = deltaY.sign;
     final target = (_sheetController.size - deltaY / _parentHeight)
         .clamp(_minSize, _maxSize)
         .toDouble();
@@ -606,7 +606,6 @@ class _ProxyPanelShellState extends State<ProxyPanelShell> {
   }
 
   void _handleHeaderDragEnd(DragEndDetails details) {
-    _externalPointerActive = false;
     _externalOpenRequested = false;
     final totalDeltaY = _externalDragDeltaY;
     _externalDragDeltaY = 0;
@@ -687,7 +686,6 @@ class _ProxyPanelShellState extends State<ProxyPanelShell> {
           }
           final gestures = ProxyPanelGestures(
             onInteractionStart: () {
-              _externalPointerActive = true;
               _externalOpenRequested = false;
               _externalDragDeltaY = 0;
               _markInteractionActive();

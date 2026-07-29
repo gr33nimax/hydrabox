@@ -274,13 +274,16 @@ class _TrafficGraphCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
+    final visibleSamples = _recentSamples(samples);
     var maxDownload = 0;
     var maxUpload = 0;
-    for (final sample in samples) {
+    for (final sample in visibleSamples) {
       maxDownload = math.max(maxDownload, sample.downlinkBps);
       maxUpload = math.max(maxUpload, sample.uplinkBps);
     }
-    final maxBps = math.max(1, math.max(maxDownload, maxUpload));
+    final maxBps = _roundedGraphScale(
+      math.max(1, math.max(maxDownload, maxUpload)),
+    );
     return Card(
       margin: EdgeInsets.zero,
       elevation: 0,
@@ -322,19 +325,21 @@ class _TrafficGraphCard extends StatelessWidget {
             SizedBox(
               height: 128,
               width: double.infinity,
-              child: CustomPaint(
-                key: const ValueKey('traffic-dashboard-graph'),
-                painter: _TrafficChartPainter(
-                  samples: samples,
-                  downloadColor: theme.colorScheme.primary,
-                  uploadColor: theme.colorScheme.tertiary,
-                  gridColor: theme.colorScheme.outlineVariant.withValues(
-                    alpha: .45,
+              child: RepaintBoundary(
+                child: CustomPaint(
+                  key: const ValueKey('traffic-dashboard-graph'),
+                  painter: _TrafficChartPainter(
+                    samples: visibleSamples,
+                    downloadColor: theme.colorScheme.primary,
+                    uploadColor: theme.colorScheme.tertiary,
+                    gridColor: theme.colorScheme.outlineVariant.withValues(
+                      alpha: .45,
+                    ),
+                    maxBps: maxBps,
+                    emptyTextColor: theme.colorScheme.onSurfaceVariant,
+                    emptyText: l10n.trafficDashboardNoSamples,
+                    textStyle: theme.textTheme.bodySmall,
                   ),
-                  maxBps: maxBps,
-                  emptyTextColor: theme.colorScheme.onSurfaceVariant,
-                  emptyText: l10n.trafficDashboardNoSamples,
-                  textStyle: theme.textTheme.bodySmall,
                 ),
               ),
             ),
@@ -343,6 +348,29 @@ class _TrafficGraphCard extends StatelessWidget {
       ),
     );
   }
+}
+
+const _graphWindow = Duration(seconds: 90);
+
+List<TrafficSample> _recentSamples(List<TrafficSample> samples) {
+  if (samples.isEmpty) return samples;
+  final cutoff = samples.last.timestamp.subtract(_graphWindow);
+  final firstVisible = samples.indexWhere(
+    (sample) => !sample.timestamp.isBefore(cutoff),
+  );
+  return firstVisible <= 0 ? samples : samples.sublist(firstVisible);
+}
+
+int _roundedGraphScale(int value) {
+  var magnitude = 1;
+  while (value > magnitude * 10) {
+    magnitude *= 10;
+  }
+  for (final factor in const [1, 2, 5, 10]) {
+    final candidate = factor * magnitude;
+    if (value <= candidate) return candidate;
+  }
+  return magnitude * 10;
 }
 
 class _GraphLegendItem extends StatelessWidget {
@@ -461,12 +489,30 @@ class _TrafficChartPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    const axisGutter = 58.0;
+    final chartRect = Rect.fromLTWH(
+      axisGutter,
+      0,
+      math.max(1, size.width - axisGutter),
+      size.height,
+    );
     final gridPaint = Paint()
       ..color = gridColor
       ..strokeWidth = 1;
     for (var i = 0; i < 4; i++) {
-      final y = size.height * i / 3;
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
+      final y = chartRect.top + chartRect.height * i / 3;
+      canvas.drawLine(
+        Offset(chartRect.left, y),
+        Offset(chartRect.right, y),
+        gridPaint,
+      );
+      _paintAxisLabel(
+        canvas,
+        value: ((maxBps * (3 - i)) / 3).round(),
+        y: y,
+        maxWidth: axisGutter - 8,
+        maxHeight: chartRect.height,
+      );
     }
 
     if (samples.length < 2) {
@@ -479,12 +525,12 @@ class _TrafficChartPainter extends CustomPainter {
         ),
         textDirection: TextDirection.ltr,
         maxLines: 1,
-      )..layout(maxWidth: size.width);
+      )..layout(maxWidth: chartRect.width);
       painter.paint(
         canvas,
         Offset(
-          (size.width - painter.width) / 2,
-          (size.height - painter.height) / 2,
+          chartRect.left + (chartRect.width - painter.width) / 2,
+          chartRect.top + (chartRect.height - painter.height) / 2,
         ),
       );
       return;
@@ -495,10 +541,10 @@ class _TrafficChartPainter extends CustomPainter {
       for (var i = 0; i < samples.length; i++) {
         final sample = samples[i];
         final x = samples.length == 1
-            ? 0.0
-            : size.width * i / (samples.length - 1);
+            ? chartRect.left
+            : chartRect.left + chartRect.width * i / (samples.length - 1);
         final value = selector(sample).clamp(0, maxBps);
-        final y = size.height - size.height * value / maxBps;
+        final y = chartRect.bottom - chartRect.height * value / maxBps;
         if (i == 0) {
           path.moveTo(x, y);
         } else {
@@ -525,6 +571,36 @@ class _TrafficChartPainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round,
+    );
+  }
+
+  void _paintAxisLabel(
+    Canvas canvas, {
+    required int value,
+    required double y,
+    required double maxWidth,
+    required double maxHeight,
+  }) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: formatSpeed(value.toDouble()),
+        style: (textStyle ?? const TextStyle()).copyWith(
+          color: emptyTextColor,
+          fontSize: (textStyle?.fontSize ?? 12) * .82,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+      textAlign: TextAlign.right,
+    )..layout(maxWidth: maxWidth);
+    painter.paint(
+      canvas,
+      Offset(
+        maxWidth - painter.width,
+        (y - painter.height / 2)
+            .clamp(0.0, maxHeight - painter.height)
+            .toDouble(),
+      ),
     );
   }
 

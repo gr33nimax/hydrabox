@@ -1,6 +1,9 @@
 // Copyright 2014 The Flutter Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+//
+// Adapted for Etonify from Flutter's
+// predictive_back_page_transitions_builder.dart. See THIRD_PARTY_NOTICES.md.
 
 import 'dart:ui' show clampDouble;
 
@@ -36,11 +39,11 @@ import 'package:flutter/services.dart';
 ///  * https://developer.android.com/design/ui/mobile/guides/patterns/predictive-back#shared-element-transition,
 ///    which is the Android spec for this page transition, called the Shared
 ///    Element page transition.
-class HiddifyPredictiveBackPageTransitionsBuilder
+class EtonifyPredictiveBackPageTransitionsBuilder
     extends PageTransitionsBuilder {
   /// Creates an instance of a [PageTransitionsBuilder] that matches Android U's
   /// predictive back transition.
-  const HiddifyPredictiveBackPageTransitionsBuilder();
+  const EtonifyPredictiveBackPageTransitionsBuilder();
 
   @override
   Duration get transitionDuration => const Duration(
@@ -142,11 +145,11 @@ class HiddifyPredictiveBackPageTransitionsBuilder
 ///    transition that matches native iOS page transitions.
 ///  * https://developer.android.com/design/ui/mobile/guides/patterns/predictive-back#full-screen-surfaces,
 ///    which is the native Android docs for this page transition.
-class HiddifyPredictiveBackFullscreenPageTransitionsBuilder
+class EtonifyPredictiveBackFullscreenPageTransitionsBuilder
     extends PageTransitionsBuilder {
   /// Creates an instance of a [PageTransitionsBuilder] that matches Android U's
   /// full screen predictive back transition.
-  const HiddifyPredictiveBackFullscreenPageTransitionsBuilder();
+  const EtonifyPredictiveBackFullscreenPageTransitionsBuilder();
 
   @override
   Widget buildTransitions<T>(

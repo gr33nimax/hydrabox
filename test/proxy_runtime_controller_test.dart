@@ -88,6 +88,24 @@ void main() {
     expect(controller.latencyFailureCounts['vless-1'], 2);
   });
 
+  test('network handover invalidates only the active route when requested', () {
+    final controller = ProxyRuntimeController();
+    addTearDown(controller.dispose);
+    controller.runtimeLatencies.addAll({'vless-active': 81, 'vless-other': 44});
+    controller.runtimeLatencyTimes.addAll({'vless-active': 10, 'vless-other': 10});
+
+    final changed = controller.invalidateNetworkMeasurements(
+      const ['vless-active'],
+      preserveUnrelatedMeasurements: true,
+    );
+
+    expect(changed, isTrue);
+    expect(controller.runtimeLatencies['vless-active'], isNull);
+    expect(controller.isLatencyInvalidated('vless-active'), isTrue);
+    expect(controller.runtimeLatencies['vless-other'], 44);
+    expect(controller.isLatencyInvalidated('vless-other'), isFalse);
+  });
+
   test('failed lowest endpoint is no longer presented as selected', () {
     final controller = ProxyRuntimeController();
     addTearDown(controller.dispose);

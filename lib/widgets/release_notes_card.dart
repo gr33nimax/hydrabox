@@ -54,7 +54,10 @@ class ReleaseNotesCard extends StatelessWidget {
             else
               MarkdownBody(
                 data: releaseNotes,
-                selectable: true,
+                // Long-press selection intercepts drag gestures in the updater
+                // and changelog sheet, making the surrounding list feel stuck.
+                // Links still remain tappable through onTapLink below.
+                selectable: false,
                 fitContent: true,
                 shrinkWrap: true,
                 onTapLink: (_, href, _) => _openLink(href),

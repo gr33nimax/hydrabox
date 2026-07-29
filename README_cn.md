@@ -8,14 +8,14 @@
 
 [![Android](https://img.shields.io/badge/platform-Android-3DDC84?style=flat-square&logo=android)](#)
 [![Flutter](https://img.shields.io/badge/built%20with-Flutter-02569B?style=flat-square&logo=flutter)](#)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square)](LICENSE)
+[![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue?style=flat-square)](LICENSE)
 [![Telegram](https://img.shields.io/badge/Telegram-@etonify-26A5E4?style=flat-square&logo=telegram)](https://t.me/etonify)
 
 **面向 Android 的开源 VPN 客户端，基于修改版 sing-box 核心。**
 
 </div>
 
-Etonify 是一个以 Android 为核心目标的 VPN 客户端，面向需要透明、可维护、社区驱动替代方案的用户。项目最初受 Hiddify 相关思路启发，但 Android 运行时、订阅处理、界面、诊断和维护流程正在围绕 Etonify 与 [**yamixdev/etonify-core**](https://github.com/yamixdev/etonify-core/tree/etonify-dev) 重建；后者基于稳定版 sing-box，并维护客户端所需的改动。
+Etonify 是一个以 Android 为核心目标的 VPN 客户端，面向需要透明、可维护、社区驱动替代方案的用户。Android 运行时、订阅处理、界面、诊断和维护流程围绕 Etonify 与 [**yamixdev/etonify-core**](https://github.com/yamixdev/etonify-core/tree/etonify-dev) 开发；后者基于稳定版 sing-box，并维护客户端所需的改动。
 
 本应用不提供 VPN 服务器。它是用于导入和使用你拥有或有权使用的订阅与配置的客户端。
 
@@ -82,9 +82,9 @@ adb install -r build\app\outputs\flutter-apk\app-release.apk
 - 除非单独验证 sing-box API 兼容性，否则 `libbox.aar` 保持不变。
 - `lib/l10n/generated` 下的生成文件会保留在源码树中，因为应用会直接导入它们。
 - `third_party/flutter_circle_flags` 是 `pubspec.yaml` 中需要的本地 path dependency。
-- 第三方组件和项目历史说明记录在 [NOTICE.md](NOTICE.md)。
+- 第三方组件说明记录在 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 - 官方 release 构建可以包含通过 GitHub Actions secrets 恢复的私有 Happ crypto compatibility assets。这些 assets 不属于公开源码树。
 
 ## 许可证
 
-Etonify 使用 [Apache License 2.0](LICENSE) 授权。
+Etonify 使用 [GNU General Public License v3.0 或更高版本](LICENSE) 授权。第三方和改编组件的说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

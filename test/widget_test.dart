@@ -259,10 +259,13 @@ void main() {
 
     expect(find.text('panel:0.00'), findsOneWidget);
 
-    await tester.drag(
-      find.byKey(const ValueKey('proxy-panel-header')),
-      const Offset(0, -420),
+    final partialOpen = await tester.startGesture(
+      tester.getCenter(find.byKey(const ValueKey('proxy-panel-header'))),
     );
+    await partialOpen.moveBy(const Offset(0, -70));
+    await tester.pump();
+    expect(find.text('panel:0.00'), findsNothing);
+    await partialOpen.up();
     await tester.pumpAndSettle();
 
     expect(find.text('panel:1.00'), findsOneWidget);
@@ -850,6 +853,65 @@ void main() {
         tester.getTopLeft(find.text('Healthy')).dy,
         lessThan(tester.getTopLeft(find.text('Old fast')).dy),
       );
+    },
+  );
+
+  testWidgets(
+    'working-only proxy mode hides failed rows and restores recovered rows',
+    (tester) async {
+      final proxies = <AppProxySummary>[
+        _proxy('healthy', 'Healthy', latency: 40),
+        _proxy('failed', 'Failed', latency: 20),
+      ];
+      final runtimeStates = ProxyRuntimeVisualStore();
+      addTearDown(runtimeStates.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          supportedLocales: AppLocalizations.supportedLocales,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          home: Scaffold(
+            body: SizedBox(
+              height: 720,
+              child: ProxiesPage(
+                proxies: proxies,
+                selectedTag: 'healthy',
+                connected: true,
+                initialSort: ProxySort.working,
+                progressiveBlurEnabled: false,
+                onSelected: (_) {},
+                onUrlTest: () async {},
+                embedded: true,
+                sheetAtMaxExtent: true,
+                sheetExtent: 1,
+                runtimeStates: runtimeStates,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      runtimeStates.replaceAll(const <String, ProxyRuntimeVisualState>{
+        'healthy': ProxyRuntimeVisualState(latency: 40, latencyFresh: true),
+        'failed': ProxyRuntimeVisualState(
+          latencyUnavailable: true,
+          latencyError: 'i/o timeout',
+        ),
+      });
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump();
+
+      expect(find.text('Healthy'), findsOneWidget);
+      expect(find.text('Failed'), findsNothing);
+
+      runtimeStates.replaceAll(const <String, ProxyRuntimeVisualState>{
+        'healthy': ProxyRuntimeVisualState(latency: 40, latencyFresh: true),
+        'failed': ProxyRuntimeVisualState(latency: 62, latencyFresh: true),
+      });
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump();
+
+      expect(find.text('Failed'), findsOneWidget);
     },
   );
 
@@ -1484,7 +1546,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('The team behind Etonify'), findsOneWidget);
-    expect(find.text('Started as a Hiddify fork'), findsOneWidget);
+    expect(find.text('Early client development'), findsOneWidget);
     expect(find.text('Moving to etonify-core'), findsOneWidget);
 
     await tester.scrollUntilVisible(find.text('dudosxdev'), 500);

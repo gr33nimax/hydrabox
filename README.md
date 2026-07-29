@@ -8,14 +8,14 @@
 
 [![Android](https://img.shields.io/badge/platform-Android-3DDC84?style=flat-square&logo=android)](#)
 [![Flutter](https://img.shields.io/badge/built%20with-Flutter-02569B?style=flat-square&logo=flutter)](#)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square)](LICENSE)
+[![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue?style=flat-square)](LICENSE)
 [![Telegram](https://img.shields.io/badge/Telegram-@etonify-26A5E4?style=flat-square&logo=telegram)](https://t.me/etonify)
 
 **Android-first open-source VPN client built around a modified sing-box core.**
 
 </div>
 
-Etonify is an Android-focused VPN client for people who need a transparent, maintainable, and community-driven alternative to legacy VPN clients. The project started as a fork lineage inspired by Hiddify, but the Android runtime, subscription handling, UI, diagnostics, and maintenance flow are being rebuilt around Etonify and [**yamixdev/etonify-core**](https://github.com/yamixdev/etonify-core/tree/etonify-dev), a stable sing-box base with changes maintained specifically for the client.
+Etonify is an Android-focused VPN client for people who need a transparent, maintainable, and community-driven alternative to legacy VPN clients. Its Android runtime, subscription handling, UI, diagnostics, and maintenance flow are developed around Etonify and [**yamixdev/etonify-core**](https://github.com/yamixdev/etonify-core/tree/etonify-dev), a stable sing-box base with changes maintained specifically for the client.
 
 The app does not provide VPN servers. It is a client for subscriptions and configurations that you own or are allowed to use.
 
@@ -85,9 +85,9 @@ For public distribution, create a real release keystore and `android/key.propert
   `android/app/libs` and verified by CI.
 - Generated l10n files under `lib/l10n/generated` are part of the source tree because the app imports them directly.
 - `third_party/flutter_circle_flags` is required by `pubspec.yaml` as a local path dependency.
-- Third-party attribution notes are tracked in [NOTICE.md](NOTICE.md).
+- Third-party attribution notes are tracked in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 - Official release builds can include private Happ crypto compatibility assets restored from GitHub Actions secrets. These assets are not part of the public source tree.
 
 ## License
 
-Etonify is licensed under the [Apache License 2.0](LICENSE).
+Etonify is licensed under the [GNU General Public License v3.0 or later](LICENSE). See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for bundled and adapted components.

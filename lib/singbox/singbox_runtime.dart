@@ -336,6 +336,7 @@ class SingboxRuntime {
 
   Future<void> updateVpnNotificationPresentation({
     required bool detailed,
+    required String trafficDisplayMode,
     required String title,
     int? latencyMillis,
     required String groupTag,
@@ -358,6 +359,7 @@ class SingboxRuntime {
     try {
       await _methods.invokeMethod<void>('updateVpnNotificationPresentation', {
         'detailed': detailed,
+        'trafficDisplayMode': trafficDisplayMode,
         'title': title,
         'latencyMillis': latencyMillis,
         'groupTag': groupTag,

@@ -1,21 +1,24 @@
 # Etonify Notices
 
-Etonify is developed by MeowTeam and is intended to be licensed under Apache License 2.0 for original project code.
+Copyright 2026 MeowTeam.
 
-## Third-Party Components
+Etonify is distributed under the GNU General Public License v3.0 or later.
+Third-party and adapted-source attributions are collected in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-- `third_party/flutter_circle_flags` is based on `circle_flags`, distributed under the MIT License. Its license is preserved in `third_party/flutter_circle_flags/LICENSE`.
-- Etonify bundles `etonify-core`, a sing-box/libbox fork maintained for the client by MeowTeam: https://github.com/yamixdev/etonify-core/tree/etonify-dev. The core and its dependencies remain subject to their own licenses.
-- Etonify uses Flutter, Android Gradle Plugin, Kotlin, sing-box/libbox integration, and other dependencies listed in `pubspec.yaml`, Gradle files, and generated lock files. Their own licenses remain applicable.
+## Private compatibility assets
 
-## Private Compatibility Assets
+Official Etonify release builds may restore private Happ crypto compatibility
+assets from GitHub Actions secrets. Those assets are not part of this public
+source tree. They are not automatically licensed merely by cloning this
+repository.
 
-Official Etonify release builds may include private Happ crypto compatibility assets restored from GitHub Actions secrets at build time. These assets are not part of the public source tree and are not covered by the public repository contents.
+APK obfuscation and minification can make casual repackaging harder, but they
+do not make an APK or its bundled assets cryptographically secret.
 
-APK obfuscation and minification are used for official release builds to reduce casual repackaging and reverse engineering, but bundled APK assets should not be treated as cryptographically secret.
+## Brand identity
 
-## Historical Context
-
-Etonify has historical project lineage and UI/runtime ideas that were originally explored around Hiddify-style clients. The current goal is to maintain Etonify as its own Android-first client with original runtime, subscription, diagnostics, and UI work.
-
-Before a public binary release, review any remaining legacy source files and third-party assets to confirm license compatibility with Apache License 2.0.
+The GPL grants rights to the source code; it does not grant a right to present
+an unrelated build as an official Etonify release. The Etonify name, logo,
+package identity, release channels and update metadata may only be used to
+truthfully describe the original project or with MeowTeam's permission.

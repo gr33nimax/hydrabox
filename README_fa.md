@@ -8,14 +8,14 @@
 
 [![Android](https://img.shields.io/badge/platform-Android-3DDC84?style=flat-square&logo=android)](#)
 [![Flutter](https://img.shields.io/badge/built%20with-Flutter-02569B?style=flat-square&logo=flutter)](#)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square)](LICENSE)
+[![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue?style=flat-square)](LICENSE)
 [![Telegram](https://img.shields.io/badge/Telegram-@etonify-26A5E4?style=flat-square&logo=telegram)](https://t.me/etonify)
 
 **یک کلاینت VPN متن‌باز با تمرکز روی Android و مبتنی بر هسته‌ی تغییر یافته‌ی sing-box.**
 
 </div>
 
-Etonify یک کلاینت VPN با تمرکز روی Android است؛ برای کاربرانی که به جای کلاینت‌های قدیمی یا بسته، به یک گزینه‌ی شفاف، قابل نگهداری و جامعه‌محور نیاز دارند. این پروژه در مسیر ایده‌های مرتبط با Hiddify شروع شد، اما runtime اندروید، مدیریت subscription، رابط کاربری، تشخیص خطا و روند نگهداری اکنون حول Etonify و [**yamixdev/etonify-core**](https://github.com/yamixdev/etonify-core/tree/etonify-dev) بازسازی می‌شود؛ هسته‌ای بر پایه‌ی نسخه‌ی پایدار sing-box با تغییرات مورد نیاز کلاینت.
+Etonify یک کلاینت VPN با تمرکز روی Android است؛ برای کاربرانی که به جای کلاینت‌های قدیمی یا بسته، به یک گزینه‌ی شفاف، قابل نگهداری و جامعه‌محور نیاز دارند. runtime اندروید، مدیریت subscription، رابط کاربری، تشخیص خطا و روند نگهداری حول Etonify و [**yamixdev/etonify-core**](https://github.com/yamixdev/etonify-core/tree/etonify-dev) توسعه می‌یابد؛ هسته‌ای بر پایه‌ی نسخه‌ی پایدار sing-box با تغییرات مورد نیاز کلاینت.
 
 این برنامه سرور VPN ارائه نمی‌کند. Etonify یک کلاینت برای subscriptionها و configurationهایی است که مالک آن‌ها هستید یا اجازه‌ی استفاده از آن‌ها را دارید.
 
@@ -82,9 +82,9 @@ adb install -r build\app\outputs\flutter-apk\app-release.apk
 - تا زمانی که سازگاری API هسته‌ی sing-box جداگانه بررسی نشود، `libbox.aar` بدون تغییر می‌ماند.
 - فایل‌های تولیدشده‌ی localization در `lib/l10n/generated` در source tree نگهداری می‌شوند، چون برنامه مستقیماً آن‌ها را import می‌کند.
 - `third_party/flutter_circle_flags` به عنوان local path dependency در `pubspec.yaml` لازم است.
-- توضیحات مربوط به componentهای شخص ثالث و پیشینه‌ی پروژه در [NOTICE.md](NOTICE.md) آمده است.
+- توضیحات مربوط به componentهای شخص ثالث در [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) آمده است.
 - buildهای رسمی release می‌توانند private Happ crypto compatibility assets را از GitHub Actions secrets بازیابی و داخل APK قرار دهند. این assets بخشی از source tree عمومی نیستند.
 
 ## مجوز
 
-Etonify تحت [Apache License 2.0](LICENSE) منتشر می‌شود.
+Etonify تحت [GNU General Public License v3.0 یا جدیدتر](LICENSE) منتشر می‌شود. توضیحات componentهای شخص ثالث و اقتباس‌شده در [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) آمده است.

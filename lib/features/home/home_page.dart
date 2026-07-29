@@ -408,7 +408,6 @@ class _HomeProxyPanelGestureRelayState
   double _totalDeltaY = 0;
 
   void _handlePointerDown(PointerDownEvent event) {
-    widget.onInteractionStart?.call();
     _dragStarted = false;
     _totalDeltaY = 0;
   }
@@ -419,6 +418,9 @@ class _HomeProxyPanelGestureRelayState
       return;
     }
     final deltaY = _dragStarted ? event.delta.dy : _totalDeltaY;
+    if (!_dragStarted) {
+      widget.onInteractionStart?.call();
+    }
     _dragStarted = true;
     widget.onDragUpdate?.call(
       DragUpdateDetails(
@@ -432,12 +434,16 @@ class _HomeProxyPanelGestureRelayState
   }
 
   void _handlePointerEnd(PointerUpEvent event) {
-    widget.onDragEnd?.call(DragEndDetails());
+    if (_dragStarted) {
+      widget.onDragEnd?.call(DragEndDetails());
+    }
     _reset();
   }
 
   void _handlePointerCancel(PointerCancelEvent event) {
-    widget.onDragEnd?.call(DragEndDetails());
+    if (_dragStarted) {
+      widget.onDragEnd?.call(DragEndDetails());
+    }
     _reset();
   }
 

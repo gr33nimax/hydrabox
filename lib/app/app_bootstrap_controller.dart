@@ -39,6 +39,22 @@ class AppBootstrapResult {
   final bool usesInMemoryStore;
 }
 
+/// Optional rule-set status loaded after the first application frame.
+///
+/// The underlying files are only required to build a runtime configuration
+/// when the corresponding feature is enabled. Keeping a disabled feature out
+/// of the critical startup path makes the home screen available sooner while
+/// preserving the safe path for an enabled feature.
+class BootstrapDeferredStatuses {
+  const BootstrapDeferredStatuses({
+    required this.adBlockStatus,
+    required this.russiaRouteDataStatus,
+  });
+
+  final AdBlockRuleSetStatus adBlockStatus;
+  final RussiaRouteDataStatus russiaRouteDataStatus;
+}
+
 /// Loads the durable application state without owning any Flutter UI state.
 ///
 /// Keeping storage, native metadata and core compatibility checks here makes
@@ -102,14 +118,14 @@ class AppBootstrapController {
         ownsStore = providedStore == null;
       }
       state = await store.loadState();
-      final adBlockStatusFuture = _loadAdBlockStatus().catchError(
-        (_) => const AdBlockRuleSetStatus.unavailable(),
-      );
-      final russiaRouteStatusFuture = _loadRussiaRouteStatus().catchError(
-        (_) => const RussiaRouteDataStatus.unavailable(),
-      );
-      adBlockStatus = await adBlockStatusFuture;
-      russiaRouteDataStatus = await russiaRouteStatusFuture;
+      if (state.adBlockEnabled || state.useRussiaRouteData) {
+        final requiredStatuses = await loadDeferredStatuses(
+          includeAdBlock: state.adBlockEnabled,
+          includeRussiaRouteData: state.useRussiaRouteData,
+        );
+        adBlockStatus = requiredStatuses.adBlockStatus;
+        russiaRouteDataStatus = requiredStatuses.russiaRouteDataStatus;
+      }
     } catch (error, stackTrace) {
       AppLogStore.error(
         'bootstrap',
@@ -164,6 +180,44 @@ class AppBootstrapController {
       pendingCoreConfigMigration: pendingCoreConfigMigration,
       usesInMemoryStore: usesInMemoryStore,
     );
+  }
+
+  /// Reads status data that is useful for settings UI but not needed to draw
+  /// the initial screen when the related features are disabled.
+  Future<BootstrapDeferredStatuses> loadDeferredStatuses({
+    bool includeAdBlock = true,
+    bool includeRussiaRouteData = true,
+  }) async {
+    final adBlockStatusFuture = includeAdBlock
+        ? _loadAdBlockStatusSafely()
+        : Future<AdBlockRuleSetStatus>.value(
+            const AdBlockRuleSetStatus.unavailable(),
+          );
+    final russiaRouteStatusFuture = includeRussiaRouteData
+        ? _loadRussiaRouteStatusSafely()
+        : Future<RussiaRouteDataStatus>.value(
+            const RussiaRouteDataStatus.unavailable(),
+          );
+    return BootstrapDeferredStatuses(
+      adBlockStatus: await adBlockStatusFuture,
+      russiaRouteDataStatus: await russiaRouteStatusFuture,
+    );
+  }
+
+  Future<AdBlockRuleSetStatus> _loadAdBlockStatusSafely() async {
+    try {
+      return await _loadAdBlockStatus();
+    } catch (_) {
+      return const AdBlockRuleSetStatus.unavailable();
+    }
+  }
+
+  Future<RussiaRouteDataStatus> _loadRussiaRouteStatusSafely() async {
+    try {
+      return await _loadRussiaRouteStatus();
+    } catch (_) {
+      return const RussiaRouteDataStatus.unavailable();
+    }
   }
 
   Future<AppVersionInfo> readAppVersionInfo() async {

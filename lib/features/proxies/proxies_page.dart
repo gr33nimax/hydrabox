@@ -41,6 +41,7 @@ enum _ProxyChainAction { edit, rename, remove }
 String _proxySortLabel(AppLocalizations l10n, ProxySort sort) => switch (sort) {
   ProxySort.source => l10n.sortByDefault,
   ProxySort.latency => l10n.sortByLatency,
+  ProxySort.working => l10n.sortByWorking,
   ProxySort.name => l10n.sortByName,
   ProxySort.country => l10n.sortByCountry,
 };
@@ -109,6 +110,7 @@ String _localizedProxyTechnicalText(
 IconData _proxySortIcon(ProxySort sort) => switch (sort) {
   ProxySort.source => FluentIcons.list_24_regular,
   ProxySort.latency => FluentIcons.timer_24_regular,
+  ProxySort.working => FluentIcons.checkmark_circle_24_regular,
   ProxySort.name => FluentIcons.text_sort_ascending_24_regular,
   ProxySort.country => FluentIcons.globe_24_regular,
 };
@@ -371,6 +373,7 @@ class _ProxiesPageState extends State<ProxiesPage> {
   late ProxySort _sort;
   List<AppProxySummary> _visibleItems = const [];
   Timer? _runtimeResortTimer;
+  ValueListenable<ProxyPanelMetrics>? _observedSheetMetrics;
   double _proxySheetHeaderScrollCollapse = 0;
   bool _groupSheetOpen = false;
   List<_ProxyListEntry>? _visibleEntriesCache;
@@ -393,6 +396,7 @@ class _ProxiesPageState extends State<ProxiesPage> {
     super.initState();
     _sort = widget.initialSort;
     widget.runtimeStates?.revision.addListener(_onRuntimeStatesChanged);
+    _bindSheetMetricsListenable(widget.sheetMetricsListenable);
     _rebuildVisibleItems();
   }
 
@@ -402,6 +406,11 @@ class _ProxiesPageState extends State<ProxiesPage> {
     if (oldWidget.runtimeStates != widget.runtimeStates) {
       oldWidget.runtimeStates?.revision.removeListener(_onRuntimeStatesChanged);
       widget.runtimeStates?.revision.addListener(_onRuntimeStatesChanged);
+    }
+    if (oldWidget.sheetMetricsListenable != widget.sheetMetricsListenable) {
+      _bindSheetMetricsListenable(widget.sheetMetricsListenable);
+    } else {
+      _activateEmbeddedListIfNeeded();
     }
     if (oldWidget.proxies != widget.proxies ||
         oldWidget.isProxyChainTag != widget.isProxyChainTag ||
@@ -422,18 +431,70 @@ class _ProxiesPageState extends State<ProxiesPage> {
   void dispose() {
     _runtimeResortTimer?.cancel();
     widget.runtimeStates?.revision.removeListener(_onRuntimeStatesChanged);
+    _observedSheetMetrics?.removeListener(_onSheetMetricsChanged);
     super.dispose();
   }
 
+  void _bindSheetMetricsListenable(
+    ValueListenable<ProxyPanelMetrics>? listenable,
+  ) {
+    _observedSheetMetrics?.removeListener(_onSheetMetricsChanged);
+    _observedSheetMetrics = listenable;
+    listenable?.addListener(_onSheetMetricsChanged);
+    _activateEmbeddedListIfNeeded();
+  }
+
+  void _onSheetMetricsChanged() {
+    final atMaxExtent = _effectiveSheetAtMaxExtent;
+    final activateList = !_embeddedListActivated && atMaxExtent;
+    final resetHeaderCollapse =
+        !atMaxExtent && _proxySheetHeaderScrollCollapse != 0;
+    if (!activateList && !resetHeaderCollapse) {
+      return;
+    }
+    if (!mounted) {
+      if (activateList) {
+        _embeddedListActivated = true;
+      }
+      if (resetHeaderCollapse) {
+        _proxySheetHeaderScrollCollapse = 0;
+      }
+      return;
+    }
+    setState(() {
+      if (activateList) {
+        _embeddedListActivated = true;
+      }
+      if (resetHeaderCollapse) {
+        _proxySheetHeaderScrollCollapse = 0;
+      }
+    });
+  }
+
+  void _activateEmbeddedListIfNeeded({bool notify = false}) {
+    if (_embeddedListActivated || !_effectiveSheetAtMaxExtent) {
+      return;
+    }
+    if (!notify || !mounted) {
+      _embeddedListActivated = true;
+      return;
+    }
+    setState(() {
+      _embeddedListActivated = true;
+    });
+  }
+
   void _onRuntimeStatesChanged() {
-    if (!mounted || _sort != ProxySort.latency) {
+    if (!mounted ||
+        (_sort != ProxySort.latency && _sort != ProxySort.working)) {
       return;
     }
     if (_runtimeResortTimer?.isActive ?? false) {
       return;
     }
     _runtimeResortTimer = Timer(const Duration(milliseconds: 80), () {
-      if (!mounted || _sort != ProxySort.latency) {
+      if (!mounted ||
+          (_sort != ProxySort.latency && _sort != ProxySort.working)) {
         return;
       }
       setState(_rebuildVisibleItems);
@@ -461,7 +522,11 @@ class _ProxiesPageState extends State<ProxiesPage> {
       }
       if (_isPinnedHeaderProxy(proxy)) {
         pinnedItems.add(proxy);
-      } else {
+      } else if (shouldShowProxyForSort(
+        proxy,
+        _sort,
+        runtimeState: widget.runtimeStates?.valueFor(proxy.tag),
+      )) {
         visibleItems.add(proxy);
       }
     }
@@ -546,7 +611,15 @@ class _ProxiesPageState extends State<ProxiesPage> {
     }
     final cachedChildren = widget.groupChildrenByTag[group.tag];
     if (cachedChildren != null) {
-      final children = cachedChildren.toList(growable: false);
+      final children = cachedChildren
+          .where(
+            (proxy) => shouldShowProxyForSort(
+              proxy,
+              _sort,
+              runtimeState: widget.runtimeStates?.valueFor(proxy.tag),
+            ),
+          )
+          .toList(growable: false);
       _sortItems(children, keepLowestFirst: false);
       return children;
     }
@@ -557,6 +630,13 @@ class _ProxiesPageState extends State<ProxiesPage> {
     final children = group.childTags
         .map((tag) => childByTag[tag])
         .whereType<AppProxySummary>()
+        .where(
+          (proxy) => shouldShowProxyForSort(
+            proxy,
+            _sort,
+            runtimeState: widget.runtimeStates?.valueFor(proxy.tag),
+          ),
+        )
         .toList(growable: false);
     _sortItems(children, keepLowestFirst: false);
     return children;
@@ -656,14 +736,17 @@ class _ProxiesPageState extends State<ProxiesPage> {
     final theme = Theme.of(context);
     if (widget.embedded) {
       final sheetMetricsListenable = widget.sheetMetricsListenable;
+      final list = _buildEmbeddedProxyList(context: context, l10n: l10n);
       if (sheetMetricsListenable != null) {
         return ValueListenableBuilder<ProxyPanelMetrics>(
           valueListenable: sheetMetricsListenable,
-          builder: (context, metrics, _) {
+          child: list,
+          builder: (context, metrics, list) {
             return _buildEmbeddedSheet(
               context: context,
               l10n: l10n,
               theme: theme,
+              list: list!,
               sheetAtMaxExtent: metrics.atMaxExtent,
               sheetCanFillScreen: metrics.canFillScreen,
               sheetExtent: metrics.progress,
@@ -673,7 +756,12 @@ class _ProxiesPageState extends State<ProxiesPage> {
           },
         );
       }
-      return _buildEmbeddedSheet(context: context, l10n: l10n, theme: theme);
+      return _buildEmbeddedSheet(
+        context: context,
+        l10n: l10n,
+        theme: theme,
+        list: list,
+      );
     }
 
     final topPadding = appSystemStatusBarInset(context);
@@ -746,6 +834,7 @@ class _ProxiesPageState extends State<ProxiesPage> {
     required BuildContext context,
     required AppLocalizations l10n,
     required ThemeData theme,
+    required Widget list,
     bool? sheetAtMaxExtent,
     bool? sheetCanFillScreen,
     double? sheetExtent,
@@ -758,7 +847,6 @@ class _ProxiesPageState extends State<ProxiesPage> {
     final effectiveSheetExtent = sheetExtent ?? widget.sheetExtent;
     final effectiveProgressiveBlurEnabled =
         progressiveBlurEnabled ?? widget.progressiveBlurEnabled;
-    final bottomInset = appSystemNavigationBarInset(context);
     final progressRange =
         widget.expandedHeaderExtent - widget.collapsedSheetExtent;
     final headerProgress = progressRange <= 0
@@ -771,61 +859,6 @@ class _ProxiesPageState extends State<ProxiesPage> {
         : 0.0;
     final headerHeight = _proxySheetHeaderHeightForCollapse(
       headerScrollCollapse,
-    );
-    final compactListTopPadding = max(headerHeight + 6, 84).toDouble();
-    final listTopPadding = compactListTopPadding;
-    if (effectiveSheetAtMaxExtent) {
-      _embeddedListActivated = true;
-    }
-    final listMounted = _embeddedListActivated;
-    final list = Padding(
-      padding: EdgeInsets.only(bottom: bottomInset),
-      child: Builder(
-        builder: (context) {
-          final entries = listMounted
-              ? _visibleEntries()
-              : const <_ProxyListEntry>[];
-          return ListView.builder(
-            controller: widget.scrollController,
-            physics: const ClampingScrollPhysics(
-              parent: AlwaysScrollableScrollPhysics(),
-            ),
-            itemExtent: _kProxySheetRowExtent,
-            scrollCacheExtent: const ScrollCacheExtent.pixels(0),
-            addAutomaticKeepAlives: false,
-            addRepaintBoundaries: true,
-            addSemanticIndexes: false,
-            padding: listMounted
-                ? EdgeInsets.only(top: listTopPadding, bottom: 20)
-                : EdgeInsets.zero,
-            itemCount: !listMounted
-                ? 0
-                : widget.proxies.isEmpty
-                ? 1
-                : entries.length,
-            itemBuilder: (context, index) {
-              if (widget.proxies.isEmpty) {
-                return Center(
-                  child: Text(
-                    l10n.noProxies,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                );
-              }
-
-              final entry = entries[index];
-              return IgnorePointer(
-                ignoring: !effectiveSheetAtMaxExtent,
-                child: _buildEmbeddedEntry(
-                  context: context,
-                  l10n: l10n,
-                  entry: entry,
-                ),
-              );
-            },
-          );
-        },
-      ),
     );
     final header = _ProxySheetHeader(
       height: headerHeight,
@@ -860,7 +893,10 @@ class _ProxiesPageState extends State<ProxiesPage> {
         children: [
           NotificationListener<ScrollNotification>(
             onNotification: _handleEmbeddedScrollNotification,
-            child: RepaintBoundary(child: list),
+            child: IgnorePointer(
+              ignoring: !effectiveSheetAtMaxExtent,
+              child: RepaintBoundary(child: list),
+            ),
           ),
           Positioned(left: 0, right: 0, top: 0, child: pinnedHeader),
         ],
@@ -872,6 +908,56 @@ class _ProxiesPageState extends State<ProxiesPage> {
       shadowColor: Colors.transparent,
       clipBehavior: Clip.none,
       child: sheetBody,
+    );
+  }
+
+  Widget _buildEmbeddedProxyList({
+    required BuildContext context,
+    required AppLocalizations l10n,
+  }) {
+    final listMounted = _embeddedListActivated;
+    final headerHeight = _proxySheetHeaderHeightForCollapse(
+      _proxySheetHeaderScrollCollapse,
+    );
+    final listTopPadding = max(headerHeight + 6, 84).toDouble();
+    final bottomInset = appSystemNavigationBarInset(context);
+    final entries = listMounted ? _visibleEntries() : const <_ProxyListEntry>[];
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottomInset),
+      child: ListView.builder(
+        controller: widget.scrollController,
+        physics: const ClampingScrollPhysics(
+          parent: AlwaysScrollableScrollPhysics(),
+        ),
+        itemExtent: _kProxySheetRowExtent,
+        scrollCacheExtent: const ScrollCacheExtent.pixels(0),
+        addAutomaticKeepAlives: false,
+        addRepaintBoundaries: true,
+        addSemanticIndexes: false,
+        padding: listMounted
+            ? EdgeInsets.only(top: listTopPadding, bottom: 20)
+            : EdgeInsets.zero,
+        itemCount: !listMounted
+            ? 0
+            : widget.proxies.isEmpty
+            ? 1
+            : entries.length,
+        itemBuilder: (context, index) {
+          if (widget.proxies.isEmpty) {
+            return Center(
+              child: Text(
+                l10n.noProxies,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            );
+          }
+          return _buildEmbeddedEntry(
+            context: context,
+            l10n: l10n,
+            entry: entries[index],
+          );
+        },
+      ),
     );
   }
 

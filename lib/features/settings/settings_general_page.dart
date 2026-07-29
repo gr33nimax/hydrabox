@@ -64,6 +64,7 @@ class SettingsGeneralPage extends StatelessWidget {
     this.dynamicLightScheme,
     required this.currentHapticEnabled,
     required this.currentStatusNotificationEnabled,
+    required this.currentNotificationTrafficDisplayMode,
     required this.currentHideServerIp,
     required this.currentPerformanceMode,
     required this.currentMemoryLimitEnabled,
@@ -74,6 +75,7 @@ class SettingsGeneralPage extends StatelessWidget {
     required this.onAccentColorChanged,
     required this.onHapticChanged,
     required this.onStatusNotificationChanged,
+    required this.onNotificationTrafficDisplayModeChanged,
     required this.onHideServerIpChanged,
     required this.onPerformanceModeChanged,
     required this.onMemoryLimitChanged,
@@ -86,6 +88,7 @@ class SettingsGeneralPage extends StatelessWidget {
   final ColorScheme? dynamicLightScheme;
   final bool currentHapticEnabled;
   final bool currentStatusNotificationEnabled;
+  final NotificationTrafficDisplayMode currentNotificationTrafficDisplayMode;
   final bool currentHideServerIp;
   final AppPerformanceMode currentPerformanceMode;
   final bool currentMemoryLimitEnabled;
@@ -96,6 +99,8 @@ class SettingsGeneralPage extends StatelessWidget {
   final ValueChanged<String> onAccentColorChanged;
   final ValueChanged<bool> onHapticChanged;
   final ValueChanged<bool> onStatusNotificationChanged;
+  final ValueChanged<NotificationTrafficDisplayMode>
+  onNotificationTrafficDisplayModeChanged;
   final ValueChanged<bool> onHideServerIpChanged;
   final ValueChanged<AppPerformanceMode> onPerformanceModeChanged;
   final void Function(bool value, {bool warningDismissed}) onMemoryLimitChanged;
@@ -163,6 +168,46 @@ class SettingsGeneralPage extends StatelessWidget {
     AppUpdateInstallMode.manual => l10n.updatesInstallModeManual,
     AppUpdateInstallMode.auto => l10n.updatesInstallModeAuto,
   };
+
+  String _notificationTrafficDisplayModeName(
+    AppLocalizations l10n,
+    NotificationTrafficDisplayMode value,
+  ) => switch (value) {
+    NotificationTrafficDisplayMode.speed =>
+      l10n.notificationTrafficDisplaySpeed,
+    NotificationTrafficDisplayMode.total =>
+      l10n.notificationTrafficDisplayTotal,
+    NotificationTrafficDisplayMode.both => l10n.notificationTrafficDisplayBoth,
+  };
+
+  Future<void> _showNotificationTrafficDisplayPicker(
+    BuildContext context,
+  ) async {
+    final l10n = AppLocalizations.of(context);
+    final result = await showModalBottomSheet<NotificationTrafficDisplayMode>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => _RadioSheet<NotificationTrafficDisplayMode>(
+        title: l10n.notificationTrafficDisplayTitle,
+        current: currentNotificationTrafficDisplayMode,
+        items: [
+          _RadioItem(
+            value: NotificationTrafficDisplayMode.speed,
+            label: l10n.notificationTrafficDisplaySpeed,
+          ),
+          _RadioItem(
+            value: NotificationTrafficDisplayMode.total,
+            label: l10n.notificationTrafficDisplayTotal,
+          ),
+          _RadioItem(
+            value: NotificationTrafficDisplayMode.both,
+            label: l10n.notificationTrafficDisplayBoth,
+          ),
+        ],
+      ),
+    );
+    if (result != null) onNotificationTrafficDisplayModeChanged(result);
+  }
 
   Future<void> _setMemoryLimitEnabled(BuildContext context, bool value) async {
     final l10n = AppLocalizations.of(context);
@@ -343,6 +388,48 @@ class SettingsGeneralPage extends StatelessWidget {
                   subtitle: Text(l10n.statusNotificationSubtitle),
                   value: currentStatusNotificationEnabled,
                   onChanged: onStatusNotificationChanged,
+                ),
+              ),
+            ),
+
+            const Gap(settingsIslandGap),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Card(
+                margin: EdgeInsets.zero,
+                child: ListTile(
+                  key: const ValueKey('notification-traffic-display-setting'),
+                  enabled: currentStatusNotificationEnabled,
+                  leading: SettingsLeadingIcon(
+                    icon: Icons.speed_rounded,
+                    color: currentStatusNotificationEnabled
+                        ? cs.primary
+                        : cs.onSurface.withValues(alpha: 0.38),
+                  ),
+                  title: Text(l10n.notificationTrafficDisplayTitle),
+                  subtitle: Text(l10n.notificationTrafficDisplaySubtitle),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _notificationTrafficDisplayModeName(
+                          l10n,
+                          currentNotificationTrafficDisplayMode,
+                        ),
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: currentStatusNotificationEnabled
+                              ? cs.onSurfaceVariant
+                              : cs.onSurface.withValues(alpha: 0.38),
+                        ),
+                      ),
+                      const Icon(Icons.chevron_right_rounded),
+                    ],
+                  ),
+                  onTap: currentStatusNotificationEnabled
+                      ? () => unawaited(
+                          _showNotificationTrafficDisplayPicker(context),
+                        )
+                      : null,
                 ),
               ),
             ),

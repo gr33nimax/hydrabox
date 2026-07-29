@@ -111,14 +111,16 @@ class _GroupOutboundsSheetBodyState extends State<_GroupOutboundsSheetBody> {
   }
 
   void _onRuntimeStatesChanged() {
-    if (!mounted || _sort != ProxySort.latency) {
+    if (!mounted ||
+        (_sort != ProxySort.latency && _sort != ProxySort.working)) {
       return;
     }
     if (_runtimeResortTimer?.isActive ?? false) {
       return;
     }
     _runtimeResortTimer = Timer(const Duration(milliseconds: 80), () {
-      if (!mounted || _sort != ProxySort.latency) {
+      if (!mounted ||
+          (_sort != ProxySort.latency && _sort != ProxySort.working)) {
         return;
       }
       setState(() {
@@ -145,7 +147,15 @@ class _GroupOutboundsSheetBodyState extends State<_GroupOutboundsSheetBody> {
     if (cached != null && _sortedChildrenSort == _sort) {
       return cached;
     }
-    final children = widget.children.toList(growable: false);
+    final children = widget.children
+        .where(
+          (proxy) => shouldShowProxyForSort(
+            proxy,
+            _sort,
+            runtimeState: widget.runtimeStates?.valueFor(proxy.tag),
+          ),
+        )
+        .toList(growable: false);
     sortProxySummaries(
       children,
       _sort,

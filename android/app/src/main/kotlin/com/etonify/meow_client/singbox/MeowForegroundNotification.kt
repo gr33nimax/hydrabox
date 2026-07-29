@@ -11,6 +11,7 @@ import android.graphics.drawable.Icon
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import com.etonify.meow_client.MainActivity
 import com.etonify.meow_client.R
 import kotlin.math.max
@@ -36,6 +37,25 @@ internal class MeowForegroundNotification(
         private const val CONTENT_REQUEST_CODE = 4203
         private const val DEFAULT_LATENCY_TIMEOUT_MS = 20_000L
         private const val MAX_TEXT_LENGTH = 120
+        private const val TRAFFIC_REFRESH_INTERVAL_MS = 2_000L
+        private const val PRESENTATION_PREFS = "meow_foreground_notification"
+        private const val PREF_DETAILED = "detailed"
+        private const val PREF_TRAFFIC_DISPLAY_MODE = "traffic_display_mode"
+        private const val PREF_TITLE = "title"
+        private const val PREF_LATENCY = "latency"
+        private const val PREF_CONNECTED_TEXT = "connected_text"
+        private const val PREF_CHECKING_TEXT = "checking_text"
+        private const val PREF_UNAVAILABLE_TEXT = "unavailable_text"
+        private const val PREF_REFRESH_LABEL = "refresh_label"
+        private const val PREF_STOP_LABEL = "stop_label"
+        private const val PREF_URLTEST_GROUP = "urltest_group"
+        private const val PREF_URLTEST_TARGET = "urltest_target"
+        private const val PREF_URLTEST_PRIORITY = "urltest_priority"
+        private const val PREF_URLTEST_EXCLUDE = "urltest_exclude"
+        private const val PREF_URLTEST_URL = "urltest_url"
+        private const val PREF_URLTEST_TIMEOUT = "urltest_timeout"
+        private const val PREF_URLTEST_CONCURRENCY = "urltest_concurrency"
+        private const val PREF_URLTEST_DEADLINE = "urltest_deadline"
     }
 
     private data class UrlTestRequest(
@@ -78,6 +98,7 @@ internal class MeowForegroundNotification(
 
     private data class Presentation(
         val detailed: Boolean = true,
+        val trafficDisplayMode: String = "speed",
         val title: String = "",
         val latencyMillis: Long? = null,
         val connectedText: String = "VPN подключён",
@@ -91,13 +112,22 @@ internal class MeowForegroundNotification(
     private val notificationManager =
         service.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val presentationPrefs = service.getSharedPreferences(
+        PRESENTATION_PREFS,
+        Context.MODE_PRIVATE,
+    )
 
     private var foregroundStarted = false
     private var lifecycleStatus = "Starting"
-    private var presentation = Presentation()
+    private var presentation = restorePresentation()
     private var uplink = 0L
     private var downlink = 0L
+    private var uplinkTotal = 0L
+    private var downlinkTotal = 0L
     private var trafficAvailable = false
+    private var displayedUplink = 0L
+    private var displayedDownlink = 0L
+    private var lastTrafficRefreshAt = 0L
     private var latencyChecking = false
     private var latencyActionGeneration = 0L
     private var latencyActionInFlight = false
@@ -118,9 +148,15 @@ internal class MeowForegroundNotification(
                     ?: fallback
 
             val detailed = arguments["detailed"] as? Boolean ?: true
+            val trafficDisplayMode = when (arguments["trafficDisplayMode"]?.toString()) {
+                "total" -> "total"
+                "both" -> "both"
+                else -> "speed"
+            }
             val latency = (arguments["latencyMillis"] as? Number)?.toLong()?.takeIf { it >= 0L }
             presentation = Presentation(
                 detailed = detailed,
+                trafficDisplayMode = trafficDisplayMode,
                 title = text("title", ""),
                 latencyMillis = latency,
                 connectedText = text("connectedText", "VPN подключён"),
@@ -130,6 +166,7 @@ internal class MeowForegroundNotification(
                 stopLabel = text("stopLabel", "Остановить"),
                 urlTestRequest = UrlTestRequest.fromArguments(arguments),
             )
+            persistPresentation(presentation)
             if (!latencyChecking) {
                 // Flutter delivers the last known successful result on every
                 // selected-outbound update. Do not leave an old action result
@@ -144,18 +181,41 @@ internal class MeowForegroundNotification(
     fun updateTraffic(
         uplink: Long,
         downlink: Long,
+        uplinkTotal: Long,
+        downlinkTotal: Long,
         trafficAvailable: Boolean,
     ) {
         synchronized(this) {
+            val availabilityChanged = this.trafficAvailable != trafficAvailable
             val changed = this.uplink != uplink ||
                 this.downlink != downlink ||
+                this.uplinkTotal != uplinkTotal ||
+                this.downlinkTotal != downlinkTotal ||
                 this.trafficAvailable != trafficAvailable
             this.uplink = uplink
             this.downlink = downlink
+            this.uplinkTotal = uplinkTotal
+            this.downlinkTotal = downlinkTotal
             this.trafficAvailable = trafficAvailable
-            if (changed) {
+            val now = SystemClock.elapsedRealtime()
+            val refreshDue = lastTrafficRefreshAt == 0L ||
+                now - lastTrafficRefreshAt >= TRAFFIC_REFRESH_INTERVAL_MS
+            if (changed && (availabilityChanged || refreshDue)) {
+                displayedUplink = smoothRate(displayedUplink, uplink, trafficAvailable)
+                displayedDownlink = smoothRate(displayedDownlink, downlink, trafficAvailable)
+                lastTrafficRefreshAt = now
                 refreshLocked()
             }
+        }
+    }
+
+    fun clearSavedPresentation() {
+        synchronized(this) {
+            presentationPrefs.edit().clear().apply()
+            presentation = Presentation()
+            displayedUplink = 0L
+            displayedDownlink = 0L
+            lastTrafficRefreshAt = 0L
         }
     }
 
@@ -184,6 +244,7 @@ internal class MeowForegroundNotification(
             presentation = presentation.copy(
                 latencyMillis = delayMillis.takeIf { it > 0L },
             )
+            persistPresentation(presentation)
             refreshLocked()
         }
     }
@@ -236,8 +297,108 @@ internal class MeowForegroundNotification(
             latencyChecking = false
             if (latencyMillis != null) {
                 presentation = presentation.copy(latencyMillis = latencyMillis)
+                persistPresentation(presentation)
             }
             refreshLocked()
+        }
+    }
+
+    private fun smoothRate(previous: Long, incoming: Long, available: Boolean): Long {
+        if (!available || incoming <= 0L) {
+            return (previous * 2L) / 3L
+        }
+        if (previous <= 0L) {
+            return incoming
+        }
+        return ((previous * 2L) + incoming) / 3L
+    }
+
+    private fun restorePresentation(): Presentation {
+        fun text(key: String, fallback: String): String =
+            presentationPrefs.getString(key, fallback)
+                ?.trim()
+                ?.take(MAX_TEXT_LENGTH)
+                ?.ifEmpty { fallback }
+                ?: fallback
+        fun value(key: String, fallback: Int): Int =
+            presentationPrefs.getInt(key, fallback)
+
+        val target = text(PREF_URLTEST_TARGET, "")
+        val url = text(PREF_URLTEST_URL, "")
+        val request = if (target.isEmpty() || url.isEmpty()) {
+            null
+        } else {
+            val timeout = value(PREF_URLTEST_TIMEOUT, 15_000).coerceIn(1_000, 30_000)
+            UrlTestRequest(
+                groupTag = text(PREF_URLTEST_GROUP, "select"),
+                targetOutboundTag = target,
+                priorityOutboundTag = text(PREF_URLTEST_PRIORITY, target),
+                excludeOutboundTag = text(PREF_URLTEST_EXCLUDE, ""),
+                url = url,
+                timeoutMillis = timeout,
+                concurrency = value(PREF_URLTEST_CONCURRENCY, 1).coerceIn(1, 4),
+                deadlineMillis = value(PREF_URLTEST_DEADLINE, timeout + 5_000)
+                    .coerceIn(timeout, 35_000),
+            )
+        }
+        return Presentation(
+            detailed = presentationPrefs.getBoolean(PREF_DETAILED, true),
+            trafficDisplayMode = when (text(PREF_TRAFFIC_DISPLAY_MODE, "speed")) {
+                "total" -> "total"
+                "both" -> "both"
+                else -> "speed"
+            },
+            title = text(PREF_TITLE, ""),
+            latencyMillis = if (presentationPrefs.contains(PREF_LATENCY)) {
+                presentationPrefs.getLong(PREF_LATENCY, -1L).takeIf { it >= 0L }
+            } else {
+                null
+            },
+            connectedText = text(PREF_CONNECTED_TEXT, "VPN подключён"),
+            checkingText = text(PREF_CHECKING_TEXT, "..."),
+            unavailableText = text(PREF_UNAVAILABLE_TEXT, "Пинг недоступен"),
+            refreshLabel = text(PREF_REFRESH_LABEL, "Проверить пинг"),
+            stopLabel = text(PREF_STOP_LABEL, "Остановить"),
+            urlTestRequest = request,
+        )
+    }
+
+    private fun persistPresentation(value: Presentation) {
+        val request = value.urlTestRequest
+        presentationPrefs.edit().apply {
+            putBoolean(PREF_DETAILED, value.detailed)
+            putString(PREF_TRAFFIC_DISPLAY_MODE, value.trafficDisplayMode)
+            putString(PREF_TITLE, value.title)
+            putString(PREF_CONNECTED_TEXT, value.connectedText)
+            putString(PREF_CHECKING_TEXT, value.checkingText)
+            putString(PREF_UNAVAILABLE_TEXT, value.unavailableText)
+            putString(PREF_REFRESH_LABEL, value.refreshLabel)
+            putString(PREF_STOP_LABEL, value.stopLabel)
+            if (value.latencyMillis == null) {
+                remove(PREF_LATENCY)
+            } else {
+                putLong(PREF_LATENCY, value.latencyMillis)
+            }
+            if (request == null) {
+                remove(PREF_URLTEST_GROUP)
+                remove(PREF_URLTEST_TARGET)
+                remove(PREF_URLTEST_PRIORITY)
+                remove(PREF_URLTEST_EXCLUDE)
+                remove(PREF_URLTEST_URL)
+                remove(PREF_URLTEST_TIMEOUT)
+                remove(PREF_URLTEST_CONCURRENCY)
+                remove(PREF_URLTEST_DEADLINE)
+            } else {
+                putString(PREF_URLTEST_GROUP, request.groupTag)
+                putString(PREF_URLTEST_TARGET, request.targetOutboundTag)
+                putString(PREF_URLTEST_PRIORITY, request.priorityOutboundTag)
+                putString(PREF_URLTEST_EXCLUDE, request.excludeOutboundTag)
+                putString(PREF_URLTEST_URL, request.url)
+                putInt(PREF_URLTEST_TIMEOUT, request.timeoutMillis)
+                putInt(PREF_URLTEST_CONCURRENCY, request.concurrency)
+                putInt(PREF_URLTEST_DEADLINE, request.deadlineMillis)
+            }
+            apply()
         }
     }
 
@@ -315,10 +476,12 @@ internal class MeowForegroundNotification(
     }
 
     private fun detailedContent(): String {
-        val traffic = if (trafficAvailable) {
-            "↓ ${formatRate(downlink)}  ↑ ${formatRate(uplink)}"
-        } else {
-            "↓ —  ↑ —"
+        val speed = "↓ ${formatRate(displayedDownlink)}  ↑ ${formatRate(displayedUplink)}"
+        val totals = "↓ ${formatBytes(downlinkTotal)}  ↑ ${formatBytes(uplinkTotal)}"
+        val traffic = when (presentation.trafficDisplayMode) {
+            "total" -> totals
+            "both" -> "$speed  ·  всего $totals"
+            else -> speed
         }
         val latency = when {
             latencyChecking -> presentation.checkingText
@@ -364,20 +527,23 @@ internal class MeowForegroundNotification(
         )
     }
 
-    private fun formatRate(bytesPerSecond: Long): String {
-        if (bytesPerSecond <= 0L) return "0 Б/с"
-        val units = arrayOf("Б/с", "КБ/с", "МБ/с", "ГБ/с")
-        var value = bytesPerSecond.toDouble()
+    private fun formatBytes(bytes: Long): String {
+        if (bytes <= 0L) return "0 Б"
+        val units = arrayOf("Б", "КБ", "МБ", "ГБ", "ТБ")
+        var value = bytes.toDouble()
         var index = 0
         while (value >= 1024.0 && index < units.lastIndex) {
             value /= 1024.0
             index++
         }
-        val formatted = if (value >= 100.0 || index == 0) {
-            value.toInt().toString()
-        } else {
-            "%.1f".format(java.util.Locale.US, value)
+        val precision = when {
+            value >= 100.0 || index == 0 -> 0
+            value >= 10.0 -> 1
+            else -> 2
         }
-        return "$formatted ${units[index]}"
+        return "%.${precision}f%s".format(java.util.Locale.US, value, units[index])
     }
+
+    private fun formatRate(bytesPerSecond: Long): String =
+        "${formatBytes(max(0L, bytesPerSecond))}/с"
 }

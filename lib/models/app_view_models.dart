@@ -247,7 +247,7 @@ class AppProxySummary {
   ]);
 }
 
-enum ProxySort { source, latency, name, country }
+enum ProxySort { source, latency, working, name, country }
 
 class TrafficSample {
   const TrafficSample({

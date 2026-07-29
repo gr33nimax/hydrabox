@@ -1736,12 +1736,22 @@ class _AppPickerSheetState extends State<_AppPickerSheet> {
   late final TextEditingController _searchController;
   late final Set<String> _selected;
   String _query = '';
+  List<_InstalledApp> _visibleApps = const <_InstalledApp>[];
 
   @override
   void initState() {
     super.initState();
     _searchController = TextEditingController();
     _selected = Set<String>.from(widget.initialSelected);
+    _rebuildVisibleApps();
+  }
+
+  @override
+  void didUpdateWidget(covariant _AppPickerSheet oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.apps, widget.apps)) {
+      _rebuildVisibleApps();
+    }
   }
 
   @override
@@ -1750,9 +1760,10 @@ class _AppPickerSheetState extends State<_AppPickerSheet> {
     super.dispose();
   }
 
-  List<_InstalledApp> _visibleApps() {
+  void _rebuildVisibleApps() {
     if (_query.isEmpty) {
-      return widget.apps;
+      _visibleApps = widget.apps;
+      return;
     }
     final search = _InstalledAppSearchQuery(_query);
     final scoredApps = widget.apps
@@ -1774,14 +1785,12 @@ class _AppPickerSheetState extends State<_AppPickerSheet> {
       }
       return a.index.compareTo(b.index);
     });
-    return scoredApps.map((entry) => entry.app).toList(growable: false);
+    _visibleApps = scoredApps.map((entry) => entry.app).toList(growable: false);
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final visibleApps = _visibleApps();
-
     return Padding(
       padding: EdgeInsets.only(
         left: 16,
@@ -1810,6 +1819,7 @@ class _AppPickerSheetState extends State<_AppPickerSheet> {
             onChanged: (value) {
               setState(() {
                 _query = value.trim();
+                _rebuildVisibleApps();
               });
             },
             decoration: InputDecoration(
@@ -1820,9 +1830,9 @@ class _AppPickerSheetState extends State<_AppPickerSheet> {
           const Gap(12),
           Expanded(
             child: ListView.builder(
-              itemCount: visibleApps.length,
+              itemCount: _visibleApps.length,
               itemBuilder: (context, index) {
-                final app = visibleApps[index];
+                final app = _visibleApps[index];
                 final selected = _selected.contains(app.packageName);
                 return CheckboxListTile(
                   value: selected,

@@ -18,6 +18,24 @@ void main() {
     expect(state.memoryLimitEnabled, isTrue);
     expect(state.memoryLimitWarningDismissed, isFalse);
     expect(state.statusNotificationEnabled, isTrue);
+    expect(
+      state.notificationTrafficDisplayMode,
+      NotificationTrafficDisplayMode.speed,
+    );
+  });
+
+  test('persists the selected notification traffic display mode', () {
+    final store = _TestSettingsStore();
+    final state = store.mapState(const <String, dynamic>{
+      'notification_traffic_display_mode': 'both',
+    });
+    final map = store.stateToMap(state);
+
+    expect(
+      state.notificationTrafficDisplayMode,
+      NotificationTrafficDisplayMode.both,
+    );
+    expect(map['notification_traffic_display_mode'], 'both');
   });
 
   test('migrates legacy aggressive performance mode to standard', () {
@@ -240,13 +258,13 @@ void main() {
 
   test('persists proxy sorting preference and normalizes unknown values', () {
     final store = _TestSettingsStore();
-    final latency = store.mapState(const <String, dynamic>{
-      'proxy_sort': 'latency',
+    final working = store.mapState(const <String, dynamic>{
+      'proxy_sort': 'working',
     });
 
-    expect(latency.proxySort, 'latency');
-    expect(store.stateToMap(latency)['proxy_sort'], 'latency');
-    expect(store.stateToSafeExportMap(latency)['proxy_sort'], 'latency');
+    expect(working.proxySort, 'working');
+    expect(store.stateToMap(working)['proxy_sort'], 'working');
+    expect(store.stateToSafeExportMap(working)['proxy_sort'], 'working');
     expect(
       store.mapState(const <String, dynamic>{'proxy_sort': 'broken'}).proxySort,
       'source',

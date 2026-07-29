@@ -53,8 +53,8 @@ class ProxyRuntimeVisualStore {
   final Map<String, ValueNotifier<ProxyRuntimeVisualState?>> _notifiers =
       <String, ValueNotifier<ProxyRuntimeVisualState?>>{};
   final ValueNotifier<int> _revision = ValueNotifier<int>(0);
-  Map<String, ProxyRuntimeVisualState> _states =
-      const <String, ProxyRuntimeVisualState>{};
+  final Map<String, ProxyRuntimeVisualState> _states =
+      <String, ProxyRuntimeVisualState>{};
 
   ValueListenable<int> get revision => _revision;
 
@@ -70,7 +70,9 @@ class ProxyRuntimeVisualStore {
       return;
     }
     final previousKeys = _states.keys.toSet();
-    _states = Map.unmodifiable(next);
+    _states
+      ..clear()
+      ..addAll(next);
     final changed = <String>{...previousKeys, ...next.keys};
     for (final tag in changed) {
       final notifier = _notifiers[tag];
@@ -91,6 +93,43 @@ class ProxyRuntimeVisualStore {
       _notifiers.remove(tag);
     }
     _revision.value++;
+  }
+
+  /// Applies a small runtime delta without rebuilding visual state for every
+  /// proxy. Network handovers commonly affect only the active route; replacing
+  /// thousands of cached rows on that event blocks the UI thread.
+  void updateTags(
+    Map<String, ProxyRuntimeVisualState?> updates, {
+    bool notifyRevision = true,
+  }) {
+    if (updates.isEmpty) {
+      return;
+    }
+    var changed = false;
+    for (final entry in updates.entries) {
+      final tag = entry.key.trim();
+      if (tag.isEmpty) {
+        continue;
+      }
+      final next = entry.value;
+      final previous = _states[tag];
+      if (previous == next && (next != null || !_states.containsKey(tag))) {
+        continue;
+      }
+      changed = true;
+      if (next == null) {
+        _states.remove(tag);
+      } else {
+        _states[tag] = next;
+      }
+      final notifier = _notifiers[tag];
+      if (notifier != null && notifier.value != next) {
+        notifier.value = next;
+      }
+    }
+    if (changed && notifyRevision) {
+      _revision.value++;
+    }
   }
 
   ProxyRuntimeVisualState? valueFor(String tag) => _states[tag];

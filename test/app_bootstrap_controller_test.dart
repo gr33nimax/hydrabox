@@ -76,6 +76,76 @@ void main() {
     expect(result.appVersionInfo.versionCode, 0);
     expect(result.coreCapabilities, same(LibboxCapabilities.bundledLegacy));
   });
+
+  test('disabled rule-set status is deferred until after bootstrap', () async {
+    var adBlockRequests = 0;
+    var russiaRouteRequests = 0;
+    final controller = AppBootstrapController(
+      fallbackClientVersionLabel: '0.3.0',
+      loadAppVersionInfo: () async => const AppVersionInfo(
+        packageName: '',
+        versionName: '0.3.0',
+        versionCode: 0,
+      ),
+      loadCoreCapabilities: () async => LibboxCapabilities.bundledLegacy,
+      loadAdBlockStatus: () async {
+        adBlockRequests++;
+        throw StateError('ad block status unavailable');
+      },
+      loadRussiaRouteStatus: () async {
+        russiaRouteRequests++;
+        throw StateError('russia route status unavailable');
+      },
+    );
+
+    final result = await controller.load(
+      providedStore: MemoryAppSettingsStore(),
+    );
+
+    expect(result.adBlockStatus.available, isFalse);
+    expect(result.russiaRouteDataStatus.available, isFalse);
+    expect(adBlockRequests, 0);
+    expect(russiaRouteRequests, 0);
+
+    await controller.loadDeferredStatuses();
+
+    expect(adBlockRequests, 1);
+    expect(russiaRouteRequests, 1);
+  });
+
+  test('enabled rule-set status remains in the safe startup path', () async {
+    var adBlockRequests = 0;
+    var russiaRouteRequests = 0;
+    final store = MemoryAppSettingsStore();
+    await store.saveState(
+      (await store.loadState()).copyWith(
+        adBlockEnabled: true,
+        useRussiaRouteData: true,
+      ),
+    );
+    final controller = AppBootstrapController(
+      fallbackClientVersionLabel: '0.3.0',
+      loadAppVersionInfo: () async => const AppVersionInfo(
+        packageName: '',
+        versionName: '0.3.0',
+        versionCode: 0,
+      ),
+      loadCoreCapabilities: () async => LibboxCapabilities.bundledLegacy,
+      loadAdBlockStatus: () async {
+        adBlockRequests++;
+        throw StateError('ad block status unavailable');
+      },
+      loadRussiaRouteStatus: () async {
+        russiaRouteRequests++;
+        throw StateError('russia route status unavailable');
+      },
+    );
+
+    await controller.load(providedStore: store);
+
+    expect(adBlockRequests, 1);
+    expect(russiaRouteRequests, 1);
+  });
 }
 
 class _FailingSettingsStore extends AppSettingsStore {

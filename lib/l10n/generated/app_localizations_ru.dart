@@ -101,10 +101,18 @@ class AppLocalizationsRu extends AppLocalizations {
   String get sortByLatency => 'По задержке';
 
   @override
+  String get sortByWorking => 'Только рабочие';
+
+  @override
   String get sortByName => 'По имени';
 
   @override
   String get sortByCountry => 'По стране';
+
+  @override
+  String subscriptionWorkingServersCount(int working, int checked) {
+    return 'Работают: $working из $checked проверенных';
+  }
 
   @override
   String get settingsTitle => 'Настройки';
@@ -271,11 +279,11 @@ class AppLocalizationsRu extends AppLocalizations {
       'MeowTeam — два разработчика, которые вместе развивают Etonify, ядро и сетевые компоненты как независимый открытый проект.';
 
   @override
-  String get teamTimelineForkTitle => 'Старт с форка Hiddify';
+  String get teamTimelineForkTitle => 'Ранняя разработка клиента';
 
   @override
   String get teamTimelineForkBody =>
-      'Первые версии унаследовали интерфейс и большой legacy-код Hiddify. Несколько тестовых релизов помогли понять, что именно нужно менять.';
+      'Первые тестовые версии помогли определить Android runtime, работу с подписками, диагностику и интерфейс, которые теперь поддерживает Etonify.';
 
   @override
   String get teamTimelineRefactorTitle => 'Большой рефактор';
@@ -759,6 +767,22 @@ class AppLocalizationsRu extends AppLocalizations {
   @override
   String get statusNotificationSubtitle =>
       'Показывает выбранный сервер, скорость и пинг при активном VPN.';
+
+  @override
+  String get notificationTrafficDisplayTitle => 'Что показывать в уведомлении';
+
+  @override
+  String get notificationTrafficDisplaySubtitle =>
+      'Скорость, общий объём или оба значения.';
+
+  @override
+  String get notificationTrafficDisplaySpeed => 'Текущая скорость';
+
+  @override
+  String get notificationTrafficDisplayTotal => 'Всего передано';
+
+  @override
+  String get notificationTrafficDisplayBoth => 'Скорость и общий объём';
 
   @override
   String get notificationConnected => 'VPN подключён';

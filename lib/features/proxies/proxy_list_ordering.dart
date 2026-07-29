@@ -46,7 +46,27 @@ int compareProxySummaries(
       aState: runtimeStateFor?.call(a.tag),
       bState: runtimeStateFor?.call(b.tag),
     ),
+    ProxySort.working => _compareLatency(
+      a,
+      b,
+      aState: runtimeStateFor?.call(a.tag),
+      bState: runtimeStateFor?.call(b.tag),
+    ),
   };
+}
+
+/// The "working only" mode deliberately hides only a server that URLTest has
+/// confirmed as unavailable. Untested and in-progress rows stay visible, so a
+/// newly imported subscription never looks empty before its first check.
+bool shouldShowProxyForSort(
+  AppProxySummary proxy,
+  ProxySort sort, {
+  ProxyRuntimeVisualState? runtimeState,
+}) {
+  if (sort != ProxySort.working) {
+    return true;
+  }
+  return !(runtimeState?.latencyUnavailable ?? proxy.latencyUnavailable);
 }
 
 int _compareLatency(

@@ -268,10 +268,20 @@ object SingboxController {
             downlink = message.downlink
             uplinkTotal = message.uplinkTotal
             downlinkTotal = message.downlinkTotal
-            trafficAvailable = message.trafficAvailable
+            // Some libbox builds briefly report trafficAvailable=false while
+            // their cumulative counters are already populated. Treat a
+            // non-zero rate or total as authoritative so the foreground
+            // notification never regresses to an empty traffic state.
+            trafficAvailable = message.trafficAvailable ||
+                uplink > 0L ||
+                downlink > 0L ||
+                uplinkTotal > 0L ||
+                downlinkTotal > 0L
             MeowBoxService.publishNotificationTraffic(
                 uplink = uplink,
                 downlink = downlink,
+                uplinkTotal = uplinkTotal,
+                downlinkTotal = downlinkTotal,
                 trafficAvailable = trafficAvailable,
             )
             emitCoalescedStatus(
@@ -366,7 +376,15 @@ object SingboxController {
             return
         }
         MeowDiagnostics.log(TAG, "runtime event sink detached registration=$registration")
-        disconnectClient()
+        // The command stream is also the source of native foreground-service
+        // telemetry. Do not stop it just because Flutter is detached: the VPN
+        // notification must continue receiving traffic totals and a refresh
+        // action must still be able to receive its URLTest result.
+        if (running) {
+            connectClient()
+        } else {
+            disconnectClient()
+        }
     }
 
     fun setRunning(value: Boolean, mode: String = serviceMode, error: String? = null) {
@@ -383,9 +401,9 @@ object SingboxController {
         emitCurrentState(error)
         emitCurrentStatus()
         if (value) {
-            if (eventSink != null && uiForeground) {
-                connectClient()
-            }
+            // Keep the native stream alive with the foreground VPN service.
+            // Flutter may be paused or completely detached in the background.
+            connectClient()
         } else {
             disconnectClient()
         }
@@ -405,14 +423,12 @@ object SingboxController {
             TAG,
             "ui foreground=$value changed=$changed registration=$registration running=$running",
         )
-        if (!value) {
-            disconnectClient()
-            return
-        }
-        if (running && eventSink != null) {
+        if (value && running && eventSink != null) {
             emitCurrentState()
             emitCurrentStatus()
             emitCurrentGroups()
+        }
+        if (running) {
             connectClient()
         }
     }
@@ -574,8 +590,10 @@ object SingboxController {
         }
     }
 
-    private fun shouldCommandClientBeConnected(): Boolean =
-        running && uiForeground && eventSink != null
+    // CommandStatus is consumed by the native foreground-service notification,
+    // not only by Flutter. Its lifetime therefore follows the VPN runtime,
+    // rather than Activity visibility or the EventChannel subscription.
+    private fun shouldCommandClientBeConnected(): Boolean = running
 
     private fun handleCommandClientConnected(epoch: Long) {
         if (!commandClientLifecycle.onConnected(epoch)) {

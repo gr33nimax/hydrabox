@@ -29,6 +29,21 @@ void main() {
     expect(controller.statusNotificationEnabled, isFalse);
   });
 
+  test('notification traffic display can change without a config rebuild', () {
+    final controller = AppSettingsController();
+
+    final change = controller.setNotificationTrafficDisplayMode(
+      NotificationTrafficDisplayMode.both,
+    );
+
+    expect(change.changed, isTrue);
+    expect(change.configReason, isNull);
+    expect(
+      controller.notificationTrafficDisplayMode,
+      NotificationTrafficDisplayMode.both,
+    );
+  });
+
   test('DNS preset updates resolver together with preset', () {
     final controller = AppSettingsController();
 
@@ -151,10 +166,10 @@ void main() {
   test('proxy sorting changes persist without restarting runtime', () {
     final controller = AppSettingsController();
 
-    final change = controller.setProxySort('latency');
+    final change = controller.setProxySort('working');
 
     expect(change.changed, isTrue);
     expect(change.restartRuntime, isFalse);
-    expect(controller.proxySort, 'latency');
+    expect(controller.proxySort, 'working');
   });
 }

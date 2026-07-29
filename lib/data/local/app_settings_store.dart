@@ -20,6 +20,8 @@ enum AppPerformanceMode { standard, economy, balanced, performance }
 
 enum AppUpdateInstallMode { ask, manual, auto }
 
+enum NotificationTrafficDisplayMode { speed, total, both }
+
 enum TlsFragmentationMode { disabled, record, fragment }
 
 const int maxSplitRoutingPackageCount = 128;
@@ -141,6 +143,7 @@ class AppSettingsState {
     required this.accentColorHex,
     required this.hapticEnabled,
     this.statusNotificationEnabled = true,
+    this.notificationTrafficDisplayMode = NotificationTrafficDisplayMode.speed,
     required this.hideServerIp,
     required this.progressiveBlurEnabled,
     this.progressiveBlurConfigured = false,
@@ -198,6 +201,7 @@ class AppSettingsState {
   final String accentColorHex; // e.g. "2D5BFF" or "default"
   final bool hapticEnabled;
   final bool statusNotificationEnabled;
+  final NotificationTrafficDisplayMode notificationTrafficDisplayMode;
   final bool hideServerIp;
   final bool progressiveBlurEnabled;
   final bool progressiveBlurConfigured;
@@ -255,6 +259,7 @@ class AppSettingsState {
     String? accentColorHex,
     bool? hapticEnabled,
     bool? statusNotificationEnabled,
+    NotificationTrafficDisplayMode? notificationTrafficDisplayMode,
     bool? hideServerIp,
     bool? progressiveBlurEnabled,
     bool? progressiveBlurConfigured,
@@ -315,6 +320,8 @@ class AppSettingsState {
       hapticEnabled: hapticEnabled ?? this.hapticEnabled,
       statusNotificationEnabled:
           statusNotificationEnabled ?? this.statusNotificationEnabled,
+      notificationTrafficDisplayMode:
+          notificationTrafficDisplayMode ?? this.notificationTrafficDisplayMode,
       hideServerIp: hideServerIp ?? this.hideServerIp,
       progressiveBlurEnabled:
           progressiveBlurEnabled ?? this.progressiveBlurEnabled,
@@ -398,6 +405,8 @@ abstract class AppSettingsStore {
   static const _accentColorHexKey = 'accent_color_hex';
   static const _hapticEnabledKey = 'haptic_enabled';
   static const _statusNotificationEnabledKey = 'status_notification_enabled';
+  static const _notificationTrafficDisplayModeKey =
+      'notification_traffic_display_mode';
   static const _hideServerIpKey = 'hide_server_ip';
   static const _progressiveBlurEnabledKey = 'progressive_blur_enabled';
   static const _performanceModeKey = 'performance_mode';
@@ -458,6 +467,7 @@ abstract class AppSettingsStore {
     _accentColorHexKey,
     _hapticEnabledKey,
     _statusNotificationEnabledKey,
+    _notificationTrafficDisplayModeKey,
     _hideServerIpKey,
     _proxySortKey,
     _performanceModeKey,
@@ -586,6 +596,7 @@ abstract class AppSettingsStore {
       selectedProxyTag: map[_selectedProxyTagKey] ?? '',
       proxySort: switch (map[_proxySortKey]?.toString()) {
         'latency' => 'latency',
+        'working' => 'working',
         'name' => 'name',
         'country' => 'country',
         _ => 'source',
@@ -604,6 +615,12 @@ abstract class AppSettingsStore {
         _statusNotificationEnabledKey,
         defaultValue: true,
       ),
+      notificationTrafficDisplayMode:
+          switch (map[_notificationTrafficDisplayModeKey]) {
+            'total' => NotificationTrafficDisplayMode.total,
+            'both' => NotificationTrafficDisplayMode.both,
+            _ => NotificationTrafficDisplayMode.speed,
+          },
       hideServerIp: boolValue(_hideServerIpKey, defaultValue: false),
       progressiveBlurEnabled: boolValue(
         _progressiveBlurEnabledKey,
@@ -778,6 +795,8 @@ abstract class AppSettingsStore {
       _statusNotificationEnabledKey: state.statusNotificationEnabled
           ? '1'
           : '0',
+      _notificationTrafficDisplayModeKey:
+          state.notificationTrafficDisplayMode.name,
       _hideServerIpKey: state.hideServerIp ? '1' : '0',
       _progressiveBlurEnabledKey: state.progressiveBlurEnabled ? '1' : '0',
       _performanceModeKey: state.performanceMode.name,

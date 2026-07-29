@@ -136,11 +136,29 @@ class ProxyRuntimeController {
   /// Drops measurements that belong to a previous Android network while
   /// keeping selector choices intact. Until fresh URLTest telemetry arrives,
   /// callers must not fall back to the persisted ping for these tags.
-  bool invalidateNetworkMeasurements(Iterable<String> tags) {
+  bool invalidateNetworkMeasurements(
+    Iterable<String> tags, {
+    bool preserveUnrelatedMeasurements = false,
+  }) {
     final nextInvalidatedTags = tags
         .map((tag) => tag.trim())
         .where((tag) => tag.isNotEmpty)
         .toSet();
+    if (preserveUnrelatedMeasurements) {
+      var changed = false;
+      for (final tag in nextInvalidatedTags) {
+        changed = runtimeLatencies.remove(tag) != null || changed;
+        changed = runtimeLatencyTimes.remove(tag) != null || changed;
+        changed = unavailableLatencyTags.remove(tag) || changed;
+        changed = latencyErrors.remove(tag) != null || changed;
+        changed = latencyFailureCounts.remove(tag) != null || changed;
+        changed = invalidatedLatencyTags.add(tag) || changed;
+      }
+      if (nextInvalidatedTags.contains(runtimeLowestOutboundTag)) {
+        lowestLatency = null;
+      }
+      return changed;
+    }
     final changed =
         runtimeLatencies.isNotEmpty ||
         runtimeLatencyTimes.isNotEmpty ||

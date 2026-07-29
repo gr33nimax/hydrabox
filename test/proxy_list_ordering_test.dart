@@ -16,6 +16,7 @@ void main() {
   test('primary lowest stays pinned for every interactive sort', () {
     for (final sort in const [
       ProxySort.latency,
+      ProxySort.working,
       ProxySort.name,
       ProxySort.country,
     ]) {
@@ -107,6 +108,38 @@ void main() {
     );
 
     expect(items.map((item) => item.tag), ['stale', 'old-fast']);
+  });
+
+  test('working-only mode hides only confirmed unavailable servers', () {
+    final items = [
+      _proxy('healthy', 'Healthy', latency: 50, fresh: true),
+      _proxy('checking', 'Checking', checking: true),
+      _proxy('failed', 'Failed', unavailable: true),
+    ];
+
+    final visible = items
+        .where((item) => shouldShowProxyForSort(item, ProxySort.working))
+        .toList(growable: false);
+    sortProxySummaries(visible, ProxySort.working, keepPinnedFirst: false);
+
+    expect(visible.map((item) => item.tag), ['healthy', 'checking']);
+  });
+
+  test('working-only mode immediately restores a later successful server', () {
+    final proxy = _proxy('recovering', 'Recovering', unavailable: true);
+
+    expect(shouldShowProxyForSort(proxy, ProxySort.working), isFalse);
+    expect(
+      shouldShowProxyForSort(
+        proxy,
+        ProxySort.working,
+        runtimeState: const ProxyRuntimeVisualState(
+          latency: 34,
+          latencyFresh: true,
+        ),
+      ),
+      isTrue,
+    );
   });
 }
 

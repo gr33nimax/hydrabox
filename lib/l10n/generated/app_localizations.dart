@@ -278,6 +278,12 @@ abstract class AppLocalizations {
   /// **'By latency'**
   String get sortByLatency;
 
+  /// No description provided for @sortByWorking.
+  ///
+  /// In en, this message translates to:
+  /// **'Working only'**
+  String get sortByWorking;
+
   /// No description provided for @sortByName.
   ///
   /// In en, this message translates to:
@@ -289,6 +295,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'By country'**
   String get sortByCountry;
+
+  /// No description provided for @subscriptionWorkingServersCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Working: {working} of {checked} checked'**
+  String subscriptionWorkingServersCount(int working, int checked);
 
   /// No description provided for @settingsTitle.
   ///
@@ -587,13 +599,13 @@ abstract class AppLocalizations {
   /// No description provided for @teamTimelineForkTitle.
   ///
   /// In en, this message translates to:
-  /// **'Started as a Hiddify fork'**
+  /// **'Early client development'**
   String get teamTimelineForkTitle;
 
   /// No description provided for @teamTimelineForkBody.
   ///
   /// In en, this message translates to:
-  /// **'The early client inherited the UI and a large legacy codebase from Hiddify. A few test versions helped us understand what had to change.'**
+  /// **'Early test versions helped define the Android runtime, subscription handling, diagnostics, and interface that Etonify now maintains.'**
   String get teamTimelineForkBody;
 
   /// No description provided for @teamTimelineRefactorTitle.
@@ -1447,6 +1459,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Shows the selected server, speed, and latency while VPN is active.'**
   String get statusNotificationSubtitle;
+
+  /// No description provided for @notificationTrafficDisplayTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'What to show in notification'**
+  String get notificationTrafficDisplayTitle;
+
+  /// No description provided for @notificationTrafficDisplaySubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Current speed, total transferred, or both.'**
+  String get notificationTrafficDisplaySubtitle;
+
+  /// No description provided for @notificationTrafficDisplaySpeed.
+  ///
+  /// In en, this message translates to:
+  /// **'Current speed'**
+  String get notificationTrafficDisplaySpeed;
+
+  /// No description provided for @notificationTrafficDisplayTotal.
+  ///
+  /// In en, this message translates to:
+  /// **'Total transferred'**
+  String get notificationTrafficDisplayTotal;
+
+  /// No description provided for @notificationTrafficDisplayBoth.
+  ///
+  /// In en, this message translates to:
+  /// **'Speed and total'**
+  String get notificationTrafficDisplayBoth;
 
   /// No description provided for @notificationConnected.
   ///

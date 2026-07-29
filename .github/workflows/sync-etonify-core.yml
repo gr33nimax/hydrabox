@@ -1,0 +1,209 @@
+name: Etonify · Sync libbox from core
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - etonify-core
+      - .github/workflows/sync-etonify-core.yml
+  workflow_dispatch:
+    inputs:
+      expected_core_version:
+        description: "Optional exact core version, for example v1.13.15-etonify.1"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-etonify-core-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GO_VERSION: "1.25.12"
+  JAVA_VERSION: "17"
+  ANDROID_NDK_VERSION: "r28"
+
+jobs:
+  sync-libbox:
+    name: Build and commit verified libbox
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+
+    steps:
+      - name: Checkout Etonify and pinned core source
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Read and validate core metadata
+        id: core_metadata
+        shell: bash
+        env:
+          EXPECTED_CORE_VERSION: ${{ inputs.expected_core_version }}
+        run: |
+          set -euo pipefail
+          cd etonify-core
+          workflow_go_version="$GO_VERSION"
+          workflow_java_version="$JAVA_VERSION"
+          workflow_ndk_version="$ANDROID_NDK_VERSION"
+          bash release/verify_etonify_baseline.sh
+          source release/ETONIFY_BASELINE
+
+          if [ "$GO_VERSION" != "$workflow_go_version" ] || \
+             [ "$JAVA_VERSION" != "$workflow_java_version" ] || \
+             [ "$ANDROID_NDK_VERSION" != "$workflow_ndk_version" ]; then
+            echo "::error title=Workflow toolchain mismatch::Update this workflow when release/ETONIFY_BASELINE changes Go, Java or Android NDK."
+            exit 1
+          fi
+
+          core_version="$(tr -d '\r\n' < release/ETONIFY_VERSION)"
+          if ! [[ "$core_version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-etonify\.[0-9]+$ ]]; then
+            echo "::error title=Invalid Etonify core version::Expected vX.Y.Z-etonify.N, got '$core_version'"
+            exit 1
+          fi
+          if [ -n "$EXPECTED_CORE_VERSION" ] && [ "$EXPECTED_CORE_VERSION" != "$core_version" ]; then
+            echo "::error title=Core version mismatch::Expected $EXPECTED_CORE_VERSION, core source declares $core_version"
+            exit 1
+          fi
+
+          source_commit="$(git rev-parse HEAD)"
+          source_version="$(git describe --tags --always --dirty)"
+          echo "version=$core_version" >> "$GITHUB_OUTPUT"
+          echo "commit=$source_commit" >> "$GITHUB_OUTPUT"
+          echo "source_version=$source_version" >> "$GITHUB_OUTPUT"
+          echo "Building $core_version from $source_commit"
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: etonify-core/go.sum
+
+      - name: Set up OpenJDK
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Android NDK
+        id: setup_ndk
+        uses: nttld/setup-ndk@ed92fe6cadad69be94a966a7ee3271275e62f779 # v1.6.0
+        with:
+          ndk-version: ${{ env.ANDROID_NDK_VERSION }}
+
+      - name: Test core source
+        working-directory: etonify-core
+        run: go test ./...
+
+      - name: Build libbox and sources
+        working-directory: etonify-core
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup_ndk.outputs.ndk-path }}
+        run: |
+          set -euo pipefail
+          make lib_install
+          export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
+          make lib_android
+          test -s libbox.aar
+          test -s libbox-sources.jar
+
+      - name: Replace bundled libbox artifacts
+        shell: bash
+        env:
+          CORE_VERSION: ${{ steps.core_metadata.outputs.version }}
+          CORE_COMMIT: ${{ steps.core_metadata.outputs.commit }}
+          CORE_SOURCE_VERSION: ${{ steps.core_metadata.outputs.source_version }}
+        run: |
+          set -euo pipefail
+          source etonify-core/release/ETONIFY_BASELINE
+
+          libs="android/app/libs"
+          mkdir -p "$libs"
+          cp etonify-core/libbox.aar "$libs/libbox.aar"
+          cp etonify-core/libbox-sources.jar "$libs/libbox-sources.jar"
+          sha256sum "$libs/libbox.aar" > "$libs/libbox.sha256"
+
+          export LIBBOX_SHA256="$(sha256sum "$libs/libbox.aar" | awk '{print $1}')"
+          export CORE_VERSION CORE_COMMIT CORE_SOURCE_VERSION
+          export UPSTREAM_COMMIT GOMOBILE_VERSION ANDROID_NDK_VERSION
+          export LIBBOX_ANDROID_API LIBBOX_BUILD_TAGS
+          export GO_ACTUAL="$(go version)"
+          export JAVA_ACTUAL="$(java --version 2>&1 | head -n 1)"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          provenance = {
+              "artifact": "libbox.aar",
+              "sha256": os.environ["LIBBOX_SHA256"],
+              "source_commit": os.environ["CORE_COMMIT"],
+              "source_version": os.environ["CORE_SOURCE_VERSION"],
+              "etonify_version": os.environ["CORE_VERSION"],
+              "upstream_commit": os.environ["UPSTREAM_COMMIT"],
+              "go": os.environ["GO_ACTUAL"],
+              "gomobile": os.environ["GOMOBILE_VERSION"],
+              "java": os.environ["JAVA_ACTUAL"],
+              "android_ndk": os.environ["ANDROID_NDK_VERSION"],
+              "android_api": int(os.environ["LIBBOX_ANDROID_API"]),
+              "build_tags": os.environ["LIBBOX_BUILD_TAGS"],
+          }
+          Path("android/app/libs/libbox.provenance.json").write_text(
+              json.dumps(provenance, ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Verify bundled artifacts
+        run: python3 scripts/verify_libbox.py
+
+      - name: Upload built libbox for inspection
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: etonify-libbox-${{ steps.core_metadata.outputs.version }}-${{ github.run_number }}
+          path: |
+            android/app/libs/libbox.aar
+            android/app/libs/libbox.provenance.json
+            android/app/libs/libbox.sha256
+            android/app/libs/libbox-sources.jar
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Commit verified core update
+        shell: bash
+        env:
+          CORE_VERSION: ${{ steps.core_metadata.outputs.version }}
+        run: |
+          set -euo pipefail
+          git add \
+            android/app/libs/libbox.aar \
+            android/app/libs/libbox.provenance.json \
+            android/app/libs/libbox.sha256 \
+            android/app/libs/libbox-sources.jar
+
+          if git diff --cached --quiet; then
+            echo "Bundled libbox is already up to date."
+            exit 0
+          fi
+
+          expected_files="$(printf '%s\n' \
+            android/app/libs/libbox.aar \
+            android/app/libs/libbox.provenance.json \
+            android/app/libs/libbox.sha256 \
+            android/app/libs/libbox-sources.jar | sort)"
+          changed_files="$(git diff --cached --name-only | sort)"
+          if [ "$changed_files" != "$expected_files" ]; then
+            echo "::error title=Unexpected files staged::The workflow may only update the four bundled libbox artifacts."
+            git diff --cached --name-only
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "build(core): update libbox to ${CORE_VERSION}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"

@@ -37,4 +37,24 @@ void main() {
 
     expect(listenable.value?.networkUnavailable, isTrue);
   });
+
+  test('small visual updates do not force a global resort revision', () {
+    final store = ProxyRuntimeVisualStore();
+    addTearDown(store.dispose);
+    final active = store.listenableFor('active');
+    store.replaceAll(const {
+      'active': ProxyRuntimeVisualState(latency: 120),
+      'other': ProxyRuntimeVisualState(latency: 80),
+    });
+    final revisionBefore = store.revision.value;
+
+    store.updateTags(
+      const {'active': ProxyRuntimeVisualState()},
+      notifyRevision: false,
+    );
+
+    expect(active.value?.latency, isNull);
+    expect(store.valueFor('other')?.latency, 80);
+    expect(store.revision.value, revisionBefore);
+  });
 }

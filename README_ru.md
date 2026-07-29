@@ -8,14 +8,14 @@
 
 [![Android](https://img.shields.io/badge/platform-Android-3DDC84?style=flat-square&logo=android)](#)
 [![Flutter](https://img.shields.io/badge/built%20with-Flutter-02569B?style=flat-square&logo=flutter)](#)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square)](LICENSE)
+[![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue?style=flat-square)](LICENSE)
 [![Telegram](https://img.shields.io/badge/Telegram-@etonify-26A5E4?style=flat-square&logo=telegram)](https://t.me/etonify)
 
 **Android-first VPN-клиент с открытым исходным кодом на базе модифицированного sing-box.**
 
 </div>
 
-Etonify — Android-ориентированный VPN-клиент для людей, которым нужен прозрачный, поддерживаемый и открытый клиент вместо устаревших или закрытых решений. Проект начинался в ветке идей вокруг Hiddify, но Android runtime, работа с подписками, интерфейс, диагностика и сопровождение постепенно перестраиваются вокруг Etonify и [**yamixdev/etonify-core**](https://github.com/yamixdev/etonify-core/tree/etonify-dev) — стабильной базы sing-box с изменениями специально для клиента.
+Etonify — Android-ориентированный VPN-клиент для людей, которым нужен прозрачный, поддерживаемый и открытый клиент вместо устаревших или закрытых решений. Android runtime, работа с подписками, интерфейс, диагностика и сопровождение развиваются вокруг Etonify и [**yamixdev/etonify-core**](https://github.com/yamixdev/etonify-core/tree/etonify-dev) — стабильной базы sing-box с изменениями специально для клиента.
 
 Приложение не предоставляет VPN-серверы. Это клиент для подписок и конфигураций, которыми вы владеете или которые имеете право использовать.
 
@@ -82,9 +82,9 @@ adb install -r build\app\outputs\flutter-apk\app-release.apk
 - `libbox.aar` остаётся как есть, пока совместимость sing-box API не проверяется отдельно.
 - Сгенерированные файлы локализации в `lib/l10n/generated` хранятся в исходниках, потому что приложение импортирует их напрямую.
 - `third_party/flutter_circle_flags` нужен как local path dependency из `pubspec.yaml`.
-- Заметки по сторонним компонентам и происхождению проекта указаны в [NOTICE.md](NOTICE.md).
+- Заметки по сторонним компонентам указаны в [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 - Официальные release-сборки могут включать приватные Happ crypto compatibility assets, восстановленные из GitHub Actions secrets. Эти assets не входят в публичное дерево исходников.
 
 ## Лицензия
 
-Etonify распространяется под [Apache License 2.0](LICENSE).
+Etonify распространяется под [GNU General Public License v3.0 или новее](LICENSE). Сведения о сторонних и адаптированных компонентах — в [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
