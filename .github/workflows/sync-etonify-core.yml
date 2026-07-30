@@ -157,7 +157,7 @@ jobs:
         working-directory: etonify-core
         env:
           LIBBOX_BUILD_TAGS: ${{ steps.android_build.outputs.tags }}
-        run: go test -tags "$LIBBOX_BUILD_TAGS" ./...
+        run: go test -ldflags "$(cat release/LDFLAGS)" -tags "$LIBBOX_BUILD_TAGS" ./...
 
       - name: Build libbox and sources
         working-directory: etonify-core
