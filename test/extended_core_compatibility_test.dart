@@ -992,7 +992,7 @@ PersistentKeepalive = 25
         },
       ],
     });
-    final parsed = SubscriptionParser.parse(source).single;
+    final parsed = SubscriptionParser.parse(source).outbounds.single;
 
     expect(parsed['_etonify_source_section'], 'endpoints');
     expect(parsed['address'], ['10.0.0.2/32']);
@@ -1040,7 +1040,7 @@ PersistentKeepalive = 25
             },
           ],
         }),
-      ).single;
+      ).outbounds.single;
 
       expect((parsed['peers'] as List).single['reserved'], [1, 2, 3]);
       expect(
