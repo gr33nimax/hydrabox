@@ -1,0 +1,109 @@
+name: Etonify · Test APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-test-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: "3.44.7"
+  JAVA_VERSION: "21"
+
+jobs:
+  build-test-apk:
+    name: Build debug-signed release APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          submodules: true
+
+      - name: Fetch verified libbox release asset
+        run: python3 -B scripts/fetch_libbox.py
+
+      - name: Verify pinned libbox binary
+        run: python3 -B scripts/verify_libbox.py
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5.6.0
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Show tool versions
+        run: |
+          java -version
+          flutter --version
+          dart --version
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate localization
+        run: flutter gen-l10n
+
+      - name: Generate Pigeon bindings
+        shell: bash
+        run: |
+          if [ -f pigeons/singbox_api.dart ]; then
+            dart run pigeon --input pigeons/singbox_api.dart
+          else
+            echo "No Pigeon schema found; skipping."
+          fi
+
+      - name: Build test APK
+        shell: bash
+        env:
+          MEOW_ALLOW_DEBUG_RELEASE_SIGNING: "true"
+        run: |
+          version="$(awk -F': ' '/^version:/ {print $2; exit}' pubspec.yaml | cut -d+ -f1)"
+          if [ -z "$version" ]; then
+            echo "::error title=Missing version::Could not read the version from pubspec.yaml"
+            exit 1
+          fi
+
+          mkdir -p build/test-apks
+          flutter build apk --release
+          cp build/app/outputs/flutter-apk/app-release.apk \
+            "build/test-apks/etonify-v${version}-TEST-DEBUG-SIGNED-NOT-FOR-RELEASE.apk"
+
+          sha256sum build/test-apks/*.apk > build/test-apks/SHA256SUMS.txt
+          {
+            echo "TEST BUILD — NOT FOR DISTRIBUTION"
+            echo "Source commit: ${GITHUB_SHA}"
+            echo "Version: ${version}"
+            echo "Build mode: Flutter release"
+            echo "Signing: Android debug certificate"
+            echo "Private Happ Crypto assets: not included"
+            echo "Libbox SHA-256: $(cut -d' ' -f1 android/app/libs/libbox.sha256)"
+          } > build/test-apks/BUILD-INFO.txt
+
+      - name: List APK outputs
+        run: |
+          ls -lah build/test-apks
+          cat build/test-apks/SHA256SUMS.txt
+          cat build/test-apks/BUILD-INFO.txt
+
+      - name: Upload test APK artifact
+        uses: actions/upload-artifact@v6.0.0
+        with:
+          name: etonify-test-apks-${{ github.run_number }}
+          path: build/test-apks/**
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
