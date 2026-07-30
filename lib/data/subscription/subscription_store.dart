@@ -565,7 +565,8 @@ class SubscriptionStore {
       );
       _throwIfImportCancelled(isCancelled);
       final outbounds = payload.outbounds;
-      if (!_hasUsableOutbounds(outbounds)) {
+      if (!_hasUsableOutbounds(outbounds) &&
+          !_allowsEmptySelectableEntries(result.parseResult)) {
         throw const SubscriptionContentException(
           SubscriptionContentFailureKind.noUsableProxies,
         );
@@ -684,7 +685,8 @@ class SubscriptionStore {
     );
     _throwIfImportCancelled(isCancelled);
     final outbounds = payload.outbounds;
-    if (!_hasUsableOutbounds(outbounds)) {
+    if (!_hasUsableOutbounds(outbounds) &&
+        !_allowsEmptySelectableEntries(parseResult)) {
       throw const SubscriptionContentException(
         SubscriptionContentFailureKind.noUsableProxies,
       );
@@ -781,7 +783,8 @@ class SubscriptionStore {
       'subscription refresh',
     );
     final outbounds = payload.outbounds;
-    if (!_hasUsableOutbounds(outbounds)) {
+    if (!_hasUsableOutbounds(outbounds) &&
+        !_allowsEmptySelectableEntries(result.parseResult)) {
       throw const SubscriptionContentException(
         SubscriptionContentFailureKind.noUsableProxies,
       );
@@ -854,7 +857,8 @@ class SubscriptionStore {
     }
 
     final parseResult = await SubscriptionParser.parseInBackground(rawContent);
-    if (parseResult.outbounds.isEmpty) {
+    if (parseResult.outbounds.isEmpty &&
+        !_allowsEmptySelectableEntries(parseResult)) {
       throw const SubscriptionContentException(
         SubscriptionContentFailureKind.noUsableProxies,
       );
@@ -868,7 +872,8 @@ class SubscriptionStore {
       ),
     );
     final reparsedOutbounds = payload.outbounds;
-    if (!_hasUsableOutbounds(reparsedOutbounds)) {
+    if (!_hasUsableOutbounds(reparsedOutbounds) &&
+        !_allowsEmptySelectableEntries(parseResult)) {
       throw const SubscriptionContentException(
         SubscriptionContentFailureKind.noUsableProxies,
       );
@@ -995,6 +1000,13 @@ class SubscriptionStore {
     );
   }
 
+  static bool _allowsEmptySelectableEntries(ParseResult parseResult) {
+    // A complete sing-box document can be intentionally inbound-, service-,
+    // provider- or DNS-only. Its raw payload is still consumed by the runtime
+    // builder even though there is no app-selectable outbound to materialize.
+    return parseResult.format == SubscriptionFormat.singboxConfig;
+  }
+
   /// Converts parsed outbound configs into [Outbound] model objects.
   static List<Outbound> _buildOutbounds(
     List<Map<String, dynamic>> parsedConfigs,
@@ -1075,6 +1087,10 @@ class SubscriptionStore {
       final detourSourceTag =
           config.remove('_detour_source_tag')?.toString().trim() ?? '';
       config.remove('_source_profile_name');
+      final coreSourceSection =
+          config['_etonify_source_section']?.toString().trim() ?? '';
+      final originalCoreTag =
+          config['_etonify_original_tag']?.toString().trim() ?? '';
       final countryOverride = _normalizeCountryCode(
         config.remove('_country_override')?.toString(),
       );
@@ -1089,13 +1105,25 @@ class SubscriptionStore {
 
       // Generate a unique tag
       final type = (config['type'] ?? 'proxy') as String;
-      var tag = '$type-$i';
-      // Try to use name-based tag
-      final sanitized = _sanitizeTag(name);
-      if (sanitized.isNotEmpty &&
-          !usedTags.contains(sanitized) &&
-          !isReservedProxyTag(sanitized)) {
-        tag = sanitized;
+      var tag = _uniqueGeneratedTag('$type-$i', usedTags);
+      final isCoreConfigEntry =
+          coreSourceSection == 'outbounds' || coreSourceSection == 'endpoints';
+      if (isCoreConfigEntry &&
+          originalCoreTag.isNotEmpty &&
+          !usedTags.contains(originalCoreTag) &&
+          !isReservedProxyTag(originalCoreTag)) {
+        // Cross-references in full sing-box configs are tag-based. Keep the
+        // exact native tag whenever it does not collide with app-owned tags.
+        tag = originalCoreTag;
+      } else {
+        // Try to use name-based tag for link/Clash/Xray imports and as a safe
+        // collision fallback for full core configs.
+        final sanitized = _sanitizeTag(name);
+        if (sanitized.isNotEmpty &&
+            !usedTags.contains(sanitized) &&
+            !isReservedProxyTag(sanitized)) {
+          tag = sanitized;
+        }
       }
       usedTags.add(tag);
       if (sourceTag.isNotEmpty) {
@@ -1200,6 +1228,16 @@ class SubscriptionStore {
       groups: groups.map((entry) => entry.toMap()).toList(growable: false),
       warnings: warnings,
     );
+  }
+
+  static String _uniqueGeneratedTag(String candidate, Set<String> usedTags) {
+    var tag = candidate;
+    var suffix = 2;
+    while (usedTags.contains(tag) || isReservedProxyTag(tag)) {
+      tag = '$candidate-$suffix';
+      suffix++;
+    }
+    return tag;
   }
 
   static Map<String, List<String>> _mergeSourceTagScopes(

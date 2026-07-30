@@ -181,7 +181,13 @@ class SubscriptionParser {
       if (SingboxConfigParser.canParse(content)) {
         return ParseResult(
           format: SubscriptionFormat.singboxConfig,
-          outbounds: _normalizeOutbounds(SingboxConfigParser.parse(content)),
+          // A full sing-box document is already authored against a concrete
+          // core schema. Preserve every field so extended protocols and
+          // future transports reach libbox unchanged.
+          outbounds: _normalizeOutbounds(
+            SingboxConfigParser.parse(content),
+            preserveUnknownFields: true,
+          ),
         );
       }
 
@@ -382,11 +388,34 @@ class SubscriptionParser {
   }
 
   static List<Map<String, dynamic>> _normalizeOutbounds(
-    List<Map<String, dynamic>> outbounds,
-  ) {
+    List<Map<String, dynamic>> outbounds, {
+    bool preserveUnknownFields = false,
+  }) {
     return outbounds
-        .map(_normalizeOutbound)
-        .map(ParsedOutboundSchema.sanitize)
+        .map((outbound) {
+          final normalized = preserveUnknownFields
+              ? outbound
+              : _normalizeOutbound(outbound);
+          final type =
+              normalized['type']?.toString().trim().toLowerCase() ?? '';
+          final sourceSection =
+              normalized['_etonify_source_section']?.toString() ?? '';
+          final endpointBacked = sourceSection == 'endpoints';
+          final migrateWireGuardOutbound =
+              type == 'wireguard' && sourceSection.isEmpty;
+          if (migrateWireGuardOutbound) {
+            // sing-box 1.13 removed the legacy WireGuard outbound. Its
+            // options map directly to the runnable WireGuard endpoint.
+            normalized['_etonify_source_section'] = 'endpoints';
+          }
+          return ParsedOutboundSchema.sanitize(
+            normalized,
+            preserveUnknownFields:
+                preserveUnknownFields ||
+                endpointBacked ||
+                migrateWireGuardOutbound,
+          );
+        })
         .whereType<Map<String, dynamic>>()
         .toList(growable: false);
   }

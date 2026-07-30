@@ -454,6 +454,8 @@ SingboxConfigBuildResult buildSingboxConfig(SingboxConfigBuildInput input) {
           config: const <String, dynamic>{},
           proxyOutboundTagsByIndex: plan.proxyOutboundTagsByIndex,
           visibleProxyOutboundCount: plan.visibleProxyOutboundCount,
+          hasRawCoreConfig: plan.hasRawCoreConfig,
+          allowsZeroSelectableEntries: plan.allowsZeroSelectableEntries,
         );
   return SingboxConfigBuildResult(
     plan: resultPlan,
@@ -513,12 +515,16 @@ class ConfigMutationInput {
     required this.proxyOutboundTagsByIndex,
     required this.tagToRemove,
     required this.outputPath,
+    this.hasRawCoreConfig = false,
+    this.allowsZeroSelectableEntries = false,
   });
 
   final Map<String, dynamic> config;
   final Map<int, String> proxyOutboundTagsByIndex;
   final String tagToRemove;
   final String outputPath;
+  final bool hasRawCoreConfig;
+  final bool allowsZeroSelectableEntries;
 }
 
 class ConfigMutationResult {
@@ -528,6 +534,8 @@ class ConfigMutationResult {
     required this.configPath,
     required this.outboundCount,
     required this.startableProxyCount,
+    this.hasRawCoreConfig = false,
+    this.allowsZeroSelectableEntries = false,
   });
 
   final Map<String, dynamic> config;
@@ -535,6 +543,8 @@ class ConfigMutationResult {
   final String configPath;
   final int outboundCount;
   final int startableProxyCount;
+  final bool hasRawCoreConfig;
+  final bool allowsZeroSelectableEntries;
 }
 
 Future<ConfigMutationResult> mutateSingboxConfigInBackground(
@@ -561,12 +571,16 @@ ConfigMutationResult mutateSingboxConfig(ConfigMutationInput input) {
       .toList(growable: false);
 
   var changed = true;
+  const tagListGroupTypes = {'selector', 'urltest', 'fallback'};
   while (changed) {
     changed = false;
     final nextOutbounds = <Map<String, dynamic>>[];
     for (final outbound in filteredOutbounds) {
       final references = outbound['outbounds'];
-      if (references is! List) {
+      final type = outbound['type']?.toString().trim().toLowerCase() ?? '';
+      if (!tagListGroupTypes.contains(type) ||
+          references is! List ||
+          references.any((reference) => reference is! String)) {
         nextOutbounds.add(outbound);
         continue;
       }
@@ -603,13 +617,55 @@ ConfigMutationResult mutateSingboxConfig(ConfigMutationInput input) {
   }
   final configJson = jsonEncode(mutatedConfig);
   final writtenPath = _writeConfigJsonAtomically(input.outputPath, configJson);
+  final startableCoreEntryCount = _countSelectableCoreEntries(mutatedConfig);
   return ConfigMutationResult(
     config: mutatedConfig,
     proxyOutboundTagsByIndex: newIndexMap,
     configPath: writtenPath,
     outboundCount: filteredOutbounds.length,
-    startableProxyCount: newIndexMap.length,
+    startableProxyCount: startableCoreEntryCount,
+    hasRawCoreConfig: input.hasRawCoreConfig,
+    allowsZeroSelectableEntries: input.allowsZeroSelectableEntries,
   );
+}
+
+int _countSelectableCoreEntries(Map<String, dynamic> config) {
+  const nonSelectableOutboundTypes = {
+    'direct',
+    'block',
+    'dns',
+    'selector',
+    'urltest',
+  };
+  var count = 0;
+  final outbounds = config['outbounds'];
+  if (outbounds is List) {
+    for (final entry in outbounds) {
+      if (entry is! Map) continue;
+      final type = entry['type']?.toString().trim().toLowerCase() ?? '';
+      final providers = entry['providers'];
+      final providerBackedGroup =
+          (type == 'selector' || type == 'urltest') &&
+          (entry['use_all_providers'] == true ||
+              (providers is String && providers.trim().isNotEmpty) ||
+              (providers is List &&
+                  providers.any(
+                    (value) => value.toString().trim().isNotEmpty,
+                  )));
+      if (providerBackedGroup ||
+          (type.isNotEmpty && !nonSelectableOutboundTypes.contains(type))) {
+        count++;
+      }
+    }
+  }
+  final endpoints = config['endpoints'];
+  if (endpoints is List) {
+    count += endpoints
+        .whereType<Map>()
+        .where((entry) => entry['type']?.toString().trim().isNotEmpty ?? false)
+        .length;
+  }
+  return count;
 }
 
 StartupValidationResult validateStartupOutbounds(StartupValidationInput input) {

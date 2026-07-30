@@ -41,10 +41,15 @@ class RuntimeRecoveryController {
   final Set<String> _excludedOutboundTags = <String>{};
   Map<int, String>? _proxyOutboundTagsByIndex;
   Map<String, dynamic>? _lastStartedConfig;
+  bool _lastStartedHasRawCoreConfig = false;
+  bool _lastStartedAllowsZeroSelectableEntries = false;
   String? _pendingMutationExcludedTag;
   String? _lastPresentedRuntimeError;
 
   bool get retryScheduled => _retryScheduled;
+  bool get lastStartedHasRawCoreConfig => _lastStartedHasRawCoreConfig;
+  bool get lastStartedAllowsZeroSelectableEntries =>
+      _lastStartedAllowsZeroSelectableEntries;
   Set<String> get excludedOutboundTags =>
       Set<String>.unmodifiable(_excludedOutboundTags);
 
@@ -95,11 +100,16 @@ class RuntimeRecoveryController {
     _lastStartedConfig = build.plan.config.isEmpty
         ? null
         : Map<String, dynamic>.from(build.plan.config);
+    _lastStartedHasRawCoreConfig = build.plan.hasRawCoreConfig;
+    _lastStartedAllowsZeroSelectableEntries =
+        build.plan.allowsZeroSelectableEntries;
   }
 
   void clearBuildCache() {
     _proxyOutboundTagsByIndex = null;
     _lastStartedConfig = null;
+    _lastStartedHasRawCoreConfig = false;
+    _lastStartedAllowsZeroSelectableEntries = false;
     _pendingMutationExcludedTag = null;
   }
 
@@ -144,12 +154,17 @@ class RuntimeRecoveryController {
       proxyOutboundTagsByIndex: tagsByIndex,
       tagToRemove: excludedTag,
       outputPath: outputPath,
+      hasRawCoreConfig: _lastStartedHasRawCoreConfig,
+      allowsZeroSelectableEntries: _lastStartedAllowsZeroSelectableEntries,
     );
   }
 
   void applyMutation(ConfigMutationResult mutation) {
     _pendingMutationExcludedTag = null;
     _lastStartedConfig = Map<String, dynamic>.from(mutation.config);
+    _lastStartedHasRawCoreConfig = mutation.hasRawCoreConfig;
+    _lastStartedAllowsZeroSelectableEntries =
+        mutation.allowsZeroSelectableEntries;
     _proxyOutboundTagsByIndex = Map<int, String>.from(
       mutation.proxyOutboundTagsByIndex,
     );
@@ -191,7 +206,12 @@ class RuntimeRecoveryController {
           'start ($reason): $sampleText$suffix';
     }
     return RuntimeStartupValidation(
-      canStart: build.startableOutboundCount > 0,
+      // Native sing-box documents may intentionally contain only inbounds,
+      // services, providers or DNS transports. The builder supplies a direct
+      // fallback and libbox's config check remains the schema authority.
+      canStart:
+          build.startableOutboundCount > 0 ||
+          build.plan.allowsZeroSelectableEntries,
       selectedProxyInvalid: build.selectedProxyInvalid,
       warning: warning,
     );

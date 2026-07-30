@@ -48,7 +48,10 @@ void main() {
     'mutation input uses cached config and updates it after mutation',
     () async {
       final controller = RuntimeRecoveryController();
-      controller.cacheStartedBuild(_buildResult(tagsByIndex: {1: 'bad-tag'}));
+      controller.cacheStartedBuild(
+        _buildResult(tagsByIndex: {1: 'bad-tag'}, hasRawCoreConfig: true),
+      );
+      expect(controller.lastStartedHasRawCoreConfig, isTrue);
       await controller.registerInvalidOutboundError(
         'initialize outbound[1]: unsupported transport',
       );
@@ -56,6 +59,8 @@ void main() {
       final input = controller.createMutationInput('config.json');
       expect(input?.tagToRemove, 'bad-tag');
       expect(input?.outputPath, 'config.json');
+      expect(input?.hasRawCoreConfig, isTrue);
+      expect(input?.allowsZeroSelectableEntries, isFalse);
 
       controller.applyMutation(
         const ConfigMutationResult(
@@ -64,8 +69,11 @@ void main() {
           configPath: 'config.json',
           outboundCount: 0,
           startableProxyCount: 0,
+          hasRawCoreConfig: true,
+          allowsZeroSelectableEntries: false,
         ),
       );
+      expect(controller.lastStartedHasRawCoreConfig, isTrue);
       expect(controller.createMutationInput('config.json'), isNull);
     },
   );
@@ -92,6 +100,39 @@ void main() {
     expect(validation.selectedProxyInvalid, isTrue);
     expect(validation.warning, contains('Broken server'));
   });
+
+  test(
+    'startup allows recognized native config without selectable entries only',
+    () {
+      final controller = RuntimeRecoveryController();
+
+      final nativeValidation = controller.validateStartupBuild(
+        _buildResult(
+          tagsByIndex: const {},
+          startableCount: 0,
+          hasRawCoreConfig: true,
+          allowsZeroSelectableEntries: true,
+        ),
+        'native-only',
+      );
+      final depletedNativeValidation = controller.validateStartupBuild(
+        _buildResult(
+          tagsByIndex: const {},
+          startableCount: 0,
+          hasRawCoreConfig: true,
+        ),
+        'native-proxy-depleted',
+      );
+      final ordinaryEmptyValidation = controller.validateStartupBuild(
+        _buildResult(tagsByIndex: const {}, startableCount: 0),
+        'ordinary-empty',
+      );
+
+      expect(nativeValidation.canStart, isTrue);
+      expect(depletedNativeValidation.canStart, isFalse);
+      expect(ordinaryEmptyValidation.canStart, isFalse);
+    },
+  );
 }
 
 SingboxConfigBuildResult _buildResult({
@@ -100,12 +141,16 @@ SingboxConfigBuildResult _buildResult({
   List<InvalidStartupOutbound> invalidOutbounds =
       const <InvalidStartupOutbound>[],
   bool selectedProxyInvalid = false,
+  bool hasRawCoreConfig = false,
+  bool allowsZeroSelectableEntries = false,
 }) {
   return SingboxConfigBuildResult(
     plan: SingboxBuildPlan(
       config: const <String, dynamic>{'outbounds': <Object>[]},
       proxyOutboundTagsByIndex: tagsByIndex,
       visibleProxyOutboundCount: startableCount,
+      hasRawCoreConfig: hasRawCoreConfig,
+      allowsZeroSelectableEntries: allowsZeroSelectableEntries,
     ),
     configJson: '',
     configPath: 'config.json',

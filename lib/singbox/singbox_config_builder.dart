@@ -1,8 +1,10 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
 import 'package:meow_client/core/lowest_proxy_groups.dart';
 import 'package:meow_client/data/local/app_settings_store.dart';
+import 'package:meow_client/data/subscription/parsers/singbox_config_parser.dart';
 import 'package:meow_client/models/subscription.dart';
 import 'package:meow_client/singbox/libbox_capabilities.dart';
 
@@ -11,6 +13,55 @@ class SingboxConfigBuilder {
   static const String _snowtunProtectPath =
       '@com.etonify.meow_client.snowtun.protect';
   static const int _urltestInterruptDelayThresholdMs = 300;
+  static const Set<String> _nonServerOutboundTypes = {
+    'direct',
+    'block',
+    'dns',
+    'selector',
+    'urltest',
+    'fallback',
+    'failover',
+    'bond',
+    'bandwidth-limiter',
+    'connection-limiter',
+    'traffic-limiter',
+    'rate-limiter',
+    'parser',
+    'tor',
+    'masque',
+    'openvpn',
+    'wireguard',
+  };
+
+  static const Set<String> _removedCoreOutboundTypes = {
+    'dns',
+    'shadowsocksr',
+    'wireguard',
+  };
+
+  static const Set<String> _removedCoreInboundTypes = {'shadowsocksr'};
+
+  static const Set<String> _dialOverrideOutboundTypes = {
+    'socks',
+    'http',
+    'shadowsocks',
+    'vmess',
+    'trojan',
+    'naive',
+    'hysteria',
+    'hysteria2',
+    'tuic',
+    'anytls',
+    'vless',
+    'mieru',
+    'ssh',
+    'shadowtls',
+    'masque',
+    'openvpn',
+    'trusttunnel',
+    'sudoku',
+    'snell',
+  };
 
   const SingboxConfigBuilder({
     required this.activeSubscription,
@@ -121,6 +172,13 @@ class SingboxConfigBuilder {
       throw StateError('Local proxy requires valid access credentials');
     }
     final outbounds = _visibleOutbounds();
+    final coreTagRemapping = _coreTagRemapping();
+    final endpointOutbounds = outbounds
+        .where(_isEndpointBacked)
+        .toList(growable: false);
+    final regularOutbounds = outbounds
+        .where((outbound) => !_isEndpointBacked(outbound))
+        .toList(growable: false);
     final outboundTags = outbounds
         .map((outbound) => outbound.tag)
         .toList(growable: false);
@@ -169,6 +227,7 @@ class SingboxConfigBuilder {
         ...groupTags,
         ...selectableOutboundTags,
       },
+      tagRemapping: coreTagRemapping,
     );
     final chainTags = chainOutbounds
         .map((outbound) => outbound['tag']?.toString() ?? '')
@@ -209,296 +268,776 @@ class SingboxConfigBuilder {
               ? lowestProxyTag
               : outboundTags.first)
         : 'direct';
-    final proxyOutboundIndexes = <int, String>{};
-    final proxyStartIndex = hasProxies
-        ? 1 +
-              availableLowestTags.length +
-              visibleGroups.length +
-              chainOutbounds.length
-        : 1;
-    for (var i = 0; i < outbounds.length; i++) {
-      proxyOutboundIndexes[proxyStartIndex + i] = outbounds[i].tag;
-    }
-
     final routeFinal = hasProxies ? 'select' : 'direct';
     final dnsFinal = hasProxies ? 'dns-remote' : 'dns-direct';
     final dnsRemoteDetour = hasProxies
         ? _dnsRemoteDetourFor(selectorDefault, selectableTags.toSet())
         : 'direct';
 
-    return SingboxBuildPlan(
-      config: {
-        'log': {'level': logLevel},
-        if (_supportsLegacyUrlTestConfigExtensions)
-          'global': {
-            'urltest_concurrency_limit': _urltestConcurrency(
-              activeSubscription?.urlTestConfig.concurrency ??
-                  urlTestConcurrency,
-            ),
-          },
-        'dns': {
-          'servers': [
+    final generatedConfig = <String, dynamic>{
+      'log': {'level': logLevel},
+      if (_supportsLegacyUrlTestConfigExtensions)
+        'global': {
+          'urltest_concurrency_limit': _urltestConcurrency(
+            activeSubscription?.urlTestConfig.concurrency ?? urlTestConcurrency,
+          ),
+        },
+      'dns': {
+        'servers': [
+          _buildDnsServer(
+            tag: 'dns-remote',
+            value: dnsProxyResolver,
+            detour: dnsRemoteDetour,
+          ),
+          _buildDnsServer(
+            tag: 'dns-direct',
+            value: dnsDirectResolver,
+            detour: 'direct',
+          ),
+          if (russiaRouteDataActive)
             _buildDnsServer(
-              tag: 'dns-remote',
-              value: dnsProxyResolver,
-              detour: dnsRemoteDetour,
-            ),
-            _buildDnsServer(
-              tag: 'dns-direct',
-              value: dnsDirectResolver,
+              tag: 'dns-ru-direct',
+              value: _normalizedResolver(
+                russiaDnsDirectResolver,
+                defaultRussiaDnsDirectResolver,
+              ),
               detour: 'direct',
             ),
-            if (russiaRouteDataActive)
-              _buildDnsServer(
-                tag: 'dns-ru-direct',
-                value: _normalizedResolver(
-                  russiaDnsDirectResolver,
-                  defaultRussiaDnsDirectResolver,
-                ),
-                detour: 'direct',
-              ),
-            const <String, Object>{'type': 'local', 'tag': 'dns-local'},
-          ],
-          if (russiaRouteDataActive ||
-              russiaCuratedDirectServicesActive ||
-              adBlockActive)
-            'rules': [
-              if (russiaRouteDataActive)
-                {
-                  'rule_set': 'ru-geosite-ru-blocked',
-                  'action': 'route',
-                  'server': dnsFinal,
-                },
-              if (russiaRouteDataActive)
-                {
-                  'domain_suffix': _russiaDirectDomainSuffixes,
-                  'action': 'route',
-                  'server': 'dns-ru-direct',
-                },
-              if (russiaCuratedDirectServicesActive)
-                {
-                  'rule_set': 'ru-direct-services',
-                  'action': 'route',
-                  'server': russiaRouteDataActive
-                      ? 'dns-ru-direct'
-                      : 'dns-direct',
-                },
-              if (russiaRouteDataActive)
-                {
-                  'rule_set': 'ru-geosite-ru-available-only-inside',
-                  'action': 'route',
-                  'server': 'dns-ru-direct',
-                },
-              if (russiaRouteDataActive)
-                {
-                  'rule_set': 'ru-geosite-category-ru',
-                  'action': 'route',
-                  'server': 'dns-ru-direct',
-                },
-              if (adBlockAllowActive)
-                {
-                  'rule_set': 'adblock-allow',
-                  'action': 'route',
-                  'server': dnsFinal,
-                },
-              if (adBlockActive)
-                {
-                  'rule_set': 'adblock-block',
-                  'action': 'reject',
-                  'method': 'default',
-                },
-            ],
-          'final': dnsFinal,
-          'independent_cache': true,
-          'cache_capacity': 4096,
-          if (dnsPreferIpv6) 'strategy': 'prefer_ipv6',
-        },
-        'inbounds': [
-          if (vpnInboundEnabled)
-            {
-              'type': 'tun',
-              'tag': 'tun-in',
-              'address': ['172.19.0.1/30', 'fdfe:dcba:9876::1/126'],
-              'mtu': max(vpnMtu, 1280),
-              'auto_route': true,
-              'strict_route': vpnStrictRoute,
-              'stack': vpnTunImplementation.name,
-              if (tunIncludePackages.isNotEmpty)
-                'include_package': tunIncludePackages,
-              if (tunExcludePackages.isNotEmpty)
-                'exclude_package': tunExcludePackages,
-            },
-          if (proxyInboundEnabled)
-            {
-              'type': 'mixed',
-              'tag': 'mixed-in',
-              'listen': proxyMixedListen,
-              'listen_port': proxyMixedPort,
-              'users': [
-                {'username': proxyUsername, 'password': proxyPassword},
-              ],
-            },
+          const <String, Object>{'type': 'local', 'tag': 'dns-local'},
         ],
-        'outbounds': [
-          if (hasProxies)
-            {
-              'type': 'selector',
-              'tag': 'select',
-              'outbounds': selectableTags,
-              'default': selectorDefault,
-              'interrupt_exist_connections': interruptExistingConnections,
-            }
-          else
-            {
-              'type': 'selector',
-              'tag': 'select',
-              'outbounds': ['direct'],
-              'default': 'direct',
-            },
-          if (hasProxies)
-            ...availableLowestTags.map(
-              (tag) => _buildLowestOutbound(tag, lowestOutboundTags[tag]!),
-            ),
-          if (hasProxies)
-            ...visibleGroups.map(
-              (group) => _buildProxyGroupOutbound(group, outboundTags.toSet()),
-            ),
-          ...chainOutbounds,
-          ...outbounds.map(_buildProxyOutbound),
-          {
-            'type': 'direct',
-            'tag': 'direct',
-            'tcp_fast_open': tcpFastOpenEnabled,
-            'tcp_multi_path': tcpMultiPathEnabled,
-          },
-        ],
-        'route': {
-          'auto_detect_interface': true,
-          // Proxy endpoint hostnames must be resolved before a proxy exists.
-          // Using the user-selected direct resolver here makes startup depend
-          // on public UDP/DoT reachability and can create a bootstrap failure.
-          // Android's current network DNS is the reliable bootstrap resolver;
-          // user DNS choices still handle routed application queries above.
-          'default_domain_resolver': 'dns-local',
-          if (russiaRouteDataActive ||
-              russiaCuratedDirectServicesActive ||
-              adBlockActive)
-            'rule_set': [
-              if (russiaCuratedDirectServicesActive)
-                {
-                  'type': 'local',
-                  'tag': 'ru-direct-services',
-                  'format': 'binary',
-                  'path': russiaCuratedDirectServicesPath,
-                },
-              if (russiaRouteDataActive) ...[
-                {
-                  'type': 'local',
-                  'tag': 'ru-geosite-ru-blocked',
-                  'format': 'binary',
-                  'path': russiaGeositeRuBlockedPath,
-                },
-                {
-                  'type': 'local',
-                  'tag': 'ru-geosite-ru-available-only-inside',
-                  'format': 'binary',
-                  'path': russiaGeositeRuAvailableOnlyInsidePath,
-                },
-                {
-                  'type': 'local',
-                  'tag': 'ru-geosite-category-ru',
-                  'format': 'binary',
-                  'path': russiaGeositeCategoryRuPath,
-                },
-                {
-                  'type': 'local',
-                  'tag': 'ru-geoip-ru-blocked',
-                  'format': 'binary',
-                  'path': russiaGeoipRuBlockedPath,
-                },
-                {
-                  'type': 'local',
-                  'tag': 'ru-geoip-ru-whitelist',
-                  'format': 'binary',
-                  'path': russiaGeoipRuWhitelistPath,
-                },
-                {
-                  'type': 'local',
-                  'tag': 'ru-geoip-ru',
-                  'format': 'binary',
-                  'path': russiaGeoipRuPath,
-                },
-              ],
-              if (adBlockAllowActive)
-                {
-                  'type': 'local',
-                  'tag': 'adblock-allow',
-                  'path': adBlockAllowRuleSetPath,
-                },
-              if (adBlockActive)
-                {
-                  'type': 'local',
-                  'tag': 'adblock-block',
-                  'path': adBlockBlockRuleSetPath,
-                },
-            ],
+        if (russiaRouteDataActive ||
+            russiaCuratedDirectServicesActive ||
+            adBlockActive)
           'rules': [
-            {'action': 'sniff'},
-            {
-              'type': 'logical',
-              'mode': 'or',
-              'rules': [
-                {'protocol': 'dns'},
-                {'port': 53},
-              ],
-              'action': 'hijack-dns',
-            },
-            if (vpnInboundEnabled)
-              {
-                'inbound': 'tun-in',
-                'network': 'icmp',
-                'ip_cidr': '172.19.0.2/32',
-                'action': 'reject',
-                'method': 'drop',
-              },
-            if (blockLeaks) {'protocol': 'stun', 'action': 'reject'},
-            if (bypassLocalNetwork)
-              {'ip_is_private': true, 'outbound': 'direct'},
-            if (adBlockAllowActive)
-              {'rule_set': 'adblock-allow', 'outbound': routeFinal},
-            if (adBlockActive)
-              {'rule_set': 'adblock-block', 'action': 'reject'},
             if (russiaRouteDataActive)
               {
-                'rule_set': ['ru-geosite-ru-blocked', 'ru-geoip-ru-blocked'],
-                'outbound': hasProxies ? 'select' : 'direct',
+                'rule_set': 'ru-geosite-ru-blocked',
+                'action': 'route',
+                'server': dnsFinal,
               },
             if (russiaRouteDataActive)
               {
                 'domain_suffix': _russiaDirectDomainSuffixes,
-                'outbound': 'direct',
+                'action': 'route',
+                'server': 'dns-ru-direct',
+              },
+            if (russiaCuratedDirectServicesActive)
+              {
+                'rule_set': 'ru-direct-services',
+                'action': 'route',
+                'server': russiaRouteDataActive
+                    ? 'dns-ru-direct'
+                    : 'dns-direct',
               },
             if (russiaRouteDataActive)
               {
                 'rule_set': 'ru-geosite-ru-available-only-inside',
-                'outbound': 'direct',
+                'action': 'route',
+                'server': 'dns-ru-direct',
               },
-            if (russiaRouteDataActive)
-              {'rule_set': 'ru-geosite-category-ru', 'outbound': 'direct'},
-            if (russiaCuratedDirectServicesActive)
-              {'rule_set': 'ru-direct-services', 'outbound': 'direct'},
             if (russiaRouteDataActive)
               {
-                'rule_set': ['ru-geoip-ru-whitelist', 'ru-geoip-ru'],
-                'outbound': 'direct',
+                'rule_set': 'ru-geosite-category-ru',
+                'action': 'route',
+                'server': 'dns-ru-direct',
+              },
+            if (adBlockAllowActive)
+              {
+                'rule_set': 'adblock-allow',
+                'action': 'route',
+                'server': dnsFinal,
+              },
+            if (adBlockActive)
+              {
+                'rule_set': 'adblock-block',
+                'action': 'reject',
+                'method': 'default',
               },
           ],
-          'final': routeFinal,
-        },
+        'final': dnsFinal,
+        'independent_cache': true,
+        'cache_capacity': 4096,
+        if (dnsPreferIpv6) 'strategy': 'prefer_ipv6',
       },
+      'inbounds': [
+        if (vpnInboundEnabled)
+          {
+            'type': 'tun',
+            'tag': 'tun-in',
+            'address': ['172.19.0.1/30', 'fdfe:dcba:9876::1/126'],
+            'mtu': max(vpnMtu, 1280),
+            'auto_route': true,
+            'strict_route': vpnStrictRoute,
+            'stack': vpnTunImplementation.name,
+            if (tunIncludePackages.isNotEmpty)
+              'include_package': tunIncludePackages,
+            if (tunExcludePackages.isNotEmpty)
+              'exclude_package': tunExcludePackages,
+          },
+        if (proxyInboundEnabled)
+          {
+            'type': 'mixed',
+            'tag': 'mixed-in',
+            'listen': proxyMixedListen,
+            'listen_port': proxyMixedPort,
+            'users': [
+              {'username': proxyUsername, 'password': proxyPassword},
+            ],
+          },
+      ],
+      if (endpointOutbounds.isNotEmpty)
+        'endpoints': endpointOutbounds
+            .map((outbound) => _buildEndpoint(outbound, coreTagRemapping))
+            .toList(),
+      'outbounds': [
+        if (hasProxies)
+          {
+            'type': 'selector',
+            'tag': 'select',
+            'outbounds': selectableTags,
+            'default': selectorDefault,
+            'interrupt_exist_connections': interruptExistingConnections,
+          }
+        else
+          {
+            'type': 'selector',
+            'tag': 'select',
+            'outbounds': ['direct'],
+            'default': 'direct',
+          },
+        if (hasProxies)
+          ...availableLowestTags.map(
+            (tag) => _buildLowestOutbound(tag, lowestOutboundTags[tag]!),
+          ),
+        if (hasProxies)
+          ...visibleGroups.map(
+            (group) => _buildProxyGroupOutbound(group, outboundTags.toSet()),
+          ),
+        ...chainOutbounds,
+        ...regularOutbounds.map(
+          (outbound) => _buildProxyOutbound(outbound, coreTagRemapping),
+        ),
+        {
+          'type': 'direct',
+          'tag': 'direct',
+          'tcp_fast_open': tcpFastOpenEnabled,
+          'tcp_multi_path': tcpMultiPathEnabled,
+        },
+      ],
+      'route': {
+        'auto_detect_interface': true,
+        // Proxy endpoint hostnames must be resolved before a proxy exists.
+        // Using the user-selected direct resolver here makes startup depend
+        // on public UDP/DoT reachability and can create a bootstrap failure.
+        // Android's current network DNS is the reliable bootstrap resolver;
+        // user DNS choices still handle routed application queries above.
+        'default_domain_resolver': 'dns-local',
+        if (russiaRouteDataActive ||
+            russiaCuratedDirectServicesActive ||
+            adBlockActive)
+          'rule_set': [
+            if (russiaCuratedDirectServicesActive)
+              {
+                'type': 'local',
+                'tag': 'ru-direct-services',
+                'format': 'binary',
+                'path': russiaCuratedDirectServicesPath,
+              },
+            if (russiaRouteDataActive) ...[
+              {
+                'type': 'local',
+                'tag': 'ru-geosite-ru-blocked',
+                'format': 'binary',
+                'path': russiaGeositeRuBlockedPath,
+              },
+              {
+                'type': 'local',
+                'tag': 'ru-geosite-ru-available-only-inside',
+                'format': 'binary',
+                'path': russiaGeositeRuAvailableOnlyInsidePath,
+              },
+              {
+                'type': 'local',
+                'tag': 'ru-geosite-category-ru',
+                'format': 'binary',
+                'path': russiaGeositeCategoryRuPath,
+              },
+              {
+                'type': 'local',
+                'tag': 'ru-geoip-ru-blocked',
+                'format': 'binary',
+                'path': russiaGeoipRuBlockedPath,
+              },
+              {
+                'type': 'local',
+                'tag': 'ru-geoip-ru-whitelist',
+                'format': 'binary',
+                'path': russiaGeoipRuWhitelistPath,
+              },
+              {
+                'type': 'local',
+                'tag': 'ru-geoip-ru',
+                'format': 'binary',
+                'path': russiaGeoipRuPath,
+              },
+            ],
+            if (adBlockAllowActive)
+              {
+                'type': 'local',
+                'tag': 'adblock-allow',
+                'path': adBlockAllowRuleSetPath,
+              },
+            if (adBlockActive)
+              {
+                'type': 'local',
+                'tag': 'adblock-block',
+                'path': adBlockBlockRuleSetPath,
+              },
+          ],
+        'rules': [
+          {'action': 'sniff'},
+          {
+            'type': 'logical',
+            'mode': 'or',
+            'rules': [
+              {'protocol': 'dns'},
+              {'port': 53},
+            ],
+            'action': 'hijack-dns',
+          },
+          if (vpnInboundEnabled)
+            {
+              'inbound': 'tun-in',
+              'network': 'icmp',
+              'ip_cidr': '172.19.0.2/32',
+              'action': 'reject',
+              'method': 'drop',
+            },
+          if (blockLeaks) {'protocol': 'stun', 'action': 'reject'},
+          if (bypassLocalNetwork) {'ip_is_private': true, 'outbound': 'direct'},
+          if (adBlockAllowActive)
+            {'rule_set': 'adblock-allow', 'outbound': routeFinal},
+          if (adBlockActive) {'rule_set': 'adblock-block', 'action': 'reject'},
+          if (russiaRouteDataActive)
+            {
+              'rule_set': ['ru-geosite-ru-blocked', 'ru-geoip-ru-blocked'],
+              'outbound': hasProxies ? 'select' : 'direct',
+            },
+          if (russiaRouteDataActive)
+            {
+              'domain_suffix': _russiaDirectDomainSuffixes,
+              'outbound': 'direct',
+            },
+          if (russiaRouteDataActive)
+            {
+              'rule_set': 'ru-geosite-ru-available-only-inside',
+              'outbound': 'direct',
+            },
+          if (russiaRouteDataActive)
+            {'rule_set': 'ru-geosite-category-ru', 'outbound': 'direct'},
+          if (russiaCuratedDirectServicesActive)
+            {'rule_set': 'ru-direct-services', 'outbound': 'direct'},
+          if (russiaRouteDataActive)
+            {
+              'rule_set': ['ru-geoip-ru-whitelist', 'ru-geoip-ru'],
+              'outbound': 'direct',
+            },
+        ],
+        'final': routeFinal,
+      },
+    };
+    final rawCoreConfig = _readRawSingboxConfig();
+    final mergedConfig = _mergeRawCoreConfig(generatedConfig, rawCoreConfig);
+    final regularOutboundTags = regularOutbounds
+        .map((outbound) => outbound.tag)
+        .toSet();
+    final proxyOutboundIndexes = <int, String>{};
+    final mergedOutbounds = _asObjectList(mergedConfig['outbounds']);
+    for (var i = 0; i < mergedOutbounds.length; i++) {
+      final tag = mergedOutbounds[i]['tag']?.toString() ?? '';
+      if (regularOutboundTags.contains(tag)) {
+        proxyOutboundIndexes[i] = tag;
+      }
+    }
+    return SingboxBuildPlan(
+      config: mergedConfig,
       proxyOutboundTagsByIndex: proxyOutboundIndexes,
       visibleProxyOutboundCount: outbounds.length,
+      hasRawCoreConfig: rawCoreConfig != null,
+      allowsZeroSelectableEntries:
+          rawCoreConfig != null &&
+          !_rawDocumentHasSelectableEntries(rawCoreConfig),
     );
+  }
+
+  /// Reconciles the app-managed runtime sections with a complete sing-box
+  /// document supplied by a user/subscription.
+  ///
+  /// The generated config still owns the Android TUN/proxy inbounds, selector,
+  /// routing safety rules and normalized proxy entries.  Every other section
+  /// from the source document (endpoints, services, providers, custom DNS
+  /// transports, extra inbounds and meta outbounds) is retained verbatim.
+  /// This is the compatibility boundary that lets the app consume protocols
+  /// added by the extended core without a matching Flutter release.
+  Map<String, dynamic> _mergeRawCoreConfig(
+    Map<String, dynamic> generated,
+    Map<String, dynamic>? raw,
+  ) {
+    if (raw == null) {
+      return generated;
+    }
+
+    final merged = _cloneJsonMap(raw);
+
+    // Generated scalar sections are authoritative for app-owned settings,
+    // while unknown top-level sections remain from the source document.
+    for (final entry in generated.entries) {
+      if (entry.key == 'dns' ||
+          entry.key == 'route' ||
+          entry.key == 'endpoints' ||
+          entry.key == 'inbounds' ||
+          entry.key == 'outbounds') {
+        continue;
+      }
+      merged[entry.key] = _cloneJsonValue(entry.value);
+    }
+
+    merged['dns'] = _mergeConfigMap(
+      raw['dns'],
+      generated['dns'],
+      listKeys: const {'servers', 'rules', 'rule_set'},
+    );
+    merged['route'] = _mergeConfigMap(
+      raw['route'],
+      generated['route'],
+      listKeys: const {'rules', 'rule_set'},
+    );
+
+    final managedEndpointIndexes = _managedRawSourceIndexes('endpoints');
+    final managedEndpointTags = _managedRawSourceTags('endpoints');
+    final generatedEndpoints = _asObjectList(generated['endpoints']);
+    final generatedEndpointTags = generatedEndpoints
+        .map((entry) => entry['tag']?.toString())
+        .whereType<String>()
+        .where((tag) => tag.isNotEmpty)
+        .toSet();
+    final rawEndpoints = _withoutManagedCoreEntries(
+      raw['endpoints'],
+      const <String>{},
+      replacedIndexes: managedEndpointIndexes,
+      replacedTags: managedEndpointTags,
+    );
+    merged['endpoints'] = _mergeTaggedObjectLists(
+      rawEndpoints,
+      generatedEndpoints,
+      replaceTags: {...generatedEndpointTags, ...managedEndpointTags},
+    );
+
+    final rawInbounds = _withoutManagedCoreEntries(
+      raw['inbounds'],
+      _removedCoreInboundTypes,
+    );
+    final generatedInbounds = _asObjectList(generated['inbounds']);
+    final generatedInboundTags = generatedInbounds
+        .map((entry) => entry['tag']?.toString())
+        .whereType<String>()
+        .where((tag) => tag.isNotEmpty)
+        .toSet();
+    merged['inbounds'] = _mergeTaggedObjectLists(
+      rawInbounds,
+      generatedInbounds,
+      replaceTags: generatedInboundTags,
+    );
+
+    final managedOutboundIndexes = _managedRawSourceIndexes('outbounds');
+    final managedOutboundTags = _managedRawSourceTags('outbounds');
+    final rawOutbounds = _withoutManagedCoreEntries(
+      raw['outbounds'],
+      _removedCoreOutboundTypes,
+      replacedIndexes: managedOutboundIndexes,
+      replacedTags: managedOutboundTags,
+    );
+    final generatedOutbounds = _asObjectList(generated['outbounds']);
+    final generatedOutboundTags = generatedOutbounds
+        .map((entry) => entry['tag']?.toString())
+        .whereType<String>()
+        .where((tag) => tag.isNotEmpty)
+        .toSet();
+    merged['outbounds'] = _mergeTaggedObjectLists(
+      rawOutbounds,
+      generatedOutbounds,
+      replaceTags: {...generatedOutboundTags, ...managedOutboundTags},
+    );
+
+    return merged;
+  }
+
+  Map<String, dynamic>? _readRawSingboxConfig() {
+    final rawContent = activeSubscription?.rawContent.trim() ?? '';
+    if (rawContent.isEmpty ||
+        !(rawContent.startsWith('{') || rawContent.startsWith('['))) {
+      return null;
+    }
+    try {
+      final decoded = SingboxConfigParser.decodeDocument(rawContent);
+      if (decoded == null) {
+        return null;
+      }
+      final config = _cloneJsonMap(decoded);
+      final tagRemapping = _coreTagRemapping();
+      if (tagRemapping.isNotEmpty) {
+        _remapRawCoreTags(config, tagRemapping);
+      }
+      if (!_hasTypedCoreSection(config)) {
+        return null;
+      }
+      return config;
+    } on FormatException {
+      return null;
+    } on TypeError {
+      return null;
+    }
+  }
+
+  Map<String, String> _coreTagRemapping() {
+    final candidates = <String, Set<String>>{};
+    for (final outbound
+        in activeSubscription?.outbounds ?? const <Outbound>[]) {
+      final sourceSection =
+          outbound.config['_etonify_source_section']?.toString() ?? '';
+      if (sourceSection != 'outbounds' && sourceSection != 'endpoints') {
+        continue;
+      }
+      final original =
+          outbound.config['_etonify_original_tag']?.toString().trim() ?? '';
+      final current = outbound.tag.trim();
+      if (original.isEmpty || current.isEmpty) {
+        continue;
+      }
+      candidates.putIfAbsent(original, () => <String>{}).add(current);
+    }
+    return {
+      for (final entry in candidates.entries)
+        if (entry.value.length == 1 && entry.value.single != entry.key)
+          entry.key: entry.value.single,
+    };
+  }
+
+  static void _remapRawCoreTags(
+    Map<String, dynamic> config,
+    Map<String, String> remapping,
+  ) {
+    SingboxConfigParser.remapCoreOutboundTags(config, remapping);
+  }
+
+  static void _remapOutboundReferenceValues(
+    dynamic value,
+    Map<String, String> remapping,
+  ) {
+    _remapCoreReferenceValues(
+      value,
+      remapping,
+      stringKeys: const {
+        'outbound',
+        'detour',
+        'download_detour',
+        'upload_detour',
+        'endpoint',
+        'default',
+      },
+      listKeys: const {'outbounds'},
+    );
+  }
+
+  static bool _hasTypedCoreSection(Map<String, dynamic> config) {
+    bool hasTypedEntry(dynamic value) {
+      return value is List &&
+          value.any(
+            (entry) =>
+                entry is Map &&
+                (entry['type']?.toString().trim().isNotEmpty ?? false),
+          );
+    }
+
+    for (final section in const {
+      'outbounds',
+      'endpoints',
+      'inbounds',
+      'providers',
+      'services',
+    }) {
+      if (hasTypedEntry(config[section])) {
+        return true;
+      }
+    }
+    final dns = config['dns'];
+    return dns is Map && hasTypedEntry(dns['servers']);
+  }
+
+  static bool _rawDocumentHasSelectableEntries(Map<String, dynamic> config) {
+    const nonSelectableOutboundTypes = {
+      'direct',
+      'block',
+      'dns',
+      'selector',
+      'urltest',
+    };
+    final outbounds = config['outbounds'];
+    if (outbounds is List) {
+      for (final entry in outbounds) {
+        if (entry is! Map) continue;
+        final type = entry['type']?.toString().trim().toLowerCase() ?? '';
+        if ((type == 'selector' || type == 'urltest') &&
+            _rawGroupUsesProviders(entry)) {
+          return true;
+        }
+        if (type.isNotEmpty && !nonSelectableOutboundTypes.contains(type)) {
+          return true;
+        }
+      }
+    }
+    final endpoints = config['endpoints'];
+    return endpoints is List &&
+        endpoints.any(
+          (entry) =>
+              entry is Map &&
+              (entry['type']?.toString().trim().isNotEmpty ?? false),
+        );
+  }
+
+  static bool _rawGroupUsesProviders(Map entry) {
+    if (entry['use_all_providers'] == true) {
+      return true;
+    }
+    final providers = entry['providers'];
+    return (providers is String && providers.trim().isNotEmpty) ||
+        (providers is List &&
+            providers.any((value) => value.toString().trim().isNotEmpty));
+  }
+
+  Set<int> _managedRawSourceIndexes(String section) {
+    final indexes = <int>{};
+    for (final outbound
+        in activeSubscription?.outbounds ?? const <Outbound>[]) {
+      final sourceIndexSection =
+          outbound.config['_etonify_source_index_section']?.toString() ??
+          outbound.config['_etonify_source_section']?.toString() ??
+          '';
+      if (sourceIndexSection != section) {
+        continue;
+      }
+      final value = outbound.config['_etonify_source_index'];
+      final index = value is int
+          ? value
+          : int.tryParse(value?.toString() ?? '');
+      if (index != null && index >= 0) {
+        indexes.add(index);
+      }
+    }
+    return indexes;
+  }
+
+  Set<String> _managedRawSourceTags(String section) {
+    final tags = <String>{};
+    for (final outbound
+        in activeSubscription?.outbounds ?? const <Outbound>[]) {
+      final sourceIndexSection =
+          outbound.config['_etonify_source_index_section']?.toString() ??
+          outbound.config['_etonify_source_section']?.toString() ??
+          '';
+      if (sourceIndexSection != section) {
+        continue;
+      }
+      final original =
+          outbound.config['_etonify_original_tag']?.toString().trim() ?? '';
+      final current = outbound.tag.trim();
+      if (original.isNotEmpty) {
+        tags.add(original);
+      }
+      if (current.isNotEmpty) {
+        tags.add(current);
+      }
+    }
+    return tags;
+  }
+
+  static void _remapCoreReferenceValues(
+    dynamic value,
+    Map<String, String> remapping, {
+    Set<String> stringKeys = const <String>{},
+    Set<String> listKeys = const <String>{},
+  }) {
+    if (value is Map) {
+      for (final keyValue in value.keys.toList(growable: false)) {
+        final key = keyValue.toString();
+        final child = value[keyValue];
+        if (child is String && stringKeys.contains(key)) {
+          value[keyValue] = remapping[child] ?? child;
+          continue;
+        }
+        if (child is List && listKeys.contains(key)) {
+          for (var i = 0; i < child.length; i++) {
+            final item = child[i];
+            if (item is String) {
+              child[i] = remapping[item] ?? item;
+            } else {
+              _remapCoreReferenceValues(
+                item,
+                remapping,
+                stringKeys: stringKeys,
+                listKeys: listKeys,
+              );
+            }
+          }
+          continue;
+        }
+        _remapCoreReferenceValues(
+          child,
+          remapping,
+          stringKeys: stringKeys,
+          listKeys: listKeys,
+        );
+      }
+      return;
+    }
+    if (value is List) {
+      for (final child in value) {
+        _remapCoreReferenceValues(
+          child,
+          remapping,
+          stringKeys: stringKeys,
+          listKeys: listKeys,
+        );
+      }
+    }
+  }
+
+  static Map<String, dynamic> _cloneJsonMap(Map source) {
+    final cloned = _cloneJsonValue(source);
+    return cloned is Map<String, dynamic> ? cloned : <String, dynamic>{};
+  }
+
+  static dynamic _cloneJsonValue(dynamic value) {
+    if (value is Map) {
+      final result = <String, dynamic>{};
+      for (final entry in value.entries) {
+        result[entry.key.toString()] = _cloneJsonValue(entry.value);
+      }
+      return result;
+    }
+    if (value is List) {
+      return value.map(_cloneJsonValue).toList(growable: true);
+    }
+    return value;
+  }
+
+  static List<Map<String, dynamic>> _asObjectList(dynamic value) {
+    if (value is! List) {
+      return <Map<String, dynamic>>[];
+    }
+    return value
+        .whereType<Map>()
+        .map((entry) => _cloneJsonMap(entry))
+        .where((entry) => entry.isNotEmpty)
+        .toList(growable: true);
+  }
+
+  static List<Map<String, dynamic>> _withoutManagedCoreEntries(
+    dynamic value,
+    Set<String> removedTypes, {
+    Set<int> replacedIndexes = const <int>{},
+    Set<String> replacedTags = const <String>{},
+  }) {
+    if (value is! List) {
+      return <Map<String, dynamic>>[];
+    }
+    final result = <Map<String, dynamic>>[];
+    for (var index = 0; index < value.length; index++) {
+      if (replacedIndexes.contains(index)) {
+        continue;
+      }
+      final valueEntry = value[index];
+      if (valueEntry is! Map) {
+        continue;
+      }
+      final entry = _cloneJsonMap(valueEntry);
+      final type = entry['type']?.toString().trim().toLowerCase() ?? '';
+      final tag = entry['tag']?.toString() ?? '';
+      if (removedTypes.contains(type) ||
+          (tag.isNotEmpty && replacedTags.contains(tag))) {
+        continue;
+      }
+      result.add(entry);
+    }
+    return result;
+  }
+
+  static List<Map<String, dynamic>> _mergeTaggedObjectLists(
+    dynamic raw,
+    List<Map<String, dynamic>> generated, {
+    required Set<String> replaceTags,
+  }) {
+    final result = <Map<String, dynamic>>[];
+    final indexByTag = <String, int>{};
+    for (final entry in _asObjectList(raw)) {
+      final tag = entry['tag']?.toString() ?? '';
+      if (tag.isNotEmpty && replaceTags.contains(tag)) {
+        continue;
+      }
+      if (tag.isNotEmpty && indexByTag.containsKey(tag)) {
+        continue;
+      }
+      if (tag.isNotEmpty) {
+        indexByTag[tag] = result.length;
+      }
+      result.add(entry);
+    }
+    for (final entry in generated) {
+      final tag = entry['tag']?.toString() ?? '';
+      final existingIndex = tag.isEmpty ? null : indexByTag[tag];
+      if (existingIndex != null) {
+        result[existingIndex] = _cloneJsonMap(entry);
+      } else {
+        if (tag.isNotEmpty) {
+          indexByTag[tag] = result.length;
+        }
+        result.add(_cloneJsonMap(entry));
+      }
+    }
+    return result;
+  }
+
+  static Map<String, dynamic> _mergeConfigMap(
+    dynamic raw,
+    dynamic generated, {
+    required Set<String> listKeys,
+  }) {
+    final result = raw is Map ? _cloneJsonMap(raw) : <String, dynamic>{};
+    if (generated is! Map) {
+      return result;
+    }
+    for (final entry in generated.entries) {
+      final key = entry.key.toString();
+      if (!listKeys.contains(key)) {
+        result[key] = _cloneJsonValue(entry.value);
+        continue;
+      }
+      final generatedList = _asObjectList(entry.value);
+      if (entry.value is! List) {
+        result[key] = _cloneJsonValue(entry.value);
+        continue;
+      }
+      result[key] = _mergeTaggedObjectLists(
+        result[key],
+        generatedList,
+        replaceTags: generatedList
+            .map((item) => item['tag']?.toString())
+            .whereType<String>()
+            .where((tag) => tag.isNotEmpty)
+            .toSet(),
+      );
+    }
+    return result;
   }
 
   bool _validRuleSetPath(String? path) {
@@ -557,11 +1096,44 @@ class SingboxConfigBuilder {
       final binaryPath = snowtunBinaryPath?.trim() ?? '';
       return confId.isNotEmpty && transport == 'xtun' && binaryPath.isNotEmpty;
     }
-    return _hasValidServer(outbound.config);
+    final type = outbound.type.trim().toLowerCase();
+    if (type.isEmpty) {
+      return false;
+    }
+    if (_isEndpointBacked(outbound)) {
+      return true;
+    }
+    if (outbound.config['_etonify_core_passthrough'] == true) {
+      return true;
+    }
+    if (_hasValidServer(outbound.config)) {
+      return true;
+    }
+    if (_nonServerOutboundTypes.contains(type)) {
+      return true;
+    }
+    // Extended group/endpoint protocols can be valid without a top-level
+    // `server` (for example a bond of nested outbounds or a parser source).
+    if (outbound.config['outbounds'] is List ||
+        outbound.config['endpoint'] != null ||
+        outbound.config['providers'] is List) {
+      return true;
+    }
+    // A complete sing-box document is validated by libbox itself. Do not
+    // discard a newly introduced protocol merely because this Flutter build
+    // does not know where its endpoint fields live.
+    if (_readRawSingboxConfig() != null) {
+      return true;
+    }
+    return false;
   }
 
   bool _isGroupOnlyOutbound(Outbound outbound) {
     return outbound.config['_group_only'] == true;
+  }
+
+  bool _isEndpointBacked(Outbound outbound) {
+    return outbound.config['_etonify_source_section'] == 'endpoints';
   }
 
   /// Check if the outbound has a valid server address (valid IP or FQDN).
@@ -617,9 +1189,30 @@ class SingboxConfigBuilder {
     return false;
   }
 
-  Map<String, dynamic> _buildProxyOutbound(Outbound outbound) {
-    final config = Map<String, dynamic>.from(outbound.config);
+  Map<String, dynamic> _buildProxyOutbound(
+    Outbound outbound,
+    Map<String, String> tagRemapping,
+  ) {
+    final corePassthrough =
+        outbound.config['_etonify_core_passthrough'] == true;
+    final config = corePassthrough
+        ? _cloneJsonMap(outbound.config)
+        : Map<String, dynamic>.from(outbound.config);
     config.remove('_group_only');
+    config.remove('_etonify_core_passthrough');
+    config.remove('_etonify_source_section');
+    config.remove('_etonify_source_index');
+    config.remove('_etonify_source_index_section');
+    config.remove('_etonify_original_tag');
+    config['tag'] = outbound.tag;
+    _remapOutboundReferenceValues(config, tagRemapping);
+    // A complete sing-box document already uses the native core schema.
+    // Share-link repairs and app-level dial/TLS overrides can introduce fields
+    // that do not exist on extended types (for example MASQUE has no `server`).
+    // Keep this boundary lossless and let libbox validate it.
+    if (corePassthrough) {
+      return config;
+    }
     _normalizeStableOutboundSchema(config);
     if (outbound.type == 'snowtun') {
       final binaryPath = snowtunBinaryPath?.trim();
@@ -647,10 +1240,32 @@ class SingboxConfigBuilder {
       ),
     );
     _applyTlsFragmentation(config, tlsFragmentationMode);
-    config['tag'] = outbound.tag;
-    config['tcp_fast_open'] = tcpFastOpenEnabled;
-    config['tcp_multi_path'] = tcpMultiPathEnabled;
+    _applyDialOverrides(config);
     return config;
+  }
+
+  Map<String, dynamic> _buildEndpoint(
+    Outbound outbound,
+    Map<String, String> tagRemapping,
+  ) {
+    final config = _cloneJsonMap(outbound.config);
+    config.remove('_group_only');
+    config.remove('_etonify_core_passthrough');
+    config.remove('_etonify_source_section');
+    config.remove('_etonify_source_index');
+    config.remove('_etonify_source_index_section');
+    config.remove('_etonify_original_tag');
+    config['tag'] = outbound.tag;
+    _remapOutboundReferenceValues(config, tagRemapping);
+    return config;
+  }
+
+  void _applyDialOverrides(Map<String, dynamic> config) {
+    final type = config['type']?.toString().trim().toLowerCase() ?? '';
+    if (_dialOverrideOutboundTypes.contains(type)) {
+      config['tcp_fast_open'] = tcpFastOpenEnabled;
+      config['tcp_multi_path'] = tcpMultiPathEnabled;
+    }
   }
 
   String _dnsRemoteDetourFor(
@@ -686,16 +1301,29 @@ class SingboxConfigBuilder {
     required bool tcpMultiPathEnabled,
     required TlsFragmentationMode tlsFragmentationMode,
     bool supportsRealitySpiderX = true,
+    Map<String, String> tagRemapping = const <String, String>{},
   }) {
     final tag = chain.tag.trim();
     final detourTag = chain.detourTag.trim();
     if (tag.isEmpty || detourTag.isEmpty || target.type == 'direct') {
       return null;
     }
-    final config = Map<String, dynamic>.from(target.config);
+    final corePassthrough = target.config['_etonify_core_passthrough'] == true;
+    final config = corePassthrough
+        ? _cloneJsonMap(target.config)
+        : Map<String, dynamic>.from(target.config);
+    config.remove('_etonify_core_passthrough');
+    config.remove('_etonify_source_section');
+    config.remove('_etonify_source_index');
+    config.remove('_etonify_source_index_section');
+    config.remove('_etonify_original_tag');
     config['tag'] = tag;
     config['detour'] = detourTag;
     config.remove('domain_resolver');
+    _remapOutboundReferenceValues(config, tagRemapping);
+    if (corePassthrough) {
+      return config;
+    }
     _normalizeStableOutboundSchema(config);
     if (target.type == 'snowtun') {
       final binaryPath = snowtunBinaryPath?.trim();
@@ -718,14 +1346,18 @@ class SingboxConfigBuilder {
     _normalizeServerAddress(config);
     _ensureRealityUtls(config, supportsSpiderX: supportsRealitySpiderX);
     _applyTlsFragmentation(config, tlsFragmentationMode);
-    config['tcp_fast_open'] = tcpFastOpenEnabled;
-    config['tcp_multi_path'] = tcpMultiPathEnabled;
+    final targetType = config['type']?.toString().trim().toLowerCase() ?? '';
+    if (_dialOverrideOutboundTypes.contains(targetType)) {
+      config['tcp_fast_open'] = tcpFastOpenEnabled;
+      config['tcp_multi_path'] = tcpMultiPathEnabled;
+    }
     return config;
   }
 
   List<Map<String, dynamic>> _visibleProxyChainOutbounds({
     required List<Outbound> visibleOutbounds,
     required Set<String> selectableBaseTags,
+    required Map<String, String> tagRemapping,
   }) {
     final subscription = activeSubscription;
     if (subscription == null || subscription.proxyChains.isEmpty) {
@@ -741,6 +1373,7 @@ class SingboxConfigBuilder {
       final target = _targetOutboundForChain(chain, outboundByTag);
       if (tag.isEmpty ||
           target == null ||
+          _isEndpointBacked(target) ||
           !seen.add(tag) ||
           !selectableBaseTags.contains(chain.detourTag.trim())) {
         continue;
@@ -757,6 +1390,7 @@ class SingboxConfigBuilder {
         supportsRealitySpiderX: _supportsCoreConfigExtension(
           capabilities.supportsRealitySpiderX,
         ),
+        tagRemapping: tagRemapping,
       );
       if (config != null) {
         result.add(config);
@@ -1197,10 +1831,12 @@ class SingboxConfigBuilder {
 
   static void _normalizeStableOutboundSchema(Map<String, dynamic> config) {
     final type = config['type']?.toString().trim().toLowerCase();
-    if (type == 'vless') {
+    final encryption = config['encryption']?.toString().trim().toLowerCase();
+    if (type == 'vless' && encryption == 'none') {
       // VLESS does not expose a configurable encryption field in sing-box.
       // Legacy parsers stored `encryption: none`; omitting it is equivalent
-      // and keeps the config accepted by the strict stable-core decoder.
+      // and keeps the config accepted by strict stable-core decoders. Extended
+      // VLESS encryption values are real protocol options and must survive.
       config.remove('encryption');
     }
   }
@@ -1211,9 +1847,13 @@ class SingboxBuildPlan {
     required this.config,
     required this.proxyOutboundTagsByIndex,
     required this.visibleProxyOutboundCount,
+    this.hasRawCoreConfig = false,
+    this.allowsZeroSelectableEntries = false,
   });
 
   final Map<String, dynamic> config;
   final Map<int, String> proxyOutboundTagsByIndex;
   final int visibleProxyOutboundCount;
+  final bool hasRawCoreConfig;
+  final bool allowsZeroSelectableEntries;
 }

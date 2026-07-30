@@ -62,6 +62,9 @@ diagnostics/
 .diagnostics/
 .lazyweb/
 .codebase-memory/
+graphify-out/
+__pycache__/
+*.py[cod]
 *.hprof
 *.trace
 

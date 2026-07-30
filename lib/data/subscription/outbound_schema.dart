@@ -5,6 +5,103 @@ import 'dart:convert';
 class ParsedOutboundSchema {
   ParsedOutboundSchema._();
 
+  /// Protocols registered by the extended sing-box core.
+  ///
+  /// This is intentionally a catalogue rather than a gate.  The core owns
+  /// the authoritative decoder and can add protocol-specific fields between
+  /// app releases.  Keeping the list public lets the UI and diagnostics show
+  /// coverage without making the importer discard a newer config.
+  static const Set<String> extendedOutboundTypes = {
+    'direct',
+    'block',
+    'fallback',
+    'selector',
+    'urltest',
+    'socks',
+    'http',
+    'shadowsocks',
+    'vmess',
+    'trojan',
+    'naive',
+    'tor',
+    'ssh',
+    'shadowtls',
+    'vless',
+    'mieru',
+    'anytls',
+    'masque',
+    'openvpn',
+    'bond',
+    'failover',
+    'trusttunnel',
+    'hysteria',
+    'hysteria2',
+    'tuic',
+    'sudoku',
+    'snell',
+    'bandwidth-limiter',
+    'connection-limiter',
+    'traffic-limiter',
+    'rate-limiter',
+    'parser',
+  };
+
+  /// Inbound types available in the extended Android build.
+  static const Set<String> extendedInboundTypes = {
+    'tun',
+    'redirect',
+    'tproxy',
+    'direct',
+    'socks',
+    'http',
+    'mixed',
+    'shadowsocks',
+    'vmess',
+    'trojan',
+    'naive',
+    'shadowtls',
+    'vless',
+    'anytls',
+    'mieru',
+    'ssh',
+    'bond',
+    'failover',
+    'trusttunnel',
+    'hysteria',
+    'hysteria2',
+    'tuic',
+    'mtproxy',
+    'sudoku',
+    'snell',
+  };
+
+  /// V2Ray and extended transports accepted by the core.
+  static const Set<String> extendedTransportTypes = {
+    'http',
+    'ws',
+    'quic',
+    'grpc',
+    'httpupgrade',
+    'xhttp',
+    'mkcp',
+  };
+
+  static const Set<String> _compatibilityOutboundTypes = {
+    // Removed native outbounds are retained here only so validation can emit a
+    // precise error or legacy app-owned migration can handle them.
+    'dns',
+    'shadowsocksr',
+    'wireguard',
+    'snowtun',
+  };
+
+  static const Set<String> _compatibilityTransportTypes = {
+    // Import aliases emitted by older Xray/Clash configurations. Parsers
+    // canonicalize these to xhttp/mkcp before the config reaches the core.
+    'splithttp',
+    'kcp',
+  };
+
   static const Set<String> _validXhttpModes = {
     'packet-up',
     'stream-up',
@@ -45,20 +142,8 @@ class ParsedOutboundSchema {
   );
 
   static const Set<String> _knownOutboundTypes = {
-    'vless',
-    'vmess',
-    'trojan',
-    'shadowsocks',
-    'shadowsocksr',
-    'socks',
-    'http',
-    'hysteria',
-    'hysteria2',
-    'tuic',
-    'anytls',
-    'naive',
-    'wireguard',
-    'snowtun',
+    ...extendedOutboundTypes,
+    ..._compatibilityOutboundTypes,
   };
 
   static const Set<String> _baseOutboundKeys = {
@@ -397,7 +482,13 @@ class ParsedOutboundSchema {
     'transport',
   };
 
-  static Map<String, dynamic>? sanitize(Map<String, dynamic> outbound) {
+  static Map<String, dynamic>? sanitize(
+    Map<String, dynamic> outbound, {
+    bool preserveUnknownFields = false,
+  }) {
+    if (preserveUnknownFields) {
+      return _sanitizeCorePassthrough(outbound);
+    }
     final canonical = _canonicalize(outbound);
     final sanitized = _sanitizeOutbound(canonical);
     if (sanitized == null) {
@@ -414,13 +505,72 @@ class ParsedOutboundSchema {
     return normalized;
   }
 
+  /// Keeps a complete sing-box object intact for configs supplied by users.
+  ///
+  /// The old importer used per-protocol allow-lists.  Those lists are useful
+  /// for legacy share-link normalization, but they are unsafe for a full
+  /// sing-box document because a newly-added core field would be silently
+  /// deleted.  Full JSON configs therefore use this lossless path and leave
+  /// semantic validation to the native core.
+  static Map<String, dynamic>? _sanitizeCorePassthrough(
+    Map<String, dynamic> outbound,
+  ) {
+    final type = _normalizedType(outbound['type']);
+    if (type.isEmpty) {
+      return null;
+    }
+    final sourceSection = outbound['_etonify_source_section']?.toString();
+    final isEndpoint = sourceSection == 'endpoints';
+    // The extended core deliberately registers these as descriptive stubs.
+    // WireGuard remains available as a top-level endpoint, not an outbound.
+    if (type == 'shadowsocksr' || (type == 'wireguard' && !isEndpoint)) {
+      return null;
+    }
+    final cloned = _deepCloneValue(outbound);
+    if (cloned is! Map<String, dynamic>) {
+      return null;
+    }
+    // Marks this object for the later store validation pass. The marker is
+    // stripped by SingboxConfigBuilder and never reaches libbox.
+    cloned['_etonify_core_passthrough'] = true;
+    return cloned;
+  }
+
   static String? validate(Map<String, dynamic> config) {
     final type = _normalizedType(config['type']);
-    if (!_knownOutboundTypes.contains(type)) {
-      return 'unsupported outbound type: ${type.isEmpty ? 'unknown' : type}';
+    if (type.isEmpty) {
+      return 'missing outbound type';
     }
     if (type == 'shadowsocksr') {
       return 'unsupported outbound type: shadowsocksr';
+    }
+    if (type == 'wireguard' &&
+        config['_etonify_core_passthrough'] == true &&
+        config['_etonify_source_section'] != 'endpoints') {
+      return 'unsupported outbound type: wireguard; use a WireGuard endpoint';
+    }
+    if (type == 'wireguard') {
+      final reservedCompatibilityError = _wireGuardReservedCompatibilityError(
+        config,
+      );
+      if (reservedCompatibilityError != null) {
+        return reservedCompatibilityError;
+      }
+    }
+
+    // A complete sing-box document is already authored against the native
+    // schema. Avoid second-guessing protocol-specific options in Flutter;
+    // libbox performs the authoritative validation before startup.
+    if (config['_etonify_core_passthrough'] == true) {
+      return null;
+    }
+
+    // Unknown/new protocols are intentionally accepted here.  The extended
+    // core performs the authoritative schema check when the config starts.
+    // Retaining this forward-compatible behavior is what prevents an app
+    // update from breaking a newer core config.
+    if (!_knownOutboundTypes.contains(type)) {
+      return null;
     }
 
     if (_requiresServer(type)) {
@@ -730,6 +880,33 @@ class ParsedOutboundSchema {
   static bool _isValidWireGuardReserved(List<dynamic> value) {
     return value.length == 3 &&
         value.every((item) => item is int && item >= 0 && item <= 255);
+  }
+
+  static String? _wireGuardReservedCompatibilityError(
+    Map<String, dynamic> config,
+  ) {
+    bool isAbsentEquivalent(dynamic value) {
+      return value == null ||
+          (value is List &&
+              _isValidWireGuardReserved(value) &&
+              value.every((item) => item == 0));
+    }
+
+    if (!isAbsentEquivalent(config['reserved'])) {
+      return 'unsupported wireguard reserved override in '
+          'sing-box-extended 2.5.3; remove it or use a warp endpoint';
+    }
+    final peers = config['peers'];
+    if (peers is List) {
+      for (var i = 0; i < peers.length; i++) {
+        final peer = peers[i];
+        if (peer is Map && !isAbsentEquivalent(peer['reserved'])) {
+          return 'unsupported wireguard peer $i reserved override in '
+              'sing-box-extended 2.5.3; remove it or use a warp endpoint';
+        }
+      }
+    }
+    return null;
   }
 
   static bool _isValidRealityShortId(dynamic value) {
@@ -1225,7 +1402,14 @@ class ParsedOutboundSchema {
   }
 
   static Map<String, dynamic>? _sanitizeWireGuardPeer(dynamic value) {
-    return _sanitizeNestedMap(value, _wireGuardPeerKeys);
+    final peer = _sanitizeNestedMap(value, _wireGuardPeerKeys);
+    final reserved = peer?['reserved'];
+    if (reserved is List &&
+        _isValidWireGuardReserved(reserved) &&
+        reserved.every((item) => item == 0)) {
+      peer!.remove('reserved');
+    }
+    return peer;
   }
 
   static Map<String, dynamic>? _sanitizeXhttpXmux(dynamic value) {
@@ -1341,9 +1525,40 @@ class ParsedOutboundSchema {
     return value;
   }
 
-  static bool _requiresServer(String type) {
-    return type != 'wireguard' && type != 'snowtun';
+  static dynamic _deepCloneValue(dynamic value) {
+    if (value is Map) {
+      final cloned = <String, dynamic>{};
+      for (final entry in value.entries) {
+        cloned[entry.key.toString()] = _deepCloneValue(entry.value);
+      }
+      return cloned;
+    }
+    if (value is List) {
+      return value.map(_deepCloneValue).toList(growable: false);
+    }
+    return value;
   }
+
+  static bool _requiresServer(String type) => !const {
+    'direct',
+    'block',
+    'dns',
+    'fallback',
+    'selector',
+    'urltest',
+    'tor',
+    'masque',
+    'openvpn',
+    'bond',
+    'failover',
+    'bandwidth-limiter',
+    'connection-limiter',
+    'traffic-limiter',
+    'rate-limiter',
+    'parser',
+    'wireguard',
+    'snowtun',
+  }.contains(type);
 
   static int? _intValue(dynamic value) {
     if (value is int) {
@@ -1378,14 +1593,7 @@ class ParsedOutboundSchema {
   }
 
   static const Set<String> _knownTransportTypes = {
-    'http',
-    'ws',
-    'grpc',
-    'httpupgrade',
-    'xhttp',
-    'splithttp',
-    'kcp',
-    'mkcp',
-    'quic',
+    ...extendedTransportTypes,
+    ..._compatibilityTransportTypes,
   };
 }

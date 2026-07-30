@@ -5737,7 +5737,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
 
   void _warnIfNoOutboundsRemainAfterDropInvalid() {
     final subscription = _activeSubscription;
-    if (subscription == null) {
+    if (subscription == null ||
+        _runtimeRecovery.lastStartedAllowsZeroSelectableEntries) {
       return;
     }
     final hasRemainingOutbounds = _runtimeRecovery.hasRemainingOutbounds(
@@ -5934,7 +5935,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       return true;
     }
     _runtimeRecovery.applyMutation(mutation);
-    if (mutation.startableProxyCount == 0) {
+    if (mutation.startableProxyCount == 0 &&
+        !mutation.allowsZeroSelectableEntries) {
       if (mounted) {
         setState(() {
           _setConnectionPhase(AppConnectionPhase.failed);
@@ -5953,6 +5955,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         config: mutation.config,
         proxyOutboundTagsByIndex: mutation.proxyOutboundTagsByIndex,
         visibleProxyOutboundCount: mutation.startableProxyCount,
+        hasRawCoreConfig: mutation.hasRawCoreConfig,
+        allowsZeroSelectableEntries: mutation.allowsZeroSelectableEntries,
       ),
       configJson: '',
       configPath: mutation.configPath,

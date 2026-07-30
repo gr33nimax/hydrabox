@@ -972,7 +972,7 @@ void main() {
       expect(result.outbounds.first['tls']['alpn'], ['h2']);
     });
 
-    test('forces h2 alpn for grpc transport in sing-box configs', () {
+    test('preserves native grpc alpn in sing-box configs', () {
       final content = jsonEncode({
         'outbounds': [
           {
@@ -997,7 +997,7 @@ void main() {
       final result = SubscriptionParser.parse(content);
       expect(result.outbounds, hasLength(1));
       expect(result.outbounds.first['transport']['type'], 'grpc');
-      expect(result.outbounds.first['tls']['alpn'], ['h2']);
+      expect(result.outbounds.first['tls']['alpn'], ['h3']);
     });
 
     test('drops empty transport headers in xray configs', () {
@@ -1038,7 +1038,7 @@ void main() {
       });
     });
 
-    test('drops empty transport headers in sing-box configs', () {
+    test('preserves native transport headers in sing-box configs', () {
       final content = jsonEncode({
         'outbounds': [
           {
@@ -1060,11 +1060,12 @@ void main() {
       final result = SubscriptionParser.parse(content);
       expect(result.outbounds, hasLength(1));
       expect(result.outbounds.first['transport']['headers'], {
+        'Host': '',
         'User-Agent': 'Mozilla/5.0',
       });
     });
 
-    test('drops empty top-level headers in http outbounds', () {
+    test('preserves native top-level headers in http outbounds', () {
       final content = jsonEncode({
         'outbounds': [
           {
@@ -1081,8 +1082,8 @@ void main() {
 
       final result = SubscriptionParser.parse(content);
       expect(result.outbounds, hasLength(1));
-      expect(result.outbounds.first['headers'], {'X-Test': 'ok'});
-      expect(result.outbounds.first['tls']['server_name'], 'proxy.example');
+      expect(result.outbounds.first['headers'], {'Host': '', 'X-Test': ' ok '});
+      expect(result.outbounds.first['tls']['server_name'], ' proxy.example ');
     });
 
     test('drops unknown xhttp extra parameters from share links', () {
@@ -1122,7 +1123,7 @@ void main() {
       expect(transport['path'], '/css2');
     });
 
-    test('drops invalid outbounds during parsing', () {
+    test('defers native outbound validation to libbox', () {
       final content = jsonEncode({
         'outbounds': [
           {
@@ -1140,7 +1141,8 @@ void main() {
       });
 
       final result = SubscriptionParser.parse(content);
-      expect(result.outbounds, isEmpty);
+      expect(result.outbounds, hasLength(1));
+      expect(result.outbounds.single['_etonify_core_passthrough'], isTrue);
     });
   });
 
@@ -1184,7 +1186,39 @@ PersistentKeepalive = 25
         r['peers'][0]['pre_shared_key'],
         'e6OeLbqRHGEhDi1n3dRNqHQO3RKSIWJgc9jX7WFR2EU=',
       );
-      expect(r['peers'][0]['persistent_keepalive_interval'], '25s');
+      expect(r['peers'][0]['persistent_keepalive_interval'], 25);
+    });
+
+    test('keeps repeated WireGuard peers isolated and ordered', () {
+      const content = '''
+[Interface]
+PrivateKey = interface-key
+Address = 10.0.0.2/32
+
+[Peer]
+PublicKey = first-public-key
+PresharedKey = first-psk
+AllowedIPs = 10.0.0.0/8
+Endpoint = first.example.com:51820
+PersistentKeepalive = 25
+
+[Peer]
+PublicKey = second-public-key
+AllowedIPs = 0.0.0.0/0, ::/0
+Endpoint = [2001:db8::1]:51821
+''';
+
+      final results = WireGuardConfigParser.parse(content);
+      expect(results, hasLength(1));
+      final peers = (results.single['peers'] as List).cast<Map>();
+      expect(peers, hasLength(2));
+      expect(peers[0]['address'], 'first.example.com');
+      expect(peers[0]['pre_shared_key'], 'first-psk');
+      expect(peers[0]['persistent_keepalive_interval'], 25);
+      expect(peers[1]['address'], '2001:db8::1');
+      expect(peers[1]['port'], 51821);
+      expect(peers[1], isNot(contains('pre_shared_key')));
+      expect(peers[1], isNot(contains('persistent_keepalive_interval')));
     });
   });
 
@@ -1356,36 +1390,36 @@ proxies:
       expect(result.outbounds.length, 1);
     });
 
-    test(
-      'drops tls.utls for hysteria2 outbounds during subscription parsing',
-      () {
-        final raw = jsonEncode({
-          'outbounds': [
-            {
-              'type': 'hysteria2',
-              'tag': 'hy2-node',
-              'server': 'hy2.example.com',
-              'server_port': 443,
-              'tls': {
-                'enabled': true,
-                'server_name': 'sni.hy2.example.com',
-                'utls': {'enabled': true, 'fingerprint': 'chrome'},
-              },
+    test('preserves tls.utls for native hysteria2 outbounds', () {
+      final raw = jsonEncode({
+        'outbounds': [
+          {
+            'type': 'hysteria2',
+            'tag': 'hy2-node',
+            'server': 'hy2.example.com',
+            'server_port': 443,
+            'tls': {
+              'enabled': true,
+              'server_name': 'sni.hy2.example.com',
+              'utls': {'enabled': true, 'fingerprint': 'chrome'},
             },
-          ],
-        });
+          },
+        ],
+      });
 
-        final result = SubscriptionParser.parse(raw);
-        expect(result.format, SubscriptionFormat.singboxConfig);
-        expect(result.outbounds.length, 1);
-        expect(result.outbounds.first['type'], 'hysteria2');
-        expect(
-          result.outbounds.first['tls']['server_name'],
-          'sni.hy2.example.com',
-        );
-        expect(result.outbounds.first['tls'].containsKey('utls'), isFalse);
-      },
-    );
+      final result = SubscriptionParser.parse(raw);
+      expect(result.format, SubscriptionFormat.singboxConfig);
+      expect(result.outbounds.length, 1);
+      expect(result.outbounds.first['type'], 'hysteria2');
+      expect(
+        result.outbounds.first['tls']['server_name'],
+        'sni.hy2.example.com',
+      );
+      expect(result.outbounds.first['tls']['utls'], {
+        'enabled': true,
+        'fingerprint': 'chrome',
+      });
+    });
 
     test('detects JSON array of xray configs', () {
       final raw = jsonEncode([

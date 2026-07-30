@@ -15,7 +15,7 @@
 
 </div>
 
-Etonify is an Android-focused VPN client for people who need a transparent, maintainable, and community-driven alternative to legacy VPN clients. Its Android runtime, subscription handling, UI, diagnostics, and maintenance flow are developed around Etonify and [**yamixdev/etonify-core**](https://github.com/yamixdev/etonify-core/tree/etonify-dev), a stable sing-box base with changes maintained specifically for the client.
+Etonify is an Android-focused VPN client for people who need a transparent, maintainable, and community-driven alternative to legacy VPN clients. Its Android runtime, subscription handling, UI, diagnostics, and maintenance flow are developed around Etonify and the [extended sing-box core](docs/EXTENDED_CORE.md). Complete sing-box JSON documents are passed through losslessly, so protocols and fields added by the core do not require a matching Flutter release.
 
 The app does not provide VPN servers. It is a client for subscriptions and configurations that you own or are allowed to use.
 
@@ -25,7 +25,7 @@ Etonify is in early public development. Android is the only production target ri
 
 ## Features
 
-- Android VPN TUN mode powered by [etonify-core](https://github.com/yamixdev/etonify-core/tree/etonify-dev).
+- Android VPN TUN mode powered by the extended `etonify-core` integration.
 - Local mixed proxy inbound for apps or devices that use HTTP/SOCKS manually.
 - Subscription import from URL, QR code, local file, clipboard, and deep links.
 - Deep link handlers for `etonify://`, `happ://add`, `happ://crypt*`, and `sing-box://import-remote-profile`.

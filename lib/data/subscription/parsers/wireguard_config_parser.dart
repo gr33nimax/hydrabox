@@ -1,4 +1,4 @@
-/// Parses WireGuard `.conf` files into a sing-box WireGuard endpoint outbound.
+/// Parses WireGuard `.conf` files into a sing-box WireGuard endpoint entry.
 ///
 /// Example input:
 /// ```ini
@@ -27,10 +27,22 @@ class WireGuardConfigParser {
   /// Returns a list with 0 or 1 element.
   static List<Map<String, dynamic>> parse(String content) {
     final sections = _parseSections(content);
-    final iface = sections['Interface'];
+    Map<String, String>? iface;
+    final peerSections = <Map<String, String>>[];
+    for (final section in sections) {
+      if (section.name == 'Interface' && iface == null) {
+        iface = section.values;
+      } else if (section.name == 'Peer') {
+        peerSections.add(section.values);
+      }
+    }
     if (iface == null) return [];
 
-    final result = <String, dynamic>{'type': 'wireguard', 'tag': ''};
+    final result = <String, dynamic>{
+      'type': 'wireguard',
+      'tag': '',
+      '_etonify_source_section': 'endpoints',
+    };
 
     // Interface → private_key, address, mtu
     final privateKey = iface['PrivateKey'] ?? '';
@@ -50,9 +62,7 @@ class WireGuardConfigParser {
 
     // Peers
     final peers = <Map<String, dynamic>>[];
-    for (final entry in sections.entries) {
-      if (entry.key != 'Peer') continue;
-      final p = entry.value;
+    for (final p in peerSections) {
       final peer = <String, dynamic>{};
 
       // Endpoint → address + port
@@ -82,8 +92,11 @@ class WireGuardConfigParser {
       }
 
       final keepalive = p['PersistentKeepalive'] ?? '';
-      if (keepalive.isNotEmpty) {
-        peer['persistent_keepalive_interval'] = '${keepalive}s';
+      final keepaliveSeconds = int.tryParse(keepalive);
+      if (keepaliveSeconds != null &&
+          keepaliveSeconds > 0 &&
+          keepaliveSeconds <= 65535) {
+        peer['persistent_keepalive_interval'] = keepaliveSeconds;
       }
 
       peers.add(peer);
@@ -103,16 +116,12 @@ class WireGuardConfigParser {
 
   // ─────────────────── INI parser ───────────────────
 
-  /// Parses INI-style sections. Returns a map of section name → key-value pairs.
-  /// Note: multiple [Peer] sections are supported by returning them with the
-  /// same key (last one wins in a regular Map, so we use a special approach).
-  static Map<String, Map<String, String>> _parseSections(String content) {
-    // We need to handle multiple [Peer] sections. For simplicity, we merge
-    // all peers into the first Peer section since most configs have one peer.
-    // For proper multi-peer support, the parse() method already handles it
-    // by re-scanning.
-    final result = <String, Map<String, String>>{};
-    String currentSection = '';
+  /// Parses ordered INI-style section instances.
+  /// Repeated `[Peer]` blocks remain separate so values cannot leak between
+  /// peers.
+  static List<_WireGuardSection> _parseSections(String content) {
+    final result = <_WireGuardSection>[];
+    _WireGuardSection? currentSection;
 
     for (final line in content.split('\n')) {
       final trimmed = line.trim();
@@ -123,17 +132,19 @@ class WireGuardConfigParser {
       }
 
       if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
-        currentSection = trimmed.substring(1, trimmed.length - 1);
-        result.putIfAbsent(currentSection, () => {});
+        currentSection = _WireGuardSection(
+          trimmed.substring(1, trimmed.length - 1),
+        );
+        result.add(currentSection);
         continue;
       }
 
-      if (currentSection.isNotEmpty) {
+      if (currentSection != null) {
         final eqIdx = trimmed.indexOf('=');
         if (eqIdx > 0) {
           final key = trimmed.substring(0, eqIdx).trim();
           final value = trimmed.substring(eqIdx + 1).trim();
-          result[currentSection]![key] = value;
+          currentSection.values[key] = value;
         }
       }
     }
@@ -162,4 +173,11 @@ class WireGuardConfigParser {
       if (port != null) cb(host, port);
     }
   }
+}
+
+class _WireGuardSection {
+  _WireGuardSection(this.name);
+
+  final String name;
+  final Map<String, String> values = <String, String>{};
 }

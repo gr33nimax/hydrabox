@@ -86,6 +86,77 @@ void main() {
     expect(metadata.hasRawPayload, isTrue);
   });
 
+  test(
+    'addFromContent accepts a native config without selectable entries',
+    () async {
+      final source = jsonEncode({
+        'inbounds': [
+          {
+            'type': 'mtproxy',
+            'tag': 'inbound-only',
+            'listen': '127.0.0.1',
+            'listen_port': 8443,
+            'users': const [],
+          },
+        ],
+        'services': [
+          {
+            'type': 'manager-api',
+            'tag': 'service-only',
+            'listen': '127.0.0.1',
+            'listen_port': 9090,
+          },
+        ],
+      });
+
+      final result = await SubscriptionStore.addFromContent(
+        source,
+        sourceName: 'native-service.json',
+      );
+
+      expect(result.subscription.outbounds, isEmpty);
+      expect(result.subscription.selectedProxyTag, isEmpty);
+      expect(result.subscription.rawContent, source);
+      expect(SubscriptionStore.get(result.subscription.id)?.rawContent, source);
+    },
+  );
+
+  test(
+    'full-config endpoints keep native tags with safe reserved-tag fallback',
+    () async {
+      final source = jsonEncode({
+        'endpoints': [
+          {
+            'type': 'wireguard',
+            'tag': 'WG endpoint / primary',
+            'address': ['10.0.0.2/32'],
+            'private_key': 'opaque',
+            'peers': const [],
+          },
+          {
+            'type': 'tailscale',
+            'tag': 'select',
+            'state_directory': '/tmp/tailscale',
+          },
+        ],
+      });
+
+      final result = await SubscriptionStore.addFromContent(
+        source,
+        sourceName: 'extended.json',
+      );
+
+      expect(result.subscription.outbounds, hasLength(2));
+      final wireguard = result.subscription.outbounds.first;
+      final tailscale = result.subscription.outbounds.last;
+      expect(wireguard.tag, 'WG endpoint / primary');
+      expect(wireguard.config['_etonify_source_section'], 'endpoints');
+      expect(wireguard.config['_etonify_original_tag'], wireguard.tag);
+      expect(tailscale.tag, isNot('select'));
+      expect(tailscale.config['_etonify_original_tag'], 'select');
+    },
+  );
+
   test('cancelled file import does not persist a subscription', () async {
     var cancellationChecks = 0;
 
