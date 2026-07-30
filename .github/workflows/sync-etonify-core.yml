@@ -268,18 +268,29 @@ jobs:
             --header "X-GitHub-Api-Version: 2026-03-10" \
             --output "$release_tmp/release.json" \
             "$release_api"
-          jq --exit-status \
+          if ! jq --exit-status \
             --arg tag "$CORE_RELEASE_TAG" \
             '.tag_name == $tag and .draft == false and .prerelease == true' \
-            "$release_tmp/release.json" >/dev/null
-          jq --exit-status \
-            '[.assets[] | select(
-              .name == "libbox.aar" or
-              .name == "libbox.aar.sha256" or
-              .name == "libbox-sources.jar" or
-              .name == "provenance.json"
-            )] | length == 4' \
-            "$release_tmp/release.json" >/dev/null
+            "$release_tmp/release.json" >/dev/null; then
+            echo "::error title=Invalid core release::Expected published prerelease ${CORE_RELEASE_TAG}"
+            jq '{tag_name, draft, prerelease}' "$release_tmp/release.json"
+            exit 1
+          fi
+          required_asset_count="$(
+            jq \
+              '[.assets[] | select(
+                .name == "libbox.aar" or
+                .name == "libbox.aar.sha256" or
+                .name == "libbox-sources.jar" or
+                .name == "provenance.json"
+              )] | length' \
+              "$release_tmp/release.json"
+          )"
+          if [ "$required_asset_count" != "4" ]; then
+            echo "::error title=Incomplete core release::Expected all four required libbox assets, found ${required_asset_count}"
+            jq '[.assets[].name]' "$release_tmp/release.json"
+            exit 1
+          fi
 
           published_url="$(
             jq --raw-output \
@@ -291,8 +302,14 @@ jobs:
               '.assets[] | select(.name == "libbox.aar") | .size' \
               "$release_tmp/release.json"
           )"
-          test "$published_url" = "$LIBBOX_DOWNLOAD_URL"
-          test "$published_size" = "$LIBBOX_SIZE_BYTES"
+          if [ "$published_url" != "$LIBBOX_DOWNLOAD_URL" ]; then
+            echo "::error title=Published URL mismatch::Expected ${LIBBOX_DOWNLOAD_URL}, got ${published_url}"
+            exit 1
+          fi
+          if [ "$published_size" != "$LIBBOX_SIZE_BYTES" ]; then
+            echo "::error title=Published size mismatch::Expected rebuilt size ${LIBBOX_SIZE_BYTES}, got ${published_size}"
+            exit 1
+          fi
 
           release_base="https://github.com/${CORE_RELEASE_REPOSITORY}/releases/download/${CORE_RELEASE_TAG}"
           for asset in libbox.aar.sha256 libbox-sources.jar provenance.json; do
@@ -318,28 +335,46 @@ jobs:
             echo "::error title=Published sources mismatch::Local generated sources do not match the published release"
             exit 1
           fi
-          jq --exit-status \
-            --arg sha "$LIBBOX_SHA256" \
-            --arg commit "$CORE_COMMIT" \
-            --arg release_tag "$CORE_RELEASE_TAG" \
-            --arg build_tags "$LIBBOX_BUILD_TAGS" \
-            --argjson android_api "$LIBBOX_ANDROID_API" \
-            '
-              .artifact == "libbox.aar" and
-              (.sha256 | ascii_downcase) == $sha and
-              .source_commit == $commit and
-              .etonify_version == $release_tag and
-              .build_tags == $build_tags and
-              .android_api == $android_api
-            ' \
-            "$release_tmp/provenance.json" >/dev/null
+          export CORE_RELEASE_TAG CORE_COMMIT
+          export LIBBOX_ANDROID_API LIBBOX_BUILD_TAGS
+          python3 - "$release_tmp/provenance.json" <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          provenance = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          expected = {
+              "artifact": "libbox.aar",
+              "sha256": os.environ["LIBBOX_SHA256"].lower(),
+              "source_commit": os.environ["CORE_COMMIT"],
+              "etonify_version": os.environ["CORE_RELEASE_TAG"],
+              "build_tags": os.environ["LIBBOX_BUILD_TAGS"],
+              "android_api": int(os.environ["LIBBOX_ANDROID_API"]),
+          }
+          actual = dict(provenance)
+          actual["sha256"] = str(actual.get("sha256", "")).lower()
+          mismatches = {
+              field: (expected_value, actual.get(field))
+              for field, expected_value in expected.items()
+              if actual.get(field) != expected_value
+          }
+          if mismatches:
+              for field, (expected_value, actual_value) in mismatches.items():
+                  print(
+                      f"::error title=Published provenance mismatch::"
+                      f"{field}: expected {expected_value!r}, got {actual_value!r}"
+                  )
+              raise SystemExit(1)
+          print("Published provenance matches the rebuilt libbox artifact.")
+          PY
 
           export CORE_VERSION CORE_RELEASE_TAG CORE_COMMIT
           export CORE_REPOSITORY CORE_BRANCH
           export LIBBOX_ANDROID_API LIBBOX_BUILD_TAGS
           export GOMOBILE_ACTUAL="$gomobile_version"
           export GO_ACTUAL="$(go version)"
-          export JAVA_ACTUAL="$(java --version 2>&1 | head -n 1)"
+          export JAVA_ACTUAL="$(java --version 2>&1 | sed -n '1p')"
           export ANDROID_NDK_ACTUAL="$ndk_revision"
           export ANDROID_NDK_REQUESTED="$ANDROID_NDK_VERSION"
           python3 - <<'PY'
