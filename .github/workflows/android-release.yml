@@ -36,11 +36,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7.0.1
         with:
-          lfs: true
           submodules: true
 
+      - name: Fetch verified libbox release asset
+        run: python3 -B scripts/fetch_libbox.py
+
       - name: Verify pinned libbox binary
-        run: python3 scripts/verify_libbox.py
+        run: python3 -B scripts/verify_libbox.py
 
       - name: Resolve release version
         shell: bash

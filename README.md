@@ -60,6 +60,7 @@ Requirements:
 Common commands:
 
 ```powershell
+python -B scripts/fetch_libbox.py
 flutter pub get
 flutter gen-l10n
 flutter analyze
@@ -79,10 +80,10 @@ For public distribution, create a real release keystore and `android/key.propert
 ## Notes
 
 - Production focus is Android.
-- Etonify 0.2.3 bundles `libbox.aar` built from
-  [`yamixdev/etonify-core`](https://github.com/yamixdev/etonify-core/tree/etonify-dev).
-  Its source commit, SHA-256 and build provenance are documented under
-  `android/app/libs` and verified by CI.
+- This fork hydrates `libbox.aar` from the pinned
+  [`gr33nimax/etonify-core`](https://github.com/gr33nimax/etonify-core/tree/extended-integration)
+  prerelease. Its source commit, release URL, SHA-256 and build provenance are
+  documented under `android/app/libs` and verified before every Android build.
 - Generated l10n files under `lib/l10n/generated` are part of the source tree because the app imports them directly.
 - `third_party/flutter_circle_flags` is required by `pubspec.yaml` as a local path dependency.
 - Third-party attribution notes are tracked in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

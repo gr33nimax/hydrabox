@@ -1,16 +1,21 @@
 # libbox binary
 
-Etonify 0.2.3 bundles
-[`yamixdev/etonify-core`](https://github.com/yamixdev/etonify-core/tree/etonify-dev)
-`v1.13.14-etonify.1`, based on the stable sing-box `v1.13.14` line. The AAR
-exposes Etonify's versioned capability
-contract, targeted and bounded asynchronous URLTest sessions with failover,
-structured probe failures, bounded XHTTP/SplitHTTP transports, opt-in VLESS
-Encryption, and resilient per-outbound external IP lookup.
+This fork uses
+[`gr33nimax/etonify-core`](https://github.com/gr33nimax/etonify-core/tree/extended-integration),
+based directly on the `shtorm-7/sing-box-extended` `extended` line. The AAR
+contains the complete four-ABI Android build and every protocol/service tag
+recorded in `libbox.provenance.json`.
 
-`libbox.sha256` pins the exact AAR and is verified by CI before Android
-compilation. `libbox.provenance.json` records the fork commit, upstream commit,
-toolchain, Android API, and build tags used by the release workflow. Replacing
-the binary requires updating both files and testing the Pigeon/Kotlin API
-contract, Android unit tests, lint, assemble, upgrade from 0.2.1, and a device
-soak test.
+The binary is intentionally generated rather than committed to this public
+fork. From the repository root, hydrate the pinned release asset before an
+Android build:
+
+```shell
+python -B scripts/fetch_libbox.py
+python -B scripts/verify_libbox.py
+```
+
+`libbox.sha256` pins the exact AAR. `libbox.provenance.json` additionally pins
+the release URL and size, source repository/branch/commit, toolchain, Android
+API and build tags. Both the fetcher and Android `preBuild` reject a missing,
+stale or modified archive.

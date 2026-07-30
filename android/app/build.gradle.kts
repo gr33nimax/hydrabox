@@ -1,3 +1,4 @@
+import java.security.MessageDigest
 import java.util.Properties
 import org.gradle.api.GradleException
 import org.gradle.api.tasks.compile.JavaCompile
@@ -18,6 +19,52 @@ if (keyPropertiesFile.exists()) {
 }
 val allowDebugReleaseSigning =
     System.getenv("MEOW_ALLOW_DEBUG_RELEASE_SIGNING")?.equals("true", ignoreCase = true) == true
+val libboxAar = file("libs/libbox.aar")
+val libboxChecksum = file("libs/libbox.sha256")
+
+val verifyPinnedLibbox by tasks.registering {
+    group = "verification"
+    description = "Verifies the hydrated sing-box extended Android archive."
+    inputs.files(libboxAar, libboxChecksum).optional()
+
+    doLast {
+        val hydrationCommand =
+            "Run `python -B scripts/fetch_libbox.py` from the repository root."
+        if (!libboxAar.isFile) {
+            throw GradleException("Missing ${libboxAar.path}. $hydrationCommand")
+        }
+        if (!libboxChecksum.isFile) {
+            throw GradleException("Missing ${libboxChecksum.path}. $hydrationCommand")
+        }
+
+        val checksumMatch =
+            Regex("""^([0-9a-fA-F]{64})\s+\*?libbox\.aar$""")
+                .matchEntire(libboxChecksum.readText().trim())
+                ?: throw GradleException(
+                    "Invalid ${libboxChecksum.path}. $hydrationCommand",
+                )
+        val expectedChecksum = checksumMatch.groupValues[1].lowercase()
+        val digest = MessageDigest.getInstance("SHA-256")
+        libboxAar.inputStream().buffered().use { input ->
+            val buffer = ByteArray(1024 * 1024)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                digest.update(buffer, 0, read)
+            }
+        }
+        val actualChecksum =
+            digest.digest().joinToString("") { byte ->
+                "%02x".format(byte.toInt() and 0xff)
+            }
+        if (actualChecksum != expectedChecksum) {
+            throw GradleException(
+                "libbox.aar SHA-256 mismatch: expected $expectedChecksum, " +
+                    "got $actualChecksum. $hydrationCommand",
+            )
+        }
+    }
+}
 
 android {
     namespace = "com.etonify.meow_client"
@@ -113,6 +160,10 @@ dependencies {
     implementation("androidx.profileinstaller:profileinstaller:1.4.1")
     baselineProfile(project(":benchmark"))
     testImplementation("junit:junit:4.13.2")
+}
+
+tasks.matching { it.name == "preBuild" }.configureEach {
+    dependsOn(verifyPinnedLibbox)
 }
 
 tasks.withType<JavaCompile>().configureEach {

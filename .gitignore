@@ -18,6 +18,7 @@ android/app/*.jks
 android/app/*.keystore
 android/app/upload-keystore.jks
 android/app/release/
+android/app/libs/libbox.aar
 *.apk
 *.aab
 *.idsig

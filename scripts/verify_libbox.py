@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import re
 import subprocess
 import sys
@@ -12,6 +11,11 @@ import zipfile
 from pathlib import Path
 from typing import NoReturn
 
+from libbox_provenance import (
+    load_provenance,
+    required_string,
+    validate_core_pins,
+)
 from verify_extended_core import verify_source
 
 
@@ -23,6 +27,7 @@ HASH_FILE = LIBS / "libbox.sha256"
 PROVENANCE_FILE = LIBS / "libbox.provenance.json"
 CORE_PATH = ROOT / "etonify-core"
 BASELINE_FILE = CORE_PATH / "release" / "ETONIFY_BASELINE"
+VERSION_FILE = CORE_PATH / "release" / "ETONIFY_VERSION"
 GITMODULES = ROOT / ".gitmodules"
 REQUIRED_ANDROID_ABIS = {
     "armeabi-v7a",
@@ -30,7 +35,6 @@ REQUIRED_ANDROID_ABIS = {
     "x86",
     "x86_64",
 }
-PROVENANCE_SCHEMA_VERSION = 2
 
 
 def fail(message: str) -> NoReturn:
@@ -89,17 +93,6 @@ def normalize_repository(value: str) -> str:
     return normalized.lower()
 
 
-def validate_lfs_configuration() -> None:
-    attribute = git(
-        "check-attr",
-        "filter",
-        "--",
-        "android/app/libs/libbox.aar",
-    )
-    if not attribute.endswith(": lfs"):
-        fail("android/app/libs/libbox.aar must be tracked by Git LFS")
-
-
 def validate_archives() -> None:
     try:
         with zipfile.ZipFile(AAR) as archive:
@@ -134,13 +127,6 @@ def validate_archives() -> None:
                 fail("libbox-sources.jar does not contain generated Java sources")
     except zipfile.BadZipFile as error:
         fail(f"invalid libbox archive: {error}")
-
-
-def required_string(provenance: dict[str, object], key: str) -> str:
-    value = provenance.get(key)
-    if not isinstance(value, str) or not value.strip():
-        fail(f"libbox provenance is missing {key}")
-    return value.strip()
 
 
 def declared_go_version() -> str:
@@ -193,8 +179,10 @@ def main() -> None:
         fail("libbox binary and sources archive must not be empty")
     with AAR.open("rb") as stream:
         if stream.read(64).startswith(b"version https://git-lfs.github.com/"):
-            fail("libbox.aar is an LFS pointer; run `git lfs pull` first")
-    validate_lfs_configuration()
+            fail(
+                "libbox.aar is an LFS pointer; run "
+                "`python3 -B scripts/fetch_libbox.py`"
+            )
     validate_archives()
 
     hash_line = HASH_FILE.read_text(encoding="utf-8").strip()
@@ -212,21 +200,12 @@ def main() -> None:
             f"expected {pinned_hash}, got {actual_hash}"
         )
 
-    try:
-        provenance = json.loads(PROVENANCE_FILE.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as error:
-        fail(f"invalid libbox provenance JSON: {error}")
-    if not isinstance(provenance, dict):
-        fail("libbox provenance must be a JSON object")
-    if provenance.get("schema_version") != PROVENANCE_SCHEMA_VERSION:
-        fail(
-            "libbox provenance schema_version must be "
-            f"{PROVENANCE_SCHEMA_VERSION}"
-        )
-    if provenance.get("artifact") != "libbox.aar":
-        fail("libbox provenance has an unexpected artifact name")
-    if str(provenance.get("sha256", "")).lower() != actual_hash:
+    parsed_provenance = load_provenance(PROVENANCE_FILE)
+    provenance = parsed_provenance.raw
+    if parsed_provenance.sha256 != actual_hash:
         fail("libbox provenance SHA-256 does not match the bundled AAR")
+    if parsed_provenance.size_bytes != AAR.stat().st_size:
+        fail("libbox provenance size_bytes does not match the bundled AAR")
 
     actual_sources_hash = sha256(SOURCES)
     if (
@@ -238,15 +217,8 @@ def main() -> None:
             "libbox-sources.jar"
         )
 
-    source_commit = required_string(provenance, "source_commit").lower()
-    if re.fullmatch(r"[0-9a-f]{40}", source_commit) is None:
-        fail("libbox provenance source_commit must be a full Git commit")
+    source_commit = parsed_provenance.source_commit
     gitlink_commit = tracked_gitlink_commit()
-    if source_commit != gitlink_commit:
-        fail(
-            "libbox provenance source_commit does not match the etonify-core "
-            f"gitlink: {source_commit} != {gitlink_commit}"
-        )
 
     if (CORE_PATH / ".git").exists():
         checkout_commit = git("rev-parse", "HEAD", cwd=CORE_PATH).lower()
@@ -274,8 +246,31 @@ def main() -> None:
             f"{recorded_branch} != {configured_branch}"
         )
 
+    if not VERSION_FILE.is_file():
+        fail("etonify-core/release/ETONIFY_VERSION is missing")
+    pinned_release_tag = VERSION_FILE.read_text(encoding="utf-8").strip()
+    if not pinned_release_tag:
+        fail("etonify-core/release/ETONIFY_VERSION is empty")
+    validate_core_pins(
+        parsed_provenance,
+        source_commit=gitlink_commit,
+        release_tag=pinned_release_tag,
+    )
+    source_version = git(
+        "describe",
+        "--tags",
+        "--always",
+        "--abbrev=8",
+        "--exclude=v*-etonify.*",
+        cwd=CORE_PATH,
+    )
+    if parsed_provenance.core_version != source_version:
+        fail(
+            "libbox provenance core_version does not match the pinned core: "
+            f"{parsed_provenance.core_version} != {source_version}"
+        )
+
     baseline = baseline_settings()
-    required_string(provenance, "core_version")
     go_actual = required_string(provenance, "go")
     gomobile_actual = required_string(provenance, "gomobile")
     java_actual = required_string(provenance, "java")

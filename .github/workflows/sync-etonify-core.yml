@@ -8,8 +8,12 @@ on:
       - extended-core
     paths:
       - .gitattributes
+      - .gitignore
       - .gitmodules
       - etonify-core
+      - scripts/fetch_libbox.py
+      - scripts/libbox_provenance.py
+      - scripts/tests/**
       - scripts/verify_extended_core.py
       - scripts/verify_libbox.py
       - .github/workflows/sync-etonify-core.yml
@@ -33,10 +37,11 @@ env:
   ANDROID_NDK_VERSION: "r28"
   CORE_REPOSITORY: "https://github.com/gr33nimax/etonify-core.git"
   CORE_BRANCH: "extended-integration"
+  CORE_RELEASE_REPOSITORY: "gr33nimax/etonify-core"
 
 jobs:
   sync-libbox:
-    name: Build and commit verified extended libbox
+    name: Build and commit verified extended metadata
     runs-on: ubuntu-latest
     timeout-minutes: 120
 
@@ -45,8 +50,10 @@ jobs:
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           fetch-depth: 0
-          lfs: true
           submodules: true
+
+      - name: Test libbox release hydrator
+        run: python3 -B -m unittest discover -s scripts/tests -p "test_*.py" -v
 
       - name: Validate pinned extended core
         id: core_metadata
@@ -89,18 +96,30 @@ jobs:
             exit 1
           fi
 
-          core_version="$(git -C etonify-core describe --tags --always)"
+          core_version="$(
+            git -C etonify-core describe \
+              --tags \
+              --always \
+              --abbrev=8 \
+              --exclude='v*-etonify.*'
+          )"
           if [ -n "$EXPECTED_CORE_VERSION" ] && \
              [ "$EXPECTED_CORE_VERSION" != "$core_version" ]; then
             echo "::error title=Core version mismatch::Expected $EXPECTED_CORE_VERSION, found $core_version"
             exit 1
           fi
+          release_tag="$(tr -d '\r\n' < etonify-core/release/ETONIFY_VERSION)"
+          if ! [[ "$release_tag" =~ ^[0-9A-Za-z][0-9A-Za-z._+-]{0,127}$ ]]; then
+            echo "::error title=Invalid core release tag::Found '${release_tag}' in release/ETONIFY_VERSION"
+            exit 1
+          fi
 
           artifact_version="$(printf '%s' "$core_version" | tr '/[:space:]' '--')"
           echo "version=$core_version" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
           echo "artifact_version=$artifact_version" >> "$GITHUB_OUTPUT"
           echo "commit=$checkout_commit" >> "$GITHUB_OUTPUT"
-          echo "Building $core_version from $checkout_commit"
+          echo "Building $core_version from $checkout_commit for release $release_tag"
 
       - name: Verify extended protocol surface
         run: python3 scripts/verify_extended_core.py --source-only
@@ -194,11 +213,12 @@ jobs:
           unzip -tqq libbox.aar
           unzip -tqq libbox-sources.jar
 
-      - name: Replace bundled libbox artifacts
+      - name: Prepare verified libbox artifacts
         shell: bash
         env:
           ANDROID_NDK_HOME: ${{ steps.setup_ndk.outputs.ndk-path }}
           CORE_VERSION: ${{ steps.core_metadata.outputs.version }}
+          CORE_RELEASE_TAG: ${{ steps.core_metadata.outputs.release_tag }}
           CORE_COMMIT: ${{ steps.core_metadata.outputs.commit }}
           LIBBOX_ANDROID_API: ${{ steps.android_build.outputs.android_api }}
           LIBBOX_BUILD_TAGS: ${{ steps.android_build.outputs.tags }}
@@ -233,7 +253,86 @@ jobs:
           export LIBBOX_SOURCES_SHA256="$(
             sha256sum "$libs/libbox-sources.jar" | awk '{print $1}'
           )"
-          export CORE_VERSION CORE_COMMIT
+          export LIBBOX_SIZE_BYTES="$(stat --format=%s "$libs/libbox.aar")"
+          export LIBBOX_DOWNLOAD_URL="https://github.com/${CORE_RELEASE_REPOSITORY}/releases/download/${CORE_RELEASE_TAG}/libbox.aar"
+
+          release_tmp="$(mktemp -d)"
+          trap 'rm -rf "$release_tmp"' EXIT
+          release_api="https://api.github.com/repos/${CORE_RELEASE_REPOSITORY}/releases/tags/${CORE_RELEASE_TAG}"
+          curl --fail-with-body --silent --show-error --location \
+            --retry 3 \
+            --retry-all-errors \
+            --header "Accept: application/vnd.github+json" \
+            --header "X-GitHub-Api-Version: 2026-03-10" \
+            --output "$release_tmp/release.json" \
+            "$release_api"
+          jq --exit-status \
+            --arg tag "$CORE_RELEASE_TAG" \
+            '.tag_name == $tag and .draft == false and .prerelease == true' \
+            "$release_tmp/release.json" >/dev/null
+          jq --exit-status \
+            '[.assets[] | select(
+              .name == "libbox.aar" or
+              .name == "libbox.aar.sha256" or
+              .name == "libbox-sources.jar" or
+              .name == "provenance.json"
+            )] | length == 4' \
+            "$release_tmp/release.json" >/dev/null
+
+          published_url="$(
+            jq --raw-output \
+              '.assets[] | select(.name == "libbox.aar") | .browser_download_url' \
+              "$release_tmp/release.json"
+          )"
+          published_size="$(
+            jq --raw-output \
+              '.assets[] | select(.name == "libbox.aar") | .size' \
+              "$release_tmp/release.json"
+          )"
+          test "$published_url" = "$LIBBOX_DOWNLOAD_URL"
+          test "$published_size" = "$LIBBOX_SIZE_BYTES"
+
+          release_base="https://github.com/${CORE_RELEASE_REPOSITORY}/releases/download/${CORE_RELEASE_TAG}"
+          for asset in libbox.aar.sha256 libbox-sources.jar provenance.json; do
+            curl --fail-with-body --silent --show-error --location \
+              --retry 3 \
+              --retry-all-errors \
+              --output "$release_tmp/$asset" \
+              "$release_base/$asset"
+          done
+          published_sha="$(awk 'NR == 1 { print tolower($1) }' "$release_tmp/libbox.aar.sha256")"
+          if ! [[ "$published_sha" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error title=Invalid published checksum::libbox.aar.sha256 is malformed"
+            exit 1
+          fi
+          if [ "$published_sha" != "$LIBBOX_SHA256" ]; then
+            echo "::error title=Published libbox mismatch::Local build hash does not match the published release"
+            exit 1
+          fi
+          published_sources_sha="$(
+            sha256sum "$release_tmp/libbox-sources.jar" | awk '{ print $1 }'
+          )"
+          if [ "$published_sources_sha" != "$LIBBOX_SOURCES_SHA256" ]; then
+            echo "::error title=Published sources mismatch::Local generated sources do not match the published release"
+            exit 1
+          fi
+          jq --exit-status \
+            --arg sha "$LIBBOX_SHA256" \
+            --arg commit "$CORE_COMMIT" \
+            --arg release_tag "$CORE_RELEASE_TAG" \
+            --arg build_tags "$LIBBOX_BUILD_TAGS" \
+            --argjson android_api "$LIBBOX_ANDROID_API" \
+            '
+              .artifact == "libbox.aar" and
+              (.sha256 | ascii_downcase) == $sha and
+              .source_commit == $commit and
+              .etonify_version == $release_tag and
+              .build_tags == $build_tags and
+              .android_api == $android_api
+            ' \
+            "$release_tmp/provenance.json" >/dev/null
+
+          export CORE_VERSION CORE_RELEASE_TAG CORE_COMMIT
           export CORE_REPOSITORY CORE_BRANCH
           export LIBBOX_ANDROID_API LIBBOX_BUILD_TAGS
           export GOMOBILE_ACTUAL="$gomobile_version"
@@ -251,7 +350,10 @@ jobs:
               "artifact": "libbox.aar",
               "sha256": os.environ["LIBBOX_SHA256"],
               "sources_sha256": os.environ["LIBBOX_SOURCES_SHA256"],
+              "size_bytes": int(os.environ["LIBBOX_SIZE_BYTES"]),
+              "download_url": os.environ["LIBBOX_DOWNLOAD_URL"],
               "core_version": os.environ["CORE_VERSION"],
+              "release_tag": os.environ["CORE_RELEASE_TAG"],
               "source_repository": os.environ["CORE_REPOSITORY"],
               "source_branch": os.environ["CORE_BRANCH"],
               "source_commit": os.environ["CORE_COMMIT"],
@@ -275,10 +377,11 @@ jobs:
           )
           PY
 
-      - name: Verify bundled artifacts
+      - name: Fetch and verify published libbox release asset
         run: |
-          python3 scripts/verify_extended_core.py
-          python3 scripts/verify_libbox.py
+          python3 -B scripts/fetch_libbox.py
+          python3 -B scripts/verify_extended_core.py
+          python3 -B scripts/verify_libbox.py
 
       - name: Upload built libbox for inspection
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -292,35 +395,23 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Commit verified core update
+      - name: Commit verified core metadata
         shell: bash
         env:
           CORE_VERSION: ${{ steps.core_metadata.outputs.version }}
         run: |
           set -euo pipefail
-          git lfs install --local
-          aar_filter="$(
-            git check-attr filter -- android/app/libs/libbox.aar |
-              awk -F': ' '{ print $3 }'
-          )"
-          if [ "$aar_filter" != "lfs" ]; then
-            echo "::error title=Missing Git LFS rule::android/app/libs/libbox.aar must use the lfs filter"
-            exit 1
-          fi
-
           git add \
-            android/app/libs/libbox.aar \
             android/app/libs/libbox.provenance.json \
             android/app/libs/libbox.sha256 \
             android/app/libs/libbox-sources.jar
 
           if git diff --cached --quiet; then
-            echo "Bundled libbox is already up to date."
+            echo "Bundled libbox metadata is already up to date."
             exit 0
           fi
 
           allowed_files="$(printf '%s\n' \
-            android/app/libs/libbox.aar \
             android/app/libs/libbox.provenance.json \
             android/app/libs/libbox.sha256 \
             android/app/libs/libbox-sources.jar | sort)"
@@ -328,7 +419,7 @@ jobs:
             <(git diff --cached --name-only | sort) \
             <(printf '%s\n' "$allowed_files"))"
           if [ -n "$unexpected_files" ]; then
-            echo "::error title=Unexpected files staged::The workflow may only update the four bundled libbox artifacts."
+            echo "::error title=Unexpected files staged::The workflow may only update libbox metadata, checksum, and sources."
             printf '%s\n' "$unexpected_files"
             exit 1
           fi
@@ -338,7 +429,7 @@ jobs:
           git commit -m "build(core): update extended libbox to ${CORE_VERSION}"
           git push origin "HEAD:${GITHUB_REF_NAME}"
 
-      - name: Dispatch client checks for committed AAR
+      - name: Dispatch client checks for committed metadata
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}

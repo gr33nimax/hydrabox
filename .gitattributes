@@ -26,8 +26,3 @@
 *.srs binary
 *.jks binary
 *.keystore binary
-
-# A full extended-core Android archive can exceed GitHub's 100 MiB Git blob
-# limit. Keep the reproducible AAR in the fork without dropping architectures
-# or protocol implementations.
-android/app/libs/libbox.aar filter=lfs diff=lfs merge=lfs -text

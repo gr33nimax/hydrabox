@@ -61,14 +61,27 @@ should use its dedicated `warp` endpoint.
 
 ## Reproducible build
 
-The CI workflow runs `go test` with the exact extended Android tag set, builds
-the Android AAR with those tags, copies the AAR and source archive into
-`android/app/libs`, writes a SHA-256/provenance record, and runs both artifact
-and registry coverage checks. Changing the submodule pointer intentionally
-causes the workflow to rebuild the bundle. The AAR is stored with Git LFS so
-the complete four-ABI extended build is not constrained by GitHub's regular
-blob-size limit. After cloning, run `git lfs pull` before an Android build so
-`android/app/libs/libbox.aar` is hydrated instead of remaining an LFS pointer.
+The core CI workflow runs the complete test/race/resource gates and builds the
+four-ABI Android AAR with the exact extended tag set. It publishes the verified
+AAR, generated sources, SHA-256, provenance and source archive as a pinned
+prerelease in `gr33nimax/etonify-core`.
+
+GitHub's public-fork LFS rules prevent this fork's Actions bot from uploading a
+newly built object because it has no write access to the root repository
+network. The full AAR is therefore not stored as an LFS pointer in this fork.
+The small checksum, provenance and generated-source records remain in Git,
+while the binary is hydrated from its versioned core release URL:
+
+```shell
+python -B scripts/fetch_libbox.py
+python -B scripts/verify_libbox.py
+```
+
+The fetcher accepts only the pinned `gr33nimax/etonify-core` release URL,
+streams to a temporary file, verifies the declared size and SHA-256, and then
+atomically replaces `android/app/libs/libbox.aar`. Android `preBuild` verifies
+the same checksum and gives the hydration command instead of silently using a
+missing or stale core.
 
 The build tags and Android API stored in provenance are extracted from the
 checked-out core's `cmd/internal/build_libbox` entrypoint.  Verification fails

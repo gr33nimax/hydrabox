@@ -49,10 +49,13 @@ is retained at `third_party/flutter_circle_flags/LICENSE`.
 
 The `etonify-core` git submodule is the Android libbox runtime bundled into
 official releases. It is maintained at
-[`yamixdev/etonify-core`, branch `etonify-dev`](https://github.com/yamixdev/etonify-core/tree/etonify-dev)
+[`gr33nimax/etonify-core`, branch `extended-integration`](https://github.com/gr33nimax/etonify-core/tree/extended-integration),
+based on
+[`shtorm-7/sing-box-extended`, branch `extended`](https://github.com/shtorm-7/sing-box-extended/tree/extended),
 and is licensed under GPL-3.0-or-later; see `etonify-core/LICENSE` and the
-licenses of its dependencies. The Android AAR is built from that source and its
-release provenance is recorded under `android/app/libs`.
+licenses of its dependencies. The Android AAR is built from that source,
+published as a pinned core release asset, and its provenance is recorded under
+`android/app/libs`.
 
 ## Other dependencies
 
