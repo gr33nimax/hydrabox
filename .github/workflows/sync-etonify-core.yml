@@ -338,6 +338,7 @@ jobs:
           export LIBBOX_SHA256="$published_sha"
           export LIBBOX_SOURCES_SHA256="$published_sources_sha"
           export LIBBOX_SIZE_BYTES="$published_size"
+          printf '%s  libbox.aar\n' "$LIBBOX_SHA256" > "$libs/libbox.sha256"
           export CORE_RELEASE_TAG CORE_COMMIT
           export LIBBOX_ANDROID_API LIBBOX_BUILD_TAGS
           python3 - "$release_tmp/provenance.json" <<'PY'
@@ -369,7 +370,7 @@ jobs:
                       f"{field}: expected {expected_value!r}, got {actual_value!r}"
                   )
               raise SystemExit(1)
-          print("Published provenance matches the rebuilt libbox artifact.")
+          print("Published provenance matches the authoritative libbox release asset.")
           PY
 
           export CORE_VERSION CORE_RELEASE_TAG CORE_COMMIT
