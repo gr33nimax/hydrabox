@@ -9,8 +9,9 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.ProxyInfo
 import android.net.VpnService
-import android.os.CancellationSignal
 import android.os.Build
+import android.os.CancellationSignal
+import android.os.ParcelFileDescriptor
 import android.os.Process
 import android.system.ErrnoException
 import android.system.OsConstants
@@ -44,6 +45,29 @@ abstract class MeowBasePlatformInterface(
     protected val context: Context,
 ) : PlatformInterface {
     override fun autoDetectInterfaceControl(fd: Int) = Unit
+
+    override fun bindInterfaceControl(fd: Int, interfaceName: String) {
+        require(interfaceName.isNotBlank()) { "android: interface name is empty" }
+        check(Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            "android: binding a socket to an interface requires Android 6+"
+        }
+        val connectivity =
+            context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = connectivity.allNetworks.firstOrNull { candidate ->
+            connectivity.getLinkProperties(candidate)?.interfaceName == interfaceName
+        } ?: error("android: network interface $interfaceName is not available")
+
+        // Network.bindSocket() must receive a FileDescriptor, while libbox owns
+        // the original descriptor. Bind through a duplicate so closing the
+        // ParcelFileDescriptor cannot close the core's socket.
+        ParcelFileDescriptor.fromFd(fd).use { duplicate ->
+            network.bindSocket(duplicate.fileDescriptor)
+        }
+        MeowDiagnostics.log(
+            "MeowPlatform",
+            "bound fd=$fd to interface=$interfaceName network=$network",
+        )
+    }
 
     override fun clearDNSCache() = Unit
 
@@ -193,6 +217,13 @@ class MeowVpnPlatformInterface(
             MeowDiagnostics.log("MeowVpnPlatform", "protect fd=$fd returned false", error)
             throw error
         }
+    }
+
+    override fun bindInterfaceControl(fd: Int, interfaceName: String) {
+        // Explicit interface binding replaces auto-detection in libbox, so the
+        // VPN adapter must still exclude the socket from its own TUN first.
+        autoDetectInterfaceControl(fd)
+        super.bindInterfaceControl(fd, interfaceName)
     }
 
     override fun openTun(options: TunOptions): Int {
