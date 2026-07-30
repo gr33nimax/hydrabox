@@ -88,6 +88,8 @@ jobs:
 
           git -C etonify-core fetch --no-tags origin \
             "+refs/heads/${CORE_BRANCH}:refs/remotes/origin/${CORE_BRANCH}"
+          git -C etonify-core fetch --force origin \
+            "+refs/tags/*:refs/tags/*"
           branch_commit="$(
             git -C etonify-core rev-parse "refs/remotes/origin/${CORE_BRANCH}"
           )"

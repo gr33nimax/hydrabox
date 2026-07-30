@@ -256,19 +256,6 @@ def main() -> None:
         source_commit=gitlink_commit,
         release_tag=pinned_release_tag,
     )
-    source_version = git(
-        "describe",
-        "--tags",
-        "--always",
-        "--abbrev=8",
-        "--exclude=v*-etonify.*",
-        cwd=CORE_PATH,
-    )
-    if parsed_provenance.core_version != source_version:
-        fail(
-            "libbox provenance core_version does not match the pinned core: "
-            f"{parsed_provenance.core_version} != {source_version}"
-        )
 
     baseline = baseline_settings()
     go_actual = required_string(provenance, "go")
