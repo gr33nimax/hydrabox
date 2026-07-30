@@ -8,7 +8,7 @@
   "download_url": "https://github.com/gr33nimax/etonify-core/releases/download/v1.13.14-extended-etonify.1/libbox.aar",
   "go": "go version go1.26.4 linux/amd64",
   "gomobile": "v0.1.12",
-  "java": "openjdk 17.0.19 2026-04-21",
+  "java": "openjdk 17.0.20 2026-07-21",
   "release_tag": "v1.13.14-extended-etonify.1",
   "schema_version": 2,
   "sha256": "b5c04e257ebaea075401068e6e4c40107bb7571cf846161abd9ca8fa26131cb7",
