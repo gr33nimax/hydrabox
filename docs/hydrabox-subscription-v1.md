@@ -264,10 +264,11 @@ endpoints:  wireguard (userspace only)
 DNS/providers/rule sets: none
 ```
 
-For v1, `wireguard` means the userspace endpoint and classic AmneziaWG
-parameters (`jc`, `jmin`, `jmax`, `s1..s4`, and `h1..h4`). qWDTT `i1..i5`,
-`j1..j3`, and `itime` are outside this policy and are rejected before the
-document reaches HydraCore. They are neither interpreted nor rewritten.
+For v1, `wireguard` means the userspace endpoint and supports the complete
+AmneziaWG parameter set exposed by HydraCore: `jc`, `jmin`, `jmax`, `s1..s4`,
+`h1..h4`, `i1..i5`, `j1..j3`, and `itime`. These native fields are retained
+without interpretation or rewriting and are validated by HydraCore before
+activation.
 
 `direct`, `block`, selector/url-test/fallback groups, `shadowsocks` plugins,
 `ssh`, `openvpn`, `masque`, `warp`, parser/tor/composite/limiter types, and

@@ -150,18 +150,6 @@ class HydraBoxSubscriptionParser {
     'adblock-allow',
     'adblock-block',
   };
-  static const _unsupportedRemoteAmneziaFields = {
-    'i1',
-    'i2',
-    'i3',
-    'i4',
-    'i5',
-    'j1',
-    'j2',
-    'j3',
-    'itime',
-  };
-
   static bool looksLike(String content) {
     if (HydraBoxJweCodec.looksLike(content)) return true;
     final members = scanTopLevelJsonObjectForDetection(
@@ -1258,19 +1246,6 @@ class HydraBoxSubscriptionParser {
             throw FormatException(
               'runtime.document.$section[$index].amnezia must be an object',
             );
-          }
-          if (amnezia is Map) {
-            for (final rawKey in amnezia.keys) {
-              final key = rawKey.toString();
-              if (_unsupportedRemoteAmneziaFields.contains(
-                key.toLowerCase(),
-              )) {
-                throw FormatException(
-                  'runtime.document.$section[$index].amnezia.$key is outside '
-                  'HydraBox remote policy v1',
-                );
-              }
-            }
           }
         }
         if (section == 'outbounds' &&

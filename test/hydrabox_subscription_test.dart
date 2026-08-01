@@ -159,45 +159,48 @@ void main() {
     expect(visible['tag'], 'provider-wireguard');
   });
 
-  test('qWDTT Amnezia fields stay outside remote policy v1', () {
-    for (final field in const <String>[
-      'i1',
-      'i2',
-      'i3',
-      'i4',
-      'i5',
-      'j1',
-      'j2',
-      'j3',
-      'itime',
-      'I1',
-      'ITime',
-    ]) {
-      final source = document();
-      final runtime = source['runtime'] as Map<String, dynamic>;
-      final native = runtime['document'] as Map<String, dynamic>;
-      native['endpoints'] = [
-        {
-          'type': 'wireguard',
-          'tag': 'provider-wireguard',
-          'address': ['10.0.0.2/32'],
-          'private_key': 'opaque',
-          'amnezia': {field: field.toLowerCase() == 'itime' ? 1 : '<r 1>'},
-          'peers': <dynamic>[],
-        },
-      ];
+  test('all AmneziaWG fields are preserved by remote policy v1', () {
+    final source = document();
+    final runtime = source['runtime'] as Map<String, dynamic>;
+    final native = runtime['document'] as Map<String, dynamic>;
+    final amnezia = <String, dynamic>{
+      'jc': 2,
+      'jmin': 27,
+      'jmax': 39,
+      's1': 9,
+      's2': 6,
+      's3': 0,
+      's4': 0,
+      'h1': 1945982327,
+      'h2': 1210256333,
+      'h3': 125101821,
+      'h4': 375691454,
+      'i1': '<r 1>',
+      'i2': '<r 2>',
+      'i3': '<r 3>',
+      'i4': '<r 4>',
+      'i5': '<r 5>',
+      'j1': '<r 6>',
+      'j2': '<r 7>',
+      'j3': '<r 8>',
+      'itime': 50,
+    };
+    native['endpoints'] = [
+      {
+        'type': 'wireguard',
+        'tag': 'provider-wireguard',
+        'address': ['10.0.0.2/32'],
+        'private_key': 'opaque',
+        'amnezia': amnezia,
+        'peers': <dynamic>[],
+      },
+    ];
 
-      expect(
-        () => SubscriptionParser.parse(jsonEncode(source)),
-        throwsA(
-          isA<FormatException>().having(
-            (error) => error.message,
-            'message for $field',
-            contains('outside HydraBox remote policy v1'),
-          ),
-        ),
-      );
-    }
+    final parsed = SubscriptionParser.parse(jsonEncode(source));
+    final endpoints = parsed.nativeConfig?['endpoints'] as List<dynamic>;
+    final endpoint = endpoints.single as Map<String, dynamic>;
+
+    expect(endpoint['amnezia'], amnezia);
   });
 
   test('unsupported HydraBox major never falls back to a legacy parser', () {
