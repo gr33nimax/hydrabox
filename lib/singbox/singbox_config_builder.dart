@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
@@ -19,6 +20,9 @@ class SingboxConfigBuilder {
   static const int _maxHydraBoxAmneziaJunkPacketCount = 128;
   static const int _maxHydraBoxAmneziaPacketPaddingBytes = 65535;
   static const int _maxHydraBoxAmneziaHandshakeJunkBytes = 4 * 1024 * 1024;
+  static const int _maxHydraBoxWdttWorkers = 36;
+  static const int _maxHydraBoxWdttHashes = 4;
+  static const int _maxHydraBoxWdttPasswordBytes = 1024;
   static const Set<String> _nonServerOutboundTypes = {
     'direct',
     'block',
@@ -891,6 +895,13 @@ class SingboxConfigBuilder {
         return null;
       }
       final config = _cloneJsonMap(decoded);
+      if (_containsWdttEntry(config) &&
+          (!strictHydraBox ||
+              activeSubscription?.sourceMetadata['encrypted'] != true)) {
+        throw StateError(
+          'WDTT is available only through an encrypted HydraBox Subscription',
+        );
+      }
       final tagRemapping = _coreTagRemapping();
       if (tagRemapping.isNotEmpty) {
         if (strictHydraBox) {
@@ -918,6 +929,21 @@ class SingboxConfigBuilder {
       return null;
     }
     return SingboxConfigParser.decodeDocument(rawContent);
+  }
+
+  bool _containsWdttEntry(Map<String, dynamic> config) {
+    for (final section in const {'outbounds', 'endpoints'}) {
+      final entries = config[section];
+      if (entries is List &&
+          entries.any(
+            (entry) =>
+                entry is Map &&
+                entry['type']?.toString().trim().toLowerCase() == 'wdtt',
+          )) {
+        return true;
+      }
+    }
+    return false;
   }
 
   Map<String, String> _coreTagRemapping() {
@@ -1041,7 +1067,9 @@ class SingboxConfigBuilder {
       }
     }
 
-    if (capabilities.remotePolicyVersion == 1) {
+    if (capabilities.remotePolicyVersion == 1 ||
+        capabilities.remotePolicyVersion == 2) {
+      final policyVersion = capabilities.remotePolicyVersion;
       const v1TopLevelFields = {r'$schema', 'outbounds', 'endpoints'};
       const v1OutboundTypes = {
         'socks',
@@ -1060,12 +1088,15 @@ class SingboxConfigBuilder {
         'sudoku',
         'snell',
       };
-      const v1EndpointTypes = {'wireguard'};
+      final safeEndpointTypes = policyVersion == 1
+          ? const {'wireguard'}
+          : const {'wireguard', 'wdtt'};
       for (final rawKey in native.keys) {
         final key = rawKey.toString();
         if (!v1TopLevelFields.contains(key)) {
           throw StateError(
-            'runtime.document.$key is not part of HydraBox remote policy v1',
+            'runtime.document.$key is not part of HydraBox remote policy '
+            'v$policyVersion',
           );
         }
       }
@@ -1077,10 +1108,13 @@ class SingboxConfigBuilder {
       validateTypedEntries(
         native['endpoints'],
         field: 'runtime.document.endpoints',
-        safeTypes: v1EndpointTypes,
+        safeTypes: safeEndpointTypes,
       );
       _validateHydraBoxV1WireGuardResourceLimits(native);
       _validateHydraBoxV1ReferenceGraph(native);
+      if (policyVersion == 2) {
+        _validateHydraBoxV2WdttEndpoints(native);
+      }
       void rejectV1ExecutableTypes(
         dynamic value, {
         required String field,
@@ -1099,7 +1133,7 @@ class SingboxConfigBuilder {
           if (forbiddenTypes.contains(type)) {
             throw StateError(
               '$field[$index] type "$type" requires recursive HydraCore '
-              'remote-policy enforcement newer than v1',
+              'remote-policy enforcement newer than v$policyVersion',
             );
           }
         }
@@ -1128,7 +1162,7 @@ class SingboxConfigBuilder {
       if (providers is List && providers.isNotEmpty) {
         throw StateError(
           'runtime.document.providers requires recursive HydraCore '
-          'remote-policy enforcement newer than v1',
+          'remote-policy enforcement newer than v$policyVersion',
         );
       }
       final route = native['route'];
@@ -1137,7 +1171,7 @@ class SingboxConfigBuilder {
         if (ruleSets is List && ruleSets.isNotEmpty) {
           throw StateError(
             'runtime.document.route.rule_set requires recursive HydraCore '
-            'remote-policy enforcement newer than v1',
+            'remote-policy enforcement newer than v$policyVersion',
           );
         }
         for (final databaseKey in const {'geoip', 'geosite'}) {
@@ -1145,7 +1179,7 @@ class SingboxConfigBuilder {
           if (database is Map && database.isNotEmpty) {
             throw StateError(
               'runtime.document.route.$databaseKey remote data is not '
-              'classified safe by HydraCore remote policy v1',
+              'classified safe by HydraCore remote policy v$policyVersion',
             );
           }
         }
@@ -1269,6 +1303,121 @@ class SingboxConfigBuilder {
           field: '$field.amnezia.$key',
           maximum: _maxHydraBoxAmneziaPacketPaddingBytes,
         );
+      }
+    }
+  }
+
+  void _validateHydraBoxV2WdttEndpoints(Map<String, dynamic> native) {
+    final endpoints = native['endpoints'];
+    if (endpoints == null) return;
+    if (endpoints is! List) {
+      throw StateError('runtime.document.endpoints must be an array');
+    }
+    final hasWdttEndpoint = endpoints.any(
+      (endpoint) =>
+          endpoint is Map &&
+          endpoint['type']?.toString().trim().toLowerCase() == 'wdtt',
+    );
+    if (!hasWdttEndpoint) return;
+    if (!capabilities.hasWdttEndpoint) {
+      throw StateError(
+        'The installed HydraCore build does not expose the WDTT endpoint '
+        'capability',
+      );
+    }
+    if (activeSubscription?.sourceMetadata['encrypted'] != true) {
+      throw StateError(
+        'HydraBox WDTT endpoints require an encrypted JWE subscription',
+      );
+    }
+
+    const allowedKeys = <String>{
+      'type',
+      'tag',
+      'server',
+      'server_port',
+      'password',
+      'vk_hashes',
+      'workers',
+      'obfs',
+      'vk_auth',
+      'vk_anon_path',
+    };
+    final maximumWorkers = min(
+      _maxHydraBoxWdttWorkers,
+      capabilities.wdttMaxWorkers,
+    );
+    final maximumHashes = min(
+      _maxHydraBoxWdttHashes,
+      capabilities.wdttMaxHashes,
+    );
+    final hashPattern = RegExp(r'^[A-Za-z0-9._~:-]{1,256}$');
+
+    for (var index = 0; index < endpoints.length; index++) {
+      final endpoint = endpoints[index];
+      if (endpoint is! Map ||
+          endpoint['type']?.toString().trim().toLowerCase() != 'wdtt') {
+        continue;
+      }
+      final field = 'runtime.document.endpoints[$index]';
+      for (final rawKey in endpoint.keys) {
+        final key = rawKey.toString();
+        if (key != key.toLowerCase() || !allowedKeys.contains(key)) {
+          throw StateError('$field.$key is not allowed by remote policy v2');
+        }
+      }
+      final server = endpoint['server'];
+      if (server is! String ||
+          server.isEmpty ||
+          server != server.trim() ||
+          server.length > 253 ||
+          server.contains(RegExp(r'[\s\x00-\x1F\x7F/?#@]'))) {
+        throw StateError('$field.server must be a hostname or IP address');
+      }
+      final serverPort = endpoint['server_port'];
+      if (serverPort is! int || serverPort < 1 || serverPort > 65535) {
+        throw StateError('$field.server_port must be between 1 and 65535');
+      }
+      final password = endpoint['password'];
+      if (password is! String ||
+          password.isEmpty ||
+          utf8.encode(password).length > _maxHydraBoxWdttPasswordBytes ||
+          password.contains(RegExp(r'[|\x00\r\n]'))) {
+        throw StateError('$field.password is invalid');
+      }
+      final hashes = endpoint['vk_hashes'];
+      if (hashes is! List ||
+          hashes.isEmpty ||
+          hashes.length > maximumHashes ||
+          hashes.any(
+            (value) =>
+                value is! String ||
+                value != value.trim() ||
+                !hashPattern.hasMatch(value),
+          ) ||
+          hashes.toSet().length != hashes.length) {
+        throw StateError(
+          '$field.vk_hashes must contain 1-$maximumHashes unique VK hashes',
+        );
+      }
+      final workers = endpoint['workers'];
+      if (workers != null &&
+          (workers is! int || workers < 1 || workers > maximumWorkers)) {
+        throw StateError('$field.workers must be between 1 and $maximumWorkers');
+      }
+      final obfs = endpoint['obfs'] ?? 'audio';
+      if (obfs is! String ||
+          !capabilities.wdttObfsModes.contains(obfs.toLowerCase()) ||
+          !const {'audio', 'video'}.contains(obfs.toLowerCase())) {
+        throw StateError('$field.obfs must be "audio" or "video"');
+      }
+      final vkAuth = endpoint['vk_auth'] ?? 'anonymous';
+      if (vkAuth != 'anonymous' ||
+          !capabilities.wdttAuthModes.contains('anonymous')) {
+        throw StateError('$field.vk_auth must be "anonymous"');
+      }
+      if ((endpoint['vk_anon_path'] ?? 'vkcalls') != 'vkcalls') {
+        throw StateError('$field.vk_anon_path must be "vkcalls"');
       }
     }
   }

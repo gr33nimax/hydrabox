@@ -1129,6 +1129,24 @@ void main() {
   });
 
   group('SubscriptionParser', () {
+    test('rejects direct and base64-encoded WDTT links', () {
+      for (final link in const [
+        'wdtt://server.example:56000?password=must-not-import',
+        'qwdtt://server.example:56000?password=must-not-import',
+      ]) {
+        expect(
+          () => SubscriptionParser.parse(link),
+          throwsFormatException,
+          reason: '$link must not bypass HydraBox Subscription',
+        );
+        expect(
+          () => SubscriptionParser.parse(base64Encode(utf8.encode(link))),
+          throwsFormatException,
+          reason: 'base64 $link must not bypass HydraBox Subscription',
+        );
+      }
+    });
+
     test('forces h2 alpn for grpc transport in xray configs', () {
       final content = jsonEncode({
         'outbounds': [
