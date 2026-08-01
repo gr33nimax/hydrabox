@@ -225,11 +225,6 @@ class HydraBoxSubscriptionParser {
     final nativeConfig = _cloneMap(_requiredMap(runtime, 'document'));
     _validateRuntimeDocumentSafety(nativeConfig);
     final nativeEntries = _indexNativeEntries(nativeConfig);
-    if (!encrypted && _containsWdttEntry(nativeConfig)) {
-      throw const FormatException(
-        'HydraBox WDTT endpoints require an encrypted JWE subscription',
-      );
-    }
 
     final rawProfiles = document['profiles'];
     if (rawProfiles is! List) {
@@ -558,21 +553,6 @@ class HydraBoxSubscriptionParser {
       // v1 has no built-in must-understand extension handlers yet.
       throw FormatException('Unsupported required extension "$name"');
     }
-  }
-
-  static bool _containsWdttEntry(Map<String, dynamic> config) {
-    for (final section in const {'outbounds', 'endpoints'}) {
-      final entries = config[section];
-      if (entries is List &&
-          entries.any(
-            (entry) =>
-                entry is Map &&
-                entry['type']?.toString().trim().toLowerCase() == 'wdtt',
-          )) {
-        return true;
-      }
-    }
-    return false;
   }
 
   static void _validateMetadata(dynamic value) {
@@ -1175,9 +1155,6 @@ class HydraBoxSubscriptionParser {
           final key = entry.key.toString();
           final normalizedKey = key.toLowerCase();
           final child = entry.value;
-          final isWdttPublisherField =
-              value['type']?.toString().trim().toLowerCase() == 'wdtt' &&
-              normalizedKey == 'vk_anon_path';
           final reservedLocalSuffix =
               normalizedKey.endsWith('_path') ||
               normalizedKey.endsWith('_file') ||
@@ -1192,7 +1169,7 @@ class HydraBoxSubscriptionParser {
             );
           }
           if ((localCapabilityKeys.contains(normalizedKey) ||
-                  (reservedLocalSuffix && !isWdttPublisherField)) &&
+                  reservedLocalSuffix) &&
               hasValue(child)) {
             throw FormatException(
               '$field.$key requires explicit local consent',

@@ -27,11 +27,6 @@ class LibboxCapabilities {
     required this.supportsCloseConnections,
     required this.supportsRealitySpiderX,
     required this.tunStacks,
-    this.supportsWdtt = false,
-    this.wdttMaxWorkers = 0,
-    this.wdttMaxHashes = 0,
-    this.wdttAuthModes = const <String>{},
-    this.wdttObfsModes = const <String>{},
     this.remotePolicyVersion = 0,
     this.remoteSafeTopLevelFields = const <String>{},
     this.remoteSafeOutboundTypes = const <String>{},
@@ -42,7 +37,7 @@ class LibboxCapabilities {
 
   static const hydraCoreId = 'io.hydrabox.hydracore';
   static const supportedApiVersion = 1;
-  static const supportedRemotePolicyVersions = <int>{1, 2};
+  static const supportedRemotePolicyVersion = 1;
 
   static const bundledLegacy = LibboxCapabilities(
     apiVersion: 0,
@@ -136,11 +131,6 @@ class LibboxCapabilities {
         supportsCloseConnections: _readBool(json, 'supports_close_connections'),
         supportsRealitySpiderX: _readBool(json, 'supports_reality_spider_x'),
         tunStacks: _readStringSet(json, 'tun_stacks'),
-        supportsWdtt: _readBool(json, 'supports_wdtt'),
-        wdttMaxWorkers: _readInt(json, 'wdtt_max_workers'),
-        wdttMaxHashes: _readInt(json, 'wdtt_max_hashes'),
-        wdttAuthModes: _readStringSet(json, 'wdtt_auth_modes'),
-        wdttObfsModes: _readStringSet(json, 'wdtt_obfs_modes'),
         remotePolicyVersion: _readInt(json, 'remote_policy_version'),
         remoteSafeTopLevelFields: _readStringSet(
           json,
@@ -216,11 +206,6 @@ class LibboxCapabilities {
   final bool supportsCloseConnections;
   final bool supportsRealitySpiderX;
   final Set<String> tunStacks;
-  final bool supportsWdtt;
-  final int wdttMaxWorkers;
-  final int wdttMaxHashes;
-  final Set<String> wdttAuthModes;
-  final Set<String> wdttObfsModes;
   final int remotePolicyVersion;
   final Set<String> remoteSafeTopLevelFields;
   final Set<String> remoteSafeOutboundTypes;
@@ -235,15 +220,6 @@ class LibboxCapabilities {
 
   bool get hasRemoteSafetyManifest =>
       hasVersionedContract &&
-      supportedRemotePolicyVersions.contains(remotePolicyVersion) &&
+      remotePolicyVersion == supportedRemotePolicyVersion &&
       remoteSafeTopLevelFields.isNotEmpty;
-
-  bool get hasWdttEndpoint =>
-      supportsWdtt &&
-      remotePolicyVersion >= 2 &&
-      remoteSafeEndpointTypes.contains('wdtt') &&
-      wdttMaxWorkers > 0 &&
-      wdttMaxHashes > 0 &&
-      wdttAuthModes.contains('anonymous') &&
-      wdttObfsModes.contains('audio');
 }

@@ -1,6 +1,6 @@
 # HydraBox Subscription v1
 
-Status: **draft 0.4 / fail-closed compatibility profile**
+Status: **draft 0.3 / fail-closed compatibility profile**
 
 HydraBox Subscription is a versioned envelope for one native sing-box runtime
 document plus an explicit list of user-facing profiles. It is designed around
@@ -12,8 +12,6 @@ four invariants:
    preserved in full; HydraCore is the protocol-schema authority.
 4. Confidential transport uses standard JWE and is fail-closed. A key-bearing
    source cannot silently become plaintext or fall back to a legacy parser.
-5. WDTT is subscription-only: it has no share-link, manual form, sidecar, or
-   direct sing-box JSON import path, and every WDTT payload is authenticated JWE.
 
 The envelope schema does not enumerate protocols. A future HydraCore outbound
 such as:
@@ -266,71 +264,6 @@ endpoints:  wireguard (userspace only)
 DNS/providers/rule sets: none
 ```
 
-Remote policy v2 is a narrow additive revision. It keeps every v1 top-level,
-outbound, reference-graph, local-authority, and resource rule, and adds only the
-`wdtt` endpoint type. The SubscriptionData wire envelope remains
-`hydrabox.io/subscription/v1`.
-
-The following is a fragment of the authenticated plaintext inside JWE; it is
-not a valid plaintext delivery format for WDTT:
-
-```json
-{
-  "runtime": {
-    "format": "sing-box-json",
-    "ownership": {
-      "inbounds": "client",
-      "dns": "client",
-      "route": "client",
-      "log": "client"
-    },
-    "document": {
-      "endpoints": [
-        {
-          "type": "wdtt",
-          "tag": "provider-wdtt",
-          "server": "wdtt.provider.example",
-          "server_port": 56000,
-          "password": "subscription-secret",
-          "vk_hashes": ["provider-vk-call-hash"],
-          "workers": 9,
-          "obfs": "audio",
-          "vk_auth": "anonymous",
-          "vk_anon_path": "vkcalls"
-        }
-      ]
-    }
-  },
-  "profiles": [
-    {
-      "id": "wdtt-main",
-      "name": {"default": "WDTT Main"},
-      "entrypoint": {"section": "endpoints", "tag": "provider-wdtt"}
-    }
-  ]
-}
-```
-
-`server`, `server_port`, `password`, and one to four `vk_hashes` are required.
-`workers` defaults to 9 and is limited to 36. `obfs` is `audio` or `video`;
-`vk_auth` and `vk_anon_path` currently accept only `anonymous` and `vkcalls`.
-No other WDTT endpoint fields are remotely executable under policy v2.
-
-The stable device ID, loopback bridge port, anonymous VK/TURN credentials,
-dynamic WireGuard private key, peer endpoint, and allowed IPs are owned by
-HydraCore. A publisher cannot set them. HydraCore parses the server-issued
-WireGuard document through a strict allowlist, ignores its DNS and network
-authority, and replaces its peer endpoint/allowed IPs with the core-owned
-loopback bridge and tunnel routes.
-
-HydraCore creates no WDTT TURN allocation while the endpoint is merely stored.
-Initialization is lazy on first use. VK HTTPS, TURN UDP, and WDTT hostname
-resolution all use the HydraCore dialer/resolver/protect boundary.
-
-Direct `wdtt:`/`qwdtt:` links, base64-wrapped links, and ordinary sing-box JSON
-containing a WDTT endpoint are errors. A plaintext HydraBox document containing
-WDTT is also an error. These inputs are never treated as unknown legacy data.
-
 For v1, `wireguard` means the userspace endpoint and supports the complete
 AmneziaWG parameter set exposed by HydraCore: `jc`, `jmin`, `jmax`, `s1..s4`,
 `h1..h4`, `i1..i5`, `j1..j3`, and `itime`. These native fields are retained
@@ -390,11 +323,9 @@ Before accepting a document, a client must:
     dependency closure, rename native tags, or rewrite unknown native fields.
 13. Require an exact, integer-versioned HydraCore capability contract and its
     remote-policy manifest. A legacy or synthetic manifest is insufficient.
-14. Apply the exact advertised policy top-level/type allowlists, recursively
-    reject local authority, validate the closed reference graph, assemble a
-    temporary client-owned runtime, and run HydraCore `checkConfig` before
-    activation. Policy v2 additionally requires authenticated JWE and the
-    closed WDTT field/resource contract above.
+14. Apply the v1 top-level/type allowlists, recursively reject local authority,
+    validate the closed reference graph, assemble a temporary client-owned
+    runtime, and run HydraCore `checkConfig` before activation.
 
 JSON Schema validates the portable shape. Cross-reference, uniqueness, trust,
 time and HydraCore checks are runtime requirements.
@@ -614,17 +545,6 @@ amnezia.s1..s4:       0..65535 bytes each
 jc * jmax:            <= 4 MiB per handshake junk burst
 ```
 
-Remote-policy-v2 WDTT endpoints add this independent budget:
-
-```text
-WDTT endpoints:       only inside authenticated JWE
-workers:              1..36 (omission selects 9)
-vk_hashes:            1..4 unique values
-hash length:          1..256 characters
-password:             1..1024 UTF-8 bytes
-dynamic WG response:  <=16 KiB, exactly one peer
-```
-
 Providers should stay far below these ceilings. Implementations may impose
 stricter local limits.
 
@@ -641,9 +561,8 @@ limit wire bytes
   -> validate envelope/extensions/time/sequence
   -> resolve explicit profiles
   -> reject unconsented local-process authority
-  -> require exact HydraCore identity + integer remote-policy manifest
-  -> enforce exact policy top-level/types and closed acyclic references
-  -> for WDTT: require JWE + policy v2 + core-owned runtime authority
+  -> require exact HydraCore identity + integer policy-v1 manifest
+  -> enforce exact v1 top-level/types and closed acyclic references
   -> assemble client-owned runtime
   -> HydraCore config check
   -> switch the active runtime

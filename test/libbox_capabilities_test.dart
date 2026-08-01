@@ -105,34 +105,13 @@ void main() {
       );
     });
 
-    test('remote policy v2 exposes WDTT only with its full capability', () {
-      final capabilities = LibboxCapabilities.parseOrLegacy('''
-        {
-          "api_version": 1,
-          "supports_wdtt": true,
-          "wdtt_max_workers": 36,
-          "wdtt_max_hashes": 4,
-          "wdtt_auth_modes": ["anonymous"],
-          "wdtt_obfs_modes": ["audio", "video"],
-          "remote_policy_version": 2,
-          "remote_safe_top_level_fields": ["outbounds", "endpoints"],
-          "remote_safe_endpoint_types": ["wireguard", "wdtt"]
-        }
-      ''');
-
-      expect(capabilities.hasRemoteSafetyManifest, isTrue);
-      expect(capabilities.hasWdttEndpoint, isTrue);
-      expect(capabilities.wdttMaxWorkers, 36);
-      expect(capabilities.wdttMaxHashes, 4);
-    });
-
     test('unknown capability and remote-policy versions fail closed', () {
       final unknownApi = LibboxCapabilities.parseOrLegacy(
         '{"api_version":2,"remote_policy_version":1,'
         '"remote_safe_top_level_fields":["outbounds"]}',
       );
       final unknownPolicy = LibboxCapabilities.parseOrLegacy(
-        '{"api_version":1,"remote_policy_version":3,'
+        '{"api_version":1,"remote_policy_version":2,'
         '"remote_safe_top_level_fields":["outbounds"]}',
       );
 

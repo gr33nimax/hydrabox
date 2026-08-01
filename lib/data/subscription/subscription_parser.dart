@@ -266,18 +266,15 @@ class SubscriptionParser {
     if (_looksLikeJson(content)) {
       // Sing-box config
       if (SingboxConfigParser.canParse(content)) {
-        final parsed = SingboxConfigParser.parse(content);
-        if (parsed.any(_isWdttEntry)) {
-          throw const FormatException(
-            'WDTT is available only through an encrypted HydraBox Subscription',
-          );
-        }
         return ParseResult(
           format: SubscriptionFormat.singboxConfig,
           // A full sing-box document is already authored against a concrete
           // core schema. Preserve every field so extended protocols and
           // future transports reach libbox unchanged.
-          outbounds: _normalizeOutbounds(parsed, preserveUnknownFields: true),
+          outbounds: _normalizeOutbounds(
+            SingboxConfigParser.parse(content),
+            preserveUnknownFields: true,
+          ),
         );
       }
 
@@ -374,9 +371,7 @@ class SubscriptionParser {
 
       // Sanity check: decoded should contain at least one known proxy scheme
       // or comment lines
-      if (_containsProxyScheme(decoded) ||
-          _containsWdttScheme(decoded) ||
-          decoded.contains('#profile-')) {
+      if (_containsProxyScheme(decoded) || decoded.contains('#profile-')) {
         return decoded;
       }
       return null;
@@ -409,24 +404,6 @@ class SubscriptionParser {
             s.contains('anytls://'));
   }
 
-  static bool _containsWdttScheme(String value) {
-    final normalized = value.toLowerCase();
-    return normalized.contains('wdtt:') || normalized.contains('qwdtt:');
-  }
-
-  static bool _isWdttEntry(Map<String, dynamic> entry) {
-    return entry['type']?.toString().trim().toLowerCase() == 'wdtt';
-  }
-
-  static void _rejectWdttLink(String value) {
-    final normalized = value.trimLeft().toLowerCase();
-    if (normalized.startsWith('wdtt:') || normalized.startsWith('qwdtt:')) {
-      throw const FormatException(
-        'WDTT links are not supported; use an encrypted HydraBox Subscription',
-      );
-    }
-  }
-
   /// Parses each line as a proxy link, skipping comment lines and blanks.
   static List<Map<String, dynamic>> _parseLinks(String content) {
     final results = <Map<String, dynamic>>[];
@@ -436,13 +413,8 @@ class SubscriptionParser {
       if (trimmed.isEmpty) continue;
       if (trimmed.startsWith('#')) continue; // comment / metadata line
 
-      _rejectWdttLink(trimmed);
-
       final chainParts = _splitProxyChainLinks(trimmed);
       if (chainParts.length > 1) {
-        for (final part in chainParts) {
-          _rejectWdttLink(part);
-        }
         final chainOutbounds = _parseProxyChainLinks(
           chainParts,
           'proxy-chain-${proxyChainIndex++}',
@@ -454,7 +426,6 @@ class SubscriptionParser {
       }
 
       for (final candidate in _splitConcatenatedLinks(trimmed)) {
-        _rejectWdttLink(candidate);
         final parsed = LinkParser.tryParse(candidate);
         if (parsed != null) {
           results.add(parsed);

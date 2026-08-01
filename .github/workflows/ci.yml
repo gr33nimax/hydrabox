@@ -28,8 +28,6 @@ jobs:
     name: Flutter checks
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    permissions:
-      contents: write
 
     steps:
       - name: Checkout
@@ -79,41 +77,6 @@ jobs:
           else
             echo "No Pigeon schema found; skipping."
           fi
-
-      - name: Normalize WDTT integration formatting on GitHub
-        shell: bash
-        run: |
-          set -euo pipefail
-          files=(
-            lib/data/subscription/parsers/hydrabox_subscription_parser.dart
-            lib/data/subscription/subscription_parser.dart
-            lib/singbox/extended_core_protocols.dart
-            lib/singbox/libbox_capabilities.dart
-            lib/singbox/singbox_config_builder.dart
-            test/extended_core_compatibility_test.dart
-            test/hydrabox_subscription_test.dart
-            test/libbox_capabilities_test.dart
-            test/subscription_parser_test.dart
-          )
-          dart format "${files[@]}"
-          mapfile -t changed_files < <(git diff --name-only -- "${files[@]}")
-          if [ "${#changed_files[@]}" -eq 0 ]; then
-            echo "WDTT integration source is normalized."
-            exit 0
-          fi
-
-          if [[ "$GITHUB_EVENT_NAME" != "push" || "$GITHUB_REF" != "refs/heads/extended-core" ]]; then
-            git diff -- "${changed_files[@]}"
-            echo "::error title=Unnormalized WDTT integration::Commit the GitHub-generated Dart formatting diff"
-            exit 1
-          fi
-
-          git add -- "${changed_files[@]}"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "chore(wdtt): normalize HydraBox integration"
-          git push origin "HEAD:${GITHUB_REF_NAME}"
-          echo "GitHub committed normalized WDTT integration source; this run continues against the normalized worktree."
 
       - name: Analyze
         run: flutter analyze

@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:meow_client/data/local/app_settings_store.dart';
-import 'package:meow_client/data/subscription/hydrabox_subscription_crypto.dart';
 import 'package:meow_client/data/subscription/outbound_schema.dart';
 import 'package:meow_client/data/subscription/subscription_parser.dart';
 import 'package:meow_client/data/subscription/subscription_store.dart';
@@ -87,7 +86,6 @@ void main() {
         'vpn-server',
         'vpn-client',
         'wireguard',
-        'wdtt',
         'warp',
         'tailscale',
       }),
@@ -151,7 +149,6 @@ void main() {
         'with_quic',
         'with_dhcp',
         'with_wireguard',
-        'with_wdtt',
         'with_masque',
         'with_mtproxy',
         'with_ccm',
@@ -971,124 +968,6 @@ void main() {
     }
   });
 
-  test('remote policy v2 activates a JWE-only WDTT endpoint losslessly', () {
-    final source = _hydraboxBuilderDocument();
-    final runtime = source['runtime'] as Map<String, dynamic>;
-    final native = runtime['document'] as Map<String, dynamic>;
-    native['endpoints'] = [
-      {
-        'type': 'wdtt',
-        'tag': 'provider-wdtt',
-        'server': '203.0.113.10',
-        'server_port': 56000,
-        'password': 'subscription-secret',
-        'vk_hashes': ['8UkewARpV0aJoWheFZlR942el6unTZvhneulo-eU8gA'],
-        'workers': 9,
-        'obfs': 'audio',
-        'vk_auth': 'anonymous',
-        'vk_anon_path': 'vkcalls',
-      },
-    ];
-    source['default_profile_id'] = 'wdtt-profile';
-    source['profiles'] = [
-      {
-        'id': 'wdtt-profile',
-        'name': {'default': 'WDTT Moscow'},
-        'entrypoint': {'section': 'endpoints', 'tag': 'provider-wdtt'},
-      },
-    ];
-    final key = base64Url
-        .encode(List<int>.generate(32, (index) => index))
-        .replaceAll('=', '');
-    final encrypted = HydraBoxJweCodec.encrypt(
-      jsonEncode(source),
-      encodedKey: key,
-    );
-    final subscription = _hydraboxSubscriptionFromContent(
-      encrypted,
-      decryptionKey: key,
-    );
-
-    final plan = _defaultBuilder(
-      subscription,
-      capabilities: _hydraboxTestCapabilities(
-        remotePolicyVersion: 2,
-        extraEndpointTypes: const {'wdtt'},
-        supportsWdtt: true,
-      ),
-    ).buildPlan();
-    final endpoint = (plan.config['endpoints'] as List<dynamic>)
-        .cast<Map<String, dynamic>>()
-        .singleWhere((entry) => entry['tag'] == 'provider-wdtt');
-    expect(endpoint, native['endpoints']!.first);
-    expect(endpoint, isNot(contains('device_id')));
-    expect(endpoint, isNot(contains('listen_port')));
-    expect(
-      (plan.config['outbounds'] as List<dynamic>)
-          .cast<Map<String, dynamic>>()
-          .where((entry) => entry['type'] == 'wdtt'),
-      isEmpty,
-    );
-  });
-
-  test(
-    'remote policy v2 rejects WDTT runtime authority and resource abuse',
-    () {
-      final mutations = <void Function(Map<String, Object>)>[
-        (endpoint) => endpoint['workers'] = 37,
-        (endpoint) => endpoint['vk_hashes'] = ['a', 'b', 'c', 'd', 'e'],
-        (endpoint) => endpoint['device_id'] = 'publisher-owned',
-        (endpoint) => endpoint['listen_port'] = 9000,
-        (endpoint) => endpoint['detour'] = 'profile-out',
-        (endpoint) => endpoint['vk_auth'] = 'account',
-      ];
-      final key = base64Url
-          .encode(List<int>.generate(32, (index) => index))
-          .replaceAll('=', '');
-      for (final mutate in mutations) {
-        final source = _hydraboxBuilderDocument();
-        final runtime = source['runtime'] as Map<String, dynamic>;
-        final native = runtime['document'] as Map<String, dynamic>;
-        final endpoint = <String, Object>{
-          'type': 'wdtt',
-          'tag': 'provider-wdtt',
-          'server': '203.0.113.10',
-          'server_port': 56000,
-          'password': 'subscription-secret',
-          'vk_hashes': ['hash'],
-        };
-        mutate(endpoint);
-        native['endpoints'] = [endpoint];
-        source['default_profile_id'] = 'wdtt-profile';
-        source['profiles'] = [
-          {
-            'id': 'wdtt-profile',
-            'name': {'default': 'WDTT'},
-            'entrypoint': {'section': 'endpoints', 'tag': 'provider-wdtt'},
-          },
-        ];
-        final encrypted = HydraBoxJweCodec.encrypt(
-          jsonEncode(source),
-          encodedKey: key,
-        );
-        expect(() {
-          final subscription = _hydraboxSubscriptionFromContent(
-            encrypted,
-            decryptionKey: key,
-          );
-          return _defaultBuilder(
-            subscription,
-            capabilities: _hydraboxTestCapabilities(
-              remotePolicyVersion: 2,
-              extraEndpointTypes: const {'wdtt'},
-              supportsWdtt: true,
-            ),
-          ).buildPlan();
-        }, throwsA(anyOf(isA<FormatException>(), isA<StateError>())));
-      }
-    },
-  );
-
   test('HydraBox builder refuses tag remapping for persisted opaque data', () {
     final subscription = _hydraboxSubscriptionFromContent(
       jsonEncode(_hydraboxBuilderDocument()),
@@ -1187,9 +1066,7 @@ void main() {
     expect(parsed.outbounds, hasLength(rawEndpoints.length));
     expect(
       parsed.outbounds.map((entry) => entry['type']),
-      containsAll(
-        ExtendedCoreProtocolCatalog.endpointTypes.difference(const {'wdtt'}),
-      ),
+      containsAll(ExtendedCoreProtocolCatalog.endpointTypes),
     );
     expect(
       parsed.outbounds,
@@ -1216,58 +1093,6 @@ void main() {
     expect(
       selector['outbounds'],
       containsAll(rawEndpoints.map((entry) => entry['tag'])),
-    );
-  });
-
-  test('direct sing-box WDTT endpoints are rejected outside HydraBox JWE', () {
-    final source = jsonEncode({
-      'endpoints': [
-        {
-          'type': 'wdtt',
-          'tag': 'direct-wdtt',
-          'server': '203.0.113.10',
-          'server_port': 56000,
-          'password': 'must-not-import',
-          'vk_hashes': ['hash'],
-        },
-      ],
-    });
-
-    expect(() => SubscriptionParser.parse(source), throwsFormatException);
-
-    final forgedStoredSubscription = Subscription(
-      id: 'forged-direct-wdtt',
-      name: 'Forged direct WDTT',
-      url: 'file:///forged-direct-wdtt.json',
-      rawContent: source,
-    );
-    expect(
-      () => _defaultBuilder(forgedStoredSubscription).buildPlan(),
-      throwsStateError,
-    );
-
-    final forgedOutboundSource = jsonEncode({
-      'outbounds': [
-        {
-          'type': 'wdtt',
-          'tag': 'invalid-outbound-wdtt',
-          'server': '203.0.113.10',
-          'server_port': 56000,
-          'password': 'must-not-import',
-          'vk_hashes': ['hash'],
-        },
-      ],
-    });
-    expect(
-      () => _defaultBuilder(
-        Subscription(
-          id: 'forged-outbound-wdtt',
-          name: 'Forged outbound WDTT',
-          url: 'file:///forged-outbound-wdtt.json',
-          rawContent: forgedOutboundSource,
-        ),
-      ).buildPlan(),
-      throwsStateError,
     );
   });
 
@@ -1766,11 +1591,8 @@ Subscription _subscriptionFromContent(String source) {
   );
 }
 
-Subscription _hydraboxSubscriptionFromContent(
-  String source, {
-  String? decryptionKey,
-}) {
-  final parsed = SubscriptionParser.parse(source, decryptionKey: decryptionKey);
+Subscription _hydraboxSubscriptionFromContent(String source) {
+  final parsed = SubscriptionParser.parse(source);
   final payload = SubscriptionStore.buildSubscriptionPayloadForTest(parsed);
   final outbounds = payload.outbounds
       .map(Outbound.fromMap)
@@ -1945,7 +1767,6 @@ SingboxConfigBuilder _defaultBuilder(
 
 LibboxCapabilities _hydraboxTestCapabilities({
   int remotePolicyVersion = 1,
-  bool supportsWdtt = false,
   Set<String> extraTopLevelFields = const <String>{},
   Set<String> extraOutboundTypes = const <String>{},
   Set<String> extraEndpointTypes = const <String>{},
@@ -1959,13 +1780,6 @@ LibboxCapabilities _hydraboxTestCapabilities({
       'core_version': 'test',
       'upstream_project': 'etonify-core',
       'supports_config_check': true,
-      'supports_wdtt': supportsWdtt,
-      'wdtt_max_workers': supportsWdtt ? 36 : 0,
-      'wdtt_max_hashes': supportsWdtt ? 4 : 0,
-      'wdtt_auth_modes': supportsWdtt ? const ['anonymous'] : const <String>[],
-      'wdtt_obfs_modes': supportsWdtt
-          ? const ['audio', 'video']
-          : const <String>[],
       'remote_policy_version': remotePolicyVersion,
       'remote_safe_top_level_fields': <String>{
         r'$schema',
