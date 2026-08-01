@@ -43,10 +43,10 @@ separate brand permission has been obtained. Package identities, release
 channels, and update metadata must likewise not imply official status.
 
 HydraBox's Flutter surfaces and Android, iOS, macOS, web, and Windows launcher
-resources use the repository-native geometric HydraBox mark; the inherited
-`assets/images/logo.svg` is not shipped by this tree. The editable vector source
-is `assets/branding/hydrabox-app-icon.svg`, and the platform raster assets can
-be reproduced with `tool/generate_hydrabox_icons.py`.
+resources use the repository-native HydraBox mark; the inherited
+`assets/images/logo.svg` is not shipped by this tree. The canonical source is
+`assets/branding/hydrabox-logo.png`, and platform raster assets can be
+reproduced without redrawing the mark with `tool/generate_hydrabox_icons.py`.
 
 HydraBox retains several `etonify` and `meow_client` technical identifiers for
 storage, backup, platform-channel, legacy deep-link, and migration

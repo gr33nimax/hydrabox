@@ -2,6 +2,8 @@
 
 [English](README.md) / [Русский](README_ru.md) / [Українська](README_uk.md) / [简体中文](README_cn.md) / [فارسی](README_fa.md)
 
+<p align="center"><img width="220" alt="Логотип HydraBox" src="assets/branding/hydrabox-logo.png" /></p>
+
 ## Стан перекладу
 
 Український переклад наразі не підтримується. Щоб застарілий опис Etonify не

@@ -2,6 +2,8 @@
 
 [English](README.md) / [Русский](README_ru.md) / [Українська](README_uk.md) / [简体中文](README_cn.md) / [فارسی](README_fa.md)
 
+<p align="center"><img width="220" alt="نشان HydraBox" src="assets/branding/hydrabox-logo.png" /></p>
+
 ## وضعیت ترجمه
 
 ترجمهٔ فارسی در حال حاضر نگهداری نمی‌شود. برای جلوگیری از معرفی توضیحات قدیمی

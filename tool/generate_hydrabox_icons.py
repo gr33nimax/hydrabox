@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Generate platform app icons from the repository-native HydraBox geometry.
+"""Generate platform launcher icons from the canonical HydraBox logo.
 
-The checked-in SVG is the human-readable vector source.  This script mirrors
-the same normalized coordinates to produce the PNG and ICO assets expected by
-Flutter's platform projects.  Pillow is needed only when regenerating artwork.
+The script does not redraw the mark. It only resizes the checked-in master PNG
+and adds a white safety field for icon formats that apply their own mask.
+Pillow is needed only when regenerating artwork.
 """
 
 from __future__ import annotations
@@ -11,125 +11,31 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from PIL import Image, ImageDraw
+from PIL import Image
 
 
 ROOT = Path(__file__).resolve().parents[1]
-MASTER_SIZE = 2048
-BACKGROUND = "#f6fafc"
-MARK = "#0f5c7a"
-FOREGROUND = "#ffffff"
+MASTER_ASSET = ROOT / "assets" / "branding" / "hydrabox-logo.png"
 
 
-def point(x: float, y: float, scale: float) -> tuple[float, float]:
-    return x * scale, y * scale
-
-
-def cubic(
-    start: tuple[float, float],
-    control_a: tuple[float, float],
-    control_b: tuple[float, float],
-    end: tuple[float, float],
-    *,
-    steps: int = 96,
-) -> list[tuple[float, float]]:
-    points: list[tuple[float, float]] = []
-    for index in range(steps + 1):
-        t = index / steps
-        inverse = 1.0 - t
-        points.append(
-            (
-                inverse**3 * start[0]
-                + 3 * inverse**2 * t * control_a[0]
-                + 3 * inverse * t**2 * control_b[0]
-                + t**3 * end[0],
-                inverse**3 * start[1]
-                + 3 * inverse**2 * t * control_a[1]
-                + 3 * inverse * t**2 * control_b[1]
-                + t**3 * end[1],
-            )
-        )
-    return points
-
-
-def render_master() -> Image.Image:
-    image = Image.new("RGB", (MASTER_SIZE, MASTER_SIZE), BACKGROUND)
-    draw = ImageDraw.Draw(image)
-    scale = MASTER_SIZE / 108.0
-
-    draw.polygon(
-        [
-            point(54, 8, scale),
-            point(90, 27, scale),
-            point(90, 77, scale),
-            point(54, 99, scale),
-            point(18, 77, scale),
-            point(18, 27, scale),
-        ],
-        fill=MARK,
-    )
-
-    width = round(7 * scale)
-    def rounded_line(points: list[tuple[float, float]]) -> None:
-        raster_points = [(round(x), round(y)) for x, y in points]
-        draw.line(
-            raster_points,
-            fill=FOREGROUND,
-            width=width,
-            joint="curve",
-        )
-        radius = width / 2
-        for center_x, center_y in (raster_points[0], raster_points[-1]):
-            draw.ellipse(
-                (
-                    center_x - radius,
-                    center_y - radius,
-                    center_x + radius,
-                    center_y + radius,
-                ),
-                fill=FOREGROUND,
-            )
-
-    rounded_line([point(54, 82, scale), point(54, 38, scale)])
-    rounded_line(
-        cubic(
-            point(54, 59, scale),
-            point(48, 51, scale),
-            point(39, 49, scale),
-            point(32, 36, scale),
-        )
-    )
-    rounded_line(
-        cubic(
-            point(54, 59, scale),
-            point(60, 51, scale),
-            point(69, 49, scale),
-            point(76, 36, scale),
-        )
-    )
-
-    radius = 8 * scale
-    for x, y in ((32, 27), (54, 24), (76, 27)):
-        center_x, center_y = point(x, y, scale)
-        draw.ellipse(
-            (
-                center_x - radius,
-                center_y - radius,
-                center_x + radius,
-                center_y + radius,
-            ),
-            fill=FOREGROUND,
-        )
+def resized(master: Image.Image, size: int, *, scale: float = 1.0) -> Image.Image:
+    draw_size = round(size * scale)
+    artwork = master.resize((draw_size, draw_size), Image.Resampling.LANCZOS)
+    image = Image.new("RGB", (size, size), "white")
+    offset = (size - draw_size) // 2
+    image.paste(artwork, (offset, offset))
     return image
 
 
-def resized(master: Image.Image, size: int) -> Image.Image:
-    return master.resize((size, size), Image.Resampling.LANCZOS)
-
-
-def write_png(master: Image.Image, destination: Path, size: int) -> None:
+def write_png(
+    master: Image.Image,
+    destination: Path,
+    size: int,
+    *,
+    scale: float = 1.0,
+) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
-    resized(master, size).save(destination, format="PNG", optimize=True)
+    resized(master, size, scale=scale).save(destination, format="PNG", optimize=True)
 
 
 def asset_pixels(entry: dict[str, str]) -> int:
@@ -153,29 +59,47 @@ def generate_asset_catalog(master: Image.Image, catalog: Path) -> None:
         write_png(master, catalog / filename, pixels)
 
 
+def write_monochrome(master: Image.Image, destination: Path, size: int) -> None:
+    source = master.resize((size, size), Image.Resampling.LANCZOS).convert("RGB")
+    alpha = [
+        min(255, max(0, (green - max(red, blue)) * 4))
+        for red, green, blue in source.getdata()
+    ]
+    image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    alpha_image = Image.new("L", (size, size))
+    alpha_image.putdata(alpha)
+    image.putalpha(alpha_image)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    image.save(destination, format="PNG", optimize=True)
+
+
 def main() -> None:
-    master = render_master()
+    master = Image.open(MASTER_ASSET).convert("RGB")
 
     android_res = ROOT / "android" / "app" / "src" / "main" / "res"
-    android_launcher_sizes = {
+    for density, pixels in {
         "mdpi": 48,
         "hdpi": 72,
         "xhdpi": 96,
         "xxhdpi": 144,
         "xxxhdpi": 192,
-    }
-    for density, pixels in android_launcher_sizes.items():
-        write_png(
-            master,
-            android_res / f"mipmap-{density}" / "ic_launcher.png",
-            pixels,
-        )
+    }.items():
+        write_png(master, android_res / f"mipmap-{density}" / "ic_launcher.png", pixels)
+
+    drawable = android_res / "drawable-nodpi"
+    write_png(master, drawable / "hydrabox_launcher_foreground.png", 640)
+    write_monochrome(master, drawable / "hydrabox_launcher_monochrome.png", 640)
 
     web = ROOT / "web"
-    write_png(master, web / "favicon.png", 16)
+    write_png(master, web / "favicon.png", 32)
     for size in (192, 512):
         write_png(master, web / "icons" / f"Icon-{size}.png", size)
-        write_png(master, web / "icons" / f"Icon-maskable-{size}.png", size)
+        write_png(
+            master,
+            web / "icons" / f"Icon-maskable-{size}.png",
+            size,
+            scale=0.78,
+        )
 
     generate_asset_catalog(
         master,

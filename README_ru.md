@@ -4,6 +4,8 @@
 
 [English](README.md) / [Русский](README_ru.md) / [Українська](README_uk.md) / [简体中文](README_cn.md) / [فارسی](README_fa.md)
 
+<img width="220" alt="Логотип HydraBox" src="assets/branding/hydrabox-logo.png" />
+
 <img width="1672" height="941" alt="Интерфейс HydraBox, унаследованный от проекта Etonify" src="https://github.com/user-attachments/assets/c5a9780c-6b26-45e1-9458-42c23e204dde" />
 
 [![Проверки клиента](https://github.com/gr33nimax/hydrabox/actions/workflows/ci.yml/badge.svg?branch=extended-core)](https://github.com/gr33nimax/hydrabox/actions/workflows/ci.yml)

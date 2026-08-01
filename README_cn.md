@@ -2,6 +2,8 @@
 
 [English](README.md) / [Русский](README_ru.md) / [Українська](README_uk.md) / [简体中文](README_cn.md) / [فارسی](README_fa.md)
 
+<p align="center"><img width="220" alt="HydraBox 标志" src="assets/branding/hydrabox-logo.png" /></p>
+
 ## 翻译状态
 
 此中文翻译目前未维护。为避免把旧版 Etonify 说明误当作当前 HydraBox
