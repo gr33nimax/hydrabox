@@ -1175,6 +1175,9 @@ class HydraBoxSubscriptionParser {
           final key = entry.key.toString();
           final normalizedKey = key.toLowerCase();
           final child = entry.value;
+          final isWdttPublisherField =
+              value['type']?.toString().trim().toLowerCase() == 'wdtt' &&
+              normalizedKey == 'vk_anon_path';
           final reservedLocalSuffix =
               normalizedKey.endsWith('_path') ||
               normalizedKey.endsWith('_file') ||
@@ -1189,7 +1192,7 @@ class HydraBoxSubscriptionParser {
             );
           }
           if ((localCapabilityKeys.contains(normalizedKey) ||
-                  reservedLocalSuffix) &&
+                  (reservedLocalSuffix && !isWdttPublisherField)) &&
               hasValue(child)) {
             throw FormatException(
               '$field.$key requires explicit local consent',

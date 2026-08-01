@@ -126,8 +126,10 @@ jobs:
           flutter test 2>&1 | tee "$log_file"
           test_status="${PIPESTATUS[0]}"
           if [[ "$test_status" -ne 0 ]]; then
+            clean_log="$(mktemp)"
+            sed -E $'s/\\x1B\\[[0-9;]*[[:alpha:]]//g' "$log_file" > "$clean_log"
             echo "::group::Flutter test failure diagnostics"
-            grep -E -- '-[[:space:]]*[0-9]+:|\[E\]|Expected:|Actual:|Some tests failed|[0-9]+ tests passed|^package:' "$log_file" \
+            grep -E -- '-[[:space:]]*[0-9]+:|\[E\]|Expected:|Actual:|Some tests failed|[0-9]+ tests passed|^package:' "$clean_log" \
               | tail -n 300 || true
             echo "::endgroup::"
             while IFS= read -r line; do
@@ -137,7 +139,7 @@ jobs:
               escaped="${escaped//$'\n'/\%0A}"
               echo "::error title=Flutter test diagnostics::${escaped:0:2000}"
             done < <(
-              grep -E -- '-[[:space:]]*[0-9]+:|\[E\]|Expected:|Actual:|Some tests failed|[0-9]+ tests passed|^package:' "$log_file" \
+              grep -E -- '-[[:space:]]*(1|2|3):|\[E\]|Expected:|Actual:|Some tests failed|[0-9]+ tests passed|^package:' "$clean_log" \
                 | tail -n 160
             )
           fi
