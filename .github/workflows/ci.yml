@@ -123,7 +123,7 @@ jobs:
         run: |
           set +e
           log_file="$(mktemp)"
-          flutter test 2>&1 | tee "$log_file"
+          flutter test --reporter expanded 2>&1 | tee "$log_file"
           test_status="${PIPESTATUS[0]}"
           if [[ "$test_status" -ne 0 ]]; then
             clean_log="$(mktemp)"
