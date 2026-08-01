@@ -2225,7 +2225,7 @@ class SingboxConfigBuilder {
       !capabilities.hasVersionedContract || advertised;
 
   // The old bundled core exposed URLTest tuning as custom JSON fields. The
-  // versioned Etonify core exposes the same controls through URLTestWithOptions
+  // HydraCore exposes the same controls through URLTestWithOptions
   // while intentionally retaining the upstream sing-box config schema.
   bool get _supportsLegacyUrlTestConfigExtensions =>
       !capabilities.hasVersionedContract;

@@ -1522,7 +1522,9 @@ void main() {
     );
   });
 
-  testWidgets('about page opens MeowTeam timeline', (tester) async {
+  testWidgets('about page presents HydraBox product information', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       MaterialApp(
         supportedLocales: AppLocalizations.supportedLocales,
@@ -1532,37 +1534,18 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Etonify v0.1.1'), findsNothing);
     expect(find.text('Client version'), findsOneWidget);
     expect(find.text('0.1.1'), findsOneWidget);
-    expect(find.text('MeowVPN'), findsNothing);
     expect(find.text('HydraBox'), findsOneWidget);
     expect(find.text('gr33nimax/hydracore'), findsOneWidget);
     expect(
-      find.textContaining('independent derivative of Etonify'),
+      find.textContaining('subscription-first Android client'),
       findsOneWidget,
     );
-
-    final teamAction = find.ancestor(
-      of: find.text('MeowTeam'),
-      matching: find.byType(InkWell),
-    );
-    await tester.tap(teamAction.first);
-    await tester.pumpAndSettle();
-
-    expect(find.text('Etonify upstream attribution'), findsOneWidget);
-    expect(find.text('Early client development'), findsOneWidget);
-    expect(find.text('Moving to etonify-core'), findsOneWidget);
-
-    await tester.scrollUntilVisible(find.text('dudosxdev'), 500);
-    expect(find.text('dudosxdev'), findsOneWidget);
-    expect(find.text('yamixdev'), findsOneWidget);
-
-    await tester.scrollUntilVisible(
-      find.text('Etonify upstream · © 2026 MeowTeam'),
-      500,
-    );
-    expect(find.text('Etonify upstream · © 2026 MeowTeam'), findsOneWidget);
+    expect(find.text('Terms of Use'), findsOneWidget);
+    expect(find.text('Privacy Policy'), findsOneWidget);
+    expect(find.textContaining('Etonify'), findsNothing);
+    expect(find.textContaining('MeowTeam'), findsNothing);
   });
 
   testWidgets('unsupported system locale falls back to English', (

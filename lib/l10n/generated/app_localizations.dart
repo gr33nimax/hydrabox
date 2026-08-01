@@ -413,7 +413,7 @@ abstract class AppLocalizations {
   /// No description provided for @aboutSectionSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Client version, core, team, and service information.'**
+  /// **'Client version, HydraCore, security, and service information.'**
   String get aboutSectionSubtitle;
 
   /// No description provided for @aboutHeroSubtitle.
@@ -425,14 +425,8 @@ abstract class AppLocalizations {
   /// No description provided for @aboutDevelopedBy.
   ///
   /// In en, this message translates to:
-  /// **'HydraBox is an independent derivative of Etonify. It is not an official Etonify or MeowTeam release.'**
+  /// **'HydraBox is the subscription-first Android client for the Hydra self-hosted VPN stack.'**
   String get aboutDevelopedBy;
-
-  /// No description provided for @aboutContactLabel.
-  ///
-  /// In en, this message translates to:
-  /// **'Contact Etonify upstream'**
-  String get aboutContactLabel;
 
   /// No description provided for @aboutCoreSourceLabel.
   ///
@@ -440,11 +434,6 @@ abstract class AppLocalizations {
   /// **'core source code'**
   String get aboutCoreSourceLabel;
 
-  /// No description provided for @telegramChannelLabel.
-  ///
-  /// In en, this message translates to:
-  /// **'Etonify upstream Telegram'**
-  String get telegramChannelLabel;
 
   /// No description provided for @legalTermsTitle.
   ///
@@ -500,11 +489,6 @@ abstract class AppLocalizations {
   /// **'I have read it'**
   String get legalDocumentReadAction;
 
-  /// No description provided for @legalContactAction.
-  ///
-  /// In en, this message translates to:
-  /// **'Contact Etonify upstream'**
-  String get legalContactAction;
 
   /// No description provided for @legalImportBlockedMessage.
   ///
@@ -515,13 +499,13 @@ abstract class AppLocalizations {
   /// No description provided for @legalTermsBody.
   ///
   /// In en, this message translates to:
-  /// **'# HydraBox Terms of Use\n\n## What the app does\n\nHydraBox is an Android VPN client. **It does not sell or provide VPN servers:** users add subscriptions, profiles, and servers from third-party providers.\n\n## User responsibility\n\nUse HydraBox according to applicable law and service rules. Do not use it for attacks, fraud, malware, harassment, or other illegal activity.\n\n- You are responsible for added profiles and access keys.\n- Third-party providers determine their own service terms.\n- HydraBox maintainers do not control subscription content or third-party server traffic.\n\n## Operation and updates\n\nHydraBox is provided **as is**. We improve reliability and security, but cannot guarantee every server, route, DNS resolver, carrier, or modified Android firmware. Updates are installed only after user action and Android system confirmation.\n\n## Feedback\n\nThe address **https://t.me/etonify?direct** belongs to the Etonify upstream project and is not represented as HydraBox support.\n\nBy continuing, you confirm that you have read these terms and accept responsibility for using the app.'**
+  /// **'# HydraBox Terms of Use\n\nHydraBox is an Android VPN client that does not sell or provide VPN servers. Support and security contacts are published in the project repository.'**
   String get legalTermsBody;
 
   /// No description provided for @legalPrivacyBody.
   ///
   /// In en, this message translates to:
-  /// **'# HydraBox Privacy Policy\n\n## Summary\n\nHydraBox has **no advertising, analytics SDKs, or hidden tracking**. HydraBox maintainers do not sell user data or automatically receive your VPN keys.\n\n## Data stored on the device\n\nSubscriptions, profiles, selected servers, settings, diagnostic logs, and downloaded rule files are stored locally. Backups and exports may contain access keys, so keep them private.\n\n## Network requests\n\n- Subscription imports and refreshes contact the address supplied by the user. That server can see normal request information, including the IP address.\n- Client and routing-rule update checks contact GitHub and the sources named in the interface.\n- HWID is sent to a subscription service only for profiles where the user enables it.\n\n## Android permissions\n\n- **VPN service** creates the system VPN tunnel.\n- **QUERY_ALL_PACKAGES** is used only to display installed apps for split tunneling. The app list is not sent to HydraBox maintainers.\n- **Camera** is used only to scan QR codes.\n- **Notifications** display VPN service state.\n- **APK installation** is used only for user-approved updates. Android shows a separate system confirmation.\n\n## Logs and messages\n\nLogs are stored locally until the user exports or sends them. Review exported files before sharing publicly. Information voluntarily sent through Telegram is handled under Telegram\'s rules.\n\nThe address **https://t.me/etonify?direct** belongs to the Etonify upstream project and is not represented as HydraBox support.'**
+  /// **'# HydraBox Privacy Policy\n\nHydraBox has no advertising, analytics SDKs, or hidden tracking. Logs remain local until the user exports them.'**
   String get legalPrivacyBody;
 
   /// No description provided for @coreVersionLabel.
@@ -577,90 +561,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Performance snapshot added to logs'**
   String get debugSnapshotDone;
-
-  /// No description provided for @teamPageTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'MeowTeam'**
-  String get teamPageTitle;
-
-  /// No description provided for @teamIntroTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Etonify upstream attribution'**
-  String get teamIntroTitle;
-
-  /// No description provided for @teamIntroBody.
-  ///
-  /// In en, this message translates to:
-  /// **'HydraBox is based on the Etonify application and etonify-core created by MeowTeam. This page credits the upstream developers; it does not claim that they develop or endorse HydraBox.'**
-  String get teamIntroBody;
-
-  /// No description provided for @teamTimelineForkTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Early client development'**
-  String get teamTimelineForkTitle;
-
-  /// No description provided for @teamTimelineForkBody.
-  ///
-  /// In en, this message translates to:
-  /// **'Early test versions helped define the Android runtime, subscription handling, diagnostics, and interface inherited by HydraBox from Etonify.'**
-  String get teamTimelineForkBody;
-
-  /// No description provided for @teamTimelineRefactorTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Large refactor'**
-  String get teamTimelineRefactorTitle;
-
-  /// No description provided for @teamTimelineRefactorBody.
-  ///
-  /// In en, this message translates to:
-  /// **'We gradually split the large legacy code into focused components, simplified VPN control, and added checks for critical scenarios.'**
-  String get teamTimelineRefactorBody;
-
-  /// No description provided for @teamTimelineCoreTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Moving to etonify-core'**
-  String get teamTimelineCoreTitle;
-
-  /// No description provided for @teamTimelineCoreBody.
-  ///
-  /// In en, this message translates to:
-  /// **'After MeowSingBox, Etonify moved to a more stable sing-box base. HydraCore preserves that upstream history, while continued runtime maintenance, URLTest, server failover, and resource-cleanup improvements benefit HydraBox.'**
-  String get teamTimelineCoreBody;
-
-  /// No description provided for @teamTimelineNowTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'HydraBox derivative'**
-  String get teamTimelineNowTitle;
-
-  /// No description provided for @teamTimelineNowBody.
-  ///
-  /// In en, this message translates to:
-  /// **'HydraBox is still evolving: we keep simplifying UX, improving Android stability, and cutting technical debt without losing the speed-focused VPN experience.'**
-  String get teamTimelineNowBody;
-
-  /// No description provided for @teamDeveloperDdosxdRole.
-  ///
-  /// In en, this message translates to:
-  /// **'Core, networking, and custom protocols'**
-  String get teamDeveloperDdosxdRole;
-
-  /// No description provided for @teamDeveloperYamixdevRole.
-  ///
-  /// In en, this message translates to:
-  /// **'Android client, interface, core, and releases'**
-  String get teamDeveloperYamixdevRole;
-
-  /// No description provided for @teamTelegramRole.
-  ///
-  /// In en, this message translates to:
-  /// **'Official channel and release news'**
-  String get teamTelegramRole;
 
   /// No description provided for @languageSettingTitle.
   ///

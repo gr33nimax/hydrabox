@@ -3,8 +3,7 @@ name: HydraBox · CodeQL security
 on:
   push:
     branches:
-      - master
-      - extended-core
+      - main
     paths:
       - ".github/workflows/**"
       - "android/**/*.java"
@@ -18,8 +17,7 @@ on:
       - "pubspec.lock"
   pull_request:
     branches:
-      - master
-      - extended-core
+      - main
     paths:
       - ".github/workflows/**"
       - "android/**/*.java"

@@ -1,40 +1,29 @@
-# Security Policy
+# Security policy
 
-HydraBox is an early Android-first VPN client and an independent, unofficial
-derivative of [Etonify](https://github.com/yamixdev/Etonify). HydraBox-specific
-reports must not be presented to Etonify or MeowTeam as if HydraBox were their
-official release.
+HydraBox processes remote subscriptions, local secrets, network traffic, deep
+links, update artifacts, and native runtime configuration. Authentication,
+validation, secret handling, resource exhaustion, lifecycle, and routing bugs
+may therefore be security relevant.
 
-## Reporting a Vulnerability
+## Reporting
 
-Please report security issues through this repository:
+Use GitHub private vulnerability reporting when available. Otherwise open only
+a short non-exploitable issue and request a private channel. Do not publish a
+working exploit or attach subscription URLs, credentials, keys, tokens, device
+identifiers, private addresses, or sensitive logs.
 
-- Prefer GitHub's private vulnerability-reporting form in the repository's
-  **Security** tab when it is enabled.
-- If private reporting is unavailable, open an issue containing only a short,
-  non-exploitable summary and ask the HydraBox maintainers for a private
-  channel. Do not attach secrets, working exploits, or sensitive logs.
+Include the affected HydraBox version or commit, Android version/device when
+relevant, minimal reproduction conditions, expected behavior, and carefully
+redacted diagnostics.
 
-If a problem also reproduces in an unmodified Etonify build, it may be reported
-separately through Etonify's own channels. Those channels are upstream contacts,
-not HydraBox support.
+## Priorities
 
-Please do not publish exploit details publicly before the team has time to investigate and prepare a fix.
+- Authenticated, fail-closed subscription import and refresh.
+- No silent forwarding of device identifiers or secret headers.
+- Redaction of secrets in logs, diagnostics, backups, and errors.
+- Safe updater signature, package, version, and digest validation.
+- Reliable VPN lifecycle, selected-profile consistency, and split routing.
+- Bounded memory, concurrency, log, and cache retention.
 
-## What to Include
-
-- Affected version or commit.
-- Android version and device model, if relevant.
-- Clear reproduction steps.
-- Logs or screenshots, with subscription URLs, UUIDs, passwords, tokens, HWID, and IP addresses removed.
-- Expected and actual behavior.
-
-## Project Security Priorities
-
-- No silent forwarding of HWID or device identifiers.
-- Redaction of secrets in logs and exported diagnostics.
-- Safe subscription refresh and deep-link import behavior.
-- Reliable VPN service start/stop and selected-server consistency.
-- Bounded memory/log/cache retention for daily use.
-
-We try to respond constructively and are open to responsible disclosure, patches, and hard technical feedback.
+Please allow maintainers time to investigate and prepare a fix before public
+disclosure.

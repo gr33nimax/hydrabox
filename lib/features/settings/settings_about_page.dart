@@ -20,10 +20,8 @@ class SettingsAboutPage extends StatefulWidget {
   });
 
   static final Uri _coreSourceUri = Uri.parse(
-    'https://github.com/gr33nimax/hydracore/tree/extended-integration',
+    'https://github.com/gr33nimax/hydracore/tree/main',
   );
-  static final Uri _telegramUri = Uri.parse('https://t.me/etonify');
-  static final Uri _contactUri = Uri.parse('https://t.me/etonify?direct');
 
   final String versionLabel;
   final VoidCallback onShowOnboarding;
@@ -62,12 +60,6 @@ class _SettingsAboutPageState extends State<SettingsAboutPage> {
     if (!opened && mounted) {
       AppNotice.show(context, uri.toString(), tone: AppNoticeTone.error);
     }
-  }
-
-  void _openTeamPage() {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (context) => const _MeowTeamPage()),
-    );
   }
 
   void _openUpdatePage() {
@@ -131,12 +123,8 @@ class _SettingsAboutPageState extends State<SettingsAboutPage> {
                   coreVersion: _coreVersion,
                   onOpenCoreSource: () =>
                       _openUri(SettingsAboutPage._coreSourceUri),
-                  onOpenTelegram: () =>
-                      _openUri(SettingsAboutPage._telegramUri),
-                  onOpenContact: () => _openUri(SettingsAboutPage._contactUri),
                   onOpenTerms: () => _openLegalDocument(privacy: false),
                   onOpenPrivacy: () => _openLegalDocument(privacy: true),
-                  onOpenTeam: _openTeamPage,
                 ),
                 const Gap(12),
                 _AboutResourcesCard(
@@ -177,21 +165,15 @@ class _AboutInfoCard extends StatelessWidget {
     required this.versionLabel,
     required this.coreVersion,
     required this.onOpenCoreSource,
-    required this.onOpenTelegram,
-    required this.onOpenContact,
     required this.onOpenTerms,
     required this.onOpenPrivacy,
-    required this.onOpenTeam,
   });
 
   final String versionLabel;
   final String? coreVersion;
   final VoidCallback onOpenCoreSource;
-  final VoidCallback onOpenTelegram;
-  final VoidCallback onOpenContact;
   final VoidCallback onOpenTerms;
   final VoidCallback onOpenPrivacy;
-  final VoidCallback onOpenTeam;
 
   @override
   Widget build(BuildContext context) {
@@ -234,24 +216,9 @@ class _AboutInfoCard extends StatelessWidget {
               runSpacing: 8,
               children: [
                 _AboutActionChip(
-                  icon: Icons.groups_rounded,
-                  label: 'MeowTeam',
-                  onTap: onOpenTeam,
-                ),
-                _AboutActionChip(
                   icon: Icons.code_rounded,
                   label: 'gr33nimax/hydracore',
                   onTap: onOpenCoreSource,
-                ),
-                _AboutActionChip(
-                  icon: Icons.send_rounded,
-                  label: l10n.telegramChannelLabel,
-                  onTap: onOpenTelegram,
-                ),
-                _AboutActionChip(
-                  icon: Icons.forum_rounded,
-                  label: l10n.aboutContactLabel,
-                  onTap: onOpenContact,
                 ),
                 _AboutActionChip(
                   icon: Icons.description_rounded,
@@ -506,220 +473,6 @@ class _AboutActionChip extends StatelessWidget {
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _MeowTeamPage extends StatelessWidget {
-  const _MeowTeamPage();
-
-  static final Uri _dudosxdevUri = Uri.parse('https://t.me/dddosxd');
-  static final Uri _yamixdevUri = Uri.parse('https://t.me/Ilushadev');
-  static final Uri _telegramUri = Uri.parse('https://t.me/etonify');
-  static final Uri _coreUri = Uri.parse(
-    'https://github.com/yamixdev/etonify-core/tree/etonify-dev',
-  );
-
-  Future<void> _open(BuildContext context, Uri uri) async {
-    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!opened && context.mounted) {
-      AppNotice.show(context, uri.toString(), tone: AppNoticeTone.error);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final l10n = AppLocalizations.of(context);
-
-    return ProgressiveBlurScaffold(
-      appBar: AppBar(title: Text(l10n.teamPageTitle)),
-      body: ListView(
-        padding: EdgeInsets.fromLTRB(
-          16,
-          progressiveHeaderTopPadding(context, 20),
-          16,
-          appBottomSafePadding(context, 24),
-        ),
-        children: [
-          Text(
-            l10n.teamIntroTitle,
-            style: theme.textTheme.headlineMedium?.copyWith(
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const Gap(8),
-          Text(
-            l10n.teamIntroBody,
-            style: theme.textTheme.bodyLarge?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-              height: 1.4,
-            ),
-          ),
-          const Gap(18),
-          _TimelineItem(
-            icon: Icons.fork_right_rounded,
-            title: l10n.teamTimelineForkTitle,
-            body: l10n.teamTimelineForkBody,
-          ),
-          _TimelineItem(
-            icon: Icons.cleaning_services_rounded,
-            title: l10n.teamTimelineRefactorTitle,
-            body: l10n.teamTimelineRefactorBody,
-          ),
-          _TimelineItem(
-            icon: Icons.memory_rounded,
-            title: l10n.teamTimelineCoreTitle,
-            body: l10n.teamTimelineCoreBody,
-            actionLabel: 'yamixdev/etonify-core',
-            onAction: () => _open(context, _coreUri),
-          ),
-          _TimelineItem(
-            icon: Icons.auto_awesome_rounded,
-            title: l10n.teamTimelineNowTitle,
-            body: l10n.teamTimelineNowBody,
-          ),
-          const Gap(14),
-          _DeveloperCard(
-            name: 'dudosxdev',
-            role: l10n.teamDeveloperDdosxdRole,
-            avatarAsset: 'assets/images/team/ddosxd.jpg',
-            onTap: () => _open(context, _dudosxdevUri),
-          ),
-          const Gap(10),
-          _DeveloperCard(
-            name: 'yamixdev',
-            role: l10n.teamDeveloperYamixdevRole,
-            avatarAsset: 'assets/images/team/yamixdev.jpg',
-            onTap: () => _open(context, _yamixdevUri),
-          ),
-          const Gap(10),
-          _DeveloperCard(
-            name: l10n.telegramChannelLabel,
-            role: l10n.teamTelegramRole,
-            avatarAsset: 'assets/images/team/telegram.png',
-            onTap: () => _open(context, _telegramUri),
-          ),
-          const Gap(28),
-          Center(
-            child: Text(
-              'Etonify upstream · © 2026 MeowTeam',
-              style: theme.textTheme.labelLarge?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TimelineItem extends StatelessWidget {
-  const _TimelineItem({
-    required this.icon,
-    required this.title,
-    required this.body,
-    this.actionLabel,
-    this.onAction,
-  });
-
-  final IconData icon;
-  final String title;
-  final String body;
-  final String? actionLabel;
-  final VoidCallback? onAction;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: cs.primaryContainer,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(icon, size: 20, color: cs.onPrimaryContainer),
-            ),
-            const Gap(12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const Gap(5),
-                  Text(
-                    body,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: cs.onSurfaceVariant,
-                      height: 1.35,
-                    ),
-                  ),
-                  if (actionLabel != null && onAction != null) ...[
-                    const Gap(8),
-                    _AboutActionChip(
-                      icon: Icons.open_in_new_rounded,
-                      label: actionLabel!,
-                      onTap: onAction!,
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _DeveloperCard extends StatelessWidget {
-  const _DeveloperCard({
-    required this.name,
-    required this.role,
-    required this.avatarAsset,
-    required this.onTap,
-  });
-
-  final String name;
-  final String role;
-  final String avatarAsset;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
-      margin: EdgeInsets.zero,
-      child: ListTile(
-        onTap: onTap,
-        leading: CircleAvatar(
-          radius: 22,
-          backgroundImage: AssetImage(avatarAsset),
-          backgroundColor: theme.colorScheme.surfaceContainerHighest,
-        ),
-        title: Text(name),
-        subtitle: Text(role),
-        trailing: const Icon(Icons.open_in_new_rounded),
-        titleTextStyle: theme.textTheme.titleMedium?.copyWith(
-          fontWeight: FontWeight.w800,
         ),
       ),
     );

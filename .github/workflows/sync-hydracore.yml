@@ -1,11 +1,9 @@
-name: HydraCore · Sync extended libbox
+name: HydraCore · Sync verified runtime
 
 on:
   push:
     branches:
       - main
-      - master
-      - extended-core
     paths:
       - .gitattributes
       - .gitignore
@@ -16,7 +14,7 @@ on:
       - scripts/tests/**
       - scripts/verify_extended_core.py
       - scripts/verify_libbox.py
-      - .github/workflows/sync-etonify-core.yml
+      - .github/workflows/sync-hydracore.yml
   workflow_dispatch:
     inputs:
       expected_core_version:
@@ -29,14 +27,14 @@ permissions:
   contents: write
 
 concurrency:
-  group: sync-etonify-core-${{ github.ref }}
+  group: sync-hydracore-${{ github.ref }}
   cancel-in-progress: false
 
 env:
   JAVA_VERSION: "17"
   ANDROID_NDK_VERSION: "r28"
   CORE_REPOSITORY: "https://github.com/gr33nimax/hydracore.git"
-  CORE_BRANCH: "extended-integration"
+  CORE_BRANCH: "main"
   CORE_RELEASE_REPOSITORY: "gr33nimax/hydracore"
   CORE_DISTRIBUTION_ID: "io.hydrabox.hydracore"
   CORE_DISTRIBUTION_NAME: "HydraCore"
@@ -44,7 +42,7 @@ env:
 
 jobs:
   sync-libbox:
-    name: Build and commit verified extended metadata
+    name: Build and commit verified HydraCore metadata
     runs-on: ubuntu-latest
     timeout-minutes: 120
 
@@ -58,7 +56,7 @@ jobs:
       - name: Test libbox release hydrator
         run: python3 -B -m unittest discover -s scripts/tests -p "test_*.py" -v
 
-      - name: Validate pinned extended core
+      - name: Validate pinned HydraCore
         id: core_metadata
         shell: bash
         env:
@@ -120,7 +118,7 @@ jobs:
           fi
           etonify_version="$(tr -d '\r\n' < etonify-core/release/ETONIFY_VERSION)"
           if ! [[ "$etonify_version" =~ ^[0-9A-Za-z][0-9A-Za-z._+-]{0,127}$ ]]; then
-            echo "::error title=Invalid Etonify provenance version::Found '${etonify_version}'"
+            echo "::error title=Invalid upstream provenance version::Found '${etonify_version}'"
             exit 1
           fi
 
@@ -132,7 +130,7 @@ jobs:
           echo "commit=$checkout_commit" >> "$GITHUB_OUTPUT"
           echo "Building $core_version from $checkout_commit for release $release_tag"
 
-      - name: Verify extended protocol surface
+      - name: Verify HydraCore protocol surface
         run: python3 scripts/verify_extended_core.py --source-only
 
       - name: Read Android build settings
@@ -183,7 +181,7 @@ jobs:
           test "$ANDROID_NDK_VERSION" = "$EXPECTED_ANDROID_NDK_VERSION"
           bash release/verify_etonify_baseline.sh
 
-      - name: Test host-compatible extended core tags
+      - name: Test host-compatible HydraCore tags
         working-directory: etonify-core
         env:
           LIBBOX_BUILD_TAGS: ${{ steps.android_build.outputs.tags }}
@@ -483,7 +481,7 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "build(core): update extended libbox to ${CORE_VERSION}"
+          git commit -m "build(core): update HydraCore runtime to ${CORE_VERSION}"
           git push origin "HEAD:${GITHUB_REF_NAME}"
 
       - name: Dispatch client checks for committed metadata

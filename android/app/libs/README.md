@@ -1,7 +1,7 @@
 # HydraCore libbox binary
 
 HydraCore uses
-[`gr33nimax/hydracore`](https://github.com/gr33nimax/hydracore/tree/extended-integration),
+[`gr33nimax/hydracore`](https://github.com/gr33nimax/hydracore/tree/main),
 based directly on the `shtorm-7/sing-box-extended` `extended` line. The AAR
 contains the complete four-ABI Android build and every protocol/service tag
 recorded in `libbox.provenance.json`.

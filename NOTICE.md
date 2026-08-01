@@ -19,7 +19,7 @@ distributed under the GNU General Public License v3.0 or later. The complete
 license remains in [LICENSE](LICENSE). Third-party and adapted-source
 attributions remain in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Exact upstream baselines and
-compatibility identifiers are documented in [UPSTREAM.md](UPSTREAM.md).
+compatibility identifiers are documented in [CREDITS.md](CREDITS.md).
 
 ## Private compatibility assets
 

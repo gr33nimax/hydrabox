@@ -171,7 +171,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get aboutSectionSubtitle =>
-      'Client version, core, team, and service information.';
+      'Client version, HydraCore, security, and service information.';
 
   @override
   String get aboutHeroSubtitle =>
@@ -179,16 +179,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get aboutDevelopedBy =>
-      'HydraBox is an independent derivative of Etonify. It is not an official Etonify or MeowTeam release.';
-
-  @override
-  String get aboutContactLabel => 'Contact Etonify upstream';
+      'HydraBox is the subscription-first Android client for the Hydra self-hosted VPN stack.';
 
   @override
   String get aboutCoreSourceLabel => 'core source code';
-
-  @override
-  String get telegramChannelLabel => 'Etonify upstream Telegram';
 
   @override
   String get legalTermsTitle => 'Terms of Use';
@@ -222,19 +216,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get legalDocumentReadAction => 'I have read it';
 
   @override
-  String get legalContactAction => 'Contact Etonify upstream';
-
-  @override
   String get legalImportBlockedMessage =>
       'Accept Terms and Privacy Policy before importing subscriptions.';
 
   @override
   String get legalTermsBody =>
-      '# HydraBox Terms of Use\n\n## What the app does\n\nHydraBox is an Android VPN client. **It does not sell or provide VPN servers:** users add subscriptions, profiles, and servers from third-party providers.\n\n## User responsibility\n\nUse HydraBox according to applicable law and service rules. Do not use it for attacks, fraud, malware, harassment, or other illegal activity.\n\n- You are responsible for added profiles and access keys.\n- Third-party providers determine their own service terms.\n- HydraBox maintainers do not control subscription content or third-party server traffic.\n\n## Operation and updates\n\nHydraBox is provided **as is**. We improve reliability and security, but cannot guarantee every server, route, DNS resolver, carrier, or modified Android firmware. Updates are installed only after user action and Android system confirmation.\n\n## Feedback\n\nThe address **https://t.me/etonify?direct** belongs to the Etonify upstream project and is not represented as HydraBox support.\n\nBy continuing, you confirm that you have read these terms and accept responsibility for using the app.';
+      '# HydraBox Terms of Use\n\n## What the app does\n\nHydraBox is an Android VPN client. **It does not sell or provide VPN servers:** users add subscriptions, profiles, and servers from third-party providers.\n\n## User responsibility\n\nUse HydraBox according to applicable law and service rules. Do not use it for attacks, fraud, malware, harassment, or other illegal activity.\n\n- You are responsible for added profiles and access keys.\n- Third-party providers determine their own service terms.\n- HydraBox maintainers do not control subscription content or third-party server traffic.\n\n## Operation and updates\n\nHydraBox is provided **as is**. We improve reliability and security, but cannot guarantee every server, route, DNS resolver, carrier, or modified Android firmware. Updates are installed only after user action and Android system confirmation.\n\n## Support\n\nHydraBox support and security contacts are published in the project repository.\n\nBy continuing, you confirm that you have read these terms and accept responsibility for using the app.';
 
   @override
   String get legalPrivacyBody =>
-      '# HydraBox Privacy Policy\n\n## Summary\n\nHydraBox has **no advertising, analytics SDKs, or hidden tracking**. HydraBox maintainers do not sell user data or automatically receive your VPN keys.\n\n## Data stored on the device\n\nSubscriptions, profiles, selected servers, settings, diagnostic logs, and downloaded rule files are stored locally. Backups and exports may contain access keys, so keep them private.\n\n## Network requests\n\n- Subscription imports and refreshes contact the address supplied by the user. That server can see normal request information, including the IP address.\n- Client and routing-rule update checks contact GitHub and the sources named in the interface.\n- HWID is sent to a subscription service only for profiles where the user enables it.\n\n## Android permissions\n\n- **VPN service** creates the system VPN tunnel.\n- **QUERY_ALL_PACKAGES** is used only to display installed apps for split tunneling. The app list is not sent to HydraBox maintainers.\n- **Camera** is used only to scan QR codes.\n- **Notifications** display VPN service state.\n- **APK installation** is used only for user-approved updates. Android shows a separate system confirmation.\n\n## Logs and messages\n\nLogs are stored locally until the user exports or sends them. Review exported files before sharing publicly. Information voluntarily sent through Telegram is handled under Telegram\'s rules.\n\nThe address **https://t.me/etonify?direct** belongs to the Etonify upstream project and is not represented as HydraBox support.';
+      '# HydraBox Privacy Policy\n\n## Summary\n\nHydraBox has **no advertising, analytics SDKs, or hidden tracking**. HydraBox maintainers do not sell user data or automatically receive your VPN keys.\n\n## Data stored on the device\n\nSubscriptions, profiles, selected servers, settings, diagnostic logs, and downloaded rule files are stored locally. Backups and exports may contain access keys, so keep them private.\n\n## Network requests\n\n- Subscription imports and refreshes contact the address supplied by the user. That server can see normal request information, including the IP address.\n- Client and routing-rule update checks contact GitHub and the sources named in the interface.\n- HWID is sent to a subscription service only for profiles where the user enables it.\n\n## Android permissions\n\n- **VPN service** creates the system VPN tunnel.\n- **QUERY_ALL_PACKAGES** is used only to display installed apps for split tunneling. The app list is not sent to HydraBox maintainers.\n- **Camera** is used only to scan QR codes.\n- **Notifications** display VPN service state.\n- **APK installation** is used only for user-approved updates. Android shows a separate system confirmation.\n\n## Logs and messages\n\nLogs are stored locally until the user exports or sends them. Review exported files before sharing publicly. HydraBox has no built-in maintainer messaging channel.';
 
   @override
   String get coreVersionLabel => 'Core version';
@@ -266,55 +257,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get debugSnapshotDone => 'Performance snapshot added to logs';
-
-  @override
-  String get teamPageTitle => 'MeowTeam';
-
-  @override
-  String get teamIntroTitle => 'Etonify upstream attribution';
-
-  @override
-  String get teamIntroBody =>
-      'HydraBox is based on the Etonify application and etonify-core created by MeowTeam. This page credits the upstream developers; it does not claim that they develop or endorse HydraBox.';
-
-  @override
-  String get teamTimelineForkTitle => 'Early client development';
-
-  @override
-  String get teamTimelineForkBody =>
-      'Early test versions helped define the Android runtime, subscription handling, diagnostics, and interface inherited by HydraBox from Etonify.';
-
-  @override
-  String get teamTimelineRefactorTitle => 'Large refactor';
-
-  @override
-  String get teamTimelineRefactorBody =>
-      'We gradually split the large legacy code into focused components, simplified VPN control, and added checks for critical scenarios.';
-
-  @override
-  String get teamTimelineCoreTitle => 'Moving to etonify-core';
-
-  @override
-  String get teamTimelineCoreBody =>
-      'After MeowSingBox, Etonify moved to a more stable sing-box base. HydraCore preserves that upstream history, while continued runtime maintenance, URLTest, server failover, and resource-cleanup improvements benefit HydraBox.';
-
-  @override
-  String get teamTimelineNowTitle => 'HydraBox derivative';
-
-  @override
-  String get teamTimelineNowBody =>
-      'HydraBox is still evolving: we keep simplifying UX, improving Android stability, and cutting technical debt without losing the speed-focused VPN experience.';
-
-  @override
-  String get teamDeveloperDdosxdRole =>
-      'Core, networking, and custom protocols';
-
-  @override
-  String get teamDeveloperYamixdevRole =>
-      'Android client, interface, core, and releases';
-
-  @override
-  String get teamTelegramRole => 'Official channel and release news';
 
   @override
   String get languageSettingTitle => 'Language';

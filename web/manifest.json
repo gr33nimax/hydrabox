@@ -5,7 +5,7 @@
     "display": "standalone",
     "background_color": "#FFFFFF",
     "theme_color": "#0B6B0B",
-    "description": "HydraBox, an independent VPN client based on Etonify and powered by HydraCore.",
+    "description": "Subscription-first Android client for the Hydra self-hosted VPN stack, powered by HydraCore.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

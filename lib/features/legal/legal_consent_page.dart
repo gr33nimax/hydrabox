@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:meow_client/l10n/generated/app_localizations.dart';
 import 'package:meow_client/widgets/hydrabox_logo_badge.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 class LegalConsentPage extends StatefulWidget {
   const LegalConsentPage({
@@ -20,9 +19,6 @@ class LegalConsentPage extends StatefulWidget {
 
 class _LegalConsentPageState extends State<LegalConsentPage>
     with SingleTickerProviderStateMixin {
-  static final Uri _telegramUri = Uri.parse('https://t.me/etonify');
-  static final Uri _contactUri = Uri.parse('https://t.me/etonify?direct');
-
   late final AnimationController _controller;
   late final Animation<double> _fade;
   late final Animation<double> _scale;
@@ -80,10 +76,6 @@ class _LegalConsentPageState extends State<LegalConsentPage>
           _privacyRead = true;
       }
     });
-  }
-
-  Future<void> _openUri(Uri uri) async {
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
   @override
@@ -145,26 +137,6 @@ class _LegalConsentPageState extends State<LegalConsentPage>
                     subtitle: l10n.legalPrivacySummary,
                     read: _privacyRead,
                     onTap: () => _openDocument(_LegalDocumentType.privacy),
-                  ),
-                  const Gap(18),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () => _openUri(_telegramUri),
-                          icon: const Icon(Icons.send_rounded),
-                          label: Text(l10n.telegramChannelLabel),
-                        ),
-                      ),
-                      const Gap(10),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () => _openUri(_contactUri),
-                          icon: const Icon(Icons.support_agent_rounded),
-                          label: Text(l10n.legalContactAction),
-                        ),
-                      ),
-                    ],
                   ),
                   const Gap(22),
                   FilledButton(

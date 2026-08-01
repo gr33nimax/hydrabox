@@ -11,7 +11,7 @@ environment:
 - `HydraBox · Android release` builds signed APKs for `universal`, `arm64-v8a`,
   `armeabi-v7a`, and `x86_64`, publishes updater metadata, and creates or
   updates a draft GitHub Release.
-- `HydraCore · Sync extended libbox` rebuilds the pinned core, verifies its
+- `HydraCore · Sync verified runtime` rebuilds the pinned core, verifies its
   published release provenance, updates the checked-in metadata/source JAR,
   and dispatches the client checks for the resulting commit.
 
@@ -48,9 +48,9 @@ keytool -genkeypair -v `
 ```
 
 Keep this file private. If you lose it, you may not be able to update APKs
-signed with the same identity. Retaining `com.etonify.meow_client` alone does
-not make HydraBox an installable upgrade from Etonify: that also requires an
-authorized matching signing certificate or signing lineage.
+signed with the same identity. Retaining a package name alone does not make an
+independently signed APK installable as an update: the certificate or authorized
+signing lineage must also match.
 
 ## Convert Keystore to Base64
 
@@ -135,8 +135,7 @@ HydraBox builds keep automatic updates disabled unless both
 `HYDRABOX_UPDATE_REPOSITORY_OWNER` and `HYDRABOX_UPDATE_REPOSITORY_NAME` are
 provided as Dart defines. The Android release workflow derives both values from
 its GitHub-provided `GITHUB_REPOSITORY` (`owner/name`), so a release build follows
-the repository that produced it instead of consuming the upstream Etonify
-release channel.
+the repository that produced it rather than a different release channel.
 
 When a HydraBox-controlled source is configured, the updater expects these
 release asset names:

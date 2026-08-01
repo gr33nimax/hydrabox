@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// Adapted for Etonify from Flutter's
+// Adapted for HydraBox from Flutter's
 // predictive_back_page_transitions_builder.dart. See THIRD_PARTY_NOTICES.md.
 
 import 'dart:ui' show clampDouble;

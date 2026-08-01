@@ -99,7 +99,7 @@ void main() {
 
   test('HydraCore sync preserves verified distribution provenance', () {
     final workflow = File(
-      '.github/workflows/sync-etonify-core.yml',
+      '.github/workflows/sync-hydracore.yml',
     ).readAsStringSync();
 
     expect(
@@ -161,7 +161,7 @@ void main() {
     expect(provenance['etonify_version'], isNotEmpty);
 
     final coreWorkflow = File(
-      'etonify-core/.github/workflows/etonify-libbox.yml',
+      'etonify-core/.github/workflows/hydracore.yml',
     ).readAsStringSync();
     expect(coreWorkflow, contains('"android_ndk": "\${ndk_revision}"'));
     expect(
@@ -170,51 +170,24 @@ void main() {
     );
   });
 
-  test('inherited Sagernet publishers are restricted to the upstream repo', () {
-    final dockerWorkflow = File(
-      'etonify-core/.github/workflows/docker.yml',
-    ).readAsStringSync();
-    final linuxWorkflow = File(
-      'etonify-core/.github/workflows/linux.yml',
-    ).readAsStringSync();
-    const upstreamGuard = "github.repository == 'SagerNet/sing-box'";
+  test('HydraCore exposes only the verified product workflow', () {
+    final workflowNames = Directory('etonify-core/.github/workflows')
+        .listSync()
+        .whereType<File>()
+        .map((file) => file.uri.pathSegments.last)
+        .toList();
 
-    expect(
-      RegExp(RegExp.escape(upstreamGuard)).allMatches(dockerWorkflow).length,
-      3,
-      reason: 'the complete GHCR publisher pipeline must be disabled in forks',
-    );
-    expect(
-      RegExp(RegExp.escape(upstreamGuard)).allMatches(linuxWorkflow).length,
-      3,
-      reason: 'the complete Fury publisher pipeline must be disabled in forks',
-    );
-
-    for (final path in [
-      'build.yml',
-      'docker.yml',
-      'linux.yml',
-      'lint.yml',
-      'stale.yml',
-    ]) {
-      final workflow = File(
-        'etonify-core/.github/workflows/$path',
-      ).readAsStringSync();
-      expect(workflow, startsWith('name: HydraCore ·'));
-      expect(workflow, isNot(contains('name: Etonify Core')));
-    }
+    expect(workflowNames, ['hydracore.yml']);
+    expect(Directory('etonify-core/docs').existsSync(), isFalse);
   });
 
-  test('core README leads with HydraCore and retains upstream attribution', () {
+  test('core README leads with HydraCore and isolates source attribution', () {
     final readme = File('etonify-core/README.md').readAsStringSync();
 
     expect(readme, startsWith('# HydraCore'));
-    expect(readme, contains("Etonify's `etonify-core`"));
-    expect(readme, contains('not an official Etonify'));
-    expect(readme, contains('[ETONIFY_CORE.md](ETONIFY_CORE.md)'));
+    expect(readme, contains('[CREDITS.md](CREDITS.md)'));
+    expect(readme, isNot(contains('[ETONIFY_CORE.md]')));
     expect(readme, contains('[LICENSE](LICENSE)'));
-    expect(readme, contains('Preserved upstream sing-box-extended overview'));
-    expect(readme, contains('Sing-box with extended features.'));
   });
 
   test('fallback client version and changelog match pubspec', () {

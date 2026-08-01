@@ -1,9 +1,9 @@
 # Third-Party Notices
 
 This file records third-party material copied into the source tree, local
-dependencies, and the Android runtime bundled with HydraBox. The original
-Etonify provenance is preserved. Each component remains subject to its own
-license.
+dependencies, and the Android runtime bundled with HydraBox. Each component
+remains subject to its own license; application and runtime lineage are indexed
+in [CREDITS.md](CREDITS.md).
 
 ## Flutter predictive-back transition
 
@@ -46,11 +46,11 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 `circle_flags`. It is distributed under the MIT License. Its complete license
 is retained at `third_party/flutter_circle_flags/LICENSE`.
 
-## HydraCore / etonify-core / sing-box
+## HydraCore runtime lineage
 
 HydraCore is HydraBox's public name for the Android libbox runtime. Its
 compatibility submodule remains named `etonify-core` and is maintained at
-[`gr33nimax/hydracore`, branch `extended-integration`](https://github.com/gr33nimax/hydracore/tree/extended-integration),
+[`gr33nimax/hydracore`, branch `main`](https://github.com/gr33nimax/hydracore/tree/main),
 based on
 [`shtorm-7/sing-box-extended`, branch `extended`](https://github.com/shtorm-7/sing-box-extended/tree/extended),
 and is licensed under GPL-3.0-or-later; see `etonify-core/LICENSE` and the
