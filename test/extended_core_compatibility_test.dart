@@ -1034,7 +1034,7 @@ void main() {
   test(
     'remote policy v2 rejects WDTT runtime authority and resource abuse',
     () {
-      final mutations = <void Function(Map<String, dynamic>)>[
+      final mutations = <void Function(Map<String, Object>)>[
         (endpoint) => endpoint['workers'] = 37,
         (endpoint) => endpoint['vk_hashes'] = ['a', 'b', 'c', 'd', 'e'],
         (endpoint) => endpoint['device_id'] = 'publisher-owned',
@@ -1049,7 +1049,7 @@ void main() {
         final source = _hydraboxBuilderDocument();
         final runtime = source['runtime'] as Map<String, dynamic>;
         final native = runtime['document'] as Map<String, dynamic>;
-        final endpoint = <String, dynamic>{
+        final endpoint = <String, Object>{
           'type': 'wdtt',
           'tag': 'provider-wdtt',
           'server': '203.0.113.10',

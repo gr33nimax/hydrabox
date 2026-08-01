@@ -119,36 +119,7 @@ jobs:
         run: flutter analyze
 
       - name: Test
-        shell: bash
-        run: |
-          set +e
-          log_file="$(mktemp)"
-          flutter test --reporter expanded 2>&1 | tee "$log_file"
-          test_status="${PIPESTATUS[0]}"
-          if [[ "$test_status" -ne 0 ]]; then
-            clean_log="$(mktemp)"
-            sed -E $'s/\\x1B\\[[0-9;]*[[:alpha:]]//g' "$log_file" > "$clean_log"
-            echo "::group::Flutter test failure diagnostics"
-            grep -m 1 -E -- '-[[:space:]]*1:' "$clean_log" || true
-            grep -E -- '\[E\]|Expected:|Actual:|Some tests failed|[0-9]+ tests passed|^package:' "$clean_log" \
-              | tail -n 100 || true
-            grep -E -- 'Some tests failed|[0-9]+ tests passed' "$clean_log" | tail -n 20 || true
-            echo "::endgroup::"
-            while IFS= read -r line; do
-              [[ -z "$line" ]] && continue
-              escaped="${line//\%/\%25}"
-              escaped="${escaped//$'\r'/\%0D}"
-              escaped="${escaped//$'\n'/\%0A}"
-              echo "::error title=Flutter test diagnostics::${escaped:0:2000}"
-            done < <(
-              {
-                grep -m 1 -E -- '-[[:space:]]*1:' "$clean_log" || true
-                grep -E -- '\[E\]|Expected:|Actual:|Some tests failed|[0-9]+ tests passed|^package:' "$clean_log" \
-                  | tail -n 100 || true
-              }
-            )
-          fi
-          exit "$test_status"
+        run: flutter test
 
       - name: Android unit tests, lint and debug assemble
         working-directory: android
