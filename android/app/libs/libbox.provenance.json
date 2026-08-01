@@ -7,7 +7,7 @@
   "core_version": "v1.13.14-extended-hydracore.2",
   "distribution_id": "io.hydrabox.hydracore",
   "distribution_name": "HydraCore",
-  "download_url": "https://github.com/gr33nimax/etonify-core/releases/download/v1.13.14-extended-hydracore.2/libbox.aar",
+  "download_url": "https://github.com/gr33nimax/hydracore/releases/download/v1.13.14-extended-hydracore.2/libbox.aar",
   "etonify_version": "v1.13.14-extended-etonify.1",
   "go": "go version go1.26.4 linux/amd64",
   "gomobile": "v0.1.12",
@@ -18,7 +18,7 @@
   "size_bytes": 134737446,
   "source_branch": "extended-integration",
   "source_commit": "a52ab5c0e8aeabd8b5057f85ca518796ce2c57ed",
-  "source_repository": "https://github.com/gr33nimax/etonify-core.git",
+  "source_repository": "https://github.com/gr33nimax/hydracore.git",
   "sources_sha256": "2b6c1b78192c829202a6984e0561fd75f7c195b5ddbe84f46dcb4592f8f3a634",
   "upstream_project": "etonify-core"
 }

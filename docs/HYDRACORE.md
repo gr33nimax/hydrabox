@@ -5,7 +5,7 @@ sing-box/libbox integration in this repository.
 
 HydraCore is not an independent clean-room core and makes no claim to upstream
 authorship. It is based on
-[`gr33nimax/etonify-core`](https://github.com/gr33nimax/etonify-core/tree/extended-integration),
+[`gr33nimax/hydracore`](https://github.com/gr33nimax/hydracore/tree/extended-integration),
 which in turn is based on extended sing-box. The pinned source baseline in this
 tree is recorded in [UPSTREAM.md](../UPSTREAM.md), and the Android artifact's
 complete machine-readable provenance is retained in

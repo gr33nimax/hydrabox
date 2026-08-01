@@ -6,11 +6,12 @@
 
 <img width="1672" height="941" alt="Интерфейс HydraBox, унаследованный от проекта Etonify" src="https://github.com/user-attachments/assets/c5a9780c-6b26-45e1-9458-42c23e204dde" />
 
+[![Проверки клиента](https://github.com/gr33nimax/hydrabox/actions/workflows/ci.yml/badge.svg?branch=extended-core)](https://github.com/gr33nimax/hydrabox/actions/workflows/ci.yml)
 [![Android](https://img.shields.io/badge/platform-Android-3DDC84?style=flat-square&logo=android)](#)
 [![Flutter](https://img.shields.io/badge/built%20with-Flutter-02569B?style=flat-square&logo=flutter)](#)
 [![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue?style=flat-square)](LICENSE)
 
-**Android-first VPN-клиент с открытым исходным кодом на базе модифицированного sing-box.**
+**Subscription-first Android-клиент для self-hosted VPN-экосистемы Hydra.**
 
 </div>
 
@@ -21,19 +22,50 @@
 > MeowTeam. Точные исходные ревизии и сохранённые идентификаторы перечислены в
 > [UPSTREAM.md](UPSTREAM.md).
 
-HydraBox — Android-ориентированный VPN-клиент на базе
-[HydraCore](docs/HYDRACORE.md). HydraCore, в свою очередь, основан на
-`etonify-core` и расширенном sing-box. Полные нативные JSON-конфигурации
-сохраняются без потерь, поэтому новые протоколы и поля ядра не требуют
-одновременного изменения Flutter-схемы.
+HydraBox — официальный клиент self-hosted экосистемы Hydra. Его основной
+контракт — [HydraBox Subscription v1](docs/hydrabox-subscription-v1.md), которую
+создаёт [HYDRA Ultimate](https://github.com/gr33nimax/HYDRA-ULTIMATE), а исполняет
+[HydraCore](https://github.com/gr33nimax/hydracore). Полные нативные
+JSON-конфигурации сохраняются без потерь, поэтому новые протоколы и поля ядра
+не требуют одновременного изменения Flutter-схемы.
+
+Ручной и legacy-импорт остаются для миграции и совместимости. Это не второе
+направление продукта: экосистема Hydra строится вокруг одной зашифрованной
+подписки от собственного сервера до клиента.
 
 Приложение не предоставляет VPN-серверы. Это клиент для подписок и конфигураций, которыми вы владеете или которые имеете право использовать.
 
 ## Статус
 
-HydraBox находится в ранней публичной разработке. Сейчас production-цель —
-только Android. Другие Flutter-платформы могут оставаться в репозитории, но
-они пока не являются релизными целями.
+HydraBox находится в публичной beta-стадии. Поддерживаемая production-цель —
+Android. Другие Flutter-платформы могут оставаться в репозитории, но пока не
+являются релизными целями.
+
+## Экосистема Hydra
+
+```text
+HYDRA Ultimate  ->  зашифрованная подписка  ->  HydraBox  ->  HydraCore
+self-hosted сервер                              клиент        ядро
+```
+
+- [HYDRA Ultimate](https://github.com/gr33nimax/HYDRA-ULTIMATE) разворачивает
+  и управляет собственным сервером и формирует подписку.
+- HydraBox импортирует, хранит, обновляет и активирует подписку.
+- [HydraCore](https://github.com/gr33nimax/hydracore) проверяет и исполняет
+  нативную сетевую конфигурацию.
+
+Hydra не является VPN-провайдером: сервер и подписка принадлежат пользователю.
+
+## Быстрый старт
+
+1. Разверните HYDRA Ultimate на своём сервере.
+2. Скопируйте зашифрованную ссылку подписки HydraBox или её QR-код.
+3. Установите HydraBox из [GitHub Releases](https://github.com/gr33nimax/hydrabox/releases).
+4. Импортируйте подписку в HydraBox и подключитесь.
+
+Ключ расшифрования находится только во fragment URL и не отправляется серверу
+подписки. Точная модель доверия описана в
+[спецификации Subscription v1](docs/hydrabox-subscription-v1.md).
 
 ## Возможности
 

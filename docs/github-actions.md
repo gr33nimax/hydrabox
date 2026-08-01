@@ -1,9 +1,19 @@
 # GitHub Actions for HydraBox
 
-This repository contains two useful workflows:
+This repository uses GitHub Actions as the authoritative build and verification
+environment:
 
-- `CI`: runs Flutter dependency restore, localization generation, optional Pigeon generation, analyzer, and tests.
-- `Android Release APK`: builds signed Android APKs for `universal`, `arm64-v8a`, `armeabi-v7a`, and `x86_64`, uploads them as workflow artifacts, and creates or updates a draft GitHub Release.
+- `HydraBox · Client checks` restores dependencies, generates localization and
+  Pigeon bindings, runs the analyzer and tests, then runs Android unit/lint and
+  debug assembly gates.
+- `HydraBox · CodeQL security` runs the repository security scan.
+- `HydraBox · Test APK` creates a clearly marked debug-signed test artifact.
+- `HydraBox · Android release` builds signed APKs for `universal`, `arm64-v8a`,
+  `armeabi-v7a`, and `x86_64`, publishes updater metadata, and creates or
+  updates a draft GitHub Release.
+- `HydraCore · Sync extended libbox` rebuilds the pinned core, verifies its
+  published release provenance, updates the checked-in metadata/source JAR,
+  and dispatches the client checks for the resulting commit.
 
 ## Required Repository Secrets
 
@@ -103,7 +113,7 @@ make bundled assets secret or change their license. See [NOTICE.md](../NOTICE.md
 Manual build:
 
 1. Open `Actions`.
-2. Select `Android Release APK`.
+2. Select `HydraBox · Android release`.
 3. Click `Run workflow`.
 4. Use `build_name` as `0.1.0` or `v0.1.0`; both are normalized.
 5. Leave `include_private_happ_assets` disabled unless redistribution rights

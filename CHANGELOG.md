@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- Established `hydrabox` and `hydracore` as the canonical public repository
+  names while retaining legacy application, bundle, storage, deep-link, ABI,
+  and submodule-path identifiers required for compatibility.
+- Positioned HydraBox as the subscription-first client for the Hydra
+  self-hosted VPN stack and linked the complete HYDRA Ultimate → HydraBox →
+  HydraCore flow.
+- Deferred WDTT from the stable client and preserved its implementation history
+  in the `archive/wdtt` branch.
+- Added product roadmap and structured GitHub issue forms.
+
 ## [0.3.0-beta.2] - 2026-07-31
 
 ### HydraBox and HydraCore identity

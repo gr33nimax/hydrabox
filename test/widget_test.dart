@@ -1537,7 +1537,7 @@ void main() {
     expect(find.text('0.1.1'), findsOneWidget);
     expect(find.text('MeowVPN'), findsNothing);
     expect(find.text('HydraBox'), findsOneWidget);
-    expect(find.text('gr33nimax/etonify-core'), findsOneWidget);
+    expect(find.text('gr33nimax/hydracore'), findsOneWidget);
     expect(
       find.textContaining('independent derivative of Etonify'),
       findsOneWidget,

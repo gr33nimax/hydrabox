@@ -50,7 +50,7 @@ is retained at `third_party/flutter_circle_flags/LICENSE`.
 
 HydraCore is HydraBox's public name for the Android libbox runtime. Its
 compatibility submodule remains named `etonify-core` and is maintained at
-[`gr33nimax/etonify-core`, branch `extended-integration`](https://github.com/gr33nimax/etonify-core/tree/extended-integration),
+[`gr33nimax/hydracore`, branch `extended-integration`](https://github.com/gr33nimax/hydracore/tree/extended-integration),
 based on
 [`shtorm-7/sing-box-extended`, branch `extended`](https://github.com/shtorm-7/sing-box-extended/tree/extended),
 and is licensed under GPL-3.0-or-later; see `etonify-core/LICENSE` and the

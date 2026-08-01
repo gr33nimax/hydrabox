@@ -1,0 +1,64 @@
+name: HydraBox bug
+description: Report a reproducible Android client or subscription problem.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: Remove subscription URLs, keys, credentials, UUIDs, IP addresses, HWID, and private logs before submitting.
+  - type: input
+    id: version
+    attributes:
+      label: HydraBox version
+      placeholder: 0.3.0-beta.2
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Android device and version
+      placeholder: Pixel 8, Android 16
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Hydra subscription import or refresh
+        - VPN lifecycle or connectivity
+        - DNS or routing
+        - Server selection or latency
+        - Update or installation
+        - User interface
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I removed all secrets and private infrastructure data.
+          required: true
+        - label: I checked for an existing issue.
+          required: true

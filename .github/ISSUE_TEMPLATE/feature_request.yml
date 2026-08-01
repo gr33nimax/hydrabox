@@ -1,0 +1,30 @@
+name: HydraBox proposal
+description: Propose an improvement to the self-hosted client experience.
+title: "[Proposal]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Self-hosted use case
+      description: What concrete Hydra workflow is difficult or blocked?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+    validations:
+      required: true
+  - type: textarea
+    id: subscription
+    attributes:
+      label: Subscription and compatibility impact
+      description: Explain whether HydraBox Subscription, HydraCore, or HYDRA Ultimate changes are required.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives

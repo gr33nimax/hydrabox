@@ -1,5 +1,8 @@
 name: meow_client
-description: HydraBox, an Android-first open-source VPN client powered by HydraCore and based on Etonify.
+description: HydraBox, the subscription-first Android client for the Hydra self-hosted VPN stack.
+homepage: https://github.com/gr33nimax/hydrabox
+repository: https://github.com/gr33nimax/hydrabox
+issue_tracker: https://github.com/gr33nimax/hydrabox/issues
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev

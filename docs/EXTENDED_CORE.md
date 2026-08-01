@@ -2,7 +2,7 @@
 
 HydraBox uses the public name **HydraCore** for its runtime. HydraCore is based
 on the [`shtorm-7/sing-box-extended`](https://github.com/shtorm-7/sing-box-extended)
-`extended` line through the `gr33nimax/etonify-core` integration submodule.
+`extended` line through the `gr33nimax/hydracore` integration submodule.
 This naming does not imply independent upstream authorship; see
 [UPSTREAM.md](../UPSTREAM.md).
 The Android AAR is produced from the checked-out submodule commit; the
@@ -67,7 +67,7 @@ should use its dedicated `warp` endpoint.
 The core CI workflow runs the complete test/race/resource gates and builds the
 four-ABI Android AAR with the exact extended tag set. It publishes the verified
 AAR, generated sources, SHA-256, provenance and source archive as a pinned
-prerelease in `gr33nimax/etonify-core`.
+prerelease in `gr33nimax/hydracore`.
 
 GitHub's public-fork LFS rules prevent this fork's Actions bot from uploading a
 newly built object because it has no write access to the root repository
@@ -80,7 +80,7 @@ python -B scripts/fetch_libbox.py
 python -B scripts/verify_libbox.py
 ```
 
-The fetcher accepts only the pinned `gr33nimax/etonify-core` release URL,
+The fetcher accepts only the pinned `gr33nimax/hydracore` release URL,
 streams to a temporary file, verifies the declared size and SHA-256, and then
 atomically replaces `android/app/libs/libbox.aar`. Android `preBuild` verifies
 the same checksum and gives the hydration command instead of silently using a

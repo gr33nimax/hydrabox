@@ -17,6 +17,10 @@ baselines.
 
 ## Before Opening a Pull Request
 
+GitHub Actions is authoritative for HydraBox. Open the pull request against
+`extended-core` and wait for the client, Android, and security checks required
+for the change. If you also run checks locally, the equivalent commands are:
+
 Run:
 
 ```powershell
@@ -39,6 +43,8 @@ flutter build apk --release
 - Do not include real subscription links, UUIDs, passwords, tokens, HWID, or private server data in tests or screenshots.
 - Prefer small, verifiable fixes over broad rewrites.
 - If a change touches VPN start/stop, server selection, subscription refresh, split tunneling, or DNS, describe the manual Android test scenario.
+- Changes to HydraBox Subscription v1 must keep the server, client, and
+  HydraCore capability contract versioned and fail-closed.
 
 ## Communication
 

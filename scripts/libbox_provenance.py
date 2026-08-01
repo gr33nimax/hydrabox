@@ -12,7 +12,7 @@ from typing import NoReturn
 
 PROVENANCE_SCHEMA_VERSION = 2
 LIBBOX_ARTIFACT = "libbox.aar"
-LIBBOX_RELEASE_REPOSITORY = "gr33nimax/etonify-core"
+LIBBOX_RELEASE_REPOSITORY = "gr33nimax/hydracore"
 LIBBOX_RELEASE_BASE_URL = (
     f"https://github.com/{LIBBOX_RELEASE_REPOSITORY}/releases/download"
 )

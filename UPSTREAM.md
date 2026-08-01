@@ -13,7 +13,7 @@ and licenses remain in place.
 | HydraBox component | Upstream source | Baseline in this tree |
 | --- | --- | --- |
 | HydraBox application | [`yamixdev/Etonify`](https://github.com/yamixdev/Etonify) | `b0d311607ec024ca505c77ba7419f579b0edd0d6` |
-| HydraCore runtime | [`gr33nimax/etonify-core`](https://github.com/gr33nimax/etonify-core/tree/extended-integration), itself derived from extended sing-box | `a52ab5c0e8aeabd8b5057f85ca518796ce2c57ed` |
+| HydraCore runtime | [`gr33nimax/hydracore`](https://github.com/gr33nimax/hydracore/tree/extended-integration), itself derived from extended sing-box | `a52ab5c0e8aeabd8b5057f85ca518796ce2c57ed` |
 
 The commit history records later HydraBox changes. Binary core provenance,
 including the exact source commit, release asset, SHA-256, toolchain and build

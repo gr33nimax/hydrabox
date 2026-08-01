@@ -20,7 +20,7 @@ class SettingsAboutPage extends StatefulWidget {
   });
 
   static final Uri _coreSourceUri = Uri.parse(
-    'https://github.com/gr33nimax/etonify-core/tree/extended-integration',
+    'https://github.com/gr33nimax/hydracore/tree/extended-integration',
   );
   static final Uri _telegramUri = Uri.parse('https://t.me/etonify');
   static final Uri _contactUri = Uri.parse('https://t.me/etonify?direct');
@@ -240,7 +240,7 @@ class _AboutInfoCard extends StatelessWidget {
                 ),
                 _AboutActionChip(
                   icon: Icons.code_rounded,
-                  label: 'gr33nimax/etonify-core',
+                  label: 'gr33nimax/hydracore',
                   onTap: onOpenCoreSource,
                 ),
                 _AboutActionChip(
