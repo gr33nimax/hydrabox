@@ -119,7 +119,28 @@ jobs:
         run: flutter analyze
 
       - name: Test
-        run: flutter test
+        shell: bash
+        run: |
+          set +e
+          log_file="$(mktemp)"
+          flutter test 2>&1 | tee "$log_file"
+          test_status="${PIPESTATUS[0]}"
+          if [[ "$test_status" -ne 0 ]]; then
+            echo "::group::Flutter test failure diagnostics"
+            grep -E ' -[0-9]+:|Expected:|Actual:|Some tests failed|[0-9]+ tests passed' "$log_file" | tail -n 120 || true
+            echo "::endgroup::"
+            while IFS= read -r line; do
+              [[ -z "$line" ]] && continue
+              escaped="${line//\%/\%25}"
+              escaped="${escaped//$'\r'/\%0D}"
+              escaped="${escaped//$'\n'/\%0A}"
+              echo "::error title=Flutter test diagnostics::${escaped:0:2000}"
+            done < <(
+              grep -E ' -[0-9]+:|Expected:|Actual:|Some tests failed|[0-9]+ tests passed' "$log_file" \
+                | tail -n 80
+            )
+          fi
+          exit "$test_status"
 
       - name: Android unit tests, lint and debug assemble
         working-directory: android
