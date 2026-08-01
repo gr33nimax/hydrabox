@@ -83,9 +83,12 @@ Android unit/lint/assembly gates, and CodeQL. Contributions target `main`; see
 
 ## Credits and license
 
-HydraBox preserves the complete source history, corresponding source,
-copyright notices, and licenses of the projects from which it evolved. Exact
-lineage and retained compatibility identifiers are isolated from product
-branding in [CREDITS.md](CREDITS.md), [NOTICE.md](NOTICE.md), and
+HydraBox began as a fork of
+[Etonify](https://github.com/yamixdev/Etonify). We are grateful to MeowTeam and
+all upstream contributors whose work made this project possible. HydraBox is
+now maintained independently for the Hydra ecosystem while preserving the
+complete source history, corresponding source, copyright notices, and
+licenses. Exact lineage and retained compatibility identifiers are documented
+in [CREDITS.md](CREDITS.md), [NOTICE.md](NOTICE.md), and
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The project is distributed
 under [GPL-3.0-or-later](LICENSE).

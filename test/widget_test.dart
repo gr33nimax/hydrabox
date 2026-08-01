@@ -1542,9 +1542,10 @@ void main() {
       find.textContaining('subscription-first Android client'),
       findsOneWidget,
     );
+    expect(find.textContaining('Etonify fork'), findsOneWidget);
+    expect(find.text('Credits & origins'), findsOneWidget);
     expect(find.text('Terms of Use'), findsOneWidget);
     expect(find.text('Privacy Policy'), findsOneWidget);
-    expect(find.textContaining('Etonify'), findsNothing);
     expect(find.textContaining('MeowTeam'), findsNothing);
   });
 

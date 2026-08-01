@@ -179,7 +179,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get aboutDevelopedBy =>
-      'HydraBox is the subscription-first Android client for the Hydra self-hosted VPN stack.';
+      'HydraBox is the subscription-first Android client for the Hydra self-hosted VPN stack. It began as an Etonify fork and is now maintained independently.';
+
+  @override
+  String get aboutCreditsLabel => 'Credits & origins';
 
   @override
   String get aboutCoreSourceLabel => 'core source code';

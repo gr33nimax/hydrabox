@@ -425,8 +425,14 @@ abstract class AppLocalizations {
   /// No description provided for @aboutDevelopedBy.
   ///
   /// In en, this message translates to:
-  /// **'HydraBox is the subscription-first Android client for the Hydra self-hosted VPN stack.'**
+  /// **'HydraBox is the subscription-first Android client for the Hydra self-hosted VPN stack. It began as an Etonify fork and is now maintained independently.'**
   String get aboutDevelopedBy;
+
+  /// No description provided for @aboutCreditsLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Credits & origins'**
+  String get aboutCreditsLabel;
 
   /// No description provided for @aboutCoreSourceLabel.
   ///

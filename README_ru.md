@@ -82,9 +82,12 @@ unit/lint/assembly gates и CodeQL. Изменения направляются 
 
 ## Авторы, происхождение и лицензия
 
-HydraBox сохраняет полную историю исходников, corresponding source, copyright
-notices и лицензии проектов, из которых он развился. Точное происхождение и
-сохранённые идентификаторы совместимости вынесены из продуктовой страницы в
+HydraBox начинался как форк
+[Etonify](https://github.com/yamixdev/Etonify). Мы благодарны MeowTeam и всем
+upstream-разработчикам, чья работа сделала этот проект возможным. Сейчас
+HydraBox самостоятельно развивается для экосистемы Hydra, сохраняя полную
+историю исходников, corresponding source, copyright notices и лицензии.
+Точное происхождение и сохранённые идентификаторы совместимости описаны в
 [CREDITS.md](CREDITS.md), [NOTICE.md](NOTICE.md) и
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Лицензия проекта —
 [GPL-3.0-or-later](LICENSE).

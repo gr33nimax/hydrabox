@@ -22,6 +22,9 @@ class SettingsAboutPage extends StatefulWidget {
   static final Uri _coreSourceUri = Uri.parse(
     'https://github.com/gr33nimax/hydracore/tree/main',
   );
+  static final Uri _creditsUri = Uri.parse(
+    'https://github.com/gr33nimax/hydrabox/blob/main/CREDITS.md',
+  );
 
   final String versionLabel;
   final VoidCallback onShowOnboarding;
@@ -123,6 +126,7 @@ class _SettingsAboutPageState extends State<SettingsAboutPage> {
                   coreVersion: _coreVersion,
                   onOpenCoreSource: () =>
                       _openUri(SettingsAboutPage._coreSourceUri),
+                  onOpenCredits: () => _openUri(SettingsAboutPage._creditsUri),
                   onOpenTerms: () => _openLegalDocument(privacy: false),
                   onOpenPrivacy: () => _openLegalDocument(privacy: true),
                 ),
@@ -165,6 +169,7 @@ class _AboutInfoCard extends StatelessWidget {
     required this.versionLabel,
     required this.coreVersion,
     required this.onOpenCoreSource,
+    required this.onOpenCredits,
     required this.onOpenTerms,
     required this.onOpenPrivacy,
   });
@@ -172,6 +177,7 @@ class _AboutInfoCard extends StatelessWidget {
   final String versionLabel;
   final String? coreVersion;
   final VoidCallback onOpenCoreSource;
+  final VoidCallback onOpenCredits;
   final VoidCallback onOpenTerms;
   final VoidCallback onOpenPrivacy;
 
@@ -219,6 +225,11 @@ class _AboutInfoCard extends StatelessWidget {
                   icon: Icons.code_rounded,
                   label: 'gr33nimax/hydracore',
                   onTap: onOpenCoreSource,
+                ),
+                _AboutActionChip(
+                  icon: Icons.favorite_outline_rounded,
+                  label: l10n.aboutCreditsLabel,
+                  onTap: onOpenCredits,
                 ),
                 _AboutActionChip(
                   icon: Icons.description_rounded,
