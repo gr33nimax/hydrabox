@@ -128,9 +128,14 @@ jobs:
           if [[ "$test_status" -ne 0 ]]; then
             clean_log="$(mktemp)"
             sed -E $'s/\\x1B\\[[0-9;]*[[:alpha:]]//g' "$log_file" > "$clean_log"
+            first_failure_line="$(grep -n -m 1 -E -- '-[[:space:]]*1:' "$clean_log" | cut -d: -f1 || true)"
+            if [[ -z "$first_failure_line" ]]; then
+              first_failure_line=1
+            fi
+            failure_window_end=$((first_failure_line + 100))
             echo "::group::Flutter test failure diagnostics"
-            grep -E -- '-[[:space:]]*(1|2|3):|\[E\]|Expected:|Actual:|Some tests failed|[0-9]+ tests passed|^package:' "$clean_log" \
-              | head -n 300 || true
+            sed -n "${first_failure_line},${failure_window_end}p" "$clean_log" \
+              | grep -E -- '-[[:space:]]*(1|2|3):|\[E\]|Expected:|Actual:|Some tests failed|[0-9]+ tests passed|^package:' || true
             grep -E -- 'Some tests failed|[0-9]+ tests passed' "$clean_log" | tail -n 20 || true
             echo "::endgroup::"
             while IFS= read -r line; do
@@ -140,8 +145,8 @@ jobs:
               escaped="${escaped//$'\n'/\%0A}"
               echo "::error title=Flutter test diagnostics::${escaped:0:2000}"
             done < <(
-              grep -E -- '-[[:space:]]*(1|2|3):|\[E\]|Expected:|Actual:|Some tests failed|[0-9]+ tests passed|^package:' "$clean_log" \
-                | head -n 160
+              sed -n "${first_failure_line},${failure_window_end}p" "$clean_log" \
+                | grep -E -- '-[[:space:]]*(1|2|3):|\[E\]|Expected:|Actual:|Some tests failed|[0-9]+ tests passed|^package:' || true
             )
           fi
           exit "$test_status"
