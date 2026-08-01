@@ -130,7 +130,8 @@ jobs:
             sed -E $'s/\\x1B\\[[0-9;]*[[:alpha:]]//g' "$log_file" > "$clean_log"
             echo "::group::Flutter test failure diagnostics"
             grep -E -- '-[[:space:]]*[0-9]+:|\[E\]|Expected:|Actual:|Some tests failed|[0-9]+ tests passed|^package:' "$clean_log" \
-              | tail -n 300 || true
+              | head -n 300 || true
+            grep -E -- 'Some tests failed|[0-9]+ tests passed' "$clean_log" | tail -n 20 || true
             echo "::endgroup::"
             while IFS= read -r line; do
               [[ -z "$line" ]] && continue
@@ -140,7 +141,7 @@ jobs:
               echo "::error title=Flutter test diagnostics::${escaped:0:2000}"
             done < <(
               grep -E -- '-[[:space:]]*(1|2|3):|\[E\]|Expected:|Actual:|Some tests failed|[0-9]+ tests passed|^package:' "$clean_log" \
-                | tail -n 160
+                | head -n 160
             )
           fi
           exit "$test_status"
