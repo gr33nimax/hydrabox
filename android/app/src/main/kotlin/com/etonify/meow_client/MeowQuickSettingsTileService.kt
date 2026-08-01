@@ -22,7 +22,7 @@ import org.json.JSONObject
 class MeowQuickSettingsTileService : TileService() {
     companion object {
         private const val QUICK_TILE_LABEL_FILE = "quick_tile_label.txt"
-        private const val TILE_LABEL = "Etonify"
+        private const val TILE_LABEL = "HydraBox"
         private const val MAX_LABEL_LENGTH = 18
 
         fun requestRefresh(context: android.content.Context) {

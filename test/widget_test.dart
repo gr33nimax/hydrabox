@@ -70,13 +70,13 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Etonify'), findsOneWidget);
+    expect(find.text('HydraBox'), findsOneWidget);
     expect(find.text('MeowVPN'), findsNothing);
     expect(find.text('No subscriptions yet'), findsOneWidget);
     expect(find.byIcon(Icons.settings_rounded), findsOneWidget);
   });
 
-  testWidgets('welcome uses Etonify before onboarding is completed', (
+  testWidgets('welcome uses HydraBox before onboarding is completed', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -130,7 +130,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Etonify'), findsOneWidget);
+    expect(find.text('HydraBox'), findsOneWidget);
     expect(find.text('No subscriptions yet'), findsNothing);
     expect(find.byIcon(Icons.settings_rounded), findsNothing);
   });
@@ -1536,7 +1536,12 @@ void main() {
     expect(find.text('Client version'), findsOneWidget);
     expect(find.text('0.1.1'), findsOneWidget);
     expect(find.text('MeowVPN'), findsNothing);
-    expect(find.text('yamixdev/etonify-core'), findsOneWidget);
+    expect(find.text('HydraBox'), findsOneWidget);
+    expect(find.text('gr33nimax/etonify-core'), findsOneWidget);
+    expect(
+      find.textContaining('independent derivative of Etonify'),
+      findsOneWidget,
+    );
 
     final teamAction = find.ancestor(
       of: find.text('MeowTeam'),
@@ -1545,7 +1550,7 @@ void main() {
     await tester.tap(teamAction.first);
     await tester.pumpAndSettle();
 
-    expect(find.text('The team behind Etonify'), findsOneWidget);
+    expect(find.text('Etonify upstream attribution'), findsOneWidget);
     expect(find.text('Early client development'), findsOneWidget);
     expect(find.text('Moving to etonify-core'), findsOneWidget);
 
@@ -1553,8 +1558,11 @@ void main() {
     expect(find.text('dudosxdev'), findsOneWidget);
     expect(find.text('yamixdev'), findsOneWidget);
 
-    await tester.scrollUntilVisible(find.text('© 2026 MeowTeam™'), 500);
-    expect(find.text('© 2026 MeowTeam™'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Etonify upstream · © 2026 MeowTeam'),
+      500,
+    );
+    expect(find.text('Etonify upstream · © 2026 MeowTeam'), findsOneWidget);
   });
 
   testWidgets('unsupported system locale falls back to English', (

@@ -56,7 +56,9 @@ class SettingsBackupImportActions {
       await _importProfile(context, bytes);
       return;
     }
-    throw const EtonifyBackupException('This is not an Etonify backup file.');
+    throw const EtonifyBackupException(
+      'This is not a compatible HydraBox or Etonify backup file.',
+    );
   }
 
   Future<void> _importSettings(BuildContext context, List<int> bytes) async {

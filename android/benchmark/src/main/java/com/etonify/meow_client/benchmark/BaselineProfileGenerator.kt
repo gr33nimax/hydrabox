@@ -20,7 +20,7 @@ class BaselineProfileGenerator {
         stableIterations = 3,
         includeInStartupProfile = true,
     ) {
-        launchEtonify()
+        launchHydraBox()
     }
 
     @Test

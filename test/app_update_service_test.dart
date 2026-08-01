@@ -3,19 +3,32 @@ import 'package:meow_client/data/update/app_update_service.dart';
 
 void main() {
   group('AppUpdateService', () {
+    test('stays fail-closed without a HydraBox release repository', () async {
+      expect(AppUpdateService.updatesConfigured, isFalse);
+
+      final result = await AppUpdateService.instance.checkForUpdates(
+        currentVersion: '0.1.0',
+        currentBuildNumber: 1,
+        manual: true,
+      );
+
+      expect(result.status, AppUpdateStatus.disabled);
+      expect(result.info, isNull);
+    });
+
     const assets = [
       AppUpdateAsset(
-        name: 'etonify-v0.1.0-universal.apk',
+        name: 'hydrabox-v0.1.0-universal.apk',
         downloadUrl: 'https://example.com/universal.apk',
         sizeBytes: 100,
       ),
       AppUpdateAsset(
-        name: 'etonify-v0.1.0-arm64-v8a.apk',
+        name: 'hydrabox-v0.1.0-arm64-v8a.apk',
         downloadUrl: 'https://example.com/arm64.apk',
         sizeBytes: 50,
       ),
       AppUpdateAsset(
-        name: 'etonify-v0.1.0-x86_64.apk',
+        name: 'hydrabox-v0.1.0-x86_64.apk',
         downloadUrl: 'https://example.com/x86_64.apk',
         sizeBytes: 60,
       ),
@@ -27,7 +40,7 @@ void main() {
         'armeabi-v7a',
       ]);
 
-      expect(selected?.name, 'etonify-v0.1.0-arm64-v8a.apk');
+      expect(selected?.name, 'hydrabox-v0.1.0-arm64-v8a.apk');
     });
 
     test('falls back to universal for unknown ABI', () {
@@ -35,7 +48,7 @@ void main() {
         'x86',
       ]);
 
-      expect(selected?.name, 'etonify-v0.1.0-universal.apk');
+      expect(selected?.name, 'hydrabox-v0.1.0-universal.apk');
     });
 
     test('normalizes version with and without v prefix', () {
@@ -89,7 +102,7 @@ void main() {
         htmlUrl: 'https://example.com/release',
         publishedAt: null,
         asset: AppUpdateAsset(
-          name: 'etonify-v0.2.1-arm64-v8a.apk',
+          name: 'hydrabox-v0.2.1-arm64-v8a.apk',
           downloadUrl: 'https://example.com/app.apk',
           sizeBytes: 100,
         ),
@@ -101,12 +114,12 @@ void main() {
 
     test('sanitizes APK asset file names', () {
       expect(
-        AppUpdateService.sanitizeAssetFileName('etonify v0.1.0 arm64-v8a.apk'),
-        'etonify-v0.1.0-arm64-v8a.apk',
+        AppUpdateService.sanitizeAssetFileName('hydrabox v0.1.0 arm64-v8a.apk'),
+        'hydrabox-v0.1.0-arm64-v8a.apk',
       );
       expect(
         AppUpdateService.sanitizeAssetFileName('not-an-apk.zip'),
-        'etonify-update.apk',
+        'hydrabox-update.apk',
       );
     });
 
@@ -119,7 +132,7 @@ void main() {
         'packageName': 'com.etonify.meow_client',
         'assets': [
           {
-            'name': 'etonify-v0.2.1-arm64-v8a.apk',
+            'name': 'hydrabox-v0.2.1-arm64-v8a.apk',
             'sizeBytes': 123456,
             'sha256': sha256,
           },
@@ -132,10 +145,10 @@ void main() {
       expect(manifest.minimumAndroidSdk, 24);
       expect(manifest.packageName, 'com.etonify.meow_client');
       expect(
-        manifest.assets['etonify-v0.2.1-arm64-v8a.apk']?.sizeBytes,
+        manifest.assets['hydrabox-v0.2.1-arm64-v8a.apk']?.sizeBytes,
         123456,
       );
-      expect(manifest.assets['etonify-v0.2.1-arm64-v8a.apk']?.sha256, sha256);
+      expect(manifest.assets['hydrabox-v0.2.1-arm64-v8a.apk']?.sha256, sha256);
     });
 
     test('rejects a manifest without version, package, or asset list', () {

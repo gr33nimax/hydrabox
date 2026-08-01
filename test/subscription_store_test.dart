@@ -1,11 +1,14 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:meow_client/data/subscription/hydrabox_subscription_crypto.dart';
 import 'package:meow_client/data/subscription/subscription_parser.dart';
 import 'package:meow_client/data/subscription/subscription_failure.dart';
 import 'package:meow_client/data/subscription/subscription_store.dart';
+import 'package:meow_client/logging/app_log_store.dart';
 import 'package:meow_client/models/subscription.dart';
 
 void main() {
@@ -23,6 +26,7 @@ void main() {
 
   setUp(() async {
     await SubscriptionStore.clear();
+    AppLogStore.clear();
   });
 
   tearDownAll(() async {
@@ -45,8 +49,10 @@ void main() {
         await request.response.close();
       });
 
+      const secretPath = 'customer-bearer-path-secret';
+
       final result = await SubscriptionStore.addFromUrl(
-        'http://${server.address.host}:${server.port}/sub',
+        'http://${server.address.host}:${server.port}/$secretPath',
         customName: 'Saved Anyway',
         requestInfo: const SubscriptionInfo(
           requireHwid: true,
@@ -60,12 +66,90 @@ void main() {
 
       final saved = SubscriptionStore.get(result.subscription.id);
       expect(saved, isNotNull);
-      expect(saved!.url, 'http://${server.address.host}:${server.port}/sub');
+      expect(
+        saved!.url,
+        'http://${server.address.host}:${server.port}/$secretPath',
+      );
       expect(saved.info?.requireHwid, isTrue);
       expect(saved.info?.customHwid, 'spoofed-hwid');
       expect(saved.outbounds, isEmpty);
+      expect(AppLogStore.dump(), isNot(contains(secretPath)));
     },
   );
+
+  test('key-bearing source failures never save a placeholder', () async {
+    final key = base64Url.encode(List<int>.filled(32, 7)).replaceAll('=', '');
+
+    await expectLater(
+      SubscriptionStore.addFromUrl(
+        'http://127.0.0.1/subscription#hbx-key=$key',
+      ),
+      throwsA(isA<HttpException>()),
+    );
+    expect(SubscriptionStore.getAllMetadata(), isEmpty);
+  });
+
+  test(
+    'HydraBox media-type failures never save a legacy placeholder',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(server.close);
+      server.listen((request) async {
+        request.response.headers.set(
+          HttpHeaders.contentTypeHeader,
+          'application/vnd.hydrabox.subscription+json',
+        );
+        request.response.write(
+          'vless://uuid@server.example:443?security=tls#Legacy',
+        );
+        await request.response.close();
+      });
+
+      await expectLater(
+        SubscriptionStore.addFromUrl(
+          'http://${server.address.host}:${server.port}/subscription',
+        ),
+        throwsA(isA<FormatException>()),
+      );
+      expect(SubscriptionStore.getAllMetadata(), isEmpty);
+    },
+  );
+
+  test(
+    'non-Android store refuses plaintext persistence of hbx-key URLs',
+    () async {
+      if (Platform.isAndroid) return;
+      final key = base64Url
+          .encode(List<int>.filled(32, 11))
+          .replaceAll('=', '');
+      final subscription = Subscription(
+        id: 'insecure-key-source',
+        name: 'Encrypted source',
+        url: 'https://provider.example/subscription#hbx-key=$key',
+      );
+
+      await expectLater(
+        SubscriptionStore.save(subscription, allowCreate: true),
+        throwsA(isA<UnsupportedError>()),
+      );
+      expect(SubscriptionStore.getAllMetadata(), isEmpty);
+    },
+  );
+
+  test('store rejects hbx-key in URL query on every platform', () async {
+    const key = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+    const subscription = Subscription(
+      id: 'query-key-source',
+      name: 'Leaky encrypted source',
+      url: 'https://provider.example/subscription?hbx-key=$key',
+    );
+
+    await expectLater(
+      SubscriptionStore.save(subscription, allowCreate: true),
+      throwsFormatException,
+    );
+    expect(SubscriptionStore.getAllMetadata(), isEmpty);
+  });
 
   test('addFromContent imports a subscription from file content', () async {
     final result = await SubscriptionStore.addFromContent(
@@ -85,6 +169,36 @@ void main() {
     expect(metadata.cachedVisibleProxyCount, greaterThan(0));
     expect(metadata.hasRawPayload, isTrue);
   });
+
+  test(
+    'persistent encrypted HydraBox file import fails closed without key storage',
+    () async {
+      final key = base64Url
+          .encode(List<int>.filled(32, 7))
+          .replaceAll('=', '');
+      final encrypted = HydraBoxJweCodec.encrypt(
+        jsonEncode(_hydraboxPersistenceDocument()),
+        encodedKey: key,
+        keyId: 'file-import-key',
+      );
+
+      await expectLater(
+        SubscriptionStore.addFromContent(
+          encrypted,
+          sourceName: 'customer.hbx.jwe.json',
+          decryptionKey: key,
+        ),
+        throwsA(
+          isA<UnsupportedError>().having(
+            (error) => error.message,
+            'message',
+            contains('key-bearing HTTPS subscription URL'),
+          ),
+        ),
+      );
+      expect(SubscriptionStore.getAllMetadata(), isEmpty);
+    },
+  );
 
   test(
     'addFromContent accepts a native config without selectable entries',
@@ -189,14 +303,19 @@ void main() {
         ],
       );
 
-      await SubscriptionStore.save(subscription);
+      await SubscriptionStore.save(subscription, allowCreate: true);
 
-      final stored = Hive.box(
-        'subscription_payloads_secure_v1',
-      ).get(subscription.id);
+      final metadata = SubscriptionStore.getAllMetadata().single;
+      expect(
+        metadata.payloadStorageKey,
+        startsWith('${subscription.id}::payload::'),
+      );
+      final payloadBox = Hive.box('subscription_payloads_secure_v1');
+      final stored = payloadBox.get(metadata.payloadStorageKey);
       expect(stored, isA<String>());
       expect(stored as String, startsWith('gzip-base64-v1:'));
       expect(stored.length, lessThan(subscription.rawContent.length ~/ 10));
+      expect(payloadBox.get(subscription.id), isNull);
       expect(SubscriptionStore.payloadSnapshotFor(subscription.id), stored);
       expect(
         jsonDecode(SubscriptionStore.payloadJsonFor(subscription.id)!)
@@ -208,6 +327,423 @@ void main() {
       expect(hydrated, isNotNull);
       expect(hydrated!.rawContent, subscription.rawContent);
       expect(hydrated.outbounds.single.tag, 'node-1');
+    },
+  );
+
+  test(
+    'payload commits switch generations and metadata saves keep the pointer',
+    () async {
+      const original = Subscription(
+        id: 'generation-profile',
+        name: 'Generation profile',
+        url: 'file:///generation.txt',
+        rawContent: 'first payload content',
+      );
+      await SubscriptionStore.save(original, allowCreate: true);
+      final firstMetadata = SubscriptionStore.getAllMetadata().single;
+      final firstKey = firstMetadata.payloadStorageKey;
+      expect(firstKey, isNotEmpty);
+
+      await SubscriptionStore.saveMetadata(
+        firstMetadata.copyWith(name: 'Renamed'),
+      );
+      expect(
+        SubscriptionStore.getAllMetadata().single.payloadStorageKey,
+        firstKey,
+      );
+
+      await SubscriptionStore.save(
+        SubscriptionStore.get(
+          original.id,
+        )!.copyWith(name: 'Renamed', rawContent: 'second payload content'),
+      );
+      final secondMetadata = SubscriptionStore.getAllMetadata().single;
+      final secondKey = secondMetadata.payloadStorageKey;
+      expect(secondKey, isNot(firstKey));
+      expect(Hive.box('subscription_payloads_secure_v1').get(firstKey), isNull);
+      expect(
+        SubscriptionStore.get(original.id)?.rawContent,
+        'second payload content',
+      );
+    },
+  );
+
+  test(
+    'stale legacy saves cannot overwrite a newer payload revision',
+    () async {
+      const original = Subscription(
+        id: 'stale-legacy-save',
+        name: 'Original',
+        url: 'https://provider.example/subscription',
+        rawContent: 'vless://old-payload',
+      );
+      await SubscriptionStore.save(original, allowCreate: true);
+      final stale = SubscriptionStore.get(original.id)!;
+
+      await SubscriptionStore.save(
+        stale.copyWith(rawContent: 'vless://new-payload'),
+      );
+
+      await expectLater(
+        SubscriptionStore.save(stale.copyWith(name: 'Stale full save')),
+        throwsA(isA<StateError>()),
+      );
+      await expectLater(
+        SubscriptionStore.saveMetadata(
+          stale.copyWith(name: 'Stale metadata save'),
+        ),
+        throwsA(isA<StateError>()),
+      );
+
+      final stored = SubscriptionStore.get(original.id)!;
+      expect(stored.rawContent, 'vless://new-payload');
+      expect(stored.name, 'Original');
+    },
+  );
+
+  test(
+    'stale legacy reparse cannot replace a newer payload revision',
+    () async {
+      final oldRaw = List<String>.generate(
+      3000,
+        (index) =>
+            'vless://3a1a58e6-e167-4d9f-8b60-34fee9ee51e9@old$index.example:443'
+            '?encryption=none&security=tls#Old$index',
+      ).join('\n');
+      final original = Subscription(
+        id: 'stale-legacy-reparse',
+        name: 'Legacy reparse',
+        url: 'https://provider.example/subscription',
+        rawContent: oldRaw,
+      );
+      await SubscriptionStore.save(original, allowCreate: true);
+      final stale = SubscriptionStore.get(original.id)!;
+
+      final reparse = SubscriptionStore.reparseFromRaw(original.id);
+      await Future<void>.delayed(Duration.zero);
+      await SubscriptionStore.save(
+        stale.copyWith(
+          rawContent:
+              'vless://3a1a58e6-e167-4d9f-8b60-34fee9ee51e9@new.example:443'
+              '?encryption=none&security=tls#New',
+        ),
+      );
+
+      await expectLater(reparse, throwsA(isA<StateError>()));
+      expect(
+        SubscriptionStore.get(original.id)!.rawContent,
+        contains('@new.example:443'),
+      );
+    },
+  );
+
+  test(
+    'HydraBox payload reload retains profiles native config and source metadata',
+    () async {
+      final source = jsonEncode(_hydraboxPersistenceDocument());
+      final parsedSource = SubscriptionParser.parse(source);
+      final imported = await SubscriptionStore.addFromContent(
+        source,
+        sourceName: 'customer.hbx.json',
+      );
+
+      expect(imported.subscription.profiles, hasLength(1));
+      expect(imported.subscription.selectedProfileId, 'profile-main');
+      expect(imported.subscription.selectedProxyTag, 'profile-out');
+      expect(imported.subscription.nativeConfig?['future_safe_section'], {
+        'opaque': true,
+      });
+      expect(imported.subscription.sourceMetadata['sequence'], 7);
+      expect(
+        SubscriptionStore.getAllMetadata().single.sourceMetadata,
+        isNot(contains('extensions')),
+      );
+
+      final storedPayload =
+          jsonDecode(
+                SubscriptionStore.payloadJsonFor(imported.subscription.id)!,
+              )
+              as Map<String, dynamic>;
+      expect(storedPayload['profiles'], isA<List<dynamic>>());
+      expect(storedPayload['native_config'], isA<Map<String, dynamic>>());
+
+      final reloaded = await SubscriptionStore.getInBackground(
+        imported.subscription.id,
+      );
+      expect(reloaded, isNotNull);
+      expect(reloaded!.profiles, hasLength(1));
+      expect(reloaded.profiles.single.id, 'profile-main');
+      expect(reloaded.profiles.single.entrypointSection, 'outbounds');
+      expect(reloaded.profiles.single.entrypointTag, 'profile-out');
+      expect(reloaded.profiles.single.runtimeTag, 'profile-out');
+      expect(reloaded.selectedProfileId, 'profile-main');
+      expect(reloaded.selectedProxyTag, 'profile-out');
+      expect(reloaded.nativeConfig, parsedSource.nativeConfig);
+      expect(reloaded.nativeConfig?['future_safe_section'], {'opaque': true});
+      expect(reloaded.nativeConfig?['outbounds'], hasLength(2));
+      expect(reloaded.sourceMetadata['format'], 'hydrabox.io/subscription/v1');
+      expect(reloaded.sourceMetadata['issuer'], 'https://provider.example');
+      expect(reloaded.sourceMetadata['subscription_id'], 'persistence-main');
+      expect(reloaded.sourceMetadata['sequence'], 7);
+      expect(reloaded.sourceMetadata['payload_sha256'], isNotEmpty);
+      expect(reloaded.sourceMetadata['extensions'], {
+        'example.provider/labels': {'tier': 'test'},
+      });
+
+      final visible = reloaded.outbounds.singleWhere(
+        (outbound) => outbound.tag == 'profile-out',
+      );
+      final helper = reloaded.outbounds.singleWhere(
+        (outbound) => outbound.tag == 'helper-out',
+      );
+      expect(visible.config['_hydrabox_profile_id'], 'profile-main');
+      expect(visible.config['_group_only'], isNot(true));
+      expect(helper.config['_group_only'], isTrue);
+    },
+  );
+
+  test('HydraBox issued_at is the effective not_before when omitted', () async {
+    final source = _hydraboxPersistenceDocument()
+      ..['issued_at'] = DateTime.now()
+          .toUtc()
+          .add(const Duration(hours: 2))
+          .toIso8601String();
+
+    await expectLater(
+      SubscriptionStore.addFromContent(jsonEncode(source)),
+      throwsFormatException,
+    );
+    expect(SubscriptionStore.getAllMetadata(), isEmpty);
+  });
+
+  test(
+    'HydraBox anti-replay high-water is global to the trust tuple',
+    () async {
+      final firstDocument = _hydraboxPersistenceDocument()..['sequence'] = 12;
+      final firstSource = jsonEncode(firstDocument);
+      await SubscriptionStore.addFromContent(
+        firstSource,
+        sourceName: 'tuple-primary.hbx.json',
+      );
+
+      final rollback = Map<String, dynamic>.from(firstDocument)
+        ..['sequence'] = 10;
+      await expectLater(
+        SubscriptionStore.addFromContent(
+          jsonEncode(rollback),
+          sourceName: 'tuple-rollback.hbx.json',
+        ),
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            'message',
+            contains('sequence rollback'),
+          ),
+        ),
+      );
+
+      final equivocation = jsonDecode(firstSource) as Map<String, dynamic>;
+      final runtime = equivocation['runtime'] as Map<String, dynamic>;
+      final native = runtime['document'] as Map<String, dynamic>;
+      final outbounds = native['outbounds'] as List<dynamic>;
+      (outbounds.first as Map<String, dynamic>)['server'] = 'other.example';
+      await expectLater(
+        SubscriptionStore.addFromContent(
+          jsonEncode(equivocation),
+          sourceName: 'tuple-equivocation.hbx.json',
+        ),
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            'message',
+            contains('publisher equivocation'),
+          ),
+        ),
+      );
+
+      await expectLater(
+        SubscriptionStore.addFromContent(
+          firstSource,
+          sourceName: 'tuple-duplicate.hbx.json',
+        ),
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            'message',
+            contains('tuple is already stored'),
+          ),
+        ),
+      );
+      expect(SubscriptionStore.getAllMetadata(), hasLength(1));
+    },
+  );
+
+  test(
+    'HydraBox backup runtime and digest are rebuilt from raw wire data',
+    () async {
+      final imported = await SubscriptionStore.addFromContent(
+        jsonEncode(_hydraboxPersistenceDocument()),
+        sourceName: 'backup-source.hbx.json',
+      );
+      final trusted = SubscriptionStore.get(imported.subscription.id)!;
+      await SubscriptionStore.clear();
+
+      final unsafeNative = trusted.copyWith(
+        nativeConfig: {
+          'outbounds': [
+            {
+              'type': 'ssh',
+              'tag': 'forged',
+              'server': 'proxy.example',
+              'private_key_path': '/data/local/tmp/attacker-key',
+            },
+          ],
+          'log': {'output': '/data/local/tmp/provider.log'},
+        },
+      );
+      await expectLater(
+        SubscriptionStore.importFromBackup(unsafeNative),
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            'message',
+            contains('native config does not match'),
+          ),
+        ),
+      );
+
+      final forgedTrust = trusted.copyWith(
+        sourceMetadata: {
+          ...trusted.sourceMetadata,
+          'payload_sha256': ''.padRight(64, '0'),
+        },
+      );
+      await expectLater(
+        SubscriptionStore.importFromBackup(forgedTrust),
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            'message',
+            contains('payload_sha256'),
+          ),
+        ),
+      );
+      expect(SubscriptionStore.getAllMetadata(), isEmpty);
+
+      await SubscriptionStore.importFromBackup(trusted);
+      final restored = SubscriptionStore.get(trusted.id)!;
+      expect(restored.nativeConfig, trusted.nativeConfig);
+      expect(
+        restored.sourceMetadata['payload_sha256'],
+        trusted.sourceMetadata['payload_sha256'],
+      );
+    },
+  );
+
+  test('HydraBox reparse revalidates sequence inside the write lock', () async {
+    final originalDocument = _hydraboxPersistenceDocument()..['sequence'] = 10;
+    final imported = await SubscriptionStore.addFromContent(
+      jsonEncode(originalDocument),
+      sourceName: 'anti-replay.hbx.json',
+    );
+
+    final newerDocument = _hydraboxPersistenceDocument()..['sequence'] = 12;
+    final newerRaw = jsonEncode(newerDocument);
+    final newerParseResult = SubscriptionParser.parse(newerRaw);
+
+    // reparseFromRaw captures the sequence-10 raw payload before its first
+    // asynchronous parse. The concurrent save then commits sequence 12 and
+    // holds/queues the same per-subscription lock before the stale reparse
+    // can persist its result.
+    final staleReparseExpectation = expectLater(
+      SubscriptionStore.reparseFromRaw(imported.subscription.id),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          'message',
+          contains('HydraBox sequence rollback: 10 < 12'),
+        ),
+      ),
+    );
+    await SubscriptionStore.saveParsedImportForTest(
+      imported.subscription.copyWith(
+        rawContent: newerRaw,
+        sourceMetadata: newerParseResult.sourceMetadata,
+      ),
+    );
+    await staleReparseExpectation;
+
+    final stored = SubscriptionStore.get(imported.subscription.id);
+    expect(stored, isNotNull);
+    expect(stored!.sourceMetadata['sequence'], 12);
+    expect(stored.rawContent, newerRaw);
+  });
+
+  test('stale public save cannot roll back HydraBox trust state', () async {
+    final sequenceTen = _hydraboxPersistenceDocument()..['sequence'] = 10;
+    final imported = await SubscriptionStore.addFromContent(
+      jsonEncode(sequenceTen),
+      sourceName: 'stale-save.hbx.json',
+    );
+    final stale = SubscriptionStore.get(imported.subscription.id)!;
+
+    final sequenceTwelve = _hydraboxPersistenceDocument()..['sequence'] = 12;
+    final newerRaw = jsonEncode(sequenceTwelve);
+    final newerMetadata = SubscriptionParser.parse(newerRaw).sourceMetadata;
+    await SubscriptionStore.saveParsedImportForTest(
+      stale.copyWith(rawContent: newerRaw, sourceMetadata: newerMetadata),
+    );
+
+    await expectLater(
+      SubscriptionStore.save(stale.copyWith(name: 'Stale UI edit')),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          'message',
+          contains('HydraBox sequence rollback: 10 < 12'),
+        ),
+      ),
+    );
+    final stored = SubscriptionStore.get(imported.subscription.id)!;
+    expect(stored.sourceMetadata['sequence'], 12);
+    expect(stored.rawContent, newerRaw);
+  });
+
+  test(
+    'stale reorder and summary writes preserve HydraBox trust state',
+    () async {
+      final sequenceTen = _hydraboxPersistenceDocument()..['sequence'] = 10;
+      final imported = await SubscriptionStore.addFromContent(
+        jsonEncode(sequenceTen),
+        sourceName: 'stale-metadata.hbx.json',
+      );
+      final staleOrder = SubscriptionStore.getAllMetadata();
+
+      final sequenceTwelve = _hydraboxPersistenceDocument()..['sequence'] = 12;
+      final newerRaw = jsonEncode(sequenceTwelve);
+      final newerMetadata = SubscriptionParser.parse(newerRaw).sourceMetadata;
+      await SubscriptionStore.saveParsedImportForTest(
+        imported.subscription.copyWith(
+          rawContent: newerRaw,
+          sourceMetadata: newerMetadata,
+        ),
+      );
+      final committedPointer =
+          SubscriptionStore.getAllMetadata().single.payloadStorageKey;
+
+      await SubscriptionStore.reorder(staleOrder);
+      await SubscriptionStore.cachePayloadSummaries({
+        imported.subscription.id: (visibleProxyCount: 41, hasRawPayload: true),
+      });
+
+      final storedMetadata = SubscriptionStore.getAllMetadata().single;
+      expect(storedMetadata.sourceMetadata['sequence'], 12);
+      expect(storedMetadata.payloadStorageKey, committedPointer);
+      expect(storedMetadata.cachedVisibleProxyCount, 41);
+      expect(
+        SubscriptionStore.get(imported.subscription.id)!.rawContent,
+        newerRaw,
+      );
     },
   );
 
@@ -271,6 +807,7 @@ void main() {
           ),
         ],
       ),
+      allowCreate: true,
     );
 
     final first = SubscriptionStore.refresh('single-flight-refresh');
@@ -279,6 +816,138 @@ void main() {
     final results = await Future.wait([first, second]);
     expect(requestCount, 1);
     expect(results[0].outbounds.single.tag, results[1].outbounds.single.tag);
+  });
+
+  test('delete wins over an in-flight refresh without resurrection', () async {
+    final requestStarted = Completer<void>();
+    final releaseResponse = Completer<void>();
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    server.listen((request) async {
+      if (!requestStarted.isCompleted) requestStarted.complete();
+      await releaseResponse.future;
+      request.response.write(
+        'vless://3a1a58e6-e167-4d9f-8b60-34fee9ee51e9@new.example:443'
+        '?encryption=none&security=tls#New',
+      );
+      await request.response.close();
+    });
+    final subscription = Subscription(
+      id: 'delete-during-refresh',
+      name: 'Delete during refresh',
+      url: 'http://${server.address.host}:${server.port}/subscription',
+      rawContent:
+          'vless://3a1a58e6-e167-4d9f-8b60-34fee9ee51e9@old.example:443'
+          '?encryption=none&security=tls#Old',
+    );
+    await SubscriptionStore.save(subscription, allowCreate: true);
+
+    final refresh = SubscriptionStore.refresh(subscription.id);
+    await requestStarted.future;
+    await SubscriptionStore.delete(subscription.id);
+    releaseResponse.complete();
+
+    await expectLater(refresh, throwsA(isA<StateError>()));
+    expect(SubscriptionStore.get(subscription.id), isNull);
+  });
+
+  test('source URL changes invalidate an in-flight refresh', () async {
+    final requestStarted = Completer<void>();
+    final releaseResponse = Completer<void>();
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() async {
+      if (!releaseResponse.isCompleted) releaseResponse.complete();
+      await server.close(force: true);
+    });
+    server.listen((request) async {
+      if (!requestStarted.isCompleted) requestStarted.complete();
+      await releaseResponse.future;
+      request.response.write(
+        'vless://3a1a58e6-e167-4d9f-8b60-34fee9ee51e9@fetched.example:443'
+        '?encryption=none&security=tls#Fetched',
+      );
+      await request.response.close();
+    });
+    final subscription = Subscription(
+      id: 'url-change-during-refresh',
+      name: 'URL change during refresh',
+      url: 'http://${server.address.host}:${server.port}/subscription',
+      rawContent: 'vless://old-payload',
+    );
+    await SubscriptionStore.save(subscription, allowCreate: true);
+
+    final refresh = SubscriptionStore.refresh(subscription.id);
+    await requestStarted.future;
+    final latest = SubscriptionStore.get(subscription.id)!;
+    await SubscriptionStore.saveMetadata(
+      latest.copyWith(url: 'https://replacement.example/subscription'),
+    );
+    releaseResponse.complete();
+
+    await expectLater(refresh, throwsA(isA<StateError>()));
+    final stored = SubscriptionStore.get(subscription.id)!;
+    expect(stored.url, 'https://replacement.example/subscription');
+    expect(stored.rawContent, 'vless://old-payload');
+  });
+
+  test('delete and recreate defeats in-flight refresh ABA', () async {
+    final requestStarted = Completer<void>();
+    final releaseResponse = Completer<void>();
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() async {
+      if (!releaseResponse.isCompleted) releaseResponse.complete();
+      await server.close(force: true);
+    });
+    server.listen((request) async {
+      if (!requestStarted.isCompleted) requestStarted.complete();
+      await releaseResponse.future;
+      request.response.write(
+        'vless://3a1a58e6-e167-4d9f-8b60-34fee9ee51e9@stale.example:443'
+        '?encryption=none&security=tls#Stale',
+      );
+      await request.response.close();
+    });
+    final subscription = Subscription(
+      id: 'refresh-aba',
+      name: 'Original incarnation',
+      url: 'http://${server.address.host}:${server.port}/subscription',
+      rawContent: 'vless://original-payload',
+    );
+    await SubscriptionStore.save(subscription, allowCreate: true);
+
+    final refresh = SubscriptionStore.refresh(subscription.id);
+    await requestStarted.future;
+    await SubscriptionStore.delete(subscription.id);
+    await SubscriptionStore.save(
+      subscription.copyWith(
+        name: 'Replacement incarnation',
+        rawContent: 'vless://replacement-payload',
+      ),
+      allowCreate: true,
+    );
+    releaseResponse.complete();
+
+    await expectLater(refresh, throwsA(isA<StateError>()));
+    final stored = SubscriptionStore.get(subscription.id)!;
+    expect(stored.name, 'Replacement incarnation');
+    expect(stored.rawContent, 'vless://replacement-payload');
+  });
+
+  test('stale update cannot recreate a deleted subscription', () async {
+    const subscription = Subscription(
+      id: 'deleted-stale-update',
+      name: 'Before delete',
+      url: 'file:///stale.txt',
+      rawContent: 'vless://payload',
+    );
+    await SubscriptionStore.save(subscription, allowCreate: true);
+    await SubscriptionStore.delete(subscription.id);
+
+    await expectLater(
+      SubscriptionStore.save(subscription.copyWith(name: 'Stale edit')),
+      throwsA(isA<StateError>()),
+    );
+    expect(SubscriptionStore.get(subscription.id), isNull);
   });
 
   test('builds Husi-style proxy chain detours from parsed links', () {
@@ -304,6 +973,77 @@ void main() {
     expect(chained['config']['detour'], firstHop['tag']);
     expect(chained['config']['username'], 'W0sm4S');
     expect(chained['config']['password'], 'BDLLtW');
+  });
+
+  test('native detour helper is stored but not exposed as a profile', () {
+    final source = jsonEncode({
+      'route': {'final': 'trojan-over-shadowtls'},
+      'outbounds': [
+        {
+          'type': 'trojan',
+          'tag': 'trojan-over-shadowtls',
+          'server': 'proxy.example',
+          'server_port': 443,
+          'password': 'test-password',
+          'detour': 'shadowtls-transport',
+        },
+        {
+          'type': 'shadowtls',
+          'tag': 'shadowtls-transport',
+          'server': 'transport.example',
+          'server_port': 443,
+          'version': 3,
+          'password': 'test-password',
+          'tls': {'enabled': true, 'server_name': 'front.example'},
+        },
+      ],
+    });
+
+    final payload = SubscriptionStore.buildSubscriptionPayloadForTest(
+      SubscriptionParser.parse(source),
+    );
+
+    expect(payload.warnings, isEmpty);
+    expect(payload.outbounds, hasLength(2));
+    final visible = payload.outbounds
+        .where((entry) => entry['config']['_group_only'] != true)
+        .toList(growable: false);
+    expect(visible, hasLength(1));
+    expect(visible.single['tag'], 'trojan-over-shadowtls');
+    final helper = payload.outbounds.singleWhere(
+      (entry) => entry['tag'] == 'shadowtls-transport',
+    );
+    expect(helper['config']['_group_only'], isTrue);
+  });
+
+  test('selection ignores a transit-only outbound declared first', () {
+    const outbounds = [
+      Outbound(
+        tag: 'shadowtls-transport',
+        name: 'ShadowTLS transport',
+        config: {
+          'type': 'shadowtls',
+          'tag': 'shadowtls-transport',
+          '_group_only': true,
+        },
+      ),
+      Outbound(
+        tag: 'trojan-over-shadowtls',
+        name: 'Trojan over ShadowTLS',
+        config: {
+          'type': 'trojan',
+          'tag': 'trojan-over-shadowtls',
+          'detour': 'shadowtls-transport',
+        },
+      ),
+    ];
+
+    final selected = SubscriptionStore.selectedProxyTagForOutboundsForTest(
+      outbounds,
+      preferredTag: 'shadowtls-transport',
+    );
+
+    expect(selected, 'trojan-over-shadowtls');
   });
 
   test('get hydrates saved proxy groups from payload storage', () async {
@@ -332,7 +1072,7 @@ void main() {
       ],
     );
 
-    await SubscriptionStore.save(subscription);
+    await SubscriptionStore.save(subscription, allowCreate: true);
 
     final saved = SubscriptionStore.get(subscription.id);
     expect(saved, isNotNull);
@@ -421,7 +1161,7 @@ void main() {
       ],
     );
 
-    await SubscriptionStore.save(subscription);
+    await SubscriptionStore.save(subscription, allowCreate: true);
     await SubscriptionStore.saveOutboundRuntimeInfoInBackground(
       subscription.id,
       latestPings: const {'leaf-1': 42},
@@ -656,6 +1396,64 @@ void main() {
     });
   });
 }
+
+Map<String, dynamic> _hydraboxPersistenceDocument() => {
+  'api_version': 'hydrabox.io/subscription/v1',
+  'kind': 'SubscriptionData',
+  'issuer': 'https://provider.example',
+  'subscription_id': 'persistence-main',
+  'channel': 'stable',
+  'sequence': 7,
+  'issued_at': DateTime.now()
+      .toUtc()
+      .subtract(const Duration(minutes: 1))
+      .toIso8601String(),
+  'default_profile_id': 'profile-main',
+  'runtime': {
+    'format': 'sing-box-json',
+    'ownership': {
+      'inbounds': 'client',
+      'route_final': 'selected-profile',
+      'dns': 'merge-safe',
+      'route_rules': 'merge-safe',
+      'log': 'client-overlay',
+      'global': 'client-overlay',
+    },
+    'document': {
+      'outbounds': [
+        {
+          'type': 'trojan',
+          'tag': 'profile-out',
+          'server': 'proxy.example',
+          'server_port': 443,
+          'password': 'secret',
+          'detour': 'helper-out',
+        },
+        {
+          'type': 'shadowtls',
+          'tag': 'helper-out',
+          'server': 'transport.example',
+          'server_port': 443,
+          'version': 3,
+          'password': 'secret',
+        },
+      ],
+      'future_safe_section': {'opaque': true},
+    },
+  },
+  'profiles': [
+    {
+      'id': 'profile-main',
+      'name': {'default': 'Main profile'},
+      'entrypoint': {'section': 'outbounds', 'tag': 'profile-out'},
+      'enabled': true,
+    },
+  ],
+  'required_extensions': <dynamic>[],
+  'extensions': {
+    'example.provider/labels': {'tier': 'test'},
+  },
+};
 
 class _PassthroughHttpOverrides extends HttpOverrides {
   @override

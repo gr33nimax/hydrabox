@@ -488,7 +488,11 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage>
         actions: [
           IconButton(
             tooltip: l10n.updatesCheckAction,
-            onPressed: _checking || _downloading || _installing
+            onPressed:
+                !AppUpdateService.updatesConfigured ||
+                    _checking ||
+                    _downloading ||
+                    _installing
                 ? null
                 : () => _check(manual: true),
             icon: const Icon(Icons.refresh_rounded),
@@ -566,9 +570,10 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage>
 
   String _titleFor(BuildContext context, AppUpdateCheckResult? result) {
     final l10n = AppLocalizations.of(context);
-    if (_checking) return 'Etonify';
+    if (_checking) return 'HydraBox';
     if (_downloading) return l10n.updatesDownloadingTitle;
     return switch (result?.status) {
+      AppUpdateStatus.disabled => l10n.updatesDisabledTitle,
       AppUpdateStatus.updateAvailable => l10n.updatesAvailableTitle,
       AppUpdateStatus.unsupportedAndroid => l10n.updatesUnsupportedAndroidTitle,
       AppUpdateStatus.downloaded => l10n.updatesDownloadedTitle,
@@ -584,6 +589,7 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage>
     if (_downloading) return l10n.updatesDownloadWarning;
     final info = result?.info;
     return switch (result?.status) {
+      AppUpdateStatus.disabled => l10n.updatesDisabledSubtitle,
       AppUpdateStatus.updateAvailable when info != null =>
         l10n.updatesAvailableSubtitle(
           info.displayVersion,
@@ -637,6 +643,9 @@ class _UpdateActionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    if (result?.status == AppUpdateStatus.disabled) {
+      return const SizedBox.shrink();
+    }
     if (downloading || installing) {
       return Text(
         installing ? l10n.updatesOpeningInstaller : l10n.updatesDownloadWarning,
@@ -753,7 +762,7 @@ class _UpdateHero extends StatelessWidget {
       child: Column(
         children: [
           Text(
-            'Etonify',
+            'HydraBox',
             style: theme.textTheme.displaySmall?.copyWith(
               color: cs.onSurface,
               fontWeight: FontWeight.w900,

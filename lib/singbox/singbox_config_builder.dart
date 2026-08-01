@@ -3,6 +3,8 @@ import 'dart:math';
 
 import 'package:meow_client/core/lowest_proxy_groups.dart';
 import 'package:meow_client/data/local/app_settings_store.dart';
+import 'package:meow_client/data/subscription/hydrabox_subscription_time.dart';
+import 'package:meow_client/data/subscription/parsers/hydrabox_subscription_parser.dart';
 import 'package:meow_client/data/subscription/parsers/singbox_config_parser.dart';
 import 'package:meow_client/models/subscription.dart';
 import 'package:meow_client/singbox/libbox_capabilities.dart';
@@ -12,6 +14,11 @@ class SingboxConfigBuilder {
   static const String _snowtunProtectPath =
       '@com.etonify.meow_client.snowtun.protect';
   static const int _urltestInterruptDelayThresholdMs = 300;
+  static const int _maxHydraBoxWireGuardWorkers = 64;
+  static const int _maxHydraBoxWireGuardBuffersPerPool = 4096;
+  static const int _maxHydraBoxAmneziaJunkPacketCount = 128;
+  static const int _maxHydraBoxAmneziaPacketPaddingBytes = 65535;
+  static const int _maxHydraBoxAmneziaHandshakeJunkBytes = 4 * 1024 * 1024;
   static const Set<String> _nonServerOutboundTypes = {
     'direct',
     'block',
@@ -170,8 +177,34 @@ class SingboxConfigBuilder {
             !isValidProxyPassword(proxyPassword))) {
       throw StateError('Local proxy requires valid access credentials');
     }
+    final strictHydraBox =
+        activeSubscription?.sourceMetadata['format'] ==
+        'hydrabox.io/subscription/v1';
+    if (strictHydraBox) {
+      if (activeSubscription?.sourceMetadata['trust_blocked'] == true) {
+        throw StateError(
+          'HydraBox activation is blocked because its durable publisher trust '
+          'tuple conflicts with another stored subscription',
+        );
+      }
+      try {
+        HydraBoxSubscriptionTimePolicy.validate(
+          activeSubscription!.sourceMetadata,
+        );
+      } on FormatException catch (error) {
+        throw StateError('HydraBox activation is blocked: ${error.message}');
+      }
+      _validateHydraBoxProjectionTagIdentity();
+      _validateHydraBoxRemoteSafetyManifest();
+    }
     final outbounds = _visibleOutbounds();
     final coreTagRemapping = _coreTagRemapping();
+    if (strictHydraBox && coreTagRemapping.isNotEmpty) {
+      throw StateError(
+        'HydraBox native runtime tags must remain stable; refusing unsafe '
+        'opaque-reference remapping',
+      );
+    }
     final endpointOutbounds = outbounds
         .where(_isEndpointBacked)
         .toList(growable: false);
@@ -238,7 +271,7 @@ class SingboxConfigBuilder {
       ...chainTags,
       ...selectableOutboundTags,
     ];
-    final hasProxies = outboundTags.isNotEmpty;
+    final hasProxies = selectableTags.isNotEmpty;
     final normalizedSplitRoutingPackages = _normalizedSplitRoutingPackages();
     final tunSplitActive =
         vpnInboundEnabled &&
@@ -265,7 +298,7 @@ class SingboxConfigBuilder {
               ? normalizedSelectedProxyTag
               : availableLowestTags.isNotEmpty
               ? lowestProxyTag
-              : outboundTags.first)
+              : selectableTags.first)
         : 'direct';
     final routeFinal = hasProxies ? 'select' : 'direct';
     final dnsFinal = hasProxies ? 'dns-remote' : 'dns-direct';
@@ -561,7 +594,7 @@ class SingboxConfigBuilder {
     return SingboxBuildPlan(
       config: mergedConfig,
       proxyOutboundTagsByIndex: proxyOutboundIndexes,
-      visibleProxyOutboundCount: outbounds.length,
+      visibleProxyOutboundCount: selectableOutboundTags.length,
       hasRawCoreConfig: rawCoreConfig != null,
       allowsZeroSelectableEntries:
           rawCoreConfig != null &&
@@ -573,11 +606,11 @@ class SingboxConfigBuilder {
   /// document supplied by a user/subscription.
   ///
   /// The generated config still owns the Android TUN/proxy inbounds, selector,
-  /// routing safety rules and normalized proxy entries.  Every other section
-  /// from the source document (endpoints, services, providers, custom DNS
-  /// transports, extra inbounds and meta outbounds) is retained verbatim.
-  /// This is the compatibility boundary that lets the app consume protocols
-  /// added by the extended core without a matching Flutter release.
+  /// routing safety rules and normalized proxy entries. Protocol objects and
+  /// safe opaque sections remain lossless so HydraCore can add protocol types
+  /// without requiring a matching Flutter release. Remote HydraBox documents
+  /// cannot inject listeners, services, or experimental controllers until a
+  /// separate local consent boundary exists.
   Map<String, dynamic> _mergeRawCoreConfig(
     Map<String, dynamic> generated,
     Map<String, dynamic>? raw,
@@ -586,7 +619,14 @@ class SingboxConfigBuilder {
       return generated;
     }
 
+    final strictHydraBox =
+        activeSubscription?.sourceMetadata['format'] ==
+        'hydrabox.io/subscription/v1';
     final merged = _cloneJsonMap(raw);
+    if (strictHydraBox) {
+      merged.remove('services');
+      merged.remove('experimental');
+    }
 
     // Generated scalar sections are authoritative for app-owned settings,
     // while unknown top-level sections remain from the source document.
@@ -598,19 +638,40 @@ class SingboxConfigBuilder {
           entry.key == 'outbounds') {
         continue;
       }
-      merged[entry.key] = _cloneJsonValue(entry.value);
+      if (strictHydraBox &&
+          (entry.key == 'log' || entry.key == 'global') &&
+          raw[entry.key] is Map &&
+          entry.value is Map) {
+        merged[entry.key] = _mergeConfigMap(
+          raw[entry.key],
+          entry.value,
+          listKeys: const <String>{},
+        );
+      } else {
+        merged[entry.key] = _cloneJsonValue(entry.value);
+      }
     }
 
     merged['dns'] = _mergeConfigMap(
       raw['dns'],
       generated['dns'],
       listKeys: const {'servers', 'rules', 'rule_set'},
+      generatedFirst: strictHydraBox,
     );
     merged['route'] = _mergeConfigMap(
       raw['route'],
       generated['route'],
       listKeys: const {'rules', 'rule_set'},
+      generatedFirst: strictHydraBox,
     );
+
+    if (strictHydraBox) {
+      return _mergeStrictHydraBoxNativeSections(
+        merged: merged,
+        raw: raw,
+        generated: generated,
+      );
+    }
 
     final managedEndpointIndexes = _managedRawSourceIndexes('endpoints');
     final managedEndpointTags = _managedRawSourceTags('endpoints');
@@ -632,10 +693,9 @@ class SingboxConfigBuilder {
       replaceTags: {...generatedEndpointTags, ...managedEndpointTags},
     );
 
-    final rawInbounds = _withoutManagedCoreEntries(
-      raw['inbounds'],
-      _removedCoreInboundTypes,
-    );
+    final rawInbounds = strictHydraBox
+        ? const <Map<String, dynamic>>[]
+        : _withoutManagedCoreEntries(raw['inbounds'], _removedCoreInboundTypes);
     final generatedInbounds = _asObjectList(generated['inbounds']);
     final generatedInboundTags = generatedInbounds
         .map((entry) => entry['tag']?.toString())
@@ -671,31 +731,193 @@ class SingboxConfigBuilder {
     return merged;
   }
 
-  Map<String, dynamic>? _readRawSingboxConfig() {
-    final rawContent = activeSubscription?.rawContent.trim() ?? '';
-    if (rawContent.isEmpty ||
-        !(rawContent.startsWith('{') || rawContent.startsWith('['))) {
-      return null;
+  /// Keeps HydraBox protocol objects raw-authoritative.
+  ///
+  /// The native document is the provider's graph and HydraCore owns its
+  /// schema. Parsed outbound models are UI projections only; replacing native
+  /// entries with those projections would make a future parser normalization
+  /// capable of changing an otherwise opaque field. The app therefore adds
+  /// only its own selector/direct/group/chain wrappers around the exact raw
+  /// outbounds/endpoints. Any namespace collision is rejected instead of
+  /// guessed or recursively rewritten.
+  Map<String, dynamic> _mergeStrictHydraBoxNativeSections({
+    required Map<String, dynamic> merged,
+    required Map<String, dynamic> raw,
+    required Map<String, dynamic> generated,
+  }) {
+    List<Map<String, dynamic>> strictRawEntries(dynamic value, String section) {
+      if (value == null) return <Map<String, dynamic>>[];
+      if (value is! List) {
+        throw StateError('HydraBox native $section must remain an array');
+      }
+      final result = <Map<String, dynamic>>[];
+      for (var index = 0; index < value.length; index++) {
+        final rawEntry = value[index];
+        if (rawEntry is! Map) {
+          throw StateError(
+            'HydraBox native $section[$index] must remain an object',
+          );
+        }
+        final entry = _cloneJsonMap(rawEntry);
+        final type = entry['type'];
+        final tag = entry['tag'];
+        if (type is! String ||
+            type.isEmpty ||
+            type != type.trim() ||
+            type.contains(RegExp(r'[\x00-\x1F\x7F]')) ||
+            tag is! String ||
+            tag.isEmpty ||
+            tag != tag.trim() ||
+            tag.length > 512 ||
+            tag.contains(RegExp(r'[\x00-\x1F\x7F]'))) {
+          throw StateError(
+            'HydraBox native $section[$index] identity is corrupt',
+          );
+        }
+        result.add(entry);
+      }
+      return result;
     }
+
+    final rawOutbounds = strictRawEntries(raw['outbounds'], 'outbounds');
+    final rawEndpoints = strictRawEntries(raw['endpoints'], 'endpoints');
+    final rawOutboundTagValues = rawOutbounds
+        .map((entry) => entry['tag']?.toString() ?? '')
+        .toList(growable: false);
+    final rawEndpointTagValues = rawEndpoints
+        .map((entry) => entry['tag']?.toString() ?? '')
+        .toList(growable: false);
+    final rawOutboundTags = rawOutboundTagValues.toSet();
+    final rawEndpointTags = rawEndpointTagValues.toSet();
+    final rawTags = <String>{};
+    for (final tag in <String>[
+      ...rawOutboundTagValues,
+      ...rawEndpointTagValues,
+    ]) {
+      if (tag.isEmpty ||
+          tag.startsWith('__hydrabox.') ||
+          isReservedProxyTag(tag) ||
+          !rawTags.add(tag)) {
+        throw StateError(
+          'HydraBox native runtime tag namespace is invalid or collides with '
+          'a client-owned tag',
+        );
+      }
+    }
+
+    final managedOutboundTags = _managedRawSourceTags('outbounds');
+    final managedEndpointTags = _managedRawSourceTags('endpoints');
+    if (!rawOutboundTags.containsAll(managedOutboundTags) ||
+        !rawEndpointTags.containsAll(managedEndpointTags)) {
+      throw StateError(
+        'HydraBox persisted native projections no longer match the raw '
+        'runtime document',
+      );
+    }
+
+    List<Map<String, dynamic>> appOwnedEntries(
+      dynamic generatedValue,
+      Set<String> managedTags,
+    ) {
+      final result = <Map<String, dynamic>>[];
+      final projectionCounts = <String, int>{};
+      for (final entry in _asObjectList(generatedValue)) {
+        final tag = entry['tag']?.toString() ?? '';
+        if (managedTags.contains(tag)) {
+          projectionCounts[tag] = (projectionCounts[tag] ?? 0) + 1;
+          continue;
+        }
+        if (tag.isEmpty || rawTags.contains(tag)) {
+          throw StateError(
+            'HydraBox app-owned runtime entry collides with an opaque native '
+            'tag',
+          );
+        }
+        result.add(entry);
+      }
+      if (projectionCounts.values.any((count) => count > 1)) {
+        throw StateError('HydraBox native runtime projection is ambiguous');
+      }
+      return result;
+    }
+
+    final appEndpoints = appOwnedEntries(
+      generated['endpoints'],
+      managedEndpointTags,
+    );
+    final appOutbounds = appOwnedEntries(
+      generated['outbounds'],
+      managedOutboundTags,
+    );
+    final assembledTags = <String>{...rawTags};
+    for (final entry in <Map<String, dynamic>>[
+      ...appEndpoints,
+      ...appOutbounds,
+    ]) {
+      final tag = entry['tag']?.toString() ?? '';
+      if (!assembledTags.add(tag)) {
+        throw StateError('HydraBox assembled runtime tag "$tag" is duplicate');
+      }
+    }
+
+    merged['endpoints'] = <Map<String, dynamic>>[
+      ...rawEndpoints.map(_cloneJsonMap),
+      ...appEndpoints.map(_cloneJsonMap),
+    ];
+    merged['inbounds'] = _asObjectList(generated['inbounds']);
+    merged['outbounds'] = <Map<String, dynamic>>[
+      ...rawOutbounds.map(_cloneJsonMap),
+      ...appOutbounds.map(_cloneJsonMap),
+    ];
+    return merged;
+  }
+
+  Map<String, dynamic>? _readRawSingboxConfig() {
+    final strictHydraBox =
+        activeSubscription?.sourceMetadata['format'] ==
+        'hydrabox.io/subscription/v1';
     try {
-      final decoded = SingboxConfigParser.decodeDocument(rawContent);
+      final embedded = activeSubscription?.nativeConfig;
+      if (strictHydraBox && embedded == null) {
+        throw StateError(
+          'HydraBox native runtime payload is not hydrated; refusing a '
+          'generated-only fallback',
+        );
+      }
+      final decoded = embedded == null
+          ? _decodeRawSubscriptionConfig()
+          : _cloneJsonMap(embedded);
       if (decoded == null) {
         return null;
       }
       final config = _cloneJsonMap(decoded);
       final tagRemapping = _coreTagRemapping();
       if (tagRemapping.isNotEmpty) {
+        if (strictHydraBox) {
+          throw StateError('HydraBox native runtime tags cannot be remapped');
+        }
         _remapRawCoreTags(config, tagRemapping);
       }
-      if (!_hasTypedCoreSection(config)) {
+      if (!strictHydraBox && !_hasTypedCoreSection(config)) {
         return null;
       }
       return config;
     } on FormatException {
+      if (strictHydraBox) rethrow;
       return null;
     } on TypeError {
+      if (strictHydraBox) rethrow;
       return null;
     }
+  }
+
+  Map<String, dynamic>? _decodeRawSubscriptionConfig() {
+    final rawContent = activeSubscription?.rawContent.trim() ?? '';
+    if (rawContent.isEmpty ||
+        !(rawContent.startsWith('{') || rawContent.startsWith('['))) {
+      return null;
+    }
+    return SingboxConfigParser.decodeDocument(rawContent);
   }
 
   Map<String, String> _coreTagRemapping() {
@@ -720,6 +942,438 @@ class SingboxConfigBuilder {
         if (entry.value.length == 1 && entry.value.single != entry.key)
           entry.key: entry.value.single,
     };
+  }
+
+  void _validateHydraBoxProjectionTagIdentity() {
+    final seen = <String>{};
+    for (final outbound
+        in activeSubscription?.outbounds ?? const <Outbound>[]) {
+      final sourceSection =
+          outbound.config['_etonify_source_index_section']?.toString() ??
+          outbound.config['_etonify_source_section']?.toString() ??
+          '';
+      if (sourceSection != 'outbounds' && sourceSection != 'endpoints') {
+        continue;
+      }
+      final original =
+          outbound.config['_etonify_original_tag']?.toString() ?? '';
+      final current = outbound.tag;
+      final projectedConfigTag = outbound.config['tag']?.toString() ?? '';
+      if (original.isEmpty ||
+          original != original.trim() ||
+          current.isEmpty ||
+          current != original ||
+          projectedConfigTag != original ||
+          !seen.add('$sourceSection\u0000$original')) {
+        throw StateError(
+          'HydraBox persisted native projection changed tag identity',
+        );
+      }
+    }
+  }
+
+  void _validateHydraBoxRemoteSafetyManifest() {
+    final native = activeSubscription?.nativeConfig;
+    if (native == null) {
+      throw StateError(
+        'HydraBox native runtime payload is not hydrated for remote-policy '
+        'validation',
+      );
+    }
+    if (!capabilities.hasVersionedContract ||
+        capabilities.coreId != LibboxCapabilities.hydraCoreId ||
+        !capabilities.supportsConfigCheck) {
+      throw StateError(
+        'HydraBox activation requires a versioned HydraCore capability '
+        'contract with native config validation',
+      );
+    }
+    if (!capabilities.hasRemoteSafetyManifest) {
+      throw StateError(
+        'The installed HydraCore does not publish a remote-safety manifest',
+      );
+    }
+
+    try {
+      HydraBoxSubscriptionParser.validateRemoteRuntimeDocumentSafety(native);
+    } on FormatException catch (error) {
+      throw StateError(
+        'HydraBox remote runtime policy rejected the native document: '
+        '${error.message}',
+      );
+    }
+
+    for (final rawKey in native.keys) {
+      final key = rawKey.toString();
+      if (!capabilities.remoteSafeTopLevelFields.contains(key)) {
+        throw StateError(
+          'HydraCore remote policy ${capabilities.remotePolicyVersion} does '
+          'not classify runtime.document.$key as remote-safe',
+        );
+      }
+    }
+
+    void validateTypedEntries(
+      dynamic value, {
+      required String field,
+      required Set<String> safeTypes,
+      String emptyType = '',
+    }) {
+      if (value == null) return;
+      if (value is! List) {
+        throw StateError('$field must be an array');
+      }
+      for (var index = 0; index < value.length; index++) {
+        final entry = value[index];
+        if (entry is! Map) {
+          throw StateError('$field[$index] must be an object');
+        }
+        final rawType = entry['type'];
+        final type = rawType == null
+            ? emptyType
+            : rawType.toString().trim().toLowerCase();
+        if (type.isEmpty || !safeTypes.contains(type)) {
+          throw StateError(
+            '$field[$index] type "${type.isEmpty ? '<missing>' : type}" is '
+            'not classified remote-safe by the installed HydraCore',
+          );
+        }
+      }
+    }
+
+    if (capabilities.remotePolicyVersion == 1) {
+      const v1TopLevelFields = {r'$schema', 'outbounds', 'endpoints'};
+      const v1OutboundTypes = {
+        'socks',
+        'http',
+        'vmess',
+        'trojan',
+        'naive',
+        'shadowtls',
+        'vless',
+        'mieru',
+        'anytls',
+        'trusttunnel',
+        'hysteria',
+        'hysteria2',
+        'tuic',
+        'sudoku',
+        'snell',
+      };
+      const v1EndpointTypes = {'wireguard'};
+      for (final rawKey in native.keys) {
+        final key = rawKey.toString();
+        if (!v1TopLevelFields.contains(key)) {
+          throw StateError(
+            'runtime.document.$key is not part of HydraBox remote policy v1',
+          );
+        }
+      }
+      validateTypedEntries(
+        native['outbounds'],
+        field: 'runtime.document.outbounds',
+        safeTypes: v1OutboundTypes,
+      );
+      validateTypedEntries(
+        native['endpoints'],
+        field: 'runtime.document.endpoints',
+        safeTypes: v1EndpointTypes,
+      );
+      _validateHydraBoxV1WireGuardResourceLimits(native);
+      _validateHydraBoxV1ReferenceGraph(native);
+      void rejectV1ExecutableTypes(
+        dynamic value, {
+        required String field,
+        required Set<String> forbiddenTypes,
+      }) {
+        if (value == null) return;
+        if (value is! List) {
+          throw StateError('$field must be an array');
+        }
+        for (var index = 0; index < value.length; index++) {
+          final entry = value[index];
+          if (entry is! Map) {
+            throw StateError('$field[$index] must be an object');
+          }
+          final type = entry['type']?.toString().trim().toLowerCase() ?? '';
+          if (forbiddenTypes.contains(type)) {
+            throw StateError(
+              '$field[$index] type "$type" requires recursive HydraCore '
+              'remote-policy enforcement newer than v1',
+            );
+          }
+        }
+      }
+
+      rejectV1ExecutableTypes(
+        native['outbounds'],
+        field: 'runtime.document.outbounds',
+        forbiddenTypes: const {
+          'tor',
+          'parser',
+          'bond',
+          'failover',
+          'bandwidth-limiter',
+          'connection-limiter',
+          'traffic-limiter',
+          'rate-limiter',
+        },
+      );
+      rejectV1ExecutableTypes(
+        native['endpoints'],
+        field: 'runtime.document.endpoints',
+        forbiddenTypes: const {'tailscale', 'vpn-client', 'vpn-server'},
+      );
+      final providers = native['providers'];
+      if (providers is List && providers.isNotEmpty) {
+        throw StateError(
+          'runtime.document.providers requires recursive HydraCore '
+          'remote-policy enforcement newer than v1',
+        );
+      }
+      final route = native['route'];
+      if (route is Map) {
+        final ruleSets = route['rule_set'];
+        if (ruleSets is List && ruleSets.isNotEmpty) {
+          throw StateError(
+            'runtime.document.route.rule_set requires recursive HydraCore '
+            'remote-policy enforcement newer than v1',
+          );
+        }
+        for (final databaseKey in const {'geoip', 'geosite'}) {
+          final database = route[databaseKey];
+          if (database is Map && database.isNotEmpty) {
+            throw StateError(
+              'runtime.document.route.$databaseKey remote data is not '
+              'classified safe by HydraCore remote policy v1',
+            );
+          }
+        }
+      }
+    }
+
+    validateTypedEntries(
+      native['outbounds'],
+      field: 'runtime.document.outbounds',
+      safeTypes: capabilities.remoteSafeOutboundTypes,
+    );
+    validateTypedEntries(
+      native['endpoints'],
+      field: 'runtime.document.endpoints',
+      safeTypes: capabilities.remoteSafeEndpointTypes,
+    );
+    validateTypedEntries(
+      native['providers'],
+      field: 'runtime.document.providers',
+      safeTypes: capabilities.remoteSafeProviderTypes,
+      emptyType: 'inline',
+    );
+    final route = native['route'];
+    if (route is Map) {
+      validateTypedEntries(
+        route['rule_set'],
+        field: 'runtime.document.route.rule_set',
+        safeTypes: capabilities.remoteSafeProviderTypes,
+        emptyType: 'inline',
+      );
+    }
+    final dns = native['dns'];
+    if (dns is Map) {
+      validateTypedEntries(
+        dns['servers'],
+        field: 'runtime.document.dns.servers',
+        safeTypes: capabilities.remoteSafeDnsServerTypes,
+      );
+    }
+  }
+
+  static void _validateHydraBoxV1WireGuardResourceLimits(
+    Map<String, dynamic> native,
+  ) {
+    final endpoints = native['endpoints'];
+    if (endpoints == null) return;
+    if (endpoints is! List) {
+      throw StateError('runtime.document.endpoints must be an array');
+    }
+
+    int boundedInteger(
+      Map endpoint,
+      String key, {
+      required String field,
+      required int maximum,
+    }) {
+      final raw = endpoint[key];
+      if (raw == null) return 0;
+      if (raw is! int || raw < 0 || raw > maximum) {
+        throw StateError('$field must be an integer between 0 and $maximum');
+      }
+      return raw;
+    }
+
+    for (var index = 0; index < endpoints.length; index++) {
+      final rawEndpoint = endpoints[index];
+      if (rawEndpoint is! Map ||
+          rawEndpoint['type']?.toString().trim().toLowerCase() != 'wireguard') {
+        continue;
+      }
+      final field = 'runtime.document.endpoints[$index]';
+      boundedInteger(
+        rawEndpoint,
+        'workers',
+        field: '$field.workers',
+        maximum: _maxHydraBoxWireGuardWorkers,
+      );
+      boundedInteger(
+        rawEndpoint,
+        'preallocated_buffers_per_pool',
+        field: '$field.preallocated_buffers_per_pool',
+        maximum: _maxHydraBoxWireGuardBuffersPerPool,
+      );
+
+      final rawAmnezia = rawEndpoint['amnezia'];
+      if (rawAmnezia == null) continue;
+      if (rawAmnezia is! Map) {
+        throw StateError('$field.amnezia must be an object');
+      }
+      final jc = boundedInteger(
+        rawAmnezia,
+        'jc',
+        field: '$field.amnezia.jc',
+        maximum: _maxHydraBoxAmneziaJunkPacketCount,
+      );
+      final jmin = boundedInteger(
+        rawAmnezia,
+        'jmin',
+        field: '$field.amnezia.jmin',
+        maximum: _maxHydraBoxAmneziaPacketPaddingBytes,
+      );
+      final jmax = boundedInteger(
+        rawAmnezia,
+        'jmax',
+        field: '$field.amnezia.jmax',
+        maximum: _maxHydraBoxAmneziaPacketPaddingBytes,
+      );
+      if (jmin > jmax) {
+        throw StateError('$field.amnezia.jmin must not exceed jmax');
+      }
+      if (jc * jmax > _maxHydraBoxAmneziaHandshakeJunkBytes) {
+        throw StateError(
+          '$field.amnezia junk burst exceeds '
+          '$_maxHydraBoxAmneziaHandshakeJunkBytes bytes',
+        );
+      }
+      for (final key in const ['s1', 's2', 's3', 's4']) {
+        boundedInteger(
+          rawAmnezia,
+          key,
+          field: '$field.amnezia.$key',
+          maximum: _maxHydraBoxAmneziaPacketPaddingBytes,
+        );
+      }
+    }
+  }
+
+  static void _validateHydraBoxV1ReferenceGraph(Map<String, dynamic> native) {
+    final entriesByTag = <String, Map<String, dynamic>>{};
+    for (final section in const {'outbounds', 'endpoints'}) {
+      final entries = native[section];
+      if (entries == null) continue;
+      if (entries is! List) {
+        throw StateError('runtime.document.$section must be an array');
+      }
+      for (var index = 0; index < entries.length; index++) {
+        final raw = entries[index];
+        if (raw is! Map) {
+          throw StateError(
+            'runtime.document.$section[$index] must be an object',
+          );
+        }
+        final entry = Map<String, dynamic>.from(raw);
+        final tag = entry['tag'];
+        if (tag is! String || tag.isEmpty || entriesByTag.containsKey(tag)) {
+          throw StateError(
+            'runtime.document.$section[$index] must have one unique exact tag',
+          );
+        }
+        entriesByTag[tag] = entry;
+      }
+    }
+
+    final edges = <String, Set<String>>{
+      for (final tag in entriesByTag.keys) tag: <String>{},
+    };
+    const scalarReferenceKeys = {
+      'detour',
+      'download_detour',
+      'upload_detour',
+      'outbound',
+      'endpoint',
+    };
+    const compositeReferenceKeys = {'outbounds', 'default'};
+
+    void walk(dynamic value, String ownerTag, String field) {
+      if (value is Map) {
+        for (final rawEntry in value.entries) {
+          final key = rawEntry.key.toString();
+          final folded = key.toLowerCase();
+          final child = rawEntry.value;
+          if (folded == 'domain_resolver' && child != null) {
+            throw StateError(
+              '$field.$key is not available in remote policy v1 because DNS '
+              'ownership remains local to HydraBox',
+            );
+          }
+          if (scalarReferenceKeys.contains(folded)) {
+            if (key != folded ||
+                child is! String ||
+                child.isEmpty ||
+                !entriesByTag.containsKey(child)) {
+              throw StateError(
+                '$field.$key must reference an exact tag from the same remote '
+                'outbounds/endpoints graph',
+              );
+            }
+            edges[ownerTag]!.add(child);
+          }
+          if (compositeReferenceKeys.contains(folded) && child != null) {
+            throw StateError(
+              '$field.$key embeds an executable reference graph, which remote '
+              'policy v1 classifies as non-leaf',
+            );
+          }
+          walk(child, ownerTag, '$field.$key');
+        }
+      } else if (value is List) {
+        for (var index = 0; index < value.length; index++) {
+          walk(value[index], ownerTag, '$field[$index]');
+        }
+      }
+    }
+
+    for (final entry in entriesByTag.entries) {
+      walk(entry.value, entry.key, 'runtime.document[${entry.key}]');
+    }
+
+    final visiting = <String>{};
+    final visited = <String>{};
+    bool visit(String tag) {
+      if (visited.contains(tag)) return false;
+      if (!visiting.add(tag)) return true;
+      for (final target in edges[tag] ?? const <String>{}) {
+        if (visit(target)) return true;
+      }
+      visiting.remove(tag);
+      visited.add(tag);
+      return false;
+    }
+
+    for (final tag in entriesByTag.keys) {
+      if (visit(tag)) {
+        throw StateError(
+          'HydraBox remote policy v1 rejects cyclic outbound/endpoint detours',
+        );
+      }
+    }
   }
 
   static void _remapRawCoreTags(
@@ -1010,6 +1664,7 @@ class SingboxConfigBuilder {
     dynamic raw,
     dynamic generated, {
     required Set<String> listKeys,
+    bool generatedFirst = false,
   }) {
     final result = raw is Map ? _cloneJsonMap(raw) : <String, dynamic>{};
     if (generated is! Map) {
@@ -1026,15 +1681,29 @@ class SingboxConfigBuilder {
         result[key] = _cloneJsonValue(entry.value);
         continue;
       }
-      result[key] = _mergeTaggedObjectLists(
-        result[key],
-        generatedList,
-        replaceTags: generatedList
-            .map((item) => item['tag']?.toString())
-            .whereType<String>()
-            .where((tag) => tag.isNotEmpty)
-            .toSet(),
-      );
+      final generatedTags = generatedList
+          .map((item) => item['tag']?.toString())
+          .whereType<String>()
+          .where((tag) => tag.isNotEmpty)
+          .toSet();
+      if (!generatedFirst) {
+        result[key] = _mergeTaggedObjectLists(
+          result[key],
+          generatedList,
+          replaceTags: generatedTags,
+        );
+        continue;
+      }
+      final rawEntries = _asObjectList(result[key]);
+      final seenTags = <String>{...generatedTags};
+      result[key] = <Map<String, dynamic>>[
+        ...generatedList.map(_cloneJsonMap),
+        for (final entry in rawEntries)
+          if (entry['tag']?.toString().isEmpty ?? true)
+            _cloneJsonMap(entry)
+          else if (seenTags.add(entry['tag'].toString()))
+            _cloneJsonMap(entry),
+      ];
     }
     return result;
   }
@@ -1197,12 +1866,7 @@ class SingboxConfigBuilder {
     final config = corePassthrough
         ? _cloneJsonMap(outbound.config)
         : Map<String, dynamic>.from(outbound.config);
-    config.remove('_group_only');
-    config.remove('_etonify_core_passthrough');
-    config.remove('_etonify_source_section');
-    config.remove('_etonify_source_index');
-    config.remove('_etonify_source_index_section');
-    config.remove('_etonify_original_tag');
+    _removeAppOutboundMetadata(config);
     config['tag'] = outbound.tag;
     _remapOutboundReferenceValues(config, tagRemapping);
     // A complete sing-box document already uses the native core schema.
@@ -1248,12 +1912,7 @@ class SingboxConfigBuilder {
     Map<String, String> tagRemapping,
   ) {
     final config = _cloneJsonMap(outbound.config);
-    config.remove('_group_only');
-    config.remove('_etonify_core_passthrough');
-    config.remove('_etonify_source_section');
-    config.remove('_etonify_source_index');
-    config.remove('_etonify_source_index_section');
-    config.remove('_etonify_original_tag');
+    _removeAppOutboundMetadata(config);
     config['tag'] = outbound.tag;
     _remapOutboundReferenceValues(config, tagRemapping);
     return config;
@@ -1311,11 +1970,7 @@ class SingboxConfigBuilder {
     final config = corePassthrough
         ? _cloneJsonMap(target.config)
         : Map<String, dynamic>.from(target.config);
-    config.remove('_etonify_core_passthrough');
-    config.remove('_etonify_source_section');
-    config.remove('_etonify_source_index');
-    config.remove('_etonify_source_index_section');
-    config.remove('_etonify_original_tag');
+    _removeAppOutboundMetadata(config);
     config['tag'] = tag;
     config['detour'] = detourTag;
     config.remove('domain_resolver');
@@ -1351,6 +2006,16 @@ class SingboxConfigBuilder {
       config['tcp_multi_path'] = tcpMultiPathEnabled;
     }
     return config;
+  }
+
+  static void _removeAppOutboundMetadata(Map<String, dynamic> config) {
+    config.remove('_group_only');
+    config.remove('_etonify_core_passthrough');
+    config.remove('_etonify_source_section');
+    config.remove('_etonify_source_index');
+    config.remove('_etonify_source_index_section');
+    config.remove('_etonify_original_tag');
+    config.removeWhere((key, _) => key.startsWith('_hydrabox_'));
   }
 
   List<Map<String, dynamic>> _visibleProxyChainOutbounds({

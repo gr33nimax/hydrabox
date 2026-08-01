@@ -29,24 +29,24 @@ cd android
 
 ## Required 30–60 minute scenario
 
-1. Cold-start Etonify and connect to a known working server.
+1. Cold-start HydraBox and connect to a known working server.
 2. Verify VPN traffic, the persistent status notification, selected server,
    latency refresh, and traffic counters.
 3. Press Home, turn the screen off for at least 10 minutes, then verify that a
-   background app still receives data before reopening Etonify.
-4. Open Android recents and swipe Etonify away while the VPN is active.
+   background app still receives data before reopening HydraBox.
+4. Open Android recents and swipe HydraBox away while the VPN is active.
    Confirm that:
    - the Android VPN indicator stays visible;
-   - the Etonify foreground notification stays visible;
-   - traffic continues without reopening Etonify;
-   - reopening Etonify only restores UI state and does not restart a healthy
+   - the HydraBox foreground notification stays visible;
+   - traffic continues without reopening HydraBox;
+   - reopening HydraBox only restores UI state and does not restart a healthy
      tunnel.
 5. Repeat Wi-Fi → mobile data → Wi-Fi three times. On every handover:
    - the same selected server remains selected;
    - traffic recovers without pressing Connect;
    - the UI and notification recover within 15 seconds;
    - no stale Wi-Fi network remains pinned on mobile data.
-6. Disable both Wi-Fi and mobile data for 60 seconds. Etonify must show the
+6. Disable both Wi-Fi and mobile data for 60 seconds. HydraBox must show the
    offline state without reporting fake latency. Restore either network and
    confirm automatic recovery to the selected server.
 7. Lock and unlock the device several times, including one unlock immediately
@@ -56,7 +56,7 @@ cd android
    - refresh latency several times quickly and confirm only the latest result
      becomes visible;
    - stop the VPN and confirm both the tunnel and notification disappear;
-   - reopen Etonify and confirm the stopped VPN does not resurrect itself.
+   - reopen HydraBox and confirm the stopped VPN does not resurrect itself.
 9. Start and stop the VPN from the Quick Settings tile.
 10. Test split tunneling in all supported modes:
     - disabled;
@@ -112,7 +112,7 @@ the time of replacement.
 ## Pass criteria
 
 - No crash, ANR, fatal Go error, panic, or unrecoverable JNI timeout.
-- Background traffic works before Etonify is reopened.
+- Background traffic works before HydraBox is reopened.
 - Removing the task does not stop an active VPN and does not restart a VPN that
   the user stopped.
 - Wi-Fi/mobile handovers and restored connectivity recover automatically.
@@ -123,5 +123,5 @@ the time of replacement.
 - No duplicate foreground services, notifications, command clients, or network
   callbacks remain after stop.
 
-Attach the exported Etonify diagnostics, device details, exact scenario step,
+Attach the exported HydraBox diagnostics, device details, exact scenario step,
 and memory samples to every failure report.

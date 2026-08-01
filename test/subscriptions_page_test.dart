@@ -111,6 +111,7 @@ void main() {
               hasRawPayload: true,
               rawContent: 'vless://payload-$index',
             ),
+            allowCreate: true,
           );
         }
       });
@@ -158,6 +159,7 @@ void main() {
           ),
         ],
       ),
+      allowCreate: true,
     );
 
     final subscription = SubscriptionStore.get(subscriptionId)!;
@@ -186,6 +188,7 @@ void main() {
               'https://example.com/source-two',
           lastUpdated: 123,
         ),
+        allowCreate: true,
       ),
     );
 

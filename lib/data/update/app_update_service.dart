@@ -14,6 +14,7 @@ import 'package:path_provider/path_provider.dart';
 
 enum AppUpdateStatus {
   unknown,
+  disabled,
   checking,
   upToDate,
   updateAvailable,
@@ -323,14 +324,24 @@ class AppUpdateService {
 
   static final AppUpdateService instance = AppUpdateService._();
   static const checkInterval = Duration(hours: 24);
-  static const repositoryOwner = 'yamixdev';
-  static const repositoryName = 'Etonify';
+  static const repositoryOwner = String.fromEnvironment(
+    'HYDRABOX_UPDATE_REPOSITORY_OWNER',
+  );
+  static const repositoryName = String.fromEnvironment(
+    'HYDRABOX_UPDATE_REPOSITORY_NAME',
+  );
   static const _metadataBoxName = 'app_update_state';
-  static const _latestReleaseUrl =
-      'https://api.github.com/repos/$repositoryOwner/$repositoryName/releases/latest';
   static const _assetTokens = ['arm64-v8a', 'armeabi-v7a', 'x86_64'];
-  static const _manifestAssetName = 'etonify-update.json';
+  static const _manifestAssetName = 'hydrabox-update.json';
   Future<AppUpdateCheckResult>? _checkInFlight;
+
+  /// Automatic updates stay fail-closed until a HydraBox-controlled release
+  /// repository is supplied explicitly at build time.
+  static bool get updatesConfigured =>
+      repositoryOwner.trim().isNotEmpty && repositoryName.trim().isNotEmpty;
+
+  static String get _latestReleaseUrl =>
+      'https://api.github.com/repos/$repositoryOwner/$repositoryName/releases/latest';
 
   Future<Box<dynamic>> _openBox() async {
     await HiveAppSettingsStore.initHive();
@@ -381,6 +392,12 @@ class AppUpdateService {
     int? currentBuildNumber,
     required bool manual,
   }) async {
+    if (!updatesConfigured) {
+      return AppUpdateCheckResult(
+        status: AppUpdateStatus.disabled,
+        checkedAt: DateTime.now(),
+      );
+    }
     final metadata = await loadMetadata();
     final cachedInfoMissingDigest =
         metadata.latestInfo != null &&
@@ -654,7 +671,7 @@ class AppUpdateService {
           .getUrl(Uri.parse(_latestReleaseUrl))
           .timeout(const Duration(seconds: 15));
       request.headers.set('Accept', 'application/vnd.github+json');
-      request.headers.set('User-Agent', 'Etonify-Android-Updater');
+      request.headers.set('User-Agent', 'HydraBox-Android-Updater');
       final response = await request.close().timeout(
         const Duration(seconds: 20),
       );
@@ -692,7 +709,7 @@ class AppUpdateService {
           .getUrl(url)
           .timeout(const Duration(seconds: 15));
       request.headers.set('Accept', 'application/json');
-      request.headers.set('User-Agent', 'Etonify-Android-Updater');
+      request.headers.set('User-Agent', 'HydraBox-Android-Updater');
       final response = await request.close().timeout(
         const Duration(seconds: 20),
       );
@@ -795,7 +812,7 @@ class AppUpdateService {
       final request = await client
           .getUrl(Uri.parse(info.asset.downloadUrl))
           .timeout(const Duration(seconds: 15));
-      request.headers.set('User-Agent', 'Etonify-Android-Updater');
+      request.headers.set('User-Agent', 'HydraBox-Android-Updater');
       final response = await request.close().timeout(
         const Duration(seconds: 20),
       );
@@ -1073,7 +1090,7 @@ class AppUpdateService {
           archiveCertificates.intersection(installedCertificates).isEmpty) {
         return const AppUpdateVerificationResult(
           ok: false,
-          error: 'Downloaded APK signature does not match installed Etonify.',
+          error: 'Downloaded APK signature does not match installed HydraBox.',
         );
       }
       return const AppUpdateVerificationResult(ok: true);
@@ -1224,7 +1241,7 @@ class AppUpdateService {
         .replaceAll(RegExp(r'[^a-zA-Z0-9._-]+'), '-')
         .replaceAll(RegExp(r'-+'), '-');
     if (sanitized.isEmpty || !sanitized.toLowerCase().endsWith('.apk')) {
-      return 'etonify-update.apk';
+      return 'hydrabox-update.apk';
     }
     return sanitized;
   }

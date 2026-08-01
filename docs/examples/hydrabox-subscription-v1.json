@@ -1,0 +1,96 @@
+{
+  "api_version": "hydrabox.io/subscription/v1",
+  "kind": "SubscriptionData",
+  "issuer": "https://provider.example",
+  "subscription_id": "demo-subscription",
+  "channel": "stable",
+  "sequence": 1,
+  "issued_at": "2026-07-30T18:00:00Z",
+  "not_before": "2026-07-30T18:00:00Z",
+  "expires_at": "2026-08-30T18:00:00Z",
+  "default_profile_id": "trojan-shadowtls",
+  "metadata": {
+    "name": {
+      "default": "HydraBox Demo",
+      "ru": "Демонстрационная подписка"
+    },
+    "homepage": "https://provider.example",
+    "support_url": "https://provider.example/support"
+  },
+  "compatibility": {
+    "client": {
+      "min_version": "1.0.0",
+      "required_features": []
+    },
+    "core": {
+      "id": "io.hydrabox.hydracore",
+      "version_range": ">=1.13.14 <2.0.0",
+      "required_features": [
+        "io.hydrabox.hydracore/outbound/trojan",
+        "io.hydrabox.hydracore/outbound/shadowtls"
+      ]
+    }
+  },
+  "update": {
+    "url": "https://provider.example/demo-subscription",
+    "minimum_interval_seconds": 21600
+  },
+  "runtime": {
+    "format": "sing-box-json",
+    "ownership": {
+      "inbounds": "client",
+      "route_final": "selected-profile",
+      "dns": "merge-safe",
+      "route_rules": "merge-safe",
+      "log": "client-overlay",
+      "global": "client-overlay"
+    },
+    "document": {
+      "outbounds": [
+        {
+          "type": "trojan",
+          "tag": "trojan-main",
+          "server": "origin.example.invalid",
+          "server_port": 443,
+          "password": "not-a-real-secret",
+          "detour": "shadowtls-transport"
+        },
+        {
+          "type": "shadowtls",
+          "tag": "shadowtls-transport",
+          "server": "transport.example.invalid",
+          "server_port": 443,
+          "version": 3,
+          "password": "not-a-real-secret",
+          "tls": {
+            "enabled": true,
+            "server_name": "cover.example.invalid"
+          }
+        }
+      ]
+    }
+  },
+  "profiles": [
+    {
+      "id": "trojan-shadowtls",
+      "name": {
+        "default": "Trojan over ShadowTLS"
+      },
+      "description": {
+        "default": "One visible profile backed by two native runtime outbounds"
+      },
+      "entrypoint": {
+        "section": "outbounds",
+        "tag": "trojan-main"
+      },
+      "enabled": true,
+      "required_features": []
+    }
+  ],
+  "required_extensions": [],
+  "extensions": {
+    "example.provider/labels/v1": {
+      "tier": "demo"
+    }
+  }
+}

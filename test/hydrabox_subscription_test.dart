@@ -1,0 +1,937 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:meow_client/data/subscription/hydrabox_subscription_crypto.dart';
+import 'package:meow_client/data/subscription/parsers/hydrabox_subscription_parser.dart';
+import 'package:meow_client/data/subscription/subscription_parser.dart';
+
+void main() {
+  String encodeKey(List<int> bytes) =>
+      base64Url.encode(bytes).replaceAll('=', '');
+
+  Map<String, dynamic> document() => {
+    'api_version': 'hydrabox.io/subscription/v1',
+    'kind': 'SubscriptionData',
+    'issuer': 'https://provider.example',
+    'subscription_id': 'customer-main',
+    'channel': 'stable',
+    'sequence': 42,
+    'issued_at': '2026-07-30T18:00:00Z',
+    'default_profile_id': 'trojan-shadowtls',
+    'metadata': <String, dynamic>{
+      'name': <String, dynamic>{'default': 'HydraBox test'},
+    },
+    'runtime': <String, dynamic>{
+      'format': 'sing-box-json',
+      'ownership': <String, dynamic>{
+        'inbounds': 'client',
+        'route_final': 'selected-profile',
+        'dns': 'merge-safe',
+        'route_rules': 'merge-safe',
+        'log': 'client-overlay',
+        'global': 'client-overlay',
+      },
+      'document': <String, dynamic>{
+        'outbounds': [
+          {
+            'type': 'trojan',
+            'tag': 'trojan-main',
+            'server': 'proxy.example',
+            'server_port': 443,
+            'password': 'secret',
+            'detour': 'shadowtls-transport',
+            'future_protocol_field': {'kept': true},
+          },
+          {
+            'type': 'shadowtls',
+            'tag': 'shadowtls-transport',
+            'server': 'transport.example',
+            'server_port': 443,
+            'version': 3,
+            'password': 'secret',
+          },
+        ],
+        'future_top_level': <String, dynamic>{'kept': true},
+      },
+    },
+    'profiles': <dynamic>[
+      <String, dynamic>{
+        'id': 'trojan-shadowtls',
+        'name': <String, dynamic>{'default': 'Trojan over ShadowTLS'},
+        'entrypoint': <String, dynamic>{
+          'section': 'outbounds',
+          'tag': 'trojan-main',
+        },
+        'enabled': true,
+      },
+    ],
+    'required_extensions': <dynamic>[],
+    'extensions': <String, dynamic>{
+      'example.provider/labels': <String, dynamic>{'tier': 'test'},
+    },
+  };
+
+  test('explicit profiles are distinct from native runtime objects', () {
+    final result = SubscriptionParser.parse(jsonEncode(document()));
+
+    expect(result.format, SubscriptionFormat.hydraboxV1);
+    expect(result.profiles, hasLength(1));
+    expect(result.profiles.single.id, 'trojan-shadowtls');
+    expect(result.profiles.single.entrypointTag, 'trojan-main');
+    expect(result.nativeConfig?['future_top_level'], {'kept': true});
+    expect(result.outbounds, hasLength(2));
+
+    final entrypoint = result.outbounds.singleWhere(
+      (outbound) => outbound['_etonify_original_tag'] == 'trojan-main',
+    );
+    final helper = result.outbounds.singleWhere(
+      (outbound) => outbound['_etonify_original_tag'] == 'shadowtls-transport',
+    );
+    expect(entrypoint['_hydrabox_profile_id'], 'trojan-shadowtls');
+    expect(entrypoint['_group_only'], isNot(true));
+    expect(entrypoint['future_protocol_field'], {'kept': true});
+    expect(helper['_group_only'], isTrue);
+  });
+
+  test('an explicit profile may target a native selector group', () {
+    final source = document();
+    final runtime = source['runtime'] as Map<String, dynamic>;
+    final native = runtime['document'] as Map<String, dynamic>;
+    final outbounds = native['outbounds'] as List<dynamic>;
+    outbounds.add({
+      'type': 'selector',
+      'tag': 'provider-choice',
+      'outbounds': ['trojan-main'],
+      'default': 'trojan-main',
+    });
+    source['default_profile_id'] = 'provider-choice-profile';
+    source['profiles'] = [
+      {
+        'id': 'provider-choice-profile',
+        'name': {'default': 'Provider choice'},
+        'entrypoint': {'section': 'outbounds', 'tag': 'provider-choice'},
+      },
+    ];
+
+    final parsed = SubscriptionParser.parse(jsonEncode(source));
+    final visible = parsed.outbounds.singleWhere(
+      (entry) => entry['_hydrabox_profile_id'] == 'provider-choice-profile',
+    );
+    expect(visible['type'], 'selector');
+    expect(visible['_group_only'], isNot(true));
+    expect(
+      parsed.outbounds
+          .where((entry) => entry['_hydrabox_profile_id'] == null)
+          .every((entry) => entry['_group_only'] == true),
+      isTrue,
+    );
+  });
+
+  test('an endpoint profile keeps the exact native endpoint tag', () {
+    final source = document();
+    final runtime = source['runtime'] as Map<String, dynamic>;
+    final native = runtime['document'] as Map<String, dynamic>;
+    native['endpoints'] = [
+      {
+        'type': 'wireguard',
+        'tag': 'provider-wireguard',
+        'address': ['10.0.0.2/32'],
+        'private_key': 'opaque',
+        'peers': <dynamic>[],
+      },
+    ];
+    source['default_profile_id'] = 'wireguard-profile';
+    source['profiles'] = [
+      {
+        'id': 'wireguard-profile',
+        'name': {'default': 'Provider WireGuard'},
+        'entrypoint': {'section': 'endpoints', 'tag': 'provider-wireguard'},
+      },
+    ];
+
+    final parsed = SubscriptionParser.parse(jsonEncode(source));
+    final visible = parsed.outbounds.singleWhere(
+      (entry) => entry['_hydrabox_profile_id'] == 'wireguard-profile',
+    );
+    expect(visible['_etonify_source_index_section'], 'endpoints');
+    expect(visible['_etonify_original_tag'], 'provider-wireguard');
+    expect(visible['tag'], 'provider-wireguard');
+  });
+
+  test('qWDTT Amnezia fields stay outside remote policy v1', () {
+    for (final field in const <String>[
+      'i1',
+      'i2',
+      'i3',
+      'i4',
+      'i5',
+      'j1',
+      'j2',
+      'j3',
+      'itime',
+      'I1',
+      'ITime',
+    ]) {
+      final source = document();
+      final runtime = source['runtime'] as Map<String, dynamic>;
+      final native = runtime['document'] as Map<String, dynamic>;
+      native['endpoints'] = [
+        {
+          'type': 'wireguard',
+          'tag': 'provider-wireguard',
+          'address': ['10.0.0.2/32'],
+          'private_key': 'opaque',
+          'amnezia': {field: field.toLowerCase() == 'itime' ? 1 : '<r 1>'},
+          'peers': <dynamic>[],
+        },
+      ];
+
+      expect(
+        () => SubscriptionParser.parse(jsonEncode(source)),
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            'message for $field',
+            contains('outside HydraBox remote policy v1'),
+          ),
+        ),
+      );
+    }
+  });
+
+  test('unsupported HydraBox major never falls back to a legacy parser', () {
+    final source = document()..['api_version'] = 'hydrabox.io/subscription/v2';
+
+    expect(
+      () => SubscriptionParser.parse(jsonEncode(source)),
+      throwsFormatException,
+    );
+  });
+
+  test('nested protocol members are not envelope discriminators', () {
+    final nativeDocument = jsonEncode({
+      'outbounds': [
+        {
+          'type': 'future-protocol',
+          'tag': 'future-main',
+          'protected': 'protocol-field',
+          'iv': 'protocol-field',
+          'ciphertext': 'protocol-field',
+          'api_version': 'hydrabox.io/protocol/v1',
+          'description': 'a string containing "protected": and "tag":',
+        },
+      ],
+    });
+
+    expect(HydraBoxJweCodec.looksLike(nativeDocument), isFalse);
+    expect(HydraBoxSubscriptionParser.looksLike(nativeDocument), isFalse);
+  });
+
+  test('duplicate JSON keys are rejected before decoding', () {
+    final source = jsonEncode(
+      document(),
+    ).replaceFirst('"sequence":42', '"sequence":41,"sequence":42');
+
+    expect(
+      () => HydraBoxSubscriptionParser.parse(source),
+      throwsFormatException,
+    );
+  });
+
+  test('duplicate or malformed envelope discriminators fail closed', () {
+    final encoded = jsonEncode(document());
+    final marker = '"api_version":"hydrabox.io/subscription/v1"';
+    for (final replacement in const [
+      '"api_version":"hydrabox.io/subscription/v1",'
+          '"api_version":"not-hydrabox"',
+      '"api_version":"not-hydrabox",'
+          '"api_version":"hydrabox.io/subscription/v1"',
+    ]) {
+      expect(
+        () =>
+            SubscriptionParser.parse(encoded.replaceFirst(marker, replacement)),
+        throwsFormatException,
+      );
+    }
+
+    final malformedVersion = document()..['api_version'] = 1;
+    expect(
+      () => SubscriptionParser.parse(jsonEncode(malformedVersion)),
+      throwsFormatException,
+    );
+  });
+
+  test('RFC 3339 timestamps reject calendar normalization', () {
+    for (final invalidTimestamp in const [
+      '2026-02-30T18:00:00Z',
+      '2026-07-30T24:00:00Z',
+      '2026-07-30T18:00:60Z',
+      '2026-07-30T18:00:00+24:00',
+    ]) {
+      final source = document()..['issued_at'] = invalidTimestamp;
+      expect(
+        () => HydraBoxSubscriptionParser.parse(jsonEncode(source)),
+        throwsFormatException,
+        reason: '$invalidTimestamp must not be normalized into another instant',
+      );
+    }
+  });
+
+  test('identity and native tags are never normalized ambiguously', () {
+    final paddedId = document();
+    final idProfiles = paddedId['profiles'] as List<dynamic>;
+    (idProfiles.single as Map<String, dynamic>)['id'] = ' trojan-shadowtls';
+    expect(
+      () => HydraBoxSubscriptionParser.parse(jsonEncode(paddedId)),
+      throwsFormatException,
+    );
+
+    final paddedTag = document();
+    final runtime = paddedTag['runtime'] as Map<String, dynamic>;
+    final native = runtime['document'] as Map<String, dynamic>;
+    final outbounds = native['outbounds'] as List<dynamic>;
+    (outbounds.first as Map<String, dynamic>)['tag'] = 'trojan-main ';
+    expect(
+      () => HydraBoxSubscriptionParser.parse(jsonEncode(paddedTag)),
+      throwsFormatException,
+    );
+  });
+
+  test('outbound and endpoint tags share one unambiguous namespace', () {
+    final source = document();
+    final runtime = source['runtime'] as Map<String, dynamic>;
+    final native = runtime['document'] as Map<String, dynamic>;
+    native['endpoints'] = [
+      {
+        'type': 'wireguard',
+        'tag': 'trojan-main',
+        'address': ['10.0.0.2/32'],
+        'private_key': 'test',
+        'peers': <dynamic>[],
+      },
+    ];
+
+    expect(
+      () => HydraBoxSubscriptionParser.parse(jsonEncode(source)),
+      throwsFormatException,
+    );
+  });
+
+  test('every native tag rejects HydraBox-owned runtime collisions', () {
+    for (final reservedTag in const [
+      '__hydrabox.internal',
+      'select',
+      'direct',
+      'lowest',
+    ]) {
+      final source = document();
+      final runtime = source['runtime'] as Map<String, dynamic>;
+      final native = runtime['document'] as Map<String, dynamic>;
+      (native['outbounds'] as List<dynamic>).add({
+        'type': 'future-helper',
+        'tag': reservedTag,
+      });
+      expect(
+        () => HydraBoxSubscriptionParser.parse(jsonEncode(source)),
+        throwsFormatException,
+        reason: 'unreferenced native tag $reservedTag must not be renamed',
+      );
+    }
+  });
+
+  test('JWE dir+A256GCM round trip and authentication', () {
+    final key = encodeKey(List<int>.generate(32, (index) => index));
+    final plaintext = jsonEncode(document());
+    final encrypted = HydraBoxJweCodec.encrypt(
+      plaintext,
+      encodedKey: key,
+      keyId: 'customer-key-1',
+      nonce: Uint8List.fromList(List<int>.generate(12, (index) => index + 1)),
+    );
+
+    final parsed = SubscriptionParser.parse(encrypted, decryptionKey: key);
+    expect(parsed.format, SubscriptionFormat.hydraboxV1);
+    expect(parsed.sourceMetadata['encrypted'], isTrue);
+    expect(parsed.sourceMetadata['key_id'], 'customer-key-1');
+
+    final envelope = Map<String, dynamic>.from(jsonDecode(encrypted) as Map);
+    final ciphertext = envelope['ciphertext'] as String;
+    envelope['ciphertext'] =
+        '${ciphertext.startsWith('A') ? 'B' : 'A'}'
+        '${ciphertext.substring(1)}';
+    expect(
+      () => SubscriptionParser.parse(jsonEncode(envelope), decryptionKey: key),
+      throwsFormatException,
+    );
+  });
+
+  test('JWE output matches an independent AES-GCM interoperability vector', () {
+    const key = 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8';
+    const plaintext = '{"api_version":"hydrabox.io/subscription/v1"}';
+    const expected =
+        '{"protected":"eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2R0NNIiwidHlwIjoiaGJ4K2p3ZSIsImN0eSI6ImFwcGxpY2F0aW9uL3ZuZC5oeWRyYWJveC5zdWJzY3JpcHRpb24ranNvbiIsImtpZCI6ImludGVyb3AtMSJ9",'
+        '"iv":"AQIDBAUGBwgJCgsM",'
+        '"ciphertext":"fsg7pYXLhuM-0QoofjHQCio6hYz2Dz-9jzaWC-3DFLbnlvKvGtyD8Z_ai8e4",'
+        '"tag":"yrtx9yOYMab46V-9dqy3oQ"}';
+
+    expect(
+      HydraBoxJweCodec.encrypt(
+        plaintext,
+        encodedKey: key,
+        keyId: 'interop-1',
+        nonce: Uint8List.fromList(List<int>.generate(12, (index) => index + 1)),
+      ),
+      expected,
+    );
+    expect(HydraBoxJweCodec.decrypt(expected, encodedKey: key), plaintext);
+  });
+
+  test('supplying an hbx-key rejects a plaintext subscription', () {
+    final key = encodeKey(List<int>.filled(32, 9));
+
+    expect(
+      () =>
+          SubscriptionParser.parse(jsonEncode(document()), decryptionKey: key),
+      throwsFormatException,
+    );
+
+    final encrypted = HydraBoxJweCodec.encrypt(
+      jsonEncode(document()),
+      encodedKey: key,
+      nonce: Uint8List.fromList(List<int>.generate(12, (index) => index + 3)),
+    );
+    expect(
+      () => SubscriptionParser.parse(encrypted, decryptionKey: ' $key'),
+      throwsFormatException,
+      reason: 'hbx-key whitespace must never be normalized silently',
+    );
+  });
+
+  test('security-sensitive URLs reject empty delimiters and userinfo', () {
+    for (final invalidIssuer in const [
+      'https://provider.example?',
+      'https://provider.example#',
+      'https://@provider.example',
+    ]) {
+      final source = document()..['issuer'] = invalidIssuer;
+      expect(
+        () => SubscriptionParser.parse(jsonEncode(source)),
+        throwsFormatException,
+        reason: 'invalid issuer $invalidIssuer must fail closed',
+      );
+    }
+
+    final emptyFragmentUrl = document();
+    emptyFragmentUrl['update'] = {
+      'url': 'https://provider.example/subscription#',
+    };
+    expect(
+      () => SubscriptionParser.parse(jsonEncode(emptyFragmentUrl)),
+      throwsFormatException,
+    );
+  });
+
+  test('partial JWE containers fail closed instead of parser fallback', () {
+    final key = encodeKey(List<int>.generate(32, (index) => 255 - index));
+    final encrypted = HydraBoxJweCodec.encrypt(
+      jsonEncode(document()),
+      encodedKey: key,
+      nonce: Uint8List.fromList(List<int>.generate(12, (index) => index + 2)),
+    );
+    final complete = Map<String, dynamic>.from(jsonDecode(encrypted) as Map);
+
+    for (final missingMember in const [
+      'protected',
+      'iv',
+      'ciphertext',
+      'tag',
+    ]) {
+      final partial = Map<String, dynamic>.from(complete)
+        ..remove(missingMember);
+      expect(
+        () => SubscriptionParser.parse(jsonEncode(partial), decryptionKey: key),
+        throwsFormatException,
+        reason: 'missing JWE member $missingMember must not fall back',
+      );
+    }
+  });
+
+  test('outer byte limit is enforced before whitespace normalization', () {
+    const partialJwe = '{"protected":"x"}';
+    const maxOuterBytes = 16 * 1024 * 1024;
+    final exactBoundary =
+        '${_asciiSpaces(maxOuterBytes - utf8.encode(partialJwe).length)}'
+        '$partialJwe';
+
+    expect(
+      () => SubscriptionParser.parse(exactBoundary),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          'message',
+          contains('requires an hbx-key'),
+        ),
+      ),
+    );
+    expect(
+      () => SubscriptionParser.parse(' $exactBoundary'),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          'message',
+          contains('response is too large'),
+        ),
+      ),
+    );
+  });
+
+  test('unsafe remote runtime capabilities require local consent', () {
+    final unsafeSections = <String, dynamic>{
+      'inbounds': [
+        {
+          'type': 'mixed',
+          'tag': 'remote-listener',
+          'listen': '0.0.0.0',
+          'listen_port': 1080,
+        },
+      ],
+      'services': [
+        {
+          'type': 'manager-api',
+          'tag': 'remote-service',
+          'listen': '0.0.0.0',
+          'listen_port': 9090,
+        },
+      ],
+      'experimental': {
+        'clash_api': {'external_controller': '0.0.0.0:9091'},
+      },
+      'Services': [
+        {
+          'type': 'manager-api',
+          'tag': 'folded-remote-service',
+          'listen_port': 9091,
+        },
+      ],
+      'Experimental': {
+        'clash_api': {'external_controller': '0.0.0.0:9092'},
+      },
+    };
+
+    for (final unsafeSection in unsafeSections.entries) {
+      final source = document();
+      final runtime = source['runtime'] as Map<String, dynamic>;
+      final native = runtime['document'] as Map<String, dynamic>;
+      native[unsafeSection.key] = unsafeSection.value;
+      expect(
+        () => SubscriptionParser.parse(jsonEncode(source)),
+        throwsFormatException,
+        reason:
+            'runtime.document.${unsafeSection.key} must require local consent',
+      );
+    }
+  });
+
+  test('local resources and incomplete ownership fail closed', () {
+    final localProvider = document();
+    final localRuntime = localProvider['runtime'] as Map<String, dynamic>;
+    final localNative = localRuntime['document'] as Map<String, dynamic>;
+    localNative['providers'] = [
+      {'type': 'local', 'tag': 'disk', 'path': 'profiles.json'},
+    ];
+    expect(
+      () => SubscriptionParser.parse(jsonEncode(localProvider)),
+      throwsFormatException,
+    );
+
+    final localState = document();
+    final stateRuntime = localState['runtime'] as Map<String, dynamic>;
+    final stateNative = stateRuntime['document'] as Map<String, dynamic>;
+    stateNative['endpoints'] = [
+      {
+        'type': 'tailscale',
+        'tag': 'tailscale-helper',
+        'state_directory': '/data/local/tmp/provider-state',
+      },
+    ];
+    expect(
+      () => SubscriptionParser.parse(jsonEncode(localState)),
+      throwsFormatException,
+    );
+
+    final partialOwnership = document();
+    final ownershipRuntime =
+        partialOwnership['runtime'] as Map<String, dynamic>;
+    ownershipRuntime['ownership'] = {'inbounds': 'client'};
+    expect(
+      () => SubscriptionParser.parse(jsonEncode(partialOwnership)),
+      throwsFormatException,
+    );
+  });
+
+  test(
+    'known local filesystem and system-network capabilities fail closed',
+    () {
+      void expectRejected(
+        void Function(Map<String, dynamic> native) mutate,
+        String reason,
+      ) {
+        final source = document();
+        final runtime = source['runtime'] as Map<String, dynamic>;
+        final native = runtime['document'] as Map<String, dynamic>;
+        mutate(native);
+        expect(
+          () => SubscriptionParser.parse(jsonEncode(source)),
+          throwsFormatException,
+          reason: reason,
+        );
+      }
+
+      expectRejected(
+        (native) => native['route'] = {
+          'geoip': {'path': '/data/local/geoip.db'},
+        },
+        'route.geoip.path must not read a local file',
+      );
+      expectRejected(
+        (native) => native['route'] = {
+          'geosite': {'download_url': 'http://provider.example/geosite.db'},
+        },
+        'remote routing databases require HTTPS',
+      );
+      expectRejected(
+        (native) => native['dns'] = {
+          'servers': [
+            {
+              'type': 'hosts',
+              'tag': 'disk-hosts',
+              'path': ['/system/etc/hosts'],
+            },
+          ],
+        },
+        'hosts DNS must not read local paths',
+      );
+      expectRejected(
+        (native) => native['dns'] = {
+          'servers': [
+            {'type': 'dhcp', 'tag': 'lan-dhcp'},
+          ],
+        },
+        'DHCP discovery needs a local consent grant',
+      );
+      expectRejected(
+        (native) => native['ntp'] = {
+          'enabled': true,
+          'write_to_system': true,
+          'server': 'time.example',
+          'server_port': 123,
+        },
+        'remote NTP must not change the system clock',
+      );
+      expectRejected(
+        (native) => native['log'] = {'output': '/data/local/hydracore.log'},
+        'remote logging must not write a local file',
+      );
+      expectRejected(
+        (native) => native['log'] = {'Output': '/data/local/hydracore.log'},
+        'case-folded remote logging output must not bypass the policy',
+      );
+      expectRejected(
+        (native) => native['Providers'] = [
+          {'Type': 'local', 'Tag': 'folded-disk', 'Path': 'profiles.json'},
+        ],
+        'case-folded provider fields must not bypass the policy',
+      );
+      expectRejected((native) {
+        final outbounds = native['outbounds'] as List<dynamic>;
+        (outbounds.first as Map<String, dynamic>)['bind_interface'] = 'wlan0';
+      }, 'remote outbounds must not choose a local interface');
+      expectRejected(
+        (native) => native['route'] = {
+          'rules': [
+            {
+              'process_name': ['banking-app'],
+              'outbound': 'trojan-main',
+            },
+          ],
+        },
+        'remote route rules must not inspect local processes',
+      );
+      expectRejected(
+        (native) => native['dns'] = {
+          'rules': [
+            {
+              'wifi_ssid': ['private-network'],
+              'server': 'dns-remote',
+            },
+          ],
+        },
+        'remote DNS rules must not inspect local Wi-Fi state',
+      );
+      expectRejected(
+        (native) => native['outbounds'] = [
+          {'type': 'tor', 'tag': 'spawn-tor'},
+        ],
+        'Tor process execution requires explicit consent',
+      );
+      expectRejected(
+        (native) => native['endpoints'] = [
+          {'type': 'vpn-client', 'tag': 'reverse-vpn'},
+        ],
+        'reverse VPN endpoints require explicit consent',
+      );
+      expectRejected(
+        (native) => native['endpoints'] = [
+          {
+            'type': 'wireguard',
+            'tag': 'system-wireguard',
+            'system': true,
+            'address': ['10.0.0.2/32'],
+            'private_key': 'test',
+          },
+        ],
+        'system WireGuard interfaces require local consent',
+      );
+      expectRejected(
+        (native) => native['endpoints'] = [
+          {
+            'type': 'wireguard',
+            'tag': 'pause-bypass-wireguard',
+            'disable_pauses': true,
+            'address': ['10.0.0.2/32'],
+            'private_key': 'test',
+          },
+        ],
+        'remote WireGuard cannot bypass the app pause lifecycle',
+      );
+      expectRejected(
+        (native) => native['endpoints'] = [
+          {
+            'type': 'tailscale',
+            'tag': 'system-tailscale',
+            'system_interface': true,
+          },
+        ],
+        'Tailscale system interfaces require local consent',
+      );
+      expectRejected(
+        (native) => native['endpoints'] = [
+          {
+            'type': 'wireguard',
+            'tag': 'listener-endpoint',
+            'listen_port': 0,
+            'address': ['10.0.0.2/32'],
+            'private_key': 'opaque',
+            'peers': <dynamic>[],
+          },
+        ],
+        'even an ephemeral userspace listener requires local consent',
+      );
+    },
+  );
+
+  test('DNS and route resources reject HydraBox-owned tag collisions', () {
+    final dnsCollision = document();
+    final dnsRuntime = dnsCollision['runtime'] as Map<String, dynamic>;
+    final dnsNative = dnsRuntime['document'] as Map<String, dynamic>;
+    dnsNative['dns'] = {
+      'servers': [
+        {'type': 'https', 'tag': 'dns-remote', 'server': 'resolver.example'},
+      ],
+    };
+    expect(
+      () => SubscriptionParser.parse(jsonEncode(dnsCollision)),
+      throwsFormatException,
+    );
+
+    final ruleSetCollision = document();
+    final routeRuntime = ruleSetCollision['runtime'] as Map<String, dynamic>;
+    final routeNative = routeRuntime['document'] as Map<String, dynamic>;
+    routeNative['route'] = {
+      'rule_set': [
+        {
+          'type': 'remote',
+          'tag': 'adblock-block',
+          'format': 'binary',
+          'url': 'https://provider.example/rules.srs',
+        },
+      ],
+    };
+    expect(
+      () => SubscriptionParser.parse(jsonEncode(ruleSetCollision)),
+      throwsFormatException,
+    );
+  });
+
+  test('unknown structural fields require a namespaced extension', () {
+    final unknownEnvelope = document()..['future_field'] = true;
+    expect(
+      () => SubscriptionParser.parse(jsonEncode(unknownEnvelope)),
+      throwsFormatException,
+    );
+
+    final unknownProfile = document();
+    final profiles = unknownProfile['profiles'] as List<dynamic>;
+    (profiles.single as Map<String, dynamic>)['future_field'] = true;
+    expect(
+      () => SubscriptionParser.parse(jsonEncode(unknownProfile)),
+      throwsFormatException,
+    );
+
+    final optionalExtension = document();
+    final optionalProfiles = optionalExtension['profiles'] as List<dynamic>;
+    (optionalProfiles.single as Map<String, dynamic>)['extensions'] = {
+      'example.provider/profile-labels/v1': {'future_field': true},
+    };
+    final parsed = SubscriptionParser.parse(jsonEncode(optionalExtension));
+    expect(
+      parsed.profiles.single.metadata['extensions'],
+      containsPair('example.provider/profile-labels/v1', {
+        'future_field': true,
+      }),
+    );
+  });
+
+  test('explicit null never substitutes for omission in the strict shape', () {
+    final mutations = <String, void Function(Map<String, dynamic>)>{
+      'channel': (source) => source['channel'] = null,
+      'not_before': (source) => source['not_before'] = null,
+      'expires_at': (source) => source['expires_at'] = null,
+      'metadata': (source) => source['metadata'] = null,
+      'metadata.homepage': (source) =>
+          (source['metadata'] as Map<String, dynamic>)['homepage'] = null,
+      'metadata.support_url': (source) =>
+          (source['metadata'] as Map<String, dynamic>)['support_url'] = null,
+      'metadata.tags': (source) =>
+          (source['metadata'] as Map<String, dynamic>)['tags'] = null,
+      'metadata.extensions': (source) =>
+          (source['metadata'] as Map<String, dynamic>)['extensions'] = null,
+      'compatibility': (source) => source['compatibility'] = null,
+      'compatibility.client': (source) =>
+          source['compatibility'] = {'client': null},
+      'compatibility.core': (source) =>
+          source['compatibility'] = {'core': null},
+      'compatibility.extensions': (source) =>
+          source['compatibility'] = {'extensions': null},
+      'compatibility.client.min_version': (source) =>
+          source['compatibility'] = {
+            'client': {'min_version': null},
+          },
+      'compatibility.client.required_features': (source) =>
+          source['compatibility'] = {
+            'client': {'required_features': null},
+          },
+      'compatibility.core.id': (source) => source['compatibility'] = {
+        'core': {'id': null},
+      },
+      'compatibility.core.version_range': (source) =>
+          source['compatibility'] = {
+            'core': {'version_range': null},
+          },
+      'compatibility.core.required_features': (source) =>
+          source['compatibility'] = {
+            'core': {'required_features': null},
+          },
+      'update': (source) => source['update'] = null,
+      'update.minimum_interval_seconds': (source) => source['update'] = {
+        'url': 'https://provider.example/update',
+        'minimum_interval_seconds': null,
+      },
+      'update.extensions': (source) => source['update'] = {
+        'url': 'https://provider.example/update',
+        'extensions': null,
+      },
+      'runtime.ownership': (source) =>
+          (source['runtime'] as Map<String, dynamic>)['ownership'] = null,
+      'runtime.extensions': (source) =>
+          (source['runtime'] as Map<String, dynamic>)['extensions'] = null,
+      'profile.enabled': (source) =>
+          ((source['profiles'] as List).single
+                  as Map<String, dynamic>)['enabled'] =
+              null,
+      'profile.country': (source) =>
+          ((source['profiles'] as List).single
+                  as Map<String, dynamic>)['country'] =
+              null,
+      'profile.tags': (source) =>
+          ((source['profiles'] as List).single
+                  as Map<String, dynamic>)['tags'] =
+              null,
+      'profile.required_features': (source) =>
+          ((source['profiles'] as List).single
+                  as Map<String, dynamic>)['required_features'] =
+              null,
+      'profile.extensions': (source) =>
+          ((source['profiles'] as List).single
+                  as Map<String, dynamic>)['extensions'] =
+              null,
+      'required_extensions': (source) => source['required_extensions'] = null,
+      'extensions': (source) => source['extensions'] = null,
+    };
+
+    for (final mutation in mutations.entries) {
+      final source = document();
+      mutation.value(source);
+      expect(
+        () => SubscriptionParser.parse(jsonEncode(source)),
+        throwsFormatException,
+        reason: '${mutation.key}: explicit null is not schema-valid',
+      );
+    }
+  });
+
+  test('omission and opaque extension null values remain valid', () {
+    final source = document();
+    source['extensions'] = {
+      'example.provider/opaque/v1': {'optional_value': null},
+    };
+    final runtime = source['runtime'] as Map<String, dynamic>;
+    final native = runtime['document'] as Map<String, dynamic>;
+    native['future_top_level'] = {'opaque_null': null};
+
+    final parsed = SubscriptionParser.parse(jsonEncode(source));
+    expect(
+      parsed.sourceMetadata['extensions'],
+      contains('example.provider/opaque/v1'),
+    );
+    expect(parsed.nativeConfig?['future_top_level'], {'opaque_null': null});
+  });
+
+  test('JWE key is accepted only from an out-of-band URL fragment', () {
+    final key = encodeKey(List<int>.filled(32, 7));
+    final uri = Uri.parse(
+      'https://provider.example/subscription'
+      '#hbx-key=$key',
+    );
+
+    expect(HydraBoxJweCodec.keyFromUri(uri), key);
+    expect(
+      HydraBoxJweCodec.uriWithoutSecretFragment(uri).toString(),
+      'https://provider.example/subscription',
+    );
+
+    final empty = Uri.parse('https://provider.example/subscription#hbx-key=');
+    final duplicate = Uri.parse(
+      'https://provider.example/subscription#hbx-key=$key&hbx-key=$key',
+    );
+    final padded = Uri.parse(
+      'https://provider.example/subscription#hbx-key=%20$key',
+    );
+    expect(HydraBoxJweCodec.hasKeyFragment(empty), isTrue);
+    expect(HydraBoxJweCodec.keyFromUri(empty), isNull);
+    expect(HydraBoxJweCodec.hasKeyFragment(duplicate), isTrue);
+    expect(HydraBoxJweCodec.keyFromUri(duplicate), isNull);
+    expect(HydraBoxJweCodec.hasKeyFragment(padded), isTrue);
+    expect(HydraBoxJweCodec.keyFromUri(padded), isNull);
+    expect(
+      HydraBoxJweCodec.hasKeyQueryParameter(
+        Uri.parse('https://provider.example/sub?hbx%2Dkey=$key'),
+      ),
+      isTrue,
+    );
+  });
+}
+
+String _asciiSpaces(int length) =>
+    String.fromCharCodes(Uint8List(length)..fillRange(0, length, 0x20));

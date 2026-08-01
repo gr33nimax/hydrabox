@@ -179,16 +179,16 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get aboutDevelopedBy =>
-      'Etonify is developed by the small independent MeowTeam.';
+      'HydraBox is an independent derivative of Etonify. It is not an official Etonify or MeowTeam release.';
 
   @override
-  String get aboutContactLabel => 'Message the developers';
+  String get aboutContactLabel => 'Contact Etonify upstream';
 
   @override
   String get aboutCoreSourceLabel => 'core source code';
 
   @override
-  String get telegramChannelLabel => 'Etonify Telegram';
+  String get telegramChannelLabel => 'Etonify upstream Telegram';
 
   @override
   String get legalTermsTitle => 'Terms of Use';
@@ -202,10 +202,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get legalPrivacySummary =>
-      'What Etonify stores locally and what it does not collect.';
+      'What HydraBox stores locally and what it does not collect.';
 
   @override
-  String get legalGateTitle => 'Before using Etonify';
+  String get legalGateTitle => 'Before using HydraBox';
 
   @override
   String legalGateSubtitle(String version) {
@@ -222,7 +222,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get legalDocumentReadAction => 'I have read it';
 
   @override
-  String get legalContactAction => 'Ask a question';
+  String get legalContactAction => 'Contact Etonify upstream';
 
   @override
   String get legalImportBlockedMessage =>
@@ -230,11 +230,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get legalTermsBody =>
-      '# Etonify Terms of Use\n\n## What the app does\n\nEtonify is an Android VPN client. **It does not sell or provide VPN servers:** users add subscriptions, profiles, and servers from third-party providers.\n\n## User responsibility\n\nUse Etonify according to applicable law and service rules. Do not use it for attacks, fraud, malware, harassment, or other illegal activity.\n\n- You are responsible for added profiles and access keys.\n- Third-party providers determine their own service terms.\n- MeowTeam does not control subscription content or third-party server traffic.\n\n## Operation and updates\n\nEtonify is provided **as is**. We improve reliability and security, but cannot guarantee every server, route, DNS resolver, carrier, or modified Android firmware. Updates are installed only after user action and Android system confirmation.\n\n## Feedback\n\nQuestions, bug reports, and feature requests can be sent directly to the developers: **https://t.me/etonify?direct**.\n\nBy continuing, you confirm that you have read these terms and accept responsibility for using the app.';
+      '# HydraBox Terms of Use\n\n## What the app does\n\nHydraBox is an Android VPN client. **It does not sell or provide VPN servers:** users add subscriptions, profiles, and servers from third-party providers.\n\n## User responsibility\n\nUse HydraBox according to applicable law and service rules. Do not use it for attacks, fraud, malware, harassment, or other illegal activity.\n\n- You are responsible for added profiles and access keys.\n- Third-party providers determine their own service terms.\n- HydraBox maintainers do not control subscription content or third-party server traffic.\n\n## Operation and updates\n\nHydraBox is provided **as is**. We improve reliability and security, but cannot guarantee every server, route, DNS resolver, carrier, or modified Android firmware. Updates are installed only after user action and Android system confirmation.\n\n## Feedback\n\nThe address **https://t.me/etonify?direct** belongs to the Etonify upstream project and is not represented as HydraBox support.\n\nBy continuing, you confirm that you have read these terms and accept responsibility for using the app.';
 
   @override
   String get legalPrivacyBody =>
-      '# Etonify Privacy Policy\n\n## Summary\n\nEtonify has **no advertising, analytics SDKs, or hidden tracking**. MeowTeam does not sell user data or automatically receive your VPN keys.\n\n## Data stored on the device\n\nSubscriptions, profiles, selected servers, settings, diagnostic logs, and downloaded rule files are stored locally. Backups and exports may contain access keys, so keep them private.\n\n## Network requests\n\n- Subscription imports and refreshes contact the address supplied by the user. That server can see normal request information, including the IP address.\n- Client and routing-rule update checks contact GitHub and the sources named in the interface.\n- HWID is sent to a subscription service only for profiles where the user enables it.\n\n## Android permissions\n\n- **VPN service** creates the system VPN tunnel.\n- **QUERY_ALL_PACKAGES** is used only to display installed apps for split tunneling. The app list is not sent to MeowTeam.\n- **Camera** is used only to scan QR codes.\n- **Notifications** display VPN service state.\n- **APK installation** is used only for user-approved updates. Android shows a separate system confirmation.\n\n## Logs and messages\n\nLogs are stored locally until the user exports or sends them. Review exported files before sharing publicly. Information voluntarily sent through Telegram is handled under Telegram\'s rules.\n\nPrivacy questions can be sent directly to the developers: **https://t.me/etonify?direct**.';
+      '# HydraBox Privacy Policy\n\n## Summary\n\nHydraBox has **no advertising, analytics SDKs, or hidden tracking**. HydraBox maintainers do not sell user data or automatically receive your VPN keys.\n\n## Data stored on the device\n\nSubscriptions, profiles, selected servers, settings, diagnostic logs, and downloaded rule files are stored locally. Backups and exports may contain access keys, so keep them private.\n\n## Network requests\n\n- Subscription imports and refreshes contact the address supplied by the user. That server can see normal request information, including the IP address.\n- Client and routing-rule update checks contact GitHub and the sources named in the interface.\n- HWID is sent to a subscription service only for profiles where the user enables it.\n\n## Android permissions\n\n- **VPN service** creates the system VPN tunnel.\n- **QUERY_ALL_PACKAGES** is used only to display installed apps for split tunneling. The app list is not sent to HydraBox maintainers.\n- **Camera** is used only to scan QR codes.\n- **Notifications** display VPN service state.\n- **APK installation** is used only for user-approved updates. Android shows a separate system confirmation.\n\n## Logs and messages\n\nLogs are stored locally until the user exports or sends them. Review exported files before sharing publicly. Information voluntarily sent through Telegram is handled under Telegram\'s rules.\n\nThe address **https://t.me/etonify?direct** belongs to the Etonify upstream project and is not represented as HydraBox support.';
 
   @override
   String get coreVersionLabel => 'Core version';
@@ -271,18 +271,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get teamPageTitle => 'MeowTeam';
 
   @override
-  String get teamIntroTitle => 'The team behind Etonify';
+  String get teamIntroTitle => 'Etonify upstream attribution';
 
   @override
   String get teamIntroBody =>
-      'MeowTeam is two developers building Etonify, its core, and networking components together as an independent open-source project.';
+      'HydraBox is based on the Etonify application and etonify-core created by MeowTeam. This page credits the upstream developers; it does not claim that they develop or endorse HydraBox.';
 
   @override
   String get teamTimelineForkTitle => 'Early client development';
 
   @override
   String get teamTimelineForkBody =>
-      'Early test versions helped define the Android runtime, subscription handling, diagnostics, and interface that Etonify now maintains.';
+      'Early test versions helped define the Android runtime, subscription handling, diagnostics, and interface inherited by HydraBox from Etonify.';
 
   @override
   String get teamTimelineRefactorTitle => 'Large refactor';
@@ -296,14 +296,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get teamTimelineCoreBody =>
-      'After MeowSingBox, the client moved to a more stable sing-box base with the changes Etonify needs. Maintaining our own core makes updates and testing easier, while URLTest, server failover, and resource-cleanup improvements benefit everyday use.';
+      'After MeowSingBox, Etonify moved to a more stable sing-box base. HydraCore preserves that upstream history, while continued runtime maintenance, URLTest, server failover, and resource-cleanup improvements benefit HydraBox.';
 
   @override
-  String get teamTimelineNowTitle => 'Etonify today';
+  String get teamTimelineNowTitle => 'HydraBox derivative';
 
   @override
   String get teamTimelineNowBody =>
-      'Etonify is still evolving: we keep simplifying UX, improving Android stability, and cutting technical debt without losing the speed-focused VPN experience.';
+      'HydraBox is still evolving: we keep simplifying UX, improving Android stability, and cutting technical debt without losing the speed-focused VPN experience.';
 
   @override
   String get teamDeveloperDdosxdRole =>
@@ -376,7 +376,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get updatesSubtitle =>
-      'Check GitHub Releases and download the matching APK.';
+      'View update status and install APKs from a configured HydraBox release source.';
+
+  @override
+  String get updatesDisabledTitle => 'Automatic updates are not configured';
+
+  @override
+  String get updatesDisabledSubtitle =>
+      'A HydraBox release source has not been configured for this build. Automatic update checks are disabled.';
 
   @override
   String get updatesChecking => 'Checking for updates…';
@@ -403,21 +410,21 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get updatesDownloadWarning =>
-      'Keep Etonify open until the download finishes.';
+      'Keep HydraBox open until the download finishes.';
 
   @override
   String get updatesOpeningInstaller => 'Opening the system installer…';
 
   @override
   String get updatesInstallPermissionHint =>
-      'Allow APK installs for Etonify, then tap “Install APK” again.';
+      'Allow APK installs for HydraBox, then tap “Install APK” again.';
 
   @override
   String get updatesInstallPermissionTitle => 'Permission required';
 
   @override
   String get updatesInstallPermissionMessage =>
-      'Allow Etonify to install unknown apps before it can open the downloaded APK installer. Without this permission you can only download the file manually.';
+      'Allow HydraBox to install unknown apps before it can open the downloaded APK installer. Without this permission you can only download the file manually.';
 
   @override
   String get updatesInstallPermissionOpen => 'Open settings';
@@ -434,7 +441,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get updatesInstallModeAskSubtitle =>
-      'Etonify will ask whether to download manually or install automatically.';
+      'HydraBox will ask whether to download manually or install automatically.';
 
   @override
   String get updatesInstallModeManual => 'Manual';
@@ -466,7 +473,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get updatesInstallMethodAutoSubtitle =>
-      'After download, Etonify opens the Android system installer.';
+      'After download, HydraBox opens the Android system installer.';
 
   @override
   String get updatesInstallMethodRemember => 'Remember this choice';
@@ -496,7 +503,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String updatesDeleteCachedApkMessage(Object version) {
-    return 'This will delete the downloaded $version update APK and old temporary Etonify APK files from the app cache.';
+    return 'This will delete the downloaded $version update APK and old temporary HydraBox APK files from the app cache.';
   }
 
   @override
@@ -505,7 +512,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get updatesUpToDateTitle => 'Etonify is up to date';
+  String get updatesUpToDateTitle => 'HydraBox is up to date';
 
   @override
   String updatesUpToDateSubtitle(String version) {
@@ -553,7 +560,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get updatesErrorSubtitle =>
-      'If GitHub is blocked on this network, Etonify will try again tomorrow.';
+      'If GitHub is blocked on this network, HydraBox will try again tomorrow.';
 
   @override
   String get updatesCurrentVersion => 'Current version';
@@ -865,7 +872,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get memoryLimitDisableWarningMessage =>
-      'Use this only if VPN start fails with a memory-limit error. Disabling the limit can increase RAM usage, heat, and the chance Android kills the app. The change takes effect after restarting Etonify.';
+      'Use this only if VPN start fails with a memory-limit error. Disabling the limit can increase RAM usage, heat, and the chance Android kills the app. The change takes effect after restarting HydraBox.';
 
   @override
   String get memoryLimitDisableConfirm => 'Disable';
@@ -1182,7 +1189,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get customUserAgentSubtitle =>
-      'Overrides the default Etonify user agent for this subscription';
+      'Overrides the default HydraBox user agent for this subscription';
 
   @override
   String get customHwidTitle => 'Custom HWID';
@@ -1352,7 +1359,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get backupUseSettingsImport =>
-      'This is an Etonify backup. Import it from Settings → Import.';
+      'This is a HydraBox backup. Import it from Settings → Import.';
 
   @override
   String get subscriptionName => 'Name (optional)';
@@ -1571,7 +1578,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get subscriptionErrorUnsafeRedirect =>
-      'The subscription server tried to redirect from HTTPS to insecure HTTP. Etonify blocked the redirect.';
+      'The subscription server tried to redirect from HTTPS to insecure HTTP. HydraBox blocked the redirect.';
 
   @override
   String get subscriptionErrorRedirect =>
@@ -1702,7 +1709,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get deepLinkImportHappNotice =>
-      'Some Happ subscriptions require an HWID. Etonify sends it only after you confirm.';
+      'Some Happ subscriptions require an HWID. HydraBox sends it only after you confirm.';
 
   @override
   String get deepLinkImportHappSendHwidAction => 'Send HWID and import';
@@ -2026,7 +2033,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get splitRoutingAppVisibilityNotice =>
-      'Android gives Etonify the installed-app list only for selection. The list stays on this device.';
+      'Android gives HydraBox the installed-app list only for selection. The list stays on this device.';
 
   @override
   String get splitRoutingPackagesTitle => 'Package names';
@@ -2288,7 +2295,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String backupNewerVersionMessage(String version) {
-    return 'This file was created by Etonify $version. Some settings may not apply correctly. Continue?';
+    return 'This file was created by HydraBox $version. Some settings may not apply correctly. Continue?';
   }
 
   @override

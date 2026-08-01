@@ -16,6 +16,9 @@ LIBBOX_RELEASE_REPOSITORY = "gr33nimax/etonify-core"
 LIBBOX_RELEASE_BASE_URL = (
     f"https://github.com/{LIBBOX_RELEASE_REPOSITORY}/releases/download"
 )
+HYDRACORE_DISTRIBUTION_ID = "io.hydrabox.hydracore"
+HYDRACORE_DISTRIBUTION_NAME = "HydraCore"
+HYDRACORE_UPSTREAM_PROJECT = "etonify-core"
 
 _SHA256 = re.compile(r"[0-9a-fA-F]{64}")
 _GIT_COMMIT = re.compile(r"[0-9a-fA-F]{40}")
@@ -53,6 +56,10 @@ class LibboxProvenance:
     core_version: str
     release_tag: str
     download_url: str
+    distribution_id: str
+    distribution_name: str
+    upstream_project: str
+    etonify_version: str
 
 
 def parse_provenance(value: object) -> LibboxProvenance:
@@ -67,6 +74,19 @@ def parse_provenance(value: object) -> LibboxProvenance:
         )
     if provenance.get("artifact") != LIBBOX_ARTIFACT:
         fail("libbox provenance has an unexpected artifact name")
+
+    distribution_id = required_string(provenance, "distribution_id")
+    if distribution_id != HYDRACORE_DISTRIBUTION_ID:
+        fail("libbox provenance has an unexpected distribution_id")
+    distribution_name = required_string(provenance, "distribution_name")
+    if distribution_name != HYDRACORE_DISTRIBUTION_NAME:
+        fail("libbox provenance has an unexpected distribution_name")
+    upstream_project = required_string(provenance, "upstream_project")
+    if upstream_project != HYDRACORE_UPSTREAM_PROJECT:
+        fail("libbox provenance has an unexpected upstream_project")
+    etonify_version = required_string(provenance, "etonify_version")
+    if _RELEASE_TAG.fullmatch(etonify_version) is None:
+        fail("libbox provenance etonify_version is not a safe version tag")
 
     expected_sha256 = required_string(provenance, "sha256")
     if _SHA256.fullmatch(expected_sha256) is None:
@@ -102,6 +122,10 @@ def parse_provenance(value: object) -> LibboxProvenance:
         core_version=core_version,
         release_tag=release_tag,
         download_url=download_url,
+        distribution_id=distribution_id,
+        distribution_name=distribution_name,
+        upstream_project=upstream_project,
+        etonify_version=etonify_version,
     )
 
 
@@ -118,6 +142,7 @@ def validate_core_pins(
     *,
     source_commit: str,
     release_tag: str,
+    etonify_version: str,
 ) -> None:
     expected_commit = source_commit.strip().lower()
     if provenance.source_commit != expected_commit:
@@ -130,4 +155,11 @@ def validate_core_pins(
         fail(
             "libbox provenance release_tag does not match the pinned core "
             f"version: {provenance.release_tag} != {expected_release_tag}"
+        )
+    expected_etonify_version = etonify_version.strip()
+    if provenance.etonify_version != expected_etonify_version:
+        fail(
+            "libbox provenance etonify_version does not match the pinned "
+            "Etonify provenance version: "
+            f"{provenance.etonify_version} != {expected_etonify_version}"
         )

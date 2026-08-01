@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:meow_client/data/local/app_settings_store.dart';
@@ -7,6 +8,7 @@ import 'package:meow_client/data/subscription/subscription_parser.dart';
 import 'package:meow_client/data/subscription/subscription_store.dart';
 import 'package:meow_client/models/subscription.dart';
 import 'package:meow_client/singbox/extended_core_protocols.dart';
+import 'package:meow_client/singbox/libbox_capabilities.dart';
 import 'package:meow_client/singbox/singbox_config_builder.dart';
 
 void main() {
@@ -637,6 +639,408 @@ void main() {
     expect((plan.config['route'] as Map)['final'], 'select');
   });
 
+  test('detour helpers stay in runtime but outside the app selector', () {
+    final source = jsonEncode({
+      'outbounds': [
+        {
+          'type': 'shadowtls',
+          'tag': 'shadowtls-transport',
+          'server': 'transport.example',
+          'server_port': 443,
+          'version': 3,
+          'password': 'test-password',
+          'tls': {'enabled': true, 'server_name': 'front.example'},
+        },
+        {
+          'type': 'trojan',
+          'tag': 'trojan-over-shadowtls',
+          'server': 'proxy.example',
+          'server_port': 443,
+          'password': 'test-password',
+          'detour': 'shadowtls-transport',
+        },
+      ],
+      'route': {'final': 'trojan-over-shadowtls'},
+    });
+
+    final subscription = _subscriptionFromContent(source);
+    expect(subscription.outbounds, hasLength(2));
+    expect(subscription.outbounds.first.config['_group_only'], isTrue);
+
+    final plan = _defaultBuilder(subscription).buildPlan();
+
+    expect(plan.visibleProxyOutboundCount, 1);
+    final outbounds = (plan.config['outbounds'] as List).cast<Map>();
+    expect(
+      outbounds.map((entry) => entry['tag']),
+      containsAll(<String>[
+        'shadowtls-transport',
+        'trojan-over-shadowtls',
+        'select',
+      ]),
+    );
+    final selector = outbounds.singleWhere((entry) => entry['tag'] == 'select');
+    expect(selector['outbounds'], ['trojan-over-shadowtls']);
+    expect(selector['default'], 'trojan-over-shadowtls');
+  });
+
+  test(
+    'HydraBox builder consumes native config and selects explicit profiles only',
+    () {
+      final sourceDocument = _hydraboxBuilderDocument();
+      final subscription = _hydraboxSubscriptionFromContent(
+        jsonEncode(sourceDocument),
+      );
+
+      expect(subscription.profiles, hasLength(1));
+      expect(subscription.selectedProfileId, 'profile-main');
+      expect(subscription.selectedProxyTag, 'profile-out');
+
+      final plan = _defaultBuilder(
+        subscription,
+        capabilities: _hydraboxTestCapabilities(),
+      ).buildPlan();
+      expect(plan.hasRawCoreConfig, isTrue);
+      expect(plan.visibleProxyOutboundCount, 1);
+
+      final outbounds = (plan.config['outbounds'] as List).cast<Map>();
+      expect(
+        outbounds.map((entry) => entry['tag']),
+        containsAll(<String>['profile-out', 'helper-out', 'select']),
+      );
+      final selector = outbounds.singleWhere(
+        (entry) => entry['tag'] == 'select',
+      );
+      expect(selector['outbounds'], ['profile-out']);
+      expect(selector['default'], 'profile-out');
+
+      final profile = outbounds.singleWhere(
+        (entry) => entry['tag'] == 'profile-out',
+      );
+      final sourceRuntime = sourceDocument['runtime'] as Map<String, dynamic>;
+      final sourceNative = sourceRuntime['document'] as Map<String, dynamic>;
+      final sourceOutbounds = (sourceNative['outbounds'] as List)
+          .cast<Map<String, dynamic>>();
+      expect(profile, sourceOutbounds.first);
+      expect(profile['future_protocol_field'], {'kept': true});
+      expect(profile.containsKey('_hydrabox_profile_id'), isFalse);
+      expect(profile.containsKey('_group_only'), isFalse);
+      expect(profile.containsKey('_etonify_original_tag'), isFalse);
+
+      final helper = outbounds.singleWhere(
+        (entry) => entry['tag'] == 'helper-out',
+      );
+      expect(helper['type'], 'shadowtls');
+      expect(helper, sourceOutbounds[1]);
+      expect(helper.containsKey('_group_only'), isFalse);
+      expect((selector['outbounds'] as List), isNot(contains('helper-out')));
+
+      final endpoints = (plan.config['endpoints'] as List).cast<Map>();
+      final wireGuard = endpoints.singleWhere(
+        (entry) => entry['tag'] == 'wg-helper',
+      );
+      final sourceEndpoints = (sourceNative['endpoints'] as List)
+          .cast<Map<String, dynamic>>();
+      expect(wireGuard, sourceEndpoints.single);
+      expect(wireGuard['reserved'], [0, 0, 0]);
+      expect((wireGuard['peers'] as List).single['reserved'], [0, 0, 0]);
+      expect(wireGuard['amnezia'], {
+        'jc': 120,
+        'jmin': 23,
+        'jmax': 911,
+        's1': 1,
+        's2': 2,
+        's3': 3,
+        's4': 4,
+        'h1': 1,
+        'h2': 2,
+        'h3': 3,
+        'h4': 4,
+      });
+    },
+  );
+
+  test(
+    'HydraBox activation requires a trusted versioned HydraCore contract',
+    () {
+      final subscription = _hydraboxSubscriptionFromContent(
+        jsonEncode(_hydraboxBuilderDocument()),
+      );
+
+      expect(() => _defaultBuilder(subscription).buildPlan(), throwsStateError);
+    },
+  );
+
+  test('HydraBox activation rechecks stored subscription expiry', () {
+    final now = DateTime.now().toUtc();
+    final source = _hydraboxBuilderDocument()
+      ..['issued_at'] = now.subtract(const Duration(hours: 2)).toIso8601String()
+      ..['expires_at'] = now
+          .subtract(const Duration(minutes: 10))
+          .toIso8601String();
+    final subscription = _hydraboxSubscriptionFromContent(jsonEncode(source));
+
+    expect(
+      () => _defaultBuilder(
+        subscription,
+        capabilities: _hydraboxTestCapabilities(),
+      ).buildPlan(),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.toString(),
+          'message',
+          contains('expired'),
+        ),
+      ),
+    );
+  });
+
+  test('remote policy v1 cannot be widened by an advertised future type', () {
+    final source = _hydraboxBuilderDocument();
+    final runtime = source['runtime'] as Map<String, dynamic>;
+    final native = runtime['document'] as Map<String, dynamic>;
+    (native['outbounds'] as List<dynamic>).add({
+      'type': 'future-leaf-protocol',
+      'tag': 'future-helper',
+      'server': 'future.example',
+      'future_option': {'kept': true},
+    });
+    final subscription = _hydraboxSubscriptionFromContent(jsonEncode(source));
+
+    expect(
+      () => _defaultBuilder(
+        subscription,
+        capabilities: _hydraboxTestCapabilities(),
+      ).buildPlan(),
+      throwsStateError,
+    );
+
+    expect(
+      () => _defaultBuilder(
+        subscription,
+        capabilities: _hydraboxTestCapabilities(
+          extraOutboundTypes: const {'future-leaf-protocol'},
+        ),
+      ).buildPlan(),
+      throwsStateError,
+    );
+  });
+
+  test('remote policy v1 cannot re-enable recursive executable sources', () {
+    final composite = _hydraboxBuilderDocument();
+    final compositeRuntime = composite['runtime'] as Map<String, dynamic>;
+    final compositeNative =
+        compositeRuntime['document'] as Map<String, dynamic>;
+    (compositeNative['outbounds'] as List<dynamic>).add({
+      'type': 'bond',
+      'tag': 'recursive-bond',
+      'outbounds': [
+        {
+          'outbound': {'type': 'tor', 'tag': 'nested-tor'},
+          'download_ratio': 1,
+          'upload_ratio': 1,
+          'count': 1,
+        },
+      ],
+    });
+    final compositeSubscription = _hydraboxSubscriptionFromContent(
+      jsonEncode(composite),
+    );
+    expect(
+      () => _defaultBuilder(
+        compositeSubscription,
+        capabilities: _hydraboxTestCapabilities(
+          extraOutboundTypes: const {'bond', 'tor'},
+        ),
+      ).buildPlan(),
+      throwsStateError,
+    );
+
+    final provider = _hydraboxBuilderDocument();
+    final providerRuntime = provider['runtime'] as Map<String, dynamic>;
+    final providerNative = providerRuntime['document'] as Map<String, dynamic>;
+    providerNative['providers'] = [
+      {
+        'type': 'inline',
+        'tag': 'recursive-provider',
+        'outbounds': [
+          {'type': 'tor', 'tag': 'provider-tor'},
+        ],
+      },
+    ];
+    final providerSubscription = _hydraboxSubscriptionFromContent(
+      jsonEncode(provider),
+    );
+    expect(
+      () => _defaultBuilder(
+        providerSubscription,
+        capabilities: _hydraboxTestCapabilities(
+          extraTopLevelFields: const {'providers'},
+          extraOutboundTypes: const {'tor'},
+          extraProviderTypes: const {'inline'},
+        ),
+      ).buildPlan(),
+      throwsStateError,
+    );
+  });
+
+  test('builder revalidates local authority in hydrated HydraBox payloads', () {
+    final original = _hydraboxSubscriptionFromContent(
+      jsonEncode(_hydraboxBuilderDocument()),
+    );
+    for (final mutate in <void Function(Map<String, dynamic>)>[
+      (native) =>
+          ((native['outbounds'] as List<dynamic>).first
+                  as Map<String, dynamic>)['private_key_path'] =
+              '/data/local/tmp/provider-key',
+      (native) => native['log'] = {'output': '/data/local/tmp/provider.log'},
+    ]) {
+      final native =
+          jsonDecode(jsonEncode(original.nativeConfig)) as Map<String, dynamic>;
+      mutate(native);
+      expect(
+        () => _defaultBuilder(
+          original.copyWith(nativeConfig: native),
+          capabilities: _hydraboxTestCapabilities(),
+        ).buildPlan(),
+        throwsStateError,
+      );
+    }
+  });
+
+  test('remote policy v1 bounds WireGuard and Amnezia resource knobs', () {
+    final mutations = <void Function(Map<String, dynamic>)>[
+      (endpoint) => endpoint['workers'] = -1,
+      (endpoint) => endpoint['workers'] = 65,
+      (endpoint) => endpoint['preallocated_buffers_per_pool'] = 4097,
+      (endpoint) => (endpoint['amnezia'] as Map<String, dynamic>)['jc'] = 129,
+      (endpoint) {
+        final amnezia = endpoint['amnezia'] as Map<String, dynamic>;
+        amnezia['jmin'] = 912;
+        amnezia['jmax'] = 911;
+      },
+      (endpoint) {
+        final amnezia = endpoint['amnezia'] as Map<String, dynamic>;
+        amnezia['jc'] = 128;
+        amnezia['jmax'] = 32769;
+      },
+      (endpoint) => (endpoint['amnezia'] as Map<String, dynamic>)['s4'] = 65536,
+    ];
+
+    for (final mutate in mutations) {
+      final source = _hydraboxBuilderDocument();
+      final runtime = source['runtime'] as Map<String, dynamic>;
+      final native = runtime['document'] as Map<String, dynamic>;
+      final endpoint =
+          (native['endpoints'] as List<dynamic>).single as Map<String, dynamic>;
+      mutate(endpoint);
+      final subscription = _hydraboxSubscriptionFromContent(jsonEncode(source));
+
+      expect(
+        () => _defaultBuilder(
+          subscription,
+          capabilities: _hydraboxTestCapabilities(),
+        ).buildPlan(),
+        throwsStateError,
+      );
+    }
+  });
+
+  test('remote policy v1 closes references and rejects detour cycles', () {
+    for (final mutation in <void Function(List<dynamic>)>[
+      (outbounds) =>
+          (outbounds.first as Map<String, dynamic>)['detour'] = 'direct',
+      (outbounds) =>
+          (outbounds.last as Map<String, dynamic>)['detour'] = 'profile-out',
+    ]) {
+      final source = _hydraboxBuilderDocument();
+      final runtime = source['runtime'] as Map<String, dynamic>;
+      final native = runtime['document'] as Map<String, dynamic>;
+      mutation(native['outbounds'] as List<dynamic>);
+      final subscription = _hydraboxSubscriptionFromContent(jsonEncode(source));
+      expect(
+        () => _defaultBuilder(
+          subscription,
+          capabilities: _hydraboxTestCapabilities(),
+        ).buildPlan(),
+        throwsStateError,
+      );
+    }
+  });
+
+  test('HydraBox builder refuses tag remapping for persisted opaque data', () {
+    final subscription = _hydraboxSubscriptionFromContent(
+      jsonEncode(_hydraboxBuilderDocument()),
+    );
+    final tamperedOutbounds = subscription.outbounds
+        .map(
+          (outbound) => outbound.tag == 'profile-out'
+              ? outbound.copyWith(tag: 'renamed-profile-out')
+              : outbound,
+        )
+        .toList(growable: false);
+
+    expect(
+      () => _defaultBuilder(
+        subscription.copyWith(outbounds: tamperedOutbounds),
+        capabilities: _hydraboxTestCapabilities(),
+      ).buildPlan(),
+      throwsStateError,
+    );
+  });
+
+  test(
+    'HydraBox future-only zero-profile document is retained but not activated',
+    () {
+      final source = _hydraboxBuilderDocument()
+        ..remove('default_profile_id')
+        ..['profiles'] = <dynamic>[];
+      final runtime = source['runtime'] as Map<String, dynamic>;
+      runtime['document'] = {
+        'future_safe_section': {
+          'opaque': {'version': 7, 'outbound': 'not-a-reference-to-rewrite'},
+        },
+      };
+
+      final subscription = _hydraboxSubscriptionFromContent(jsonEncode(source));
+      expect(subscription.outbounds, isEmpty);
+      expect(subscription.profiles, isEmpty);
+
+      expect(subscription.nativeConfig?['future_safe_section'], {
+        'opaque': {'version': 7, 'outbound': 'not-a-reference-to-rewrite'},
+      });
+      expect(
+        () => _defaultBuilder(
+          subscription,
+          capabilities: _hydraboxTestCapabilities(),
+        ).buildPlan(),
+        throwsStateError,
+      );
+    },
+  );
+
+  test('checked-in HydraBox example matches the exact policy-v1 manifest', () {
+    final source = File(
+      'docs/examples/hydrabox-subscription-v1.json',
+    ).readAsStringSync();
+    final subscription = _hydraboxSubscriptionFromContent(source);
+    final native = subscription.nativeConfig!;
+    const safeTopLevel = <String>{r'$schema', 'outbounds', 'endpoints'};
+    expect(native.keys.every(safeTopLevel.contains), isTrue);
+    expect(
+      (native['outbounds'] as List<dynamic>)
+          .map((entry) => (entry as Map)['type'])
+          .toSet(),
+      everyElement(isIn(_hydraPolicyV1OutboundTypes)),
+    );
+
+    final plan = _defaultBuilder(
+      subscription,
+      capabilities: _hydraboxTestCapabilities(),
+    ).buildPlan();
+    expect(plan.hasRawCoreConfig, isTrue);
+  });
+
   test('endpoint-only configs stay selectable and never become outbounds', () {
     final rawEndpoints = <Map<String, dynamic>>[
       {
@@ -1187,7 +1591,145 @@ Subscription _subscriptionFromContent(String source) {
   );
 }
 
-SingboxConfigBuilder _defaultBuilder(Subscription subscription) {
+Subscription _hydraboxSubscriptionFromContent(String source) {
+  final parsed = SubscriptionParser.parse(source);
+  final payload = SubscriptionStore.buildSubscriptionPayloadForTest(parsed);
+  final outbounds = payload.outbounds
+      .map(Outbound.fromMap)
+      .toList(growable: false);
+  final profiles = parsed.profiles
+      .map((profile) {
+        final outbound = outbounds.singleWhere((candidate) {
+          final sourceSection =
+              candidate.config['_etonify_source_index_section']?.toString() ??
+              candidate.config['_etonify_source_section']?.toString() ??
+              '';
+          final sourceTag =
+              candidate.config['_etonify_original_tag']?.toString() ?? '';
+          return sourceSection == profile.entrypointSection &&
+              sourceTag == profile.entrypointTag;
+        });
+        return SubscriptionProfile(
+          id: profile.id,
+          name: profile.name,
+          entrypointSection: profile.entrypointSection,
+          entrypointTag: profile.entrypointTag,
+          runtimeTag: outbound.tag,
+          enabled: profile.enabled,
+          country: profile.country,
+          metadata: profile.metadata,
+        );
+      })
+      .toList(growable: false);
+  SubscriptionProfile? selected;
+  for (final profile in profiles) {
+    if (profile.id == parsed.defaultProfileId) {
+      selected = profile;
+      break;
+    }
+  }
+  return Subscription(
+    id: 'hydrabox-builder',
+    name: 'HydraBox builder',
+    url: 'https://provider.example/subscription',
+    selectedProxyTag: selected?.runtimeTag ?? '',
+    selectedProfileId: selected?.id ?? '',
+    rawContent: source,
+    outbounds: outbounds,
+    profiles: profiles,
+    nativeConfig: parsed.nativeConfig,
+    sourceMetadata: parsed.sourceMetadata,
+  );
+}
+
+Map<String, dynamic> _hydraboxBuilderDocument() => {
+  'api_version': 'hydrabox.io/subscription/v1',
+  'kind': 'SubscriptionData',
+  'issuer': 'https://provider.example',
+  'subscription_id': 'builder-main',
+  'channel': 'stable',
+  'sequence': 11,
+  'issued_at': '2026-07-30T18:00:00Z',
+  'default_profile_id': 'profile-main',
+  'runtime': {
+    'format': 'sing-box-json',
+    'ownership': {
+      'inbounds': 'client',
+      'route_final': 'selected-profile',
+      'dns': 'merge-safe',
+      'route_rules': 'merge-safe',
+      'log': 'client-overlay',
+      'global': 'client-overlay',
+    },
+    'document': {
+      'outbounds': [
+        {
+          'type': 'trojan',
+          'tag': 'profile-out',
+          'server': 'proxy.example',
+          'server_port': 443,
+          'password': 'secret',
+          'detour': 'helper-out',
+          'future_protocol_field': {'kept': true},
+        },
+        {
+          'type': 'shadowtls',
+          'tag': 'helper-out',
+          'server': 'transport.example',
+          'server_port': 443,
+          'version': 3,
+          'password': 'secret',
+        },
+      ],
+      'endpoints': [
+        {
+          'type': 'wireguard',
+          'tag': 'wg-helper',
+          'address': ['10.0.0.2/32'],
+          'private_key': 'opaque-private-key',
+          'reserved': [0, 0, 0],
+          'amnezia': {
+            'jc': 120,
+            'jmin': 23,
+            'jmax': 911,
+            's1': 1,
+            's2': 2,
+            's3': 3,
+            's4': 4,
+            'h1': 1,
+            'h2': 2,
+            'h3': 3,
+            'h4': 4,
+          },
+          'peers': [
+            {
+              'address': '192.0.2.1',
+              'port': 51820,
+              'public_key': 'opaque-public-key',
+              'allowed_ips': ['0.0.0.0/0', '::/0'],
+              'reserved': [0, 0, 0],
+            },
+          ],
+        },
+      ],
+    },
+  },
+  'profiles': [
+    {
+      'id': 'profile-main',
+      'name': {'default': 'Main profile'},
+      'entrypoint': {'section': 'outbounds', 'tag': 'profile-out'},
+      'enabled': true,
+    },
+  ],
+  'required_extensions': <dynamic>[],
+  'extensions': <String, dynamic>{},
+};
+
+SingboxConfigBuilder _defaultBuilder(
+  Subscription subscription, {
+  LibboxCapabilities capabilities = LibboxCapabilities.bundledLegacy,
+}) {
   return SingboxConfigBuilder(
     activeSubscription: subscription,
     selectedProxyTag: '',
@@ -1219,5 +1761,60 @@ SingboxConfigBuilder _defaultBuilder(Subscription subscription) {
     interruptExistingConnections: true,
     urlTestStrictTolerance: true,
     markAllServersRussia: false,
+    capabilities: capabilities,
   );
 }
+
+LibboxCapabilities _hydraboxTestCapabilities({
+  int remotePolicyVersion = 1,
+  Set<String> extraTopLevelFields = const <String>{},
+  Set<String> extraOutboundTypes = const <String>{},
+  Set<String> extraEndpointTypes = const <String>{},
+  Set<String> extraProviderTypes = const <String>{},
+}) {
+  return LibboxCapabilities.parseOrLegacy(
+    jsonEncode({
+      'api_version': 1,
+      'core_id': LibboxCapabilities.hydraCoreId,
+      'core_name': 'HydraCore test double',
+      'core_version': 'test',
+      'upstream_project': 'etonify-core',
+      'supports_config_check': true,
+      'remote_policy_version': remotePolicyVersion,
+      'remote_safe_top_level_fields': <String>{
+        r'$schema',
+        'outbounds',
+        'endpoints',
+        ...extraTopLevelFields,
+      }.toList(),
+      'remote_safe_outbound_types': <String>{
+        ..._hydraPolicyV1OutboundTypes,
+        ...extraOutboundTypes,
+      }.toList(),
+      'remote_safe_endpoint_types': <String>{
+        'wireguard',
+        ...extraEndpointTypes,
+      }.toList(),
+      'remote_safe_dns_server_types': const <String>[],
+      'remote_safe_provider_types': extraProviderTypes.toList(),
+    }),
+  );
+}
+
+const Set<String> _hydraPolicyV1OutboundTypes = {
+  'socks',
+  'http',
+  'vmess',
+  'trojan',
+  'naive',
+  'shadowtls',
+  'vless',
+  'mieru',
+  'anytls',
+  'trusttunnel',
+  'hysteria',
+  'hysteria2',
+  'tuic',
+  'sudoku',
+  'snell',
+};

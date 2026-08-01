@@ -17,7 +17,7 @@
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
 
     <application
-        android:label="Etonify"
+        android:label="HydraBox"
         android:name=".MeowApplication"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -52,6 +52,7 @@
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="hydrabox" android:host="import"/>
                 <data android:scheme="etonify" android:host="import"/>
                 <data android:scheme="meowvpn" android:host="import"/>
             </intent-filter>
@@ -71,7 +72,7 @@
         <activity-alias
             android:name=".QuickSettingsPreferencesActivity"
             android:exported="true"
-            android:label="Etonify"
+            android:label="HydraBox"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
             android:targetActivity=".MainActivity">
             <intent-filter>
@@ -122,7 +123,7 @@
             android:name=".MeowQuickSettingsTileService"
             android:exported="true"
             android:icon="@drawable/ic_meow_status"
-            android:label="Etonify"
+            android:label="HydraBox"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE" />

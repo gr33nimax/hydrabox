@@ -110,7 +110,9 @@ class DeepLinkImportRequest {
     if (normalizedScheme == 'sing-box') {
       return DeepLinkImportSource.singBoxRemoteProfile;
     }
-    if (normalizedScheme == 'etonify' || normalizedScheme == 'meowvpn') {
+    if (normalizedScheme == 'hydrabox' ||
+        normalizedScheme == 'etonify' ||
+        normalizedScheme == 'meowvpn') {
       return DeepLinkImportSource.etonifyImport;
     }
     return DeepLinkImportSource.unknown;

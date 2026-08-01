@@ -1,34 +1,50 @@
-# Etonify
+# HydraBox
 
 <div align="center">
 
 [English](README.md) / [Русский](README_ru.md) / [Українська](README_uk.md) / [简体中文](README_cn.md) / [فارسی](README_fa.md)
 
-<img width="1672" height="941" alt="etonify" src="https://github.com/user-attachments/assets/c5a9780c-6b26-45e1-9458-42c23e204dde" />
+<img width="1672" height="941" alt="HydraBox interface, inherited from the Etonify project" src="https://github.com/user-attachments/assets/c5a9780c-6b26-45e1-9458-42c23e204dde" />
 
 [![Android](https://img.shields.io/badge/platform-Android-3DDC84?style=flat-square&logo=android)](#)
 [![Flutter](https://img.shields.io/badge/built%20with-Flutter-02569B?style=flat-square&logo=flutter)](#)
 [![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue?style=flat-square)](LICENSE)
-[![Telegram](https://img.shields.io/badge/Telegram-@etonify-26A5E4?style=flat-square&logo=telegram)](https://t.me/etonify)
 
 **Android-first open-source VPN client built around a modified sing-box core.**
 
 </div>
 
-Etonify is an Android-focused VPN client for people who need a transparent, maintainable, and community-driven alternative to legacy VPN clients. Its Android runtime, subscription handling, UI, diagnostics, and maintenance flow are developed around Etonify and the [extended sing-box core](docs/EXTENDED_CORE.md). Complete sing-box JSON documents are passed through losslessly, so protocols and fields added by the core do not require a matching Flutter release.
+> [!IMPORTANT]
+> HydraBox is an independent, unofficial derivative of
+> [Etonify](https://github.com/yamixdev/Etonify). It does not claim upstream
+> authorship or ownership and is not affiliated with or endorsed by Etonify or
+> MeowTeam. Exact baselines and retained compatibility identifiers are listed
+> in [UPSTREAM.md](UPSTREAM.md).
+
+HydraBox is an Android-focused VPN client built around
+[HydraCore](docs/HYDRACORE.md), an extended sing-box runtime based on
+`etonify-core`. Complete native sing-box JSON documents are preserved
+losslessly, so protocols and fields added by HydraCore do not require a
+matching Flutter envelope schema.
 
 The app does not provide VPN servers. It is a client for subscriptions and configurations that you own or are allowed to use.
 
 ## Status
 
-Etonify is in early public development. Android is the only production target right now. Other Flutter platform folders may exist in the repository, but they are not release targets yet.
+HydraBox is in early public development. Android is the only production target
+right now. Other Flutter platform folders may exist in the repository, but
+they are not release targets yet.
 
 ## Features
 
-- Android VPN TUN mode powered by the extended `etonify-core` integration.
+- Android VPN TUN mode powered by HydraCore.
+- Versioned HydraBox Subscription v1 with explicit profiles, an opaque native
+  runtime document, lossless future-protocol fields, and JWE A256GCM transport.
 - Local mixed proxy inbound for apps or devices that use HTTP/SOCKS manually.
 - Subscription import from URL, QR code, local file, clipboard, and deep links.
-- Deep link handlers for `etonify://`, `happ://add`, `happ://crypt*`, and `sing-box://import-remote-profile`.
+- Deep link handlers for `hydrabox://`, the legacy `etonify://` and
+  `meowvpn://` aliases, `happ://add`, `happ://crypt*`, and
+  `sing-box://import-remote-profile`.
 - Happ link decryptor for `crypt`, `crypt2`, `crypt3`, `crypt4`, and `crypt5` links.
 - Happ subscription import with explicit HWID consent when a provider requires it.
 - Subscription refresh, reparse, usage display, expiration display, and safe handling of invalid refresh results.
@@ -37,15 +53,24 @@ Etonify is in early public development. Android is the only production target ri
 - DNS presets and custom DNS resolver support, including UDP, TCP, DoT, DoH, and device DNS modes.
 - Smart Routing rule sets and a locally compiled AdGuard DNS filter.
 - Traffic dashboard with live speed, session totals, active profile, active proxy, and a lightweight graph.
-- GitHub release update center with ABI-aware APK selection and download progress.
+- Optional GitHub release update center with ABI-aware APK selection and
+  download progress; it stays disabled until a HydraBox release source is
+  configured by the distributor.
 - Runtime logs, diagnostics, memory cleanup hooks, and redaction for known sensitive values.
 - RU/EN app localization, with more user-facing translations planned.
 
-## Community
+## Upstream and community
 
-- Telegram channel: [@etonify](https://t.me/etonify)
-- Direct contact with the developers: [Etonify Direct](https://t.me/etonify?direct)
-- MeowTeam: YamixDEV works on the Android client, releases, and [etonify-core](https://github.com/yamixdev/etonify-core/tree/etonify-dev); [dudosxdev](https://github.com/dudosxdev) contributes networking and protocol expertise.
+- Original Etonify project:
+  [`yamixdev/Etonify`](https://github.com/yamixdev/Etonify).
+- Etonify's Telegram and developer contact:
+  [@etonify](https://t.me/etonify) and
+  [Etonify Direct](https://t.me/etonify?direct).
+- Etonify/MeowTeam attribution: YamixDEV works on the original Android client,
+  releases, and
+  [etonify-core](https://github.com/yamixdev/etonify-core/tree/etonify-dev);
+  [dudosxdev](https://github.com/dudosxdev) contributes networking and protocol
+  expertise.
 - Issues and pull requests are welcome.
 - Security reports are welcome. Please avoid publishing exploitable details publicly before the team has time to investigate.
 
@@ -80,15 +105,27 @@ For public distribution, create a real release keystore and `android/key.propert
 ## Notes
 
 - Production focus is Android.
-- This fork hydrates `libbox.aar` from the pinned
+- HydraCore currently hydrates the compatibility artifact `libbox.aar` from
+  the pinned
   [`gr33nimax/etonify-core`](https://github.com/gr33nimax/etonify-core/tree/extended-integration)
   prerelease. Its source commit, release URL, SHA-256 and build provenance are
   documented under `android/app/libs` and verified before every Android build.
+- Historical identifiers such as `com.etonify.meow_client`, `meow_client`,
+  `etonify://`, and the `etonify-core` submodule path are intentionally retained
+  for Keystore, storage, channel, deep-link, and authorized migration
+  compatibility. The Android ID alone does not permit a differently signed APK
+  to replace Etonify. See [UPSTREAM.md](UPSTREAM.md).
 - Generated l10n files under `lib/l10n/generated` are part of the source tree because the app imports them directly.
 - `third_party/flutter_circle_flags` is required by `pubspec.yaml` as a local path dependency.
 - Third-party attribution notes are tracked in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-- Official release builds can include private Happ crypto compatibility assets restored from GitHub Actions secrets. These assets are not part of the public source tree.
+- An inherited encrypted Happ compatibility archive may be present. Do not
+  restore or ship its contents until redistribution rights have been verified;
+  see [NOTICE.md](NOTICE.md).
 
 ## License
 
-Etonify is licensed under the [GNU General Public License v3.0 or later](LICENSE). See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for bundled and adapted components.
+HydraBox and the inherited Etonify work are distributed under the
+[GNU General Public License v3.0 or later](LICENSE). See
+[NOTICE.md](NOTICE.md), [UPSTREAM.md](UPSTREAM.md), and
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for provenance and component
+attributions.

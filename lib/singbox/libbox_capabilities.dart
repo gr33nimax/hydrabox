@@ -6,7 +6,10 @@ enum UrlTestCompletionModel { rpcCompletion, groupEvents }
 class LibboxCapabilities {
   const LibboxCapabilities({
     required this.apiVersion,
+    this.coreId = '',
+    this.coreName = '',
     required this.coreVersion,
+    this.upstreamProject = '',
     required this.supportsTargetedUrlTest,
     required this.supportsGroupUrlTestSessions,
     required this.supportsStructuredProbeErrors,
@@ -24,7 +27,17 @@ class LibboxCapabilities {
     required this.supportsCloseConnections,
     required this.supportsRealitySpiderX,
     required this.tunStacks,
+    this.remotePolicyVersion = 0,
+    this.remoteSafeTopLevelFields = const <String>{},
+    this.remoteSafeOutboundTypes = const <String>{},
+    this.remoteSafeEndpointTypes = const <String>{},
+    this.remoteSafeDnsServerTypes = const <String>{},
+    this.remoteSafeProviderTypes = const <String>{},
   });
+
+  static const hydraCoreId = 'io.hydrabox.hydracore';
+  static const supportedApiVersion = 1;
+  static const supportedRemotePolicyVersion = 1;
 
   static const bundledLegacy = LibboxCapabilities(
     apiVersion: 0,
@@ -47,9 +60,13 @@ class LibboxCapabilities {
     // The unversioned libbox bundled with Etonify 0.2.1 accepted spider_x.
     supportsRealitySpiderX: true,
     tunStacks: <String>{'system', 'gvisor', 'mixed'},
+    // An unavailable/malformed capability handshake is not a trusted remote
+    // execution contract. Legacy local configurations still use these feature
+    // defaults, while HydraBox activation fails closed until the exact installed
+    // HydraCore publishes a versioned policy and config validator.
   );
 
-  /// Parses the versioned contract exposed by Etonify's libbox build.
+  /// Parses the versioned HydraCore contract (and its legacy Etonify alias).
   ///
   /// Every optional capability fails closed. An absent bridge, malformed JSON,
   /// or an unversioned document preserves the behavior of the bundled legacy
@@ -72,7 +89,10 @@ class LibboxCapabilities {
       };
       return LibboxCapabilities(
         apiVersion: apiVersion,
+        coreId: _readString(json, 'core_id'),
+        coreName: _readString(json, 'core_name'),
         coreVersion: _readString(json, 'core_version'),
+        upstreamProject: _readString(json, 'upstream_project'),
         supportsTargetedUrlTest: _readBool(json, 'supports_targeted_url_test'),
         supportsGroupUrlTestSessions: _readBool(
           json,
@@ -111,6 +131,27 @@ class LibboxCapabilities {
         supportsCloseConnections: _readBool(json, 'supports_close_connections'),
         supportsRealitySpiderX: _readBool(json, 'supports_reality_spider_x'),
         tunStacks: _readStringSet(json, 'tun_stacks'),
+        remotePolicyVersion: _readInt(json, 'remote_policy_version'),
+        remoteSafeTopLevelFields: _readStringSet(
+          json,
+          'remote_safe_top_level_fields',
+        ),
+        remoteSafeOutboundTypes: _readStringSet(
+          json,
+          'remote_safe_outbound_types',
+        ),
+        remoteSafeEndpointTypes: _readStringSet(
+          json,
+          'remote_safe_endpoint_types',
+        ),
+        remoteSafeDnsServerTypes: _readStringSet(
+          json,
+          'remote_safe_dns_server_types',
+        ),
+        remoteSafeProviderTypes: _readStringSet(
+          json,
+          'remote_safe_provider_types',
+        ),
       );
     } on FormatException {
       return bundledLegacy;
@@ -124,7 +165,7 @@ class LibboxCapabilities {
 
   static int _readInt(Map<String, Object?> json, String key) {
     final value = json[key];
-    return value is num ? value.toInt() : 0;
+    return value is int ? value : 0;
   }
 
   static String _readString(Map<String, Object?> json, String key) {
@@ -144,7 +185,10 @@ class LibboxCapabilities {
   }
 
   final int apiVersion;
+  final String coreId;
+  final String coreName;
   final String coreVersion;
+  final String upstreamProject;
   final bool supportsTargetedUrlTest;
   final bool supportsGroupUrlTestSessions;
   final bool supportsStructuredProbeErrors;
@@ -162,9 +206,20 @@ class LibboxCapabilities {
   final bool supportsCloseConnections;
   final bool supportsRealitySpiderX;
   final Set<String> tunStacks;
+  final int remotePolicyVersion;
+  final Set<String> remoteSafeTopLevelFields;
+  final Set<String> remoteSafeOutboundTypes;
+  final Set<String> remoteSafeEndpointTypes;
+  final Set<String> remoteSafeDnsServerTypes;
+  final Set<String> remoteSafeProviderTypes;
 
-  bool get hasVersionedContract => apiVersion > 0;
+  bool get hasVersionedContract => apiVersion == supportedApiVersion;
 
   bool supportsTunStack(String value) =>
       tunStacks.contains(value.trim().toLowerCase());
+
+  bool get hasRemoteSafetyManifest =>
+      hasVersionedContract &&
+      remotePolicyVersion == supportedRemotePolicyVersion &&
+      remoteSafeTopLevelFields.isNotEmpty;
 }

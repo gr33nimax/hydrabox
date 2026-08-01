@@ -1,4 +1,4 @@
-name: Etonify · Test APK
+name: HydraBox · Test APK
 
 on:
   workflow_dispatch:
@@ -80,7 +80,7 @@ jobs:
           mkdir -p build/test-apks
           flutter build apk --release
           cp build/app/outputs/flutter-apk/app-release.apk \
-            "build/test-apks/etonify-v${version}-TEST-DEBUG-SIGNED-NOT-FOR-RELEASE.apk"
+            "build/test-apks/hydrabox-v${version}-TEST-DEBUG-SIGNED-NOT-FOR-RELEASE.apk"
 
           sha256sum build/test-apks/*.apk > build/test-apks/SHA256SUMS.txt
           {
@@ -102,7 +102,7 @@ jobs:
       - name: Upload test APK artifact
         uses: actions/upload-artifact@v6.0.0
         with:
-          name: etonify-test-apks-${{ github.run_number }}
+          name: hydrabox-test-apks-${{ github.run_number }}
           path: build/test-apks/**
           if-no-files-found: error
           compression-level: 0

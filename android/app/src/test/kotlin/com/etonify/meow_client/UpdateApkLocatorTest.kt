@@ -10,7 +10,7 @@ class UpdateApkLocatorTest {
     fun `resolves an existing apk only from the private update directory`() {
         withFilesDirectory { filesDir ->
             val updates = filesDir.resolve("updates").apply { mkdirs() }
-            val apk = updates.resolve("etonify-arm64.apk").apply { writeText("apk") }
+            val apk = updates.resolve("hydrabox-arm64.apk").apply { writeText("apk") }
 
             assertEquals(
                 apk.canonicalFile,
@@ -50,8 +50,8 @@ class UpdateApkLocatorTest {
         withFilesDirectory { filesDir ->
             filesDir.resolve("updates").apply {
                 mkdirs()
-                resolve("etonify-arm64.apk").writeText("apk")
-                resolve("etonify-universal.apk").writeText("apk")
+                resolve("hydrabox-arm64.apk").writeText("apk")
+                resolve("hydrabox-universal.apk").writeText("apk")
             }
 
             assertThrows(IllegalArgumentException::class.java) {
@@ -61,7 +61,7 @@ class UpdateApkLocatorTest {
     }
 
     private fun withFilesDirectory(block: (java.io.File) -> Unit) {
-        val root = Files.createTempDirectory("etonify-update-apk-test").toFile()
+        val root = Files.createTempDirectory("hydrabox-update-apk-test").toFile()
         try {
             block(root.resolve("files").apply { mkdirs() })
         } finally {

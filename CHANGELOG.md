@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.3.0-beta.2] - 2026-07-31
+
+### HydraBox and HydraCore identity
+
+- Renamed public client and core surfaces to HydraBox and HydraCore while
+  retaining the Etonify, MeowTeam, sing-box-extended, and sing-box attribution,
+  source history, compatibility identifiers, and GPL/third-party notices.
+- Added machine-readable HydraCore capability and binary provenance fields
+  without replacing the inherited `libbox.aar` ABI or `etonify-core` source
+  path.
+
+### HydraBox Subscription v1
+
+- Added a versioned subscription envelope that separates user-visible profiles
+  from native sing-box outbounds and endpoints while preserving the native
+  runtime document losslessly for future protocol and field extensions.
+- Added strict JSON validation, stable subscription storage identifiers, media
+  type and downgrade protections, and authenticated JWE A256GCM transport with
+  keys supplied through a separate trusted channel.
+- Remote runtime activation now requires a matching versioned HydraCore
+  capability contract, native config validation, and an explicit remote-safety
+  manifest. Older cores fail closed instead of weakening the policy.
+
+### Release and maintenance
+
+- Added HydraBox-named Android release artifacts and updater metadata, with
+  update sources bound to the repository that produced the release build.
+- Strengthened libbox hydration, provenance validation, release workflow tests,
+  secret handling, diagnostics redaction, subscription imports, and Android VPN
+  lifecycle recovery.
+
 ## [0.2.5] - 2026-07-26
 
 ### VPN и работа в фоне

@@ -84,7 +84,7 @@ class MeowClient extends StatefulWidget {
 }
 
 class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
-  static const _fallbackClientVersionLabel = '0.3.0-beta.1';
+  static const _fallbackClientVersionLabel = '0.3.0-beta.2';
   static const _requiredLegalVersion = '0.2.1';
   static final RegExp _quickTileCountryCodePattern = RegExp(r'^[A-Z]{2}$');
   static const _lowestProxyTag = lowestProxyTag;
@@ -1612,7 +1612,9 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       return flag == null ? name : '$flag $name';
     }
     final profileName = _activeProfile?.name.trim();
-    return profileName == null || profileName.isEmpty ? 'Etonify' : profileName;
+    return profileName == null || profileName.isEmpty
+        ? 'HydraBox'
+        : profileName;
   }
 
   void _scheduleVpnNotificationSync() {
@@ -2056,7 +2058,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       }
       AppLogStore.warning(
         'subscription',
-        'Deep-link subscription import failed: ${error.runtimeType}: $error',
+        'Deep-link subscription import failed: ${error.runtimeType}',
       );
       _showAppSnackBar(_userFacingSubscriptionError(error, l10n));
     }
@@ -2159,6 +2161,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
       _currentLocalizations?.vpnStopFailed ?? 'Failed to stop VPN.';
 
   Future<void> _checkForClientUpdatesIfDue() async {
+    if (!AppUpdateService.updatesConfigured) return;
     await _refreshAppVersionInfo();
     await _cleanupInstalledUpdateArtifactsIfNeeded(showSnackBar: true);
     final result = await AppUpdateService.instance.checkForUpdates(
@@ -2424,6 +2427,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     final info = current.info ?? const SubscriptionInfo();
     await SubscriptionStore.save(
       current.copyWith(info: info.copyWith(requireHwid: true)),
+      allowCreate: false,
     );
     if (!mounted) {
       return;
@@ -2646,7 +2650,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   ) async {
     final controller = SubscriptionProfileImportController(
       loadExisting: SubscriptionStore.getAllMetadataInBackground,
-      save: SubscriptionStore.save,
+      save: SubscriptionStore.importFromBackup,
+      saveBatch: SubscriptionStore.importBackupBatch,
       onApplied: () => _reloadSubscriptions(
         preferredSubscriptionId: _activeProfileId,
         preferredProxyTag: _selectedProxyTag,
@@ -6896,7 +6901,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         trafficListenable: _trafficUiSnapshot,
         activeProfileRefreshing: _activeProfileRefreshInFlight,
         showActiveProfileRefreshAction: activeSubscription != null,
-        brandName: 'Etonify',
+        brandName: 'HydraBox',
         versionLabel: _clientVersionLabel,
       ),
       callbacks: HomePresentationCallbacks(
@@ -6996,7 +7001,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
           : WelcomePage(
               key: const ValueKey('welcome'),
               onContinue: _completeOnboarding,
-              brandName: 'Etonify',
+              brandName: 'HydraBox',
               versionLabel: _clientVersionLabel,
             ),
       visibleRows: _proxyPanelVisibleRows(),

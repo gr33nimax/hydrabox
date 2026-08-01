@@ -5,22 +5,24 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:meow_client/data/subscription/subscription_fetcher.dart';
 import 'package:meow_client/data/subscription/subscription_failure.dart';
 import 'package:meow_client/data/subscription/subscription_store.dart';
+import 'package:meow_client/logging/app_log_store.dart';
 import 'package:meow_client/models/subscription.dart';
 
 void main() {
   group('SubscriptionFetcher', () {
-    tearDown(
-      () => SubscriptionFetcher.configureAppVersion(
+    tearDown(() {
+      SubscriptionFetcher.configureAppVersion(
         SubscriptionFetcher.fallbackAppVersion,
-      ),
-    );
+      );
+      AppLogStore.clear();
+    });
 
     test('derives user agent from the installed app version', () {
       SubscriptionFetcher.configureAppVersion('v0.3.7');
-      expect(SubscriptionFetcher.defaultUserAgent, 'Etonify/0.3.7');
+      expect(SubscriptionFetcher.defaultUserAgent, 'HydraBox/0.3.7');
     });
 
-    test('uses current Etonify user agent by default', () async {
+    test('uses current HydraBox user agent by default', () async {
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       addTearDown(server.close);
 
@@ -39,6 +41,113 @@ void main() {
 
       expect(userAgent, SubscriptionFetcher.defaultUserAgent);
     });
+
+    test('rejects a malformed hbx-key policy before network access', () async {
+      await expectLater(
+        SubscriptionFetcher.fetch(
+          'https://provider.invalid/subscription#hbx-key=',
+        ),
+        throwsFormatException,
+      );
+    });
+
+    test('rejects hbx-key in query before network access', () async {
+      const key = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+      for (final url in [
+        'https://provider.invalid/subscription?hbx-key=$key',
+        'https://provider.invalid/subscription?hbx%2Dkey=$key#hbx-key=$key',
+      ]) {
+        await expectLater(
+          SubscriptionFetcher.fetch(url),
+          throwsFormatException,
+        );
+      }
+    });
+
+    test('rejects hbx-key introduced by a redirect query', () {
+      expect(
+        () => SubscriptionFetcher.validateRequestSecurityForTest(
+          Uri.parse('https://provider.example/sub?hbx%2Dkey=secret'),
+          const {'Accept': '*/*'},
+        ),
+        throwsA(isA<HttpException>()),
+      );
+    });
+
+    test('does not write subscription URL paths to logs', () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(server.close);
+      server.listen((request) async {
+        request.response.write(
+          'vless://uuid@server.com:443?type=tcp&security=tls#Node1',
+        );
+        await request.response.close();
+      });
+
+      const secretPath = 'customer-bearer-path-secret';
+      await SubscriptionFetcher.fetch(
+        'http://${server.address.host}:${server.port}/$secretPath',
+      );
+
+      expect(AppLogStore.dump(), isNot(contains(secretPath)));
+    });
+
+    test('malformed HydraBox source excerpts never reach logs', () async {
+      const sentinel = 'TOP-SECRET-PROVIDER-CREDENTIAL';
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(server.close);
+      server.listen((request) async {
+        request.response.headers.set(
+          HttpHeaders.contentTypeHeader,
+          'application/vnd.hydrabox.subscription+json',
+        );
+        request.response.write(
+          '{"password":"$sentinel",'
+          '"api_version":"hydrabox.io/subscription/v1",'
+          '"sequence":1,"sequence":2}',
+        );
+        await request.response.close();
+      });
+
+      await expectLater(
+        SubscriptionFetcher.fetch(
+          'http://${server.address.host}:${server.port}/subscription',
+        ),
+        throwsA(isA<FormatException>()),
+      );
+      expect(AppLogStore.dump(), isNot(contains(sentinel)));
+    });
+
+    test('malformed URLs never attach key-bearing input to errors', () {
+      const sentinel = 'TOP-SECRET-HBX-KEY';
+      Object? captured;
+
+      try {
+        SubscriptionFetcher.parseRequestUriForTest(
+          'https://[пример.рф/subscription#hbx-key=$sentinel',
+        );
+      } catch (error) {
+        captured = error;
+      }
+
+      expect(captured, isA<FormatException>());
+      expect((captured! as FormatException).source, isNull);
+      expect(captured.toString(), isNot(contains(sentinel)));
+    });
+
+    test(
+      'does not persist hbx-key sources without protected storage',
+      () async {
+        if (Platform.isAndroid) return;
+        const key = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+        await expectLater(
+          SubscriptionFetcher.fetch(
+            'https://provider.invalid/subscription#hbx-key=$key',
+          ),
+          throwsA(isA<UnsupportedError>()),
+        );
+      },
+    );
 
     test('rejects X-HWID over plain HTTP', () async {
       await expectLater(
@@ -76,6 +185,118 @@ void main() {
         throwsA(isA<HttpException>()),
       );
     });
+
+    test('rejects remote plain HTTP even without explicit credentials', () {
+      expect(
+        () => SubscriptionFetcher.validateRequestSecurityForTest(
+          Uri.parse('http://provider.example/subscription'),
+          const {'Accept': '*/*'},
+        ),
+        throwsA(isA<HttpException>()),
+      );
+    });
+
+    test('rejects HydraBox format over loopback HTTP', () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(server.close);
+      server.listen((request) async {
+        request.response.write(
+          jsonEncode({
+            'api_version': 'hydrabox.io/subscription/v1',
+            'kind': 'SubscriptionData',
+            'issuer': 'https://provider.example',
+            'subscription_id': 'https-required',
+            'sequence': 1,
+            'issued_at': '2026-07-31T10:00:00Z',
+            'runtime': {
+              'format': 'sing-box-json',
+              'document': {
+                'outbounds': [
+                  {'type': 'future-protocol', 'tag': 'main'},
+                ],
+              },
+            },
+            'profiles': [
+              {
+                'id': 'main',
+                'name': {'default': 'Main'},
+                'entrypoint': {'section': 'outbounds', 'tag': 'main'},
+              },
+            ],
+          }),
+        );
+        await request.response.close();
+      });
+
+      await expectLater(
+        SubscriptionFetcher.fetch(
+          'http://${server.address.host}:${server.port}/subscription',
+        ),
+        throwsA(isA<HttpException>()),
+      );
+    });
+
+    test(
+      'vendor HydraBox Content-Type rejects a legacy body on first import',
+      () async {
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        addTearDown(server.close);
+        server.listen((request) async {
+          request.response.headers.set(
+            HttpHeaders.contentTypeHeader,
+            'Application/Vnd.HydraBox.Subscription+Json; Charset=UTF-8',
+          );
+          request.response.write(
+            'vless://uuid@server.com:443?type=tcp&security=tls#Node1',
+          );
+          await request.response.close();
+        });
+
+        await expectLater(
+          SubscriptionFetcher.fetch(
+            'http://${server.address.host}:${server.port}/subscription',
+          ),
+          throwsA(
+            isA<FormatException>().having(
+              (error) => error.message,
+              'message',
+              contains('plaintext v1 JSON'),
+            ),
+          ),
+        );
+      },
+    );
+
+    test(
+      'JOSE Content-Type requires JWE and an hbx-key on first import',
+      () async {
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        addTearDown(server.close);
+        server.listen((request) async {
+          request.response.headers.set(
+            HttpHeaders.contentTypeHeader,
+            'APPLICATION/JOSE+JSON; charset=utf-8',
+          );
+          request.response.write(
+            'vless://uuid@server.com:443?type=tcp&security=tls#Node1',
+          );
+          await request.response.close();
+        });
+
+        await expectLater(
+          SubscriptionFetcher.fetch(
+            'http://${server.address.host}:${server.port}/subscription',
+          ),
+          throwsA(
+            isA<FormatException>().having(
+              (error) => error.message,
+              'message',
+              contains('require an hbx-key'),
+            ),
+          ),
+        );
+      },
+    );
 
     test('decodes profile-title with base64 prefix', () async {
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);

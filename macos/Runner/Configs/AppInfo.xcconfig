@@ -5,10 +5,10 @@
 // 'flutter create' template.
 
 // The application's name. By default this is also the title of the Flutter window.
-PRODUCT_NAME = meow_client
+PRODUCT_NAME = HydraBox
 
 // The application's bundle identifier
 PRODUCT_BUNDLE_IDENTIFIER = com.etonify.meowClient
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2026 com.etonify. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2026 MeowTeam and HydraBox contributors. GPL-3.0-or-later; see NOTICE.

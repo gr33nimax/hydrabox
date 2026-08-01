@@ -103,6 +103,10 @@ void main() {
       encryption: EtonifyProfileEncryption.plain,
     );
     expect(utf8.encode(content).length, greaterThan(8 * 1024 * 1024));
+    expect(
+      utf8.encode(content).length,
+      lessThanOrEqualTo(EtonifyBackupService.maxImportBytes),
+    );
 
     final parsed = await service.parseProfileExportInBackground(
       bytes: utf8.encode(content),
@@ -120,6 +124,27 @@ void main() {
     expect(parsed.subscriptions[1].outbounds.map((item) => item.tag), [
       'second-1',
     ]);
+  });
+
+  test('exporter never creates a profile larger than the import limit', () {
+    final oversized = sampleSubscription().copyWith(
+      rawContent: ''.padRight(17 * 1024 * 1024, 'é'),
+    );
+
+    expect(
+      () => service.buildProfileExport(
+        subscriptions: [oversized],
+        clientVersion: '0.2.2',
+        encryption: EtonifyProfileEncryption.plain,
+      ),
+      throwsA(
+        isA<EtonifyBackupException>().having(
+          (error) => error.message,
+          'message',
+          contains('too large to import'),
+        ),
+      ),
+    );
   });
 
   test('rejects backups that require a newer minimum client version', () {

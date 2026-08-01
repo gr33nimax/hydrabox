@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:meow_client/l10n/generated/app_localizations.dart';
-import 'package:meow_client/widgets/etonify_logo_badge.dart';
+import 'package:meow_client/widgets/hydrabox_logo_badge.dart';
 
 class WelcomePage extends StatefulWidget {
   const WelcomePage({
@@ -75,7 +75,7 @@ class _WelcomePageState extends State<WelcomePage>
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const EtonifyLogoBadge(size: 124, logoSize: 48),
+                        const HydraBoxLogoBadge(size: 124, logoSize: 48),
                         const SizedBox(height: 28),
                         Text(
                           widget.brandName,

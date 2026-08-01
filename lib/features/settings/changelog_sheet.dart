@@ -118,6 +118,26 @@ class _ChangelogSheetState extends State<ChangelogSheet> {
                       ),
                     );
                   }
+                  if (snapshot.connectionState == ConnectionState.done) {
+                    final result = snapshot.data;
+                    final message = result?.status == AppUpdateStatus.disabled
+                        ? l10n.updatesDisabledSubtitle
+                        : result?.error?.trim().isNotEmpty == true
+                        ? result!.error!
+                        : l10n.updatesErrorSubtitle;
+                    return Card(
+                      margin: EdgeInsets.zero,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          message,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: cs.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    );
+                  }
                   return const Center(
                     child: Padding(
                       padding: EdgeInsets.symmetric(vertical: 32),

@@ -10,6 +10,7 @@ import 'package:meow_client/models/subscription.dart';
 import 'package:meow_client/singbox/singbox_runtime.dart';
 
 import 'subscription_failure.dart';
+import 'hydrabox_subscription_crypto.dart';
 import 'subscription_parser.dart';
 
 /// Result returned by [SubscriptionFetcher.fetch].
@@ -42,10 +43,11 @@ class SubscriptionFetcher {
 
   static const fallbackAppVersion = '0.2.3';
   static String _appVersion = fallbackAppVersion;
-  static String get defaultUserAgent => 'Etonify/$_appVersion';
+  static String get defaultUserAgent => 'HydraBox/$_appVersion';
   static const _maxSubscriptionResponseBytes = 16 * 1024 * 1024;
   static const _maxRedirects = 5;
   static const _redirectStatusCodes = <int>{301, 302, 303, 307, 308};
+  static const _joseJsonMediaType = 'application/jose+json';
 
   static void configureAppVersion(String value) {
     final normalized = value.trim().replaceFirst(RegExp(r'^v'), '');
@@ -60,7 +62,32 @@ class SubscriptionFetcher {
     SubscriptionInfo? requestInfo,
     Duration? operationTimeout,
   }) async {
-    final uri = parseRequestUri(url);
+    final sourceUri = parseRequestUri(url);
+    if (HydraBoxJweCodec.hasKeyQueryParameter(sourceUri)) {
+      throw const FormatException(
+        'HydraBox hbx-key is allowed only in the URI fragment',
+      );
+    }
+    final hasHydraBoxKeyPolicy = HydraBoxJweCodec.hasKeyFragment(sourceUri);
+    final decryptionKey = HydraBoxJweCodec.keyFromUri(sourceUri);
+    if (hasHydraBoxKeyPolicy && decryptionKey == null) {
+      throw const FormatException(
+        'HydraBox hbx-key fragment must contain one valid key value',
+      );
+    }
+    final uri = HydraBoxJweCodec.uriWithoutSecretFragment(sourceUri);
+    if (decryptionKey != null && uri.scheme.toLowerCase() != 'https') {
+      throw HttpException(
+        'HydraBox hbx-key subscriptions require HTTPS',
+        uri: uri,
+      );
+    }
+    if (decryptionKey != null && !Platform.isAndroid) {
+      throw UnsupportedError(
+        'Persistent hbx-key subscriptions currently require Android '
+        'Keystore-backed storage',
+      );
+    }
     _logFetchStart(uri, requestInfo);
 
     try {
@@ -92,6 +119,7 @@ class SubscriptionFetcher {
           return _buildResult(
             url: url,
             rawContent: rawContent,
+            decryptionKey: decryptionKey,
             headerValue: (name) => responseHeaders[name.toLowerCase()],
           );
         } on SubscriptionContentException {
@@ -101,7 +129,8 @@ class SubscriptionFetcher {
         } catch (error) {
           AppLogStore.warning(
             'subscription',
-            'underlying-network fetch unavailable, falling back to app route: $error',
+            'underlying-network fetch unavailable, falling back to app route: '
+                '${error.runtimeType}',
           );
         }
       }
@@ -128,9 +157,13 @@ class SubscriptionFetcher {
         return _buildResult(
           url: url,
           rawContent: rawContent,
+          decryptionKey: decryptionKey,
           headerValue: (name) {
             final values = response.headers[name];
-            return values == null || values.isEmpty ? null : values.first;
+            if (values == null || values.isEmpty) return null;
+            return name.toLowerCase() == HttpHeaders.contentTypeHeader
+                ? values.join(',')
+                : values.first;
           },
         );
       } catch (error) {
@@ -215,12 +248,21 @@ class SubscriptionFetcher {
   }
 
   static void _validateRequestSecurity(Uri uri, Map<String, String> headers) {
+    if (HydraBoxJweCodec.hasKeyQueryParameter(uri)) {
+      throw HttpException(
+        'HydraBox hbx-key is allowed only in the URI fragment',
+        uri: uri,
+      );
+    }
     final scheme = uri.scheme.toLowerCase();
     if ((scheme != 'http' && scheme != 'https') || uri.host.isEmpty) {
       throw HttpException('Only HTTP and HTTPS URLs are supported', uri: uri);
     }
     if (scheme == 'https') {
       return;
+    }
+    if (!_isLoopbackHost(uri.host)) {
+      throw HttpException('Remote subscription URLs require HTTPS', uri: uri);
     }
     final hasSensitiveHeader = headers.keys.any(_isSensitiveHeaderName);
     final hasSensitiveUrl =
@@ -282,6 +324,14 @@ class SubscriptionFetcher {
       first.host.toLowerCase() == second.host.toLowerCase() &&
       first.port == second.port;
 
+  static bool _isLoopbackHost(String host) {
+    final normalized = host.toLowerCase();
+    if (normalized == 'localhost' || normalized == '::1') {
+      return true;
+    }
+    return InternetAddress.tryParse(normalized)?.isLoopback ?? false;
+  }
+
   @visibleForTesting
   static void validateRequestSecurityForTest(
     Uri uri,
@@ -296,17 +346,85 @@ class SubscriptionFetcher {
   static Future<FetchResult> _buildResult({
     required String url,
     required String rawContent,
+    String? decryptionKey,
     required String? Function(String name) headerValue,
   }) async {
     _validateResponseContent(rawContent);
     final headerInfo = _parseHeaderValues(headerValue);
-    final parseResult = await SubscriptionParser.parseInBackground(rawContent);
+    final declaredHydraMediaType = _declaredHydraBoxMediaType(
+      headerValue(HttpHeaders.contentTypeHeader),
+    );
+    if (declaredHydraMediaType == _joseJsonMediaType) {
+      if (decryptionKey == null || decryptionKey.isEmpty) {
+        throw const FormatException(
+          'application/jose+json HydraBox subscriptions require an hbx-key',
+        );
+      }
+      if (!HydraBoxJweCodec.looksLike(rawContent)) {
+        throw const FormatException(
+          'application/jose+json HydraBox response is not JWE',
+        );
+      }
+    } else if (declaredHydraMediaType == HydraBoxJweCodec.mediaType &&
+        HydraBoxJweCodec.looksLike(rawContent)) {
+      throw const FormatException(
+        'HydraBox subscription media type requires plaintext v1 JSON',
+      );
+    }
+    final parseResult = await SubscriptionParser.parseInBackground(
+      rawContent,
+      decryptionKey: decryptionKey,
+    );
+    if (declaredHydraMediaType == HydraBoxJweCodec.mediaType &&
+        (parseResult.format != SubscriptionFormat.hydraboxV1 ||
+            parseResult.sourceMetadata['encrypted'] == true)) {
+      throw const FormatException(
+        'HydraBox subscription media type requires plaintext v1 JSON',
+      );
+    }
+    if (declaredHydraMediaType == _joseJsonMediaType &&
+        (parseResult.format != SubscriptionFormat.hydraboxV1 ||
+            parseResult.sourceMetadata['encrypted'] != true)) {
+      throw const FormatException(
+        'application/jose+json HydraBox response must contain v1 JWE',
+      );
+    }
+    final requestUri = HydraBoxJweCodec.uriWithoutSecretFragment(
+      parseRequestUri(url),
+    );
+    if (parseResult.format == SubscriptionFormat.hydraboxV1 &&
+        requestUri.scheme.toLowerCase() != 'https') {
+      throw HttpException(
+        'HydraBox subscriptions require HTTPS',
+        uri: requestUri,
+      );
+    }
     return FetchResult(
       rawContent: rawContent,
       headerInfo: _mergeBodyMeta(headerInfo, parseResult.bodyMeta),
       parseResult: parseResult,
       url: url,
     );
+  }
+
+  static String? _declaredHydraBoxMediaType(String? rawContentType) {
+    final value = rawContentType?.trim() ?? '';
+    if (value.isEmpty) return null;
+    final declared = value
+        .split(',')
+        .map((entry) => entry.split(';').first.trim().toLowerCase())
+        .where(
+          (entry) =>
+              entry == HydraBoxJweCodec.mediaType ||
+              entry == _joseJsonMediaType,
+        )
+        .toSet();
+    if (declared.length > 1) {
+      throw const FormatException(
+        'Conflicting HydraBox subscription Content-Type values',
+      );
+    }
+    return declared.firstOrNull;
   }
 
   static void _validateResponseContent(String rawContent) {
@@ -355,7 +473,6 @@ class SubscriptionFetcher {
     AppLogStore.info(
       'subscription',
       'fetch start host=${uri.host} port=$port scheme=${uri.scheme} '
-          'path=${uri.path.isEmpty ? "/" : uri.path} '
           'requireHwid=${requestInfo?.requireHwid == true} '
           'customHeaders=${_parseCustomHeaders(requestInfo?.customRequestHeader).length}',
     );
@@ -370,8 +487,24 @@ class SubscriptionFetcher {
     AppLogStore.error(
       'subscription',
       'fetch failed host=${uri.host} port=$port scheme=${uri.scheme} '
-          'error=${error.runtimeType}: $error',
+          'error=${_safeFetchErrorForLog(error)}',
     );
+  }
+
+  static String _safeFetchErrorForLog(Object error) {
+    if (error is FormatException) {
+      return 'FormatException: subscription validation failed';
+    }
+    if (error is SubscriptionContentException) {
+      return 'SubscriptionContentException: ${error.kind.name}';
+    }
+    if (error is TimeoutException) {
+      return 'TimeoutException';
+    }
+    if (error is HttpException) {
+      return 'HttpException: ${error.message}';
+    }
+    return error.runtimeType.toString();
   }
 
   static Future<String> _readUtf8Body(HttpClientResponse response) async {
@@ -392,7 +525,7 @@ class SubscriptionFetcher {
       }
       builder.add(chunk);
     }
-    return utf8.decode(builder.takeBytes(), allowMalformed: true);
+    return utf8.decode(builder.takeBytes(), allowMalformed: false);
   }
 
   static int _defaultPort(Uri uri) {
@@ -408,12 +541,12 @@ class SubscriptionFetcher {
       r'^([A-Za-z][A-Za-z0-9+.\-]*):\/\/([^\/?#]*)([^?#]*)(?:\?([^#]*))?(?:#(.*))?$',
     ).firstMatch(rawUrl);
     if (match == null) {
-      throw FormatException('Invalid URL', rawUrl);
+      throw const FormatException('Invalid URL');
     }
 
     final scheme = match.group(1) ?? '';
     if (scheme != 'http' && scheme != 'https') {
-      throw FormatException('Unsupported URL scheme', rawUrl);
+      throw const FormatException('Unsupported URL scheme');
     }
 
     final authority = match.group(2) ?? '';
@@ -434,17 +567,17 @@ class SubscriptionFetcher {
     if (hostPort.startsWith('[')) {
       final closingIndex = hostPort.indexOf(']');
       if (closingIndex <= 0) {
-        throw FormatException('Invalid IPv6 host', rawUrl);
+        throw const FormatException('Invalid IPv6 host');
       }
       host = hostPort.substring(1, closingIndex);
       final portPart = hostPort.substring(closingIndex + 1);
       if (portPart.isNotEmpty) {
         if (!portPart.startsWith(':')) {
-          throw FormatException('Invalid port', rawUrl);
+          throw const FormatException('Invalid port');
         }
         port = int.tryParse(portPart.substring(1));
         if (port == null) {
-          throw FormatException('Invalid port', rawUrl);
+          throw const FormatException('Invalid port');
         }
       }
     } else {

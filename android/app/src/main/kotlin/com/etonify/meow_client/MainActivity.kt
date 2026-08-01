@@ -49,13 +49,52 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
+import java.net.InetAddress
 import java.net.URL
+import java.net.URLDecoder
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
+import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.util.concurrent.Executors
 
+internal fun isLiteralLoopbackSubscriptionHost(rawHost: String): Boolean {
+    val host = rawHost.trim().removePrefix("[").removeSuffix("]").lowercase()
+    if (host == "localhost" || host.endsWith(".localhost")) return true
+
+    val ipv4 = host.split('.')
+    if (ipv4.size == 4 && ipv4.all { part ->
+            part.isNotEmpty() &&
+                part.all(Char::isDigit) &&
+                (part.length == 1 || !part.startsWith('0')) &&
+                part.toIntOrNull() in 0..255
+        }
+    ) {
+        return ipv4.first().toInt() == 127
+    }
+
+    // Invoke the platform parser only for an IPv6 literal. Never resolve an
+    // arbitrary hostname here: DNS resolution must not turn remote HTTP into
+    // an accepted loopback request (or vice versa).
+    if (!host.contains(':') || !Regex("^[0-9a-f:.]+$").matches(host)) {
+        return false
+    }
+    return runCatching { InetAddress.getByName(host).isLoopbackAddress }
+        .getOrDefault(false)
+}
+
+internal fun hasHydraBoxKeyQuery(rawQuery: String?): Boolean =
+    rawQuery.orEmpty().split('&', ';').any { member ->
+        val rawName = member.substringBefore('=')
+        val decodedName = runCatching {
+            URLDecoder.decode(rawName, StandardCharsets.UTF_8.name())
+        }.getOrDefault(rawName)
+        decodedName.equals("hbx-key", ignoreCase = true)
+    }
+
 class MainActivity : FlutterFragmentActivity() {
     companion object {
-        private const val TAG = "MeowMainActivity"
+        private const val TAG = "HydraBoxMainActivity"
         private const val QUICK_TILE_LABEL_FILE = "quick_tile_label.txt"
         private const val MAX_SUBSCRIPTION_REDIRECTS = 5
         private val SUBSCRIPTION_REDIRECT_CODES = setOf(301, 302, 303, 307, 308)
@@ -206,13 +245,25 @@ class MainActivity : FlutterFragmentActivity() {
         )
     }
 
-    private fun getEtonifyCoreCapabilities(): String =
+    private fun getHydraCoreCapabilities(): String =
         runCatching {
-            val capabilityMethod = Libbox::class.java.methods.firstOrNull { method ->
+            val hydraCoreMethod = Libbox::class.java.methods.firstOrNull { method ->
+                method.parameterCount == 0 &&
+                    method.name.equals("hydraCoreCapabilities", ignoreCase = true)
+            }
+            if (hydraCoreMethod != null) {
+                return@runCatching (hydraCoreMethod.invoke(null) as? String).orEmpty()
+            }
+
+            val legacyMethod = Libbox::class.java.methods.firstOrNull { method ->
                 method.parameterCount == 0 &&
                     method.name.equals("etonifyCapabilities", ignoreCase = true)
             }
-            capabilityMethod?.invoke(null) as? String ?: ""
+            // Preserve ordinary legacy runtime capabilities, but do not invent
+            // a HydraCore remote-policy manifest for an older binary. Remote
+            // HydraBox documents remain fail-closed until the installed AAR
+            // exports HydraCoreCapabilities() itself.
+            (legacyMethod?.invoke(null) as? String).orEmpty()
         }.onFailure { error ->
             Log.w(TAG, "Core capability handshake is unavailable", error)
         }.getOrDefault("")
@@ -313,7 +364,7 @@ class MainActivity : FlutterFragmentActivity() {
         val inspection = inspectDownloadedApk(file.absolutePath)
         require(inspection["valid"] == true) { "Android could not read the update APK." }
         require(inspection["packageName"] == packageName) {
-            "Update APK package does not match Etonify."
+            "Update APK package does not match HydraBox."
         }
         val archiveCertificates = digestSet(inspection["signingCertificateSha256"])
         val installedCertificates = digestSet(inspection["installedCertificateSha256"])
@@ -321,7 +372,7 @@ class MainActivity : FlutterFragmentActivity() {
             archiveCertificates.isNotEmpty() &&
                 installedCertificates.isNotEmpty() &&
                 archiveCertificates.any(installedCertificates::contains),
-        ) { "Update APK signature does not match installed Etonify." }
+        ) { "Update APK signature does not match installed HydraBox." }
     }
 
     private fun digestSet(value: Any?): Set<String> =
@@ -539,9 +590,14 @@ class MainActivity : FlutterFragmentActivity() {
                     if (name == null || values.isNullOrEmpty()) continue
                     responseHeaders[name.lowercase()] = values.joinToString(", ")
                 }
+                val body = Charsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(output.toByteArray()))
+                    .toString()
                 return linkedMapOf(
                     "statusCode" to statusCode,
-                    "body" to output.toString(Charsets.UTF_8.name()),
+                    "body" to body,
                     "headers" to responseHeaders,
                     "finalUrl" to url.toString(),
                     "network" to MeowDefaultNetworkMonitor.describeNetwork(network),
@@ -557,7 +613,13 @@ class MainActivity : FlutterFragmentActivity() {
         require(url.protocol == "http" || url.protocol == "https") {
             "Only HTTP and HTTPS URLs are supported."
         }
+        require(!hasHydraBoxKeyQuery(url.query)) {
+            "HydraBox hbx-key is allowed only in the URI fragment."
+        }
         if (url.protocol == "https") return
+        require(isLiteralLoopbackSubscriptionHost(url.host)) {
+            "Remote subscription URLs require HTTPS."
+        }
         val hasSensitiveHeader = headers.keys.any(::isSensitiveSubscriptionHeader)
         val hasSensitiveUrl = !url.userInfo.isNullOrBlank() ||
             SENSITIVE_SUBSCRIPTION_QUERY.containsMatchIn(url.query.orEmpty())
@@ -642,7 +704,7 @@ class MainActivity : FlutterFragmentActivity() {
             val name = uri.getQueryParameter("name")?.trim().orEmpty()
             return importPayload("singBoxRemoteProfile", url, name)
         }
-        if (scheme != "etonify" && scheme != "meowvpn") {
+        if (scheme != "hydrabox" && scheme != "etonify" && scheme != "meowvpn") {
             return null
         }
         val host = uri.host?.lowercase().orEmpty()
@@ -1667,7 +1729,7 @@ class MainActivity : FlutterFragmentActivity() {
                 }
 
                 override fun getCoreCapabilities(callback: (Result<String>) -> Unit) {
-                    callback(Result.success(getEtonifyCoreCapabilities()))
+                    callback(Result.success(getHydraCoreCapabilities()))
                 }
 
                 override fun checkConfig(config: String, callback: (Result<Unit>) -> Unit) {
@@ -1848,7 +1910,7 @@ class MainActivity : FlutterFragmentActivity() {
                 }
 
                 "getCoreCapabilities" -> {
-                    result.success(getEtonifyCoreCapabilities())
+                    result.success(getHydraCoreCapabilities())
                 }
 
                 "checkConfig" -> {

@@ -405,7 +405,7 @@ internal class MeowForegroundNotification(
     private fun ensureChannel() {
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "Etonify VPN",
+            "HydraBox VPN",
             NotificationManager.IMPORTANCE_LOW,
         ).apply {
             description = "VPN connection status"
@@ -434,7 +434,7 @@ internal class MeowForegroundNotification(
         val title = if (showDetails && presentation.title.isNotEmpty()) {
             presentation.title
         } else {
-            "Etonify"
+            "HydraBox"
         }
         val content = when {
             !connected -> lifecycleStatusText(lifecycleStatus)

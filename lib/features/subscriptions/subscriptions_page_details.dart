@@ -86,7 +86,10 @@ class _SubscriptionDetailsPageState extends State<_SubscriptionDetailsPage> {
     if (nextName == subscription.name) {
       return;
     }
-    await SubscriptionStore.save(subscription.copyWith(name: nextName));
+    await SubscriptionStore.save(
+      subscription.copyWith(name: nextName),
+      allowCreate: false,
+    );
     _reloadCurrentSubscription();
   }
 
@@ -98,7 +101,10 @@ class _SubscriptionDetailsPageState extends State<_SubscriptionDetailsPage> {
     }
     setState(() => _busy = true);
     try {
-      await SubscriptionStore.save(subscription.copyWith(name: nextName));
+      await SubscriptionStore.save(
+        subscription.copyWith(name: nextName),
+        allowCreate: false,
+      );
       _reloadCurrentSubscription();
     } finally {
       if (mounted) {
@@ -118,6 +124,7 @@ class _SubscriptionDetailsPageState extends State<_SubscriptionDetailsPage> {
     try {
       await SubscriptionStore.save(
         subscription.copyWith(disableAutoUpdate: disabled),
+        allowCreate: false,
       );
       _reloadCurrentSubscription();
     } finally {
@@ -145,6 +152,7 @@ class _SubscriptionDetailsPageState extends State<_SubscriptionDetailsPage> {
               ? subscription.autoRefreshMinutes
               : minutes,
         ),
+        allowCreate: false,
       );
       _reloadCurrentSubscription();
     } finally {
@@ -165,6 +173,7 @@ class _SubscriptionDetailsPageState extends State<_SubscriptionDetailsPage> {
     try {
       await SubscriptionStore.save(
         subscription.copyWith(markAllServersRussia: enabled),
+        allowCreate: false,
       );
       _reloadCurrentSubscription();
     } finally {
@@ -203,6 +212,7 @@ class _SubscriptionDetailsPageState extends State<_SubscriptionDetailsPage> {
             customHwid: customHwid.isEmpty ? null : customHwid,
           ),
         ),
+        allowCreate: false,
       );
       _reloadCurrentSubscription();
     } finally {
@@ -227,6 +237,7 @@ class _SubscriptionDetailsPageState extends State<_SubscriptionDetailsPage> {
             ignoreSubscriptionMoved: false,
           ),
         ),
+        allowCreate: false,
       );
       _reloadCurrentSubscription();
     } finally {
@@ -256,6 +267,9 @@ class _SubscriptionDetailsPageState extends State<_SubscriptionDetailsPage> {
       final uri = SubscriptionFetcher.parseRequestUri(urls.single);
       final scheme = uri.scheme.toLowerCase();
       if ((scheme != 'http' && scheme != 'https') || uri.host.isEmpty) {
+        return (url: null, error: l10n.invalidUrl);
+      }
+      if (HydraBoxJweCodec.hasKeyQueryParameter(uri)) {
         return (url: null, error: l10n.invalidUrl);
       }
       return (url: uri.toString(), error: null);

@@ -1,6 +1,9 @@
-# Contributing to Etonify
+# Contributing to HydraBox
 
-Thank you for considering a contribution. Etonify is early, Android-first, and focused on stability before visual complexity.
+Thank you for considering a contribution. HydraBox is early, Android-first,
+and focused on stability before visual complexity. It is an independent
+derivative of Etonify; see [UPSTREAM.md](UPSTREAM.md) for attribution and exact
+baselines.
 
 ## Useful Contributions
 
@@ -17,6 +20,7 @@ Thank you for considering a contribution. Etonify is early, Android-first, and f
 Run:
 
 ```powershell
+python -B scripts/fetch_libbox.py
 flutter gen-l10n
 flutter analyze
 flutter test
@@ -38,5 +42,6 @@ flutter build apk --release
 
 ## Communication
 
-- Telegram channel: [@etonify](https://t.me/etonify)
-- Issues and pull requests are welcome.
+- Issues and pull requests in this repository are welcome.
+- [@etonify](https://t.me/etonify) belongs to the upstream Etonify project and
+  is retained here for attribution; it is not HydraBox support.

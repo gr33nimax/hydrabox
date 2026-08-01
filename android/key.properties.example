@@ -1,5 +1,5 @@
 # Copy this file to android/key.properties for public release builds.
-storeFile=../keystores/meowvpn-release.jks
+storeFile=../keystores/hydrabox-release.jks
 storePassword=change-me
-keyAlias=meowvpn
+keyAlias=hydrabox
 keyPassword=change-me

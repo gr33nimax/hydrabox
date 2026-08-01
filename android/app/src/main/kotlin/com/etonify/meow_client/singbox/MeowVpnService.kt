@@ -73,7 +73,7 @@ class MeowVpnService : VpnService() {
         /**
          * Network callbacks are delivered while Flutter can be paused or its
          * event sink detached. Keep recovery owned by the VPN foreground
-         * service so Wi-Fi/mobile handovers do not require reopening Etonify.
+         * service so Wi-Fi/mobile handovers do not require reopening HydraBox.
          */
         fun requestRuntimeRecoveryAfterNetworkChange(reason: String) {
             val service = currentService ?: return

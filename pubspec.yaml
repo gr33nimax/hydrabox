@@ -1,5 +1,5 @@
 name: meow_client
-description: Android-first open-source VPN client built around a modified sing-box core.
+description: HydraBox, an Android-first open-source VPN client powered by HydraCore and based on Etonify.
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -82,7 +82,6 @@ flutter:
   # the material Icons class.
   uses-material-design: true
   assets:
-    - assets/images/logo.svg
     - assets/images/world_map.png
     - assets/images/team/
     - assets/route_data/russia/geoip-ru-blocked.srs

@@ -234,7 +234,7 @@ class MeowVpnPlatformInterface(
                 "current=${MeowDefaultNetworkMonitor.describeCurrentState()}",
         )
         val builder = service.Builder()
-            .setSession("Etonify")
+            .setSession("HydraBox")
             .setMtu(options.mtu)
         var hasIpv4Address = false
         var hasIpv6Address = false

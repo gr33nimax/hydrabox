@@ -1,8 +1,9 @@
 # Third-Party Notices
 
 This file records third-party material copied into the source tree, local
-dependencies, and the Android runtime bundled with official Etonify releases.
-Each component remains subject to its own license.
+dependencies, and the Android runtime bundled with HydraBox. The original
+Etonify provenance is preserved. Each component remains subject to its own
+license.
 
 ## Flutter predictive-back transition
 
@@ -45,17 +46,18 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 `circle_flags`. It is distributed under the MIT License. Its complete license
 is retained at `third_party/flutter_circle_flags/LICENSE`.
 
-## etonify-core / sing-box
+## HydraCore / etonify-core / sing-box
 
-The `etonify-core` git submodule is the Android libbox runtime bundled into
-official releases. It is maintained at
+HydraCore is HydraBox's public name for the Android libbox runtime. Its
+compatibility submodule remains named `etonify-core` and is maintained at
 [`gr33nimax/etonify-core`, branch `extended-integration`](https://github.com/gr33nimax/etonify-core/tree/extended-integration),
 based on
 [`shtorm-7/sing-box-extended`, branch `extended`](https://github.com/shtorm-7/sing-box-extended/tree/extended),
 and is licensed under GPL-3.0-or-later; see `etonify-core/LICENSE` and the
 licenses of its dependencies. The Android AAR is built from that source,
 published as a pinned core release asset, and its provenance is recorded under
-`android/app/libs`.
+`android/app/libs`. The HydraCore name does not replace or obscure the
+copyright, license, or source history of etonify-core and sing-box.
 
 ## Other dependencies
 

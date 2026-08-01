@@ -689,6 +689,198 @@ void main() {
       expect(results[0]['_name'], 'vless-proxy');
       expect(results[1]['type'], 'vmess');
     });
+
+    test('marks detour dependencies as transit-only profiles', () {
+      final content = jsonEncode({
+        'route': {'final': 'trojan-over-shadowtls'},
+        'outbounds': [
+          {
+            'type': 'trojan',
+            'tag': 'trojan-over-shadowtls',
+            'server': 'proxy.example',
+            'server_port': 443,
+            'password': 'test-password',
+            'detour': 'shadowtls-transport',
+          },
+          {
+            'type': 'shadowtls',
+            'tag': 'shadowtls-transport',
+            'server': 'transport.example',
+            'server_port': 443,
+            'version': 3,
+            'password': 'test-password',
+            'tls': {'enabled': true, 'server_name': 'front.example'},
+          },
+        ],
+      });
+
+      final results = SingboxConfigParser.parse(content);
+
+      expect(results, hasLength(2));
+      final trojan = results.singleWhere(
+        (outbound) => outbound['tag'] == 'trojan-over-shadowtls',
+      );
+      final shadowTls = results.singleWhere(
+        (outbound) => outbound['tag'] == 'shadowtls-transport',
+      );
+      expect(trojan['detour'], 'shadowtls-transport');
+      expect(trojan['_group_only'], isNot(true));
+      expect(shadowTls['_group_only'], isTrue);
+    });
+
+    test('marks shared and multi-hop detour dependencies transit-only', () {
+      final content = jsonEncode({
+        'outbounds': [
+          {
+            'type': 'shadowtls',
+            'tag': 'transport',
+            'server': 'transport.example',
+            'server_port': 443,
+            'version': 3,
+            'password': 'test-password',
+          },
+          {
+            'type': 'socks',
+            'tag': 'middle',
+            'server': 'middle.example',
+            'server_port': 1080,
+            'detour': 'transport',
+          },
+          {
+            'type': 'trojan',
+            'tag': 'exit',
+            'server': 'exit.example',
+            'server_port': 443,
+            'password': 'test-password',
+            'detour': 'middle',
+          },
+          {
+            'type': 'anytls',
+            'tag': 'alternate',
+            'server': 'alternate.example',
+            'server_port': 443,
+            'password': 'test-password',
+            'detour': 'transport',
+          },
+        ],
+      });
+
+      final results = SingboxConfigParser.parse(content);
+      final visibleTags = results
+          .where((outbound) => outbound['_group_only'] != true)
+          .map((outbound) => outbound['tag'])
+          .toList(growable: false);
+      final helperTags = results
+          .where((outbound) => outbound['_group_only'] == true)
+          .map((outbound) => outbound['tag'])
+          .toSet();
+
+      expect(visibleTags, ['exit', 'alternate']);
+      expect(helperTags, {'transport', 'middle'});
+    });
+
+    test('does not hide cyclic detours before core validation', () {
+      final content = jsonEncode({
+        'outbounds': [
+          {
+            'type': 'trojan',
+            'tag': 'cycle-a',
+            'server': 'a.example',
+            'server_port': 443,
+            'password': 'test-password',
+            'detour': 'cycle-b',
+          },
+          {
+            'type': 'shadowtls',
+            'tag': 'cycle-b',
+            'server': 'b.example',
+            'server_port': 443,
+            'version': 3,
+            'password': 'test-password',
+            'detour': 'cycle-a',
+            'tls': {'enabled': true, 'server_name': 'front.example'},
+          },
+        ],
+      });
+
+      final results = SingboxConfigParser.parse(content);
+
+      expect(results, hasLength(2));
+      expect(
+        results.where((outbound) => outbound['_group_only'] == true),
+        isEmpty,
+      );
+    });
+
+    test('does not infer a helper through an ambiguous duplicate tag', () {
+      final content = jsonEncode({
+        'outbounds': [
+          {
+            'type': 'trojan',
+            'tag': 'outer',
+            'server': 'outer.example',
+            'server_port': 443,
+            'password': 'test-password',
+            'detour': 'duplicate-hop',
+          },
+          {
+            'type': 'shadowtls',
+            'tag': 'duplicate-hop',
+            'server': 'first.example',
+            'server_port': 443,
+            'version': 3,
+            'password': 'test-password',
+          },
+          {
+            'type': 'shadowtls',
+            'tag': 'duplicate-hop',
+            'server': 'second.example',
+            'server_port': 443,
+            'version': 3,
+            'password': 'test-password',
+          },
+        ],
+      });
+
+      final results = SingboxConfigParser.parse(content);
+
+      expect(results, hasLength(3));
+      expect(
+        results.where((outbound) => outbound['_group_only'] == true),
+        isEmpty,
+      );
+    });
+
+    test('keeps an explicitly selected detour visible', () {
+      final content = jsonEncode({
+        'route': {'final': 'shadowtls-transport'},
+        'outbounds': [
+          {
+            'type': 'trojan',
+            'tag': 'outer',
+            'server': 'outer.example',
+            'server_port': 443,
+            'password': 'test-password',
+            'detour': 'shadowtls-transport',
+          },
+          {
+            'type': 'shadowtls',
+            'tag': 'shadowtls-transport',
+            'server': 'transport.example',
+            'server_port': 443,
+            'version': 3,
+            'password': 'test-password',
+          },
+        ],
+      });
+
+      final results = SingboxConfigParser.parse(content);
+
+      expect(
+        results.where((outbound) => outbound['_group_only'] == true),
+        isEmpty,
+      );
+    });
   });
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

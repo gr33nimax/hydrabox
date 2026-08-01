@@ -1,11 +1,11 @@
 {
-    "name": "meow_client",
-    "short_name": "meow_client",
+    "name": "HydraBox",
+    "short_name": "HydraBox",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#F6FAFC",
+    "theme_color": "#0F5C7A",
+    "description": "HydraBox, an independent VPN client based on Etonify and powered by HydraCore.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

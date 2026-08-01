@@ -86,7 +86,7 @@ class EtonifyBackupService {
       'createdAt': DateTime.now().toUtc().toIso8601String(),
       'settings': store.stateToSafeExportMap(state),
     };
-    return const JsonEncoder.withIndent('  ').convert(envelope);
+    return _encodeRestorableExport(envelope);
   }
 
   EtonifySettingsImportResult parseSettingsExport({
@@ -112,7 +112,13 @@ class EtonifyBackupService {
   }) {
     final profile = <String, dynamic>{
       'subscriptions': subscriptions
-          .map((subscription) => subscription.toMap())
+          .map((subscription) {
+            final exported = subscription.toMap();
+            // payload_ref is an internal encrypted-Hive pointer. It is neither
+            // portable nor safe to let an untrusted backup choose it.
+            exported.remove('payload_ref');
+            return exported;
+          })
           .toList(growable: false),
     };
     final envelope = <String, dynamic>{
@@ -154,7 +160,18 @@ class EtonifyBackupService {
     } else {
       envelope['profile'] = profile;
     }
-    return const JsonEncoder.withIndent('  ').convert(envelope);
+    return _encodeRestorableExport(envelope);
+  }
+
+  String _encodeRestorableExport(Map<String, dynamic> envelope) {
+    final output = const JsonEncoder.withIndent('  ').convert(envelope);
+    if (utf8.encode(output).length > maxImportBytes) {
+      throw const EtonifyBackupException(
+        'Export is too large to import. Reduce the exported data or split '
+        'subscriptions and try again.',
+      );
+    }
+    return output;
   }
 
   /// Serializes and encrypts large profile exports away from the UI isolate.
@@ -248,11 +265,15 @@ class EtonifyBackupService {
     }
     final head = utf8.decode(bytes.take(128).toList(), allowMalformed: true);
     if (head.trimLeft().startsWith('<')) {
-      throw const EtonifyBackupException('HTML is not a valid Etonify file.');
+      throw const EtonifyBackupException(
+        'HTML is not a valid HydraBox or Etonify backup file.',
+      );
     }
     final decoded = jsonDecode(utf8.decode(bytes));
     if (decoded is! Map) {
-      throw const EtonifyBackupException('Invalid Etonify file.');
+      throw const EtonifyBackupException(
+        'Invalid HydraBox or Etonify backup file.',
+      );
     }
     final envelope = Map<String, dynamic>.from(decoded);
     final allowed = expectedMagic == settingsMagic
@@ -283,10 +304,14 @@ class EtonifyBackupService {
       );
     }
     if (envelope['magic'] != expectedMagic) {
-      throw const EtonifyBackupException('This is not an Etonify file.');
+      throw const EtonifyBackupException(
+        'This is not a compatible HydraBox or Etonify backup file.',
+      );
     }
     if (envelope['formatVersion'] != formatVersion) {
-      throw const EtonifyBackupException('Unsupported Etonify file version.');
+      throw const EtonifyBackupException(
+        'Unsupported HydraBox or Etonify backup format version.',
+      );
     }
     return envelope;
   }

@@ -1,4 +1,4 @@
-name: Etonify · CodeQL security
+name: HydraBox · CodeQL security
 
 on:
   push:

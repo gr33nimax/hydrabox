@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.etonify" "\0"
-            VALUE "FileDescription", "meow_client" "\0"
+            VALUE "CompanyName", "HydraBox contributors" "\0"
+            VALUE "FileDescription", "HydraBox" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "meow_client" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.etonify. All rights reserved." "\0"
-            VALUE "OriginalFilename", "meow_client.exe" "\0"
-            VALUE "ProductName", "meow_client" "\0"
+            VALUE "InternalName", "hydrabox" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 MeowTeam and HydraBox contributors; GPL-3.0-or-later." "\0"
+            VALUE "OriginalFilename", "hydrabox.exe" "\0"
+            VALUE "ProductName", "HydraBox" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

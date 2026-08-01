@@ -1,0 +1,407 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hydrabox.invalid/schema/hydrabox-subscription-v1.schema.json",
+  "title": "HydraBox SubscriptionData v1",
+  "description": "Protocol-agnostic HydraBox envelope containing one opaque native sing-box document and explicit user-facing profiles.",
+  "type": "object",
+  "required": [
+    "api_version",
+    "kind",
+    "issuer",
+    "subscription_id",
+    "sequence",
+    "issued_at",
+    "runtime",
+    "profiles"
+  ],
+  "properties": {
+    "api_version": {
+      "const": "hydrabox.io/subscription/v1"
+    },
+    "kind": {
+      "const": "SubscriptionData"
+    },
+    "issuer": {
+      "$ref": "#/$defs/httpsOrigin",
+      "description": "Part of the anti-replay identity tuple (issuer, subscription_id, channel)."
+    },
+    "subscription_id": {
+      "$ref": "#/$defs/id",
+      "description": "Part of the anti-replay identity tuple (issuer, subscription_id, channel)."
+    },
+    "channel": {
+      "$ref": "#/$defs/id",
+      "default": "stable",
+      "description": "Part of the anti-replay identity tuple; omitted means stable."
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991,
+      "description": "Monotonic within one identity tuple. Lower values and same-sequence/different-payload updates are rejected."
+    },
+    "issued_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "not_before": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "default_profile_id": {
+      "$ref": "#/$defs/id"
+    },
+    "metadata": {
+      "$ref": "#/$defs/subscriptionMetadata"
+    },
+    "compatibility": {
+      "description": "Declarative in the v1 compatibility implementation: validated and retained, but not enforced as a client/core capability gate.",
+      "$ref": "#/$defs/compatibility"
+    },
+    "update": {
+      "description": "Declarative in the v1 compatibility implementation. update.url is not followed and minimum_interval_seconds is only a scheduling hint.",
+      "$ref": "#/$defs/update"
+    },
+    "runtime": {
+      "$ref": "#/$defs/runtime"
+    },
+    "profiles": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "$ref": "#/$defs/profile"
+      }
+    },
+    "required_extensions": {
+      "$ref": "#/$defs/extensionNames"
+    },
+    "extensions": {
+      "$ref": "#/$defs/extensions"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "httpsOrigin": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://(?![^/?#]*@)[^/?#]+/?$",
+      "description": "HTTPS origin only: no userinfo, non-root path, query, or fragment."
+    },
+    "httpsUrl": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://(?![^/?#]*@)[^/?#]+(?:[/?][^#]*)?$",
+      "description": "HTTPS URL without userinfo or fragment."
+    },
+    "nativeTag": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^(?!\\s)(?!.*\\s$)[^\\u0000-\\u001F\\u007F]+$",
+      "not": {
+        "pattern": "^__hydrabox\\."
+      }
+    },
+    "localizedText": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "object",
+          "required": [
+            "default"
+          ],
+          "properties": {
+            "default": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      ]
+    },
+    "featureNames": {
+      "type": "array",
+      "description": "Declarative in the v1 compatibility implementation; retained but not enforced as a capability gate.",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      },
+      "uniqueItems": true
+    },
+    "extensionNames": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256,
+        "pattern": "^(?:[A-Za-z0-9-]+\\.)+[A-Za-z0-9-]+(?:/[A-Za-z0-9._-]+)*$"
+      },
+      "uniqueItems": true
+    },
+    "extensions": {
+      "type": "object",
+      "propertyNames": {
+        "minLength": 1,
+        "maxLength": 256,
+        "pattern": "^(?:[A-Za-z0-9-]+\\.)+[A-Za-z0-9-]+(?:/[A-Za-z0-9._-]+)*$"
+      },
+      "additionalProperties": true
+    },
+    "subscriptionMetadata": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/localizedText"
+        },
+        "description": {
+          "$ref": "#/$defs/localizedText"
+        },
+        "homepage": {
+          "$ref": "#/$defs/httpsUrl"
+        },
+        "support_url": {
+          "$ref": "#/$defs/httpsUrl"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "uniqueItems": true
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensions"
+        }
+      },
+      "additionalProperties": false
+    },
+    "compatibility": {
+      "type": "object",
+      "properties": {
+        "client": {
+          "type": "object",
+          "properties": {
+            "min_version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required_features": {
+              "$ref": "#/$defs/featureNames"
+            }
+          },
+          "additionalProperties": false
+        },
+        "core": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "const": "io.hydrabox.hydracore"
+            },
+            "version_range": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required_features": {
+              "$ref": "#/$defs/featureNames"
+            }
+          },
+          "additionalProperties": false
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensions"
+        }
+      },
+      "additionalProperties": false
+    },
+    "update": {
+      "type": "object",
+      "required": [
+        "url"
+      ],
+      "properties": {
+        "url": {
+          "$ref": "#/$defs/httpsUrl"
+        },
+        "minimum_interval_seconds": {
+          "type": "integer",
+          "minimum": 900,
+          "maximum": 604800
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensions"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ownership": {
+      "type": "object",
+      "required": [
+        "inbounds",
+        "route_final",
+        "dns",
+        "route_rules",
+        "log",
+        "global"
+      ],
+      "properties": {
+        "inbounds": {
+          "const": "client"
+        },
+        "route_final": {
+          "const": "selected-profile"
+        },
+        "dns": {
+          "const": "merge-safe"
+        },
+        "route_rules": {
+          "const": "merge-safe"
+        },
+        "log": {
+          "const": "client-overlay"
+        },
+        "global": {
+          "const": "client-overlay"
+        }
+      },
+      "additionalProperties": false,
+      "default": {
+        "inbounds": "client",
+        "route_final": "selected-profile",
+        "dns": "merge-safe",
+        "route_rules": "merge-safe",
+        "log": "client-overlay",
+        "global": "client-overlay"
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "required": [
+        "format",
+        "document"
+      ],
+      "properties": {
+        "format": {
+          "const": "sing-box-json"
+        },
+        "ownership": {
+          "$ref": "#/$defs/ownership",
+          "description": "If omitted, the complete fixed ownership object in $defs/ownership applies. Omission never delegates authority to the publisher."
+        },
+        "document": {
+          "type": "object",
+          "description": "One opaque native sing-box configuration retained losslessly by the envelope. Activation is narrower than this schema: the exact installed HydraCore policy manifest, the policy-v1 top-level/leaf-type gate, recursive local-authority filtering, closed reference-graph checks, and HydraCore config validation must all pass. Unknown future types remain storable but are not executable under policy v1.",
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "inbounds"
+                ]
+              },
+              {
+                "required": [
+                  "services"
+                ]
+              },
+              {
+                "required": [
+                  "experimental"
+                ]
+              }
+            ]
+          },
+          "additionalProperties": true,
+          "$comment": "Policy v1 activates only $schema/outbounds/endpoints, a fixed leaf outbound set, and userspace WireGuard endpoints. It rejects publisher DNS/route/log/NTP/global sections, providers/rule sets, local identity/path/plugin fields, client-tag references, composites, and cycles before core validation."
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensions"
+        }
+      },
+      "additionalProperties": false
+    },
+    "entrypoint": {
+      "type": "object",
+      "required": [
+        "section",
+        "tag"
+      ],
+      "properties": {
+        "section": {
+          "enum": [
+            "outbounds",
+            "endpoints"
+          ]
+        },
+        "tag": {
+          "$ref": "#/$defs/nativeTag"
+        }
+      },
+      "additionalProperties": false
+    },
+    "profile": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "entrypoint"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "name": {
+          "$ref": "#/$defs/localizedText"
+        },
+        "description": {
+          "$ref": "#/$defs/localizedText"
+        },
+        "entrypoint": {
+          "$ref": "#/$defs/entrypoint"
+        },
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "country": {
+          "type": "string",
+          "pattern": "^[A-Za-z]{2}$"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "uniqueItems": true
+        },
+        "required_features": {
+          "$ref": "#/$defs/featureNames"
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensions"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,10 +1,10 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:gap/gap.dart';
 import 'package:meow_client/l10n/generated/app_localizations.dart';
 import 'package:meow_client/theme/demo_app_theme.dart';
+import 'package:meow_client/widgets/hydrabox_logo_badge.dart';
 
 class ConnectionButton extends StatefulWidget {
   const ConnectionButton({
@@ -91,12 +91,14 @@ class _ConnectionButtonState extends State<ConnectionButton> {
                               angle: -rotationAngle,
                               child: Padding(
                                 padding: EdgeInsets.all(inset),
-                                child: SvgPicture.asset(
-                                  'assets/images/logo.svg',
-                                  colorFilter: ColorFilter.mode(
-                                    buttonColor,
-                                    BlendMode.srcIn,
-                                  ),
+                                child: LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    return HydraBoxMark(
+                                      size: constraints.biggest.shortestSide,
+                                      color: buttonColor,
+                                      accentColor: buttonColor,
+                                    );
+                                  },
                                 ),
                               ),
                             ),

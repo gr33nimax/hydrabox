@@ -790,7 +790,7 @@ class RussiaRouteDataService {
     client.idleTimeout = _responseTimeout;
     try {
       final request = await client.getUrl(uri).timeout(_connectTimeout);
-      request.headers.set(HttpHeaders.userAgentHeader, 'EtonifyRouteData/1');
+      request.headers.set(HttpHeaders.userAgentHeader, 'HydraBoxRouteData/1');
       request.headers.set(HttpHeaders.acceptHeader, accept);
       final response = await request.close().timeout(_responseTimeout);
       if (response.statusCode < 200 || response.statusCode >= 300) {

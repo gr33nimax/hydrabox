@@ -2,7 +2,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:gap/gap.dart';
 import 'package:meow_client/features/home/home_active_proxy.dart';
 import 'package:meow_client/features/home/home_connection_button.dart';
@@ -11,6 +10,7 @@ import 'package:meow_client/features/home/home_subscription_card.dart';
 import 'package:meow_client/l10n/generated/app_localizations.dart';
 import 'package:meow_client/models/app_view_models.dart';
 import 'package:meow_client/models/proxy_runtime_visual_state.dart';
+import 'package:meow_client/widgets/hydrabox_logo_badge.dart';
 
 export 'home_active_proxy.dart';
 export 'home_connection_button.dart';
@@ -341,11 +341,7 @@ class _HomeBrandTitle extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SvgPicture.asset(
-          'assets/images/logo.svg',
-          height: 24,
-          colorFilter: ColorFilter.mode(titleColor, BlendMode.srcIn),
-        ),
+        HydraBoxMark(size: 24, color: titleColor, accentColor: titleColor),
         const Gap(9),
         Flexible(
           child: Text(brandName, maxLines: 1, overflow: TextOverflow.ellipsis),

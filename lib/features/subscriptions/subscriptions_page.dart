@@ -11,6 +11,7 @@ import 'package:meow_client/core/security/sensitive_clipboard.dart';
 import 'package:meow_client/core/widgets/app_notice.dart';
 import 'package:meow_client/data/backup/etonify_backup_service.dart';
 import 'package:meow_client/data/subscription/happ_crypto_link.dart';
+import 'package:meow_client/data/subscription/hydrabox_subscription_crypto.dart';
 import 'package:meow_client/data/subscription/subscription_failure.dart';
 import 'package:meow_client/data/subscription/subscription_fetcher.dart';
 import 'package:meow_client/data/subscription/subscription_store.dart';
@@ -292,14 +293,14 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
         url: movedUrl,
         info: info.copyWith(newUrl: null, ignoreSubscriptionMoved: false),
       );
-      await SubscriptionStore.save(updated);
+      await SubscriptionStore.save(updated, allowCreate: false);
       return updated;
     }
 
     final ignored = sub.copyWith(
       info: info.copyWith(ignoreSubscriptionMoved: true),
     );
-    await SubscriptionStore.save(ignored);
+    await SubscriptionStore.save(ignored, allowCreate: false);
     return ignored;
   }
 
@@ -504,7 +505,7 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
     } catch (e) {
       AppLogStore.warning(
         'subscription',
-        'Subscription import failed: ${e.runtimeType}: $e',
+        'Subscription import failed: ${e.runtimeType}',
       );
       throw _LocalizedSubscriptionPageError(_userFacingSubscriptionError(e));
     }
@@ -698,6 +699,7 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
     try {
       await SubscriptionStore.save(
         current.copyWith(info: info.copyWith(requireHwid: true)),
+        allowCreate: false,
       );
       final updated = await _runSubscriptionOperationWithWarning(
         SubscriptionStore.refresh(

@@ -24,6 +24,9 @@ from libbox_provenance import (  # noqa: E402
 
 ROOT = SCRIPTS.parent
 RELEASE_TAG = (
+    ROOT / "etonify-core" / "release" / "HYDRACORE_VERSION"
+).read_text(encoding="utf-8").strip()
+ETONIFY_VERSION = (
     ROOT / "etonify-core" / "release" / "ETONIFY_VERSION"
 ).read_text(encoding="utf-8").strip()
 SOURCE_COMMIT = subprocess.check_output(
@@ -37,11 +40,15 @@ def provenance_for(payload: bytes) -> dict[str, object]:
     return {
         "schema_version": 2,
         "artifact": "libbox.aar",
+        "distribution_id": "io.hydrabox.hydracore",
+        "distribution_name": "HydraCore",
+        "upstream_project": "etonify-core",
         "sha256": hashlib.sha256(payload).hexdigest(),
         "size_bytes": len(payload),
         "source_commit": SOURCE_COMMIT,
-        "core_version": "v1.13.14-extended-2.5.3-2-g060ece46a",
+        "core_version": RELEASE_TAG,
         "release_tag": RELEASE_TAG,
+        "etonify_version": ETONIFY_VERSION,
         "download_url": expected_download_url(RELEASE_TAG),
     }
 
@@ -252,6 +259,30 @@ class FetchLibboxTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "safe GitHub release tag"):
             parse_provenance(provenance)
 
+    def test_requires_exact_hydracore_distribution_identity(self) -> None:
+        invalid_values = {
+            "distribution_id": "io.example.other-core",
+            "distribution_name": "OtherCore",
+            "upstream_project": "unknown-core",
+        }
+        for field, value in invalid_values.items():
+            with self.subTest(field=field):
+                provenance = provenance_for(b"payload")
+                provenance[field] = value
+                with self.assertRaisesRegex(RuntimeError, field):
+                    parse_provenance(provenance)
+
+    def test_requires_safe_etonify_provenance_version(self) -> None:
+        provenance = provenance_for(b"payload")
+        provenance.pop("etonify_version")
+        with self.assertRaisesRegex(RuntimeError, "missing etonify_version"):
+            parse_provenance(provenance)
+
+        provenance = provenance_for(b"payload")
+        provenance["etonify_version"] = "../other-version"
+        with self.assertRaisesRegex(RuntimeError, "safe version tag"):
+            parse_provenance(provenance)
+
     def test_rejects_unpinned_source_commit_before_network(self) -> None:
         payload = b"payload"
         with tempfile.TemporaryDirectory() as temp:
@@ -292,6 +323,30 @@ class FetchLibboxTest(unittest.TestCase):
             with self.assertRaisesRegex(
                 RuntimeError,
                 "release_tag does not match the pinned core version",
+            ):
+                fetch_libbox(
+                    provenance_path,
+                    destination,
+                    opener=opener,
+                )
+
+            self.assertEqual(opener.requests, [])
+            self.assertFalse(destination.exists())
+            self.assertEqual(self.temporary_files(directory), [])
+
+    def test_rejects_unpinned_etonify_version_before_network(self) -> None:
+        payload = b"payload"
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            destination = directory / "libbox.aar"
+            provenance = provenance_for(payload)
+            provenance["etonify_version"] = "v9.9.9-other"
+            provenance_path = self.write_provenance(directory, provenance)
+            opener = RecordingOpener(payload)
+
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "etonify_version does not match",
             ):
                 fetch_libbox(
                     provenance_path,

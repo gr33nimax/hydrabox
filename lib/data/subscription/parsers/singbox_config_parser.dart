@@ -14,6 +14,11 @@ class SingboxConfigParser {
   SingboxConfigParser._();
 
   static const _metaTypes = {'direct', 'block', 'dns', 'selector', 'urltest'};
+  static const _detourReferenceKeys = {
+    'detour',
+    'download_detour',
+    'upload_detour',
+  };
 
   /// Returns `true` if [content] looks like a sing-box configuration.
   static bool canParse(String content) {
@@ -37,11 +42,18 @@ class SingboxConfigParser {
   /// Parses sing-box JSON config and returns proxy outbound maps.
   /// Each returned map has `_name` set from the outbound `tag`.
   /// Protocol-specific validation is intentionally deferred to libbox.
-  static List<Map<String, dynamic>> parse(String content) {
+  static List<Map<String, dynamic>> parse(
+    String content, {
+    bool includeGroupOutbounds = false,
+  }) {
     final results = <Map<String, dynamic>>[];
     final document = decodeDocument(content);
     if (document != null) {
-      _appendParsedConfig(document, results);
+      _appendParsedConfig(
+        document,
+        results,
+        includeGroupOutbounds: includeGroupOutbounds,
+      );
     }
     return results;
   }
@@ -421,10 +433,172 @@ class SingboxConfigParser {
     return dns is Map && hasTypedEntry(dns['servers']);
   }
 
+  /// Finds transit entries that are dependencies of another outbound.
+  ///
+  /// A native config describes a graph, not a flat list of independent
+  /// profiles. For example, a Trojan outbound can dial through a ShadowTLS
+  /// outbound via `detour`. The dependency must remain in the runtime config,
+  /// but presenting it as a second user-selectable profile breaks the intended
+  /// chain. `_group_only` is app metadata and is removed before libbox sees the
+  /// object.
+  ///
+  /// Cyclic references are deliberately left visible. They are invalid for
+  /// normal dialing and should reach libbox validation instead of making every
+  /// member of the cycle silently disappear from the UI.
+  static Set<String> _detourHelperTags(Map<String, dynamic> json) {
+    final entries = <Map>[];
+    for (final section in const {'outbounds', 'endpoints'}) {
+      final sectionEntries = json[section];
+      if (sectionEntries is! List) continue;
+      entries.addAll(sectionEntries.whereType<Map>());
+    }
+    if (entries.isEmpty) {
+      return const <String>{};
+    }
+
+    final tagCounts = <String, int>{};
+    for (final entry in entries) {
+      final tag = entry['tag']?.toString().trim() ?? '';
+      if (tag.isNotEmpty) {
+        tagCounts[tag] = (tagCounts[tag] ?? 0) + 1;
+      }
+    }
+    final uniqueTags = tagCounts.entries
+        .where((entry) => entry.value == 1)
+        .map((entry) => entry.key)
+        .toSet();
+
+    final groupMembers = <String, Set<String>>{};
+    final retainedGroupTags = <String>{};
+    for (final entry in entries) {
+      final tag = entry['tag']?.toString().trim() ?? '';
+      final type = entry['type']?.toString().trim().toLowerCase() ?? '';
+      final members = entry['outbounds'];
+      if (!uniqueTags.contains(tag) ||
+          (type != 'selector' && type != 'urltest')) {
+        continue;
+      }
+      if (_usesProviders(Map<String, dynamic>.from(entry))) {
+        retainedGroupTags.add(tag);
+      }
+      if (members is! List) continue;
+      groupMembers[tag] = members
+          .map((member) => member.toString().trim())
+          .where((member) => member.isNotEmpty)
+          .toSet();
+    }
+
+    final dependencies = <String, Set<String>>{};
+    for (final entry in entries) {
+      final sourceTag = entry['tag']?.toString().trim() ?? '';
+      if (!uniqueTags.contains(sourceTag)) continue;
+      final targets = dependencies.putIfAbsent(sourceTag, () => <String>{});
+      for (final key in _detourReferenceKeys) {
+        final targetTag = entry[key]?.toString().trim() ?? '';
+        if (targetTag.isNotEmpty &&
+            targetTag != sourceTag &&
+            uniqueTags.contains(targetTag)) {
+          targets.add(targetTag);
+        }
+      }
+    }
+
+    // Iterative DFS keeps this safe for large remote subscriptions and marks
+    // only the active path segment closed by a back edge.
+    final cyclicTags = <String>{};
+    final detourVisitState = <String, int>{};
+    for (final tag in uniqueTags) {
+      // 0/absent = unvisited, 1 = active, 2 = finished.
+      // The map is shared across roots, so every edge is traversed once.
+      if (detourVisitState[tag] != null) continue;
+      final stackNodes = <String>[tag];
+      final stackNeighbors = <List<String>>[
+        (dependencies[tag] ?? const <String>{}).toList(growable: false),
+      ];
+      final stackIndexes = <int>[0];
+      final activeIndexes = <String, int>{tag: 0};
+      detourVisitState[tag] = 1;
+
+      while (stackNodes.isNotEmpty) {
+        final frameIndex = stackNodes.length - 1;
+        final neighbors = stackNeighbors[frameIndex];
+        final neighborIndex = stackIndexes[frameIndex];
+        if (neighborIndex < neighbors.length) {
+          final next = neighbors[neighborIndex];
+          stackIndexes[frameIndex] = neighborIndex + 1;
+          final nextState = detourVisitState[next] ?? 0;
+          if (nextState == 0) {
+            detourVisitState[next] = 1;
+            activeIndexes[next] = stackNodes.length;
+            stackNodes.add(next);
+            stackNeighbors.add(
+              (dependencies[next] ?? const <String>{}).toList(growable: false),
+            );
+            stackIndexes.add(0);
+          } else if (nextState == 1) {
+            final cycleStart = activeIndexes[next];
+            if (cycleStart != null) {
+              cyclicTags.addAll(stackNodes.skip(cycleStart));
+            }
+          }
+          continue;
+        }
+
+        final completed = stackNodes.removeLast();
+        stackNeighbors.removeLast();
+        stackIndexes.removeLast();
+        activeIndexes.remove(completed);
+        detourVisitState[completed] = 2;
+      }
+    }
+
+    final explicitlySelectableTags = <String>{...retainedGroupTags};
+    void addExplicitReference(String tag, Set<String> visitingGroups) {
+      final members = groupMembers[tag];
+      if (members == null) {
+        if (uniqueTags.contains(tag)) {
+          explicitlySelectableTags.add(tag);
+        }
+        return;
+      }
+      explicitlySelectableTags.add(tag);
+      if (!visitingGroups.add(tag)) {
+        return;
+      }
+      for (final member in members) {
+        addExplicitReference(member, visitingGroups);
+      }
+      visitingGroups.remove(tag);
+    }
+
+    // Native selector/urltest membership is an explicit declaration that a
+    // leaf may be selected on its own. Preserve that intent even if the same
+    // leaf is also reused as another outbound's detour.
+    for (final groupTag in groupMembers.keys) {
+      addExplicitReference(groupTag, <String>{});
+    }
+
+    final route = json['route'];
+    final routeFinal = route is Map
+        ? route['final']?.toString().trim() ?? ''
+        : '';
+    if (routeFinal.isNotEmpty) {
+      addExplicitReference(routeFinal, <String>{});
+    }
+    final helperTags = dependencies.values
+        .expand((targets) => targets)
+        .where((tag) => !cyclicTags.contains(tag))
+        .where((tag) => !explicitlySelectableTags.contains(tag))
+        .toSet();
+    return helperTags;
+  }
+
   static void _appendParsedConfig(
     Map<String, dynamic> json,
-    List<Map<String, dynamic>> results,
-  ) {
+    List<Map<String, dynamic>> results, {
+    required bool includeGroupOutbounds,
+  }) {
+    final detourHelperTags = _detourHelperTags(json);
     final outbounds = json['outbounds'];
     if (outbounds is List) {
       for (var sourceIndex = 0; sourceIndex < outbounds.length; sourceIndex++) {
@@ -436,7 +610,13 @@ class SingboxConfigParser {
         final providerBackedGroup =
             (type == 'selector' || type == 'urltest') &&
             _usesProviders(outbound);
-        if (_metaTypes.contains(type) && !providerBackedGroup) continue;
+        final explicitlyAddressableGroup =
+            includeGroupOutbounds && (type == 'selector' || type == 'urltest');
+        if (_metaTypes.contains(type) &&
+            !providerBackedGroup &&
+            !explicitlyAddressableGroup) {
+          continue;
+        }
         if (type == 'wireguard') {
           outbound = _migrateLegacyWireGuardOutbound(outbound);
         }
@@ -451,6 +631,9 @@ class SingboxConfigParser {
         outbound['_etonify_source_index_section'] = 'outbounds';
         if (tag.isNotEmpty) {
           outbound['_etonify_original_tag'] = tag;
+        }
+        if (detourHelperTags.contains(tag)) {
+          outbound['_group_only'] = true;
         }
         results.add(outbound);
       }
@@ -477,6 +660,9 @@ class SingboxConfigParser {
         endpoint['_etonify_source_index_section'] = 'endpoints';
         if (tag.isNotEmpty) {
           endpoint['_etonify_original_tag'] = tag;
+        }
+        if (detourHelperTags.contains(tag)) {
+          endpoint['_group_only'] = true;
         }
         results.add(endpoint);
       }

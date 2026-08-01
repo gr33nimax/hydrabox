@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:meow_client/l10n/generated/app_localizations.dart';
-import 'package:meow_client/widgets/etonify_logo_badge.dart';
+import 'package:meow_client/widgets/hydrabox_logo_badge.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class LegalConsentPage extends StatefulWidget {
@@ -109,7 +109,9 @@ class _LegalConsentPageState extends State<LegalConsentPage>
                   22 + MediaQuery.paddingOf(context).bottom,
                 ),
                 children: [
-                  const Center(child: EtonifyLogoBadge(size: 96, logoSize: 38)),
+                  const Center(
+                    child: HydraBoxLogoBadge(size: 96, logoSize: 38),
+                  ),
                   const Gap(24),
                   Text(
                     l10n.legalGateTitle,

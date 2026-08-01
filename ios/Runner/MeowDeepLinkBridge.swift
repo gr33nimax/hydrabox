@@ -81,7 +81,7 @@ final class MeowDeepLinkBridge: NSObject {
       ]
     }
 
-    guard scheme == "etonify" || scheme == "meowvpn" else {
+    guard scheme == "hydrabox" || scheme == "etonify" || scheme == "meowvpn" else {
       return nil
     }
 

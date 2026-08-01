@@ -16,7 +16,7 @@ internal fun vpnConnectionBenchmarkEnabled(): Boolean =
         .getString("etonifyBenchmarkConnectVpn")
         ?.toBooleanStrictOrNull() == true
 
-internal fun MacrobenchmarkScope.launchEtonify() {
+internal fun MacrobenchmarkScope.launchHydraBox() {
     pressHome()
     startActivityAndWait()
     device.wait(Until.hasObject(By.pkg(TARGET_PACKAGE).depth(0)), UI_TIMEOUT_MS)
@@ -24,7 +24,7 @@ internal fun MacrobenchmarkScope.launchEtonify() {
 }
 
 internal fun MacrobenchmarkScope.prepareMainScreen() {
-    launchEtonify()
+    launchHydraBox()
     device.clickFirst(
         By.textContains("Continue"),
         By.textContains("Продолжить"),

@@ -33,7 +33,7 @@ class SettingsBackupExportActions {
     );
     final path = await FilePicker.saveFile(
       dialogTitle: l10n.backupExportSettings,
-      fileName: 'etonify.etonify-settings.json',
+      fileName: 'hydrabox.etonify-settings.json',
       type: FileType.custom,
       allowedExtensions: const ['json'],
       bytes: Uint8List.fromList(utf8.encode(content)),
@@ -54,7 +54,7 @@ class SettingsBackupExportActions {
     );
     final path = await FilePicker.saveFile(
       dialogTitle: l10n.backupExportProfileEncrypted,
-      fileName: 'etonify-profile.etonify-profile',
+      fileName: 'hydrabox-profile.etonify-profile',
       type: FileType.custom,
       allowedExtensions: const ['etonify-profile'],
       bytes: Uint8List.fromList(utf8.encode(content)),
@@ -94,7 +94,7 @@ class SettingsBackupExportActions {
     );
     final path = await FilePicker.saveFile(
       dialogTitle: l10n.backupExportProfilePlain,
-      fileName: 'etonify-profile-plain.etonify-profile',
+      fileName: 'hydrabox-profile-plain.etonify-profile',
       type: FileType.custom,
       allowedExtensions: const ['etonify-profile'],
       bytes: Uint8List.fromList(utf8.encode(content)),

@@ -364,6 +364,60 @@ class SubscriptionGroup {
   }
 }
 
+/// Stable UI identity declared by HydraBox Subscription v1.
+///
+/// A profile points at a native sing-box outbound or endpoint but is not
+/// itself a native runtime object. [runtimeTag] is the resolved compatibility
+/// projection used by the existing selector pipeline.
+class SubscriptionProfile {
+  const SubscriptionProfile({
+    required this.id,
+    required this.name,
+    required this.entrypointSection,
+    required this.entrypointTag,
+    required this.runtimeTag,
+    this.enabled = true,
+    this.country,
+    this.metadata = const {},
+  });
+
+  final String id;
+  final String name;
+  final String entrypointSection;
+  final String entrypointTag;
+  final String runtimeTag;
+  final bool enabled;
+  final String? country;
+  final Map<String, dynamic> metadata;
+
+  Map<String, dynamic> toMap() => {
+    'id': id,
+    'name': name,
+    'entrypoint_section': entrypointSection,
+    'entrypoint_tag': entrypointTag,
+    'runtime_tag': runtimeTag,
+    'enabled': enabled,
+    if (country != null) 'country': country,
+    if (metadata.isNotEmpty) 'metadata': metadata,
+  };
+
+  factory SubscriptionProfile.fromMap(Map<String, dynamic> map) {
+    return SubscriptionProfile(
+      id: map['id'] as String? ?? '',
+      name: map['name'] as String? ?? '',
+      entrypointSection: map['entrypoint_section'] as String? ?? '',
+      entrypointTag: map['entrypoint_tag'] as String? ?? '',
+      runtimeTag:
+          map['runtime_tag'] as String? ??
+          map['entrypoint_tag'] as String? ??
+          '',
+      enabled: map['enabled'] != false,
+      country: map['country']?.toString(),
+      metadata: Map<String, dynamic>.from(map['metadata'] as Map? ?? const {}),
+    );
+  }
+}
+
 /// A user-defined outbound clone that dials through another outbound first.
 class SubscriptionProxyChain {
   const SubscriptionProxyChain({
@@ -443,6 +497,7 @@ class Subscription {
     required this.name,
     required this.url,
     this.selectedProxyTag = '',
+    this.selectedProfileId = '',
     this.sortOrder,
     this.lastUpdated = 0,
     this.disableAutoUpdate = false,
@@ -450,10 +505,14 @@ class Subscription {
     this.autoRefreshMinutes = 360,
     this.cachedVisibleProxyCount = -1,
     this.hasRawPayload = false,
+    this.payloadStorageKey = '',
     this.rawContent = '',
     this.outbounds = const [],
     this.groups = const [],
+    this.profiles = const [],
     this.proxyChains = const [],
+    this.nativeConfig,
+    this.sourceMetadata = const {},
     this.urlTestConfig = const UrlTestConfig(),
     this.info,
   });
@@ -462,6 +521,7 @@ class Subscription {
   final String name;
   final String url;
   final String selectedProxyTag;
+  final String selectedProfileId;
   final int? sortOrder;
   final int lastUpdated; // ms since epoch
   final bool disableAutoUpdate;
@@ -469,10 +529,17 @@ class Subscription {
   final int autoRefreshMinutes; // 0 = disabled
   final int cachedVisibleProxyCount; // -1 = summary not cached yet
   final bool hasRawPayload;
+
+  /// Internal encrypted-Hive payload generation selected by metadata.
+  /// Empty means the legacy payload key equals [id].
+  final String payloadStorageKey;
   final String rawContent; // raw response body
   final List<Outbound> outbounds;
   final List<SubscriptionGroup> groups;
+  final List<SubscriptionProfile> profiles;
   final List<SubscriptionProxyChain> proxyChains;
+  final Map<String, dynamic>? nativeConfig;
+  final Map<String, dynamic> sourceMetadata;
   final UrlTestConfig urlTestConfig;
   final SubscriptionInfo? info;
 
@@ -498,6 +565,8 @@ class Subscription {
       'name': name,
       'url': url,
       if (selectedProxyTag.isNotEmpty) 'selected_proxy_tag': selectedProxyTag,
+      if (selectedProfileId.isNotEmpty)
+        'selected_profile_id': selectedProfileId,
       if (sortOrder != null) 'sort_order': sortOrder,
       'last_updated': lastUpdated,
       'disable_auto_update': disableAutoUpdate,
@@ -505,8 +574,11 @@ class Subscription {
       'auto_refresh_minutes': autoRefreshMinutes,
       if (visibleProxyCount >= 0) 'visible_proxy_count': visibleProxyCount,
       if (rawPayloadAvailable) 'has_raw_payload': true,
+      if (payloadStorageKey.isNotEmpty) 'payload_ref': payloadStorageKey,
       if (proxyChains.isNotEmpty)
         'proxy_chains': proxyChains.map((chain) => chain.toMap()).toList(),
+      if (sourceMetadata.isNotEmpty)
+        'source_metadata': _sourceMetadataSummary(sourceMetadata),
       'urltest_config': urlTestConfig.toMap(),
       if (info != null) 'info': info!.toMap(),
     };
@@ -516,6 +588,10 @@ class Subscription {
     'raw_content': rawContent,
     'outbounds': outbounds.map((o) => o.toMap()).toList(),
     if (groups.isNotEmpty) 'groups': groups.map((g) => g.toMap()).toList(),
+    if (profiles.isNotEmpty)
+      'profiles': profiles.map((profile) => profile.toMap()).toList(),
+    if (nativeConfig != null) 'native_config': nativeConfig,
+    if (sourceMetadata.isNotEmpty) 'source_metadata': sourceMetadata,
   };
 
   Map<String, dynamic> toMap() => {...toMetadataMap(), ...toPayloadMap()};
@@ -526,6 +602,7 @@ class Subscription {
       name: map['name'] as String? ?? 'Unnamed',
       url: map['url'] as String? ?? '',
       selectedProxyTag: map['selected_proxy_tag'] as String? ?? '',
+      selectedProfileId: map['selected_profile_id'] as String? ?? '',
       sortOrder: map['sort_order'] as int?,
       lastUpdated: map['last_updated'] as int? ?? 0,
       disableAutoUpdate: map['disable_auto_update'] == true,
@@ -533,6 +610,7 @@ class Subscription {
       autoRefreshMinutes: map['auto_refresh_minutes'] as int? ?? 360,
       cachedVisibleProxyCount: map['visible_proxy_count'] as int? ?? -1,
       hasRawPayload: map['has_raw_payload'] == true,
+      payloadStorageKey: map['payload_ref'] as String? ?? '',
       proxyChains:
           (map['proxy_chains'] as List?)
               ?.map(
@@ -548,6 +626,9 @@ class Subscription {
               )
               .toList(growable: false) ??
           const [],
+      sourceMetadata: Map<String, dynamic>.from(
+        map['source_metadata'] as Map? ?? const {},
+      ),
       urlTestConfig: map['urltest_config'] is Map
           ? UrlTestConfig.fromMap(
               Map<String, dynamic>.from(map['urltest_config'] as Map),
@@ -582,6 +663,22 @@ class Subscription {
               .where((group) => group.tag.isNotEmpty)
               .toList() ??
           [],
+      profiles:
+          (map['profiles'] as List?)
+              ?.map(
+                (e) => SubscriptionProfile.fromMap(
+                  Map<String, dynamic>.from(e as Map),
+                ),
+              )
+              .where((profile) => profile.id.isNotEmpty)
+              .toList(growable: false) ??
+          const [],
+      nativeConfig: map['native_config'] is Map
+          ? Map<String, dynamic>.from(map['native_config'] as Map)
+          : null,
+      sourceMetadata: Map<String, dynamic>.from(
+        map['source_metadata'] as Map? ?? metadata.sourceMetadata,
+      ),
     );
   }
 
@@ -590,6 +687,7 @@ class Subscription {
     String? name,
     String? url,
     String? selectedProxyTag,
+    String? selectedProfileId,
     int? sortOrder,
     int? lastUpdated,
     bool? disableAutoUpdate,
@@ -597,10 +695,15 @@ class Subscription {
     int? autoRefreshMinutes,
     int? cachedVisibleProxyCount,
     bool? hasRawPayload,
+    String? payloadStorageKey,
     String? rawContent,
     List<Outbound>? outbounds,
     List<SubscriptionGroup>? groups,
+    List<SubscriptionProfile>? profiles,
     List<SubscriptionProxyChain>? proxyChains,
+    Map<String, dynamic>? nativeConfig,
+    bool clearNativeConfig = false,
+    Map<String, dynamic>? sourceMetadata,
     UrlTestConfig? urlTestConfig,
     SubscriptionInfo? info,
   }) {
@@ -609,6 +712,14 @@ class Subscription {
       name: name ?? this.name,
       url: url ?? this.url,
       selectedProxyTag: selectedProxyTag ?? this.selectedProxyTag,
+      selectedProfileId:
+          selectedProfileId ??
+          (selectedProxyTag == null
+              ? this.selectedProfileId
+              : _profileIdForRuntimeTag(
+                  profiles ?? this.profiles,
+                  selectedProxyTag,
+                )),
       sortOrder: sortOrder ?? this.sortOrder,
       lastUpdated: lastUpdated ?? this.lastUpdated,
       disableAutoUpdate: disableAutoUpdate ?? this.disableAutoUpdate,
@@ -617,10 +728,16 @@ class Subscription {
       cachedVisibleProxyCount:
           cachedVisibleProxyCount ?? this.cachedVisibleProxyCount,
       hasRawPayload: hasRawPayload ?? this.hasRawPayload,
+      payloadStorageKey: payloadStorageKey ?? this.payloadStorageKey,
       rawContent: rawContent ?? this.rawContent,
       outbounds: outbounds ?? this.outbounds,
       groups: groups ?? this.groups,
+      profiles: profiles ?? this.profiles,
       proxyChains: proxyChains ?? this.proxyChains,
+      nativeConfig: clearNativeConfig
+          ? null
+          : nativeConfig ?? this.nativeConfig,
+      sourceMetadata: sourceMetadata ?? this.sourceMetadata,
       urlTestConfig: urlTestConfig ?? this.urlTestConfig,
       info: info ?? this.info,
     );
@@ -629,4 +746,39 @@ class Subscription {
   @override
   String toString() =>
       'Subscription($name, ${outbounds.length} outbounds, updated: $lastUpdated)';
+
+  static String _profileIdForRuntimeTag(
+    List<SubscriptionProfile> profiles,
+    String tag,
+  ) {
+    for (final profile in profiles) {
+      if (profile.enabled && profile.runtimeTag == tag) {
+        return profile.id;
+      }
+    }
+    return '';
+  }
+}
+
+Map<String, dynamic> _sourceMetadataSummary(Map<String, dynamic> source) {
+  const trustStateKeys = {
+    'format',
+    'issuer',
+    'subscription_id',
+    'channel',
+    'sequence',
+    'issued_at',
+    'not_before',
+    'expires_at',
+    'default_profile_id',
+    'encrypted',
+    'key_id',
+    'payload_sha256',
+    'trust_blocked',
+    'trust_block_reason',
+  };
+  return <String, dynamic>{
+    for (final entry in source.entries)
+      if (trustStateKeys.contains(entry.key)) entry.key: entry.value,
+  };
 }

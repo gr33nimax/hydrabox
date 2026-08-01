@@ -1,6 +1,7 @@
-# Private Build Inputs
+# Inherited Private Build Inputs
 
-Official release builds can restore private Happ crypto compatibility assets from an encrypted archive:
+An encrypted Happ compatibility archive may be present for inherited workflow
+compatibility:
 
 ```text
 .github/private/happ_crypto_assets.zip.gpg
@@ -15,7 +16,13 @@ crypt51_rsa_keys.json
 native_rsa_keys.json
 ```
 
-The GPG passphrase is stored in the repository secret:
+Encryption does not grant permission to redistribute the archive or its
+decrypted contents. The HydraBox release workflow excludes these assets by
+default. A distributor must verify its rights before enabling the
+`include_private_happ_assets` workflow input.
+
+When those rights have been verified, the GPG passphrase can be stored in the
+repository secret:
 
 ```text
 HAPP_CRYPTO_ASSETS_PASSPHRASE

@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hydrabox.invalid/schema/hydrabox-subscription-jwe-v1.schema.json",
+  "title": "HydraBox Subscription JWE v1",
+  "description": "Strict flattened JWE JSON Serialization for one direct-encryption recipient. The protected header is validated at runtime as dir + A256GCM + hbx+jwe. This provides confidentiality and AEAD integrity, not publisher identity.",
+  "type": "object",
+  "required": [
+    "protected",
+    "iv",
+    "ciphertext",
+    "tag"
+  ],
+  "properties": {
+    "protected": {
+      "$ref": "#/$defs/base64url",
+      "maxLength": 5462,
+      "description": "Base64url protected JOSE header, at most 4096 decoded bytes."
+    },
+    "iv": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{16}$"
+    },
+    "ciphertext": {
+      "$ref": "#/$defs/base64url",
+      "maxLength": 16777216,
+      "description": "Ciphertext for at most 12 MiB of uncompressed plaintext."
+    },
+    "tag": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$"
+    }
+  },
+  "additionalProperties": false,
+  "$comment": "With alg=dir the JWE Encrypted Key is empty, so encrypted_key is absent. The v1 profile also forbids unprotected/header/aad/recipients/zip. A key hint or JWE discriminator must be handled fail-closed and never fall back to a plaintext or legacy parser. The complete outer response is limited to 16 MiB at runtime.",
+  "$defs": {
+    "base64url": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_-]+$"
+    }
+  }
+}

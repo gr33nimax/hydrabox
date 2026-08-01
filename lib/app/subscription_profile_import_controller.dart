@@ -1,11 +1,14 @@
 import 'dart:math';
 
 import 'package:meow_client/data/subscription/subscription_fetcher.dart';
+import 'package:meow_client/data/subscription/subscription_storage_id.dart';
 import 'package:meow_client/models/subscription.dart';
 
 typedef SubscriptionProfileLoader = Future<List<Subscription>> Function();
 typedef SubscriptionProfileSaver =
     Future<void> Function(Subscription subscription);
+typedef SubscriptionProfileBatchSaver =
+    Future<void> Function(List<Subscription> subscriptions);
 typedef SubscriptionProfileImportApplied = Future<void> Function();
 typedef SubscriptionProfileIdGenerator = String Function();
 
@@ -37,11 +40,13 @@ class SubscriptionProfileImportController {
     required this.loadExisting,
     required this.save,
     required this.onApplied,
+    this.saveBatch,
     this.generateId = SubscriptionFetcher.generateId,
   });
 
   final SubscriptionProfileLoader loadExisting;
   final SubscriptionProfileSaver save;
+  final SubscriptionProfileBatchSaver? saveBatch;
   final SubscriptionProfileImportApplied onApplied;
   final SubscriptionProfileIdGenerator generateId;
 
@@ -57,8 +62,13 @@ class SubscriptionProfileImportController {
       imported: importedSubscriptions,
       generateId: generateId,
     );
-    for (final subscription in result.subscriptions) {
-      await save(subscription);
+    final batchSaver = saveBatch;
+    if (batchSaver != null) {
+      await batchSaver(result.subscriptions);
+    } else {
+      for (final subscription in result.subscriptions) {
+        await save(subscription);
+      }
     }
     await onApplied();
     return result;
@@ -157,12 +167,14 @@ class SubscriptionProfileImportController {
     Set<String> usedIds,
     SubscriptionProfileIdGenerator generateId,
   ) {
-    if (preferredId.isNotEmpty && !usedIds.contains(preferredId)) {
+    if (isSafeSubscriptionStorageId(preferredId) &&
+        !usedIds.contains(preferredId)) {
       return preferredId;
     }
     for (var attempt = 0; attempt < 32; attempt++) {
       final generated = generateId().trim();
-      if (generated.isNotEmpty && !usedIds.contains(generated)) {
+      if (isSafeSubscriptionStorageId(generated) &&
+          !usedIds.contains(generated)) {
         return generated;
       }
     }

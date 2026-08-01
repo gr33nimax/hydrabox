@@ -1,13 +1,23 @@
 # Security Policy
 
-Etonify is an early Android-first VPN client, so security reports are important to the project.
+HydraBox is an early Android-first VPN client and an independent, unofficial
+derivative of [Etonify](https://github.com/yamixdev/Etonify). HydraBox-specific
+reports must not be presented to Etonify or MeowTeam as if HydraBox were their
+official release.
 
 ## Reporting a Vulnerability
 
-Please report security issues through one of these channels:
+Please report security issues through this repository:
 
-- GitHub issue with limited public detail, if the issue is not immediately exploitable.
-- Telegram channel/contact path: [@etonify](https://t.me/etonify).
+- Prefer GitHub's private vulnerability-reporting form in the repository's
+  **Security** tab when it is enabled.
+- If private reporting is unavailable, open an issue containing only a short,
+  non-exploitable summary and ask the HydraBox maintainers for a private
+  channel. Do not attach secrets, working exploits, or sensitive logs.
+
+If a problem also reproduces in an unmodified Etonify build, it may be reported
+separately through Etonify's own channels. Those channels are upstream contacts,
+not HydraBox support.
 
 Please do not publish exploit details publicly before the team has time to investigate and prepare a fix.
 

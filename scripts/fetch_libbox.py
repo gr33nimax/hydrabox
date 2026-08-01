@@ -24,10 +24,11 @@ ROOT = Path(__file__).resolve().parents[1]
 LIBS = ROOT / "android" / "app" / "libs"
 AAR = LIBS / "libbox.aar"
 PROVENANCE_FILE = LIBS / "libbox.provenance.json"
-CORE_VERSION_FILE = ROOT / "etonify-core" / "release" / "ETONIFY_VERSION"
+CORE_VERSION_FILE = ROOT / "etonify-core" / "release" / "HYDRACORE_VERSION"
+ETONIFY_VERSION_FILE = ROOT / "etonify-core" / "release" / "ETONIFY_VERSION"
 DOWNLOAD_CHUNK_SIZE = 1024 * 1024
 DOWNLOAD_TIMEOUT_SECONDS = 120
-USER_AGENT = "Etonify-libbox-hydrator/1"
+USER_AGENT = "HydraBox-HydraCore-hydrator/1"
 
 
 def fail(message: str) -> NoReturn:
@@ -55,8 +56,17 @@ def pinned_core_commit() -> str:
 
 def pinned_release_tag() -> str:
     if not CORE_VERSION_FILE.is_file():
-        fail("etonify-core/release/ETONIFY_VERSION is missing")
+        fail("etonify-core/release/HYDRACORE_VERSION is missing")
     value = CORE_VERSION_FILE.read_text(encoding="utf-8").strip()
+    if not value:
+        fail("etonify-core/release/HYDRACORE_VERSION is empty")
+    return value
+
+
+def pinned_etonify_version() -> str:
+    if not ETONIFY_VERSION_FILE.is_file():
+        fail("etonify-core/release/ETONIFY_VERSION is missing")
+    value = ETONIFY_VERSION_FILE.read_text(encoding="utf-8").strip()
     if not value:
         fail("etonify-core/release/ETONIFY_VERSION is empty")
     return value
@@ -106,6 +116,7 @@ def fetch_libbox(
         provenance,
         source_commit=pinned_core_commit(),
         release_tag=pinned_release_tag(),
+        etonify_version=pinned_etonify_version(),
     )
     if destination.name != provenance.raw["artifact"]:
         fail(

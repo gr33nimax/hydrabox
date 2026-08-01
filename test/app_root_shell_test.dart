@@ -23,7 +23,7 @@ void main() {
     );
 
     final app = tester.widget<MaterialApp>(find.byType(MaterialApp));
-    expect(app.title, 'Etonify');
+    expect(app.title, 'HydraBox');
     expect(app.navigatorKey, same(navigatorKey));
     expect(app.themeMode, ThemeMode.dark);
     expect(app.locale, const Locale('ru'));

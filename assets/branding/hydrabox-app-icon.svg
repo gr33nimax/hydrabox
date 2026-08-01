@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" role="img" aria-labelledby="title desc">
+  <title id="title">HydraBox application icon</title>
+  <desc id="desc">A three-headed network hydra inside a hexagonal box.</desc>
+  <rect width="108" height="108" fill="#f6fafc"/>
+  <path fill="#0f5c7a" d="M54 8 90 27v50L54 99 18 77V27Z"/>
+  <path
+    d="M54 82V38M54 59C48 51 39 49 32 36M54 59C60 51 69 49 76 36"
+    fill="none"
+    stroke="#fff"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    stroke-width="7"
+  />
+  <circle cx="32" cy="27" r="8" fill="#fff"/>
+  <circle cx="54" cy="24" r="8" fill="#fff"/>
+  <circle cx="76" cy="27" r="8" fill="#fff"/>
+</svg>

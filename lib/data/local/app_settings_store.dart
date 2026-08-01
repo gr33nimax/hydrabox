@@ -27,7 +27,7 @@ enum TlsFragmentationMode { disabled, record, fragment }
 const int maxSplitRoutingPackageCount = 128;
 const String defaultUrlTestUrl = 'https://www.gstatic.com/generate_204';
 const String defaultRussiaDnsDirectResolver = 'udp://77.88.8.8';
-const String defaultProxyUsername = 'etonify';
+const String defaultProxyUsername = 'hydrabox';
 const int proxyUsernameMaxLength = 64;
 const int proxyPasswordLength = 24;
 

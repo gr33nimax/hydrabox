@@ -1,4 +1,4 @@
-name: Etonify · Android release
+name: HydraBox · Android release
 
 on:
   workflow_dispatch:
@@ -11,6 +11,11 @@ on:
         description: "Optional versionCode override, for example 1"
         required: false
         type: string
+      include_private_happ_assets:
+        description: "Include inherited private Happ assets only after redistribution rights are verified"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -22,7 +27,7 @@ concurrency:
 env:
   FLUTTER_VERSION: "3.44.7"
   JAVA_VERSION: "21"
-  KEYSTORE_PATH: "android/app/etonify-release.jks"
+  KEYSTORE_PATH: "android/app/hydrabox-release.jks"
   BUILD_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.build_name || '' }}
   BUILD_NUMBER: ${{ github.event_name == 'workflow_dispatch' && inputs.build_number || '' }}
 
@@ -34,7 +39,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           submodules: true
 
@@ -96,7 +101,7 @@ jobs:
           fi
 
       - name: Set up JDK
-        uses: actions/setup-java@v5.6.0
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
@@ -121,10 +126,9 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          HAPP_CRYPTO_ASSETS_PASSPHRASE: ${{ secrets.HAPP_CRYPTO_ASSETS_PASSPHRASE }}
         run: |
           missing=0
-          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD HAPP_CRYPTO_ASSETS_PASSPHRASE; do
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
             if [ -z "${!name}" ]; then
               echo "::error title=Missing secret::$name is not configured in repository secrets"
               missing=1
@@ -146,15 +150,21 @@ jobs:
           storePassword=${ANDROID_KEYSTORE_PASSWORD}
           keyPassword=${ANDROID_KEY_PASSWORD}
           keyAlias=${ANDROID_KEY_ALIAS}
-          storeFile=app/etonify-release.jks
+          storeFile=app/hydrabox-release.jks
           EOF
           chmod 600 "${KEYSTORE_PATH}" android/key.properties
 
-      - name: Restore private Happ crypto assets
+      - name: Restore licensed private Happ crypto assets
+        if: ${{ inputs.include_private_happ_assets }}
         shell: bash
         env:
           HAPP_CRYPTO_ASSETS_PASSPHRASE: ${{ secrets.HAPP_CRYPTO_ASSETS_PASSPHRASE }}
         run: |
+          if [ -z "${HAPP_CRYPTO_ASSETS_PASSPHRASE}" ]; then
+            echo "::error title=Missing secret::HAPP_CRYPTO_ASSETS_PASSPHRASE is not configured"
+            exit 1
+          fi
+          echo "Private Happ assets were explicitly requested. The distributor is responsible for verified redistribution rights."
           encrypted_assets=".github/private/happ_crypto_assets.zip.gpg"
           if [ ! -s "${encrypted_assets}" ]; then
             echo "::error title=Missing encrypted Happ crypto assets::${encrypted_assets} is missing or empty"
@@ -218,7 +228,7 @@ jobs:
 
       - name: Test
         env:
-          HAPP_CRYPTO_TESTS: "true"
+          HAPP_CRYPTO_TESTS: ${{ inputs.include_private_happ_assets && 'true' || 'false' }}
         run: flutter test
 
       - name: Build obfuscated universal and ABI APKs
@@ -226,11 +236,26 @@ jobs:
         run: |
           mkdir -p build/release-apks
 
+          if [[ "${GITHUB_REPOSITORY:-}" != */* ]]; then
+            echo "::error title=Invalid repository identity::GITHUB_REPOSITORY must be owner/name"
+            exit 1
+          fi
+          update_repository_owner="${GITHUB_REPOSITORY%%/*}"
+          update_repository_name="${GITHUB_REPOSITORY#*/}"
+          if [ -z "$update_repository_owner" ] || \
+             [ -z "$update_repository_name" ] || \
+             [[ "$update_repository_name" == */* ]]; then
+            echo "::error title=Invalid repository identity::Cannot derive updater owner/name from GITHUB_REPOSITORY"
+            exit 1
+          fi
+
           common_args=(
             --release
             --obfuscate
             --build-name "${RELEASE_VERSION}"
             --split-debug-info=build/debug-info/android
+            "--dart-define=HYDRABOX_UPDATE_REPOSITORY_OWNER=${update_repository_owner}"
+            "--dart-define=HYDRABOX_UPDATE_REPOSITORY_NAME=${update_repository_name}"
           )
           if [ -n "${BUILD_NUMBER}" ]; then
             common_args+=(--build-number "${BUILD_NUMBER}")
@@ -238,15 +263,15 @@ jobs:
 
           flutter build apk "${common_args[@]}"
           cp build/app/outputs/flutter-apk/app-release.apk \
-            "build/release-apks/etonify-v${RELEASE_VERSION}-universal.apk"
+            "build/release-apks/hydrabox-v${RELEASE_VERSION}-universal.apk"
 
           flutter build apk "${common_args[@]}" --split-per-abi
           cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
-            "build/release-apks/etonify-v${RELEASE_VERSION}-arm64-v8a.apk"
+            "build/release-apks/hydrabox-v${RELEASE_VERSION}-arm64-v8a.apk"
           cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk \
-            "build/release-apks/etonify-v${RELEASE_VERSION}-armeabi-v7a.apk"
+            "build/release-apks/hydrabox-v${RELEASE_VERSION}-armeabi-v7a.apk"
           cp build/app/outputs/flutter-apk/app-x86_64-release.apk \
-            "build/release-apks/etonify-v${RELEASE_VERSION}-x86_64.apk"
+            "build/release-apks/hydrabox-v${RELEASE_VERSION}-x86_64.apk"
 
       - name: List APK outputs
         run: ls -lah build/release-apks/*.apk
@@ -254,7 +279,7 @@ jobs:
       - name: Generate updater manifest
         shell: bash
         run: |
-          apk="build/release-apks/etonify-v${RELEASE_VERSION}-universal.apk"
+          apk="build/release-apks/hydrabox-v${RELEASE_VERSION}-universal.apk"
           analyzer="${ANDROID_HOME}/cmdline-tools/latest/bin/apkanalyzer"
           if [ ! -x "$analyzer" ]; then
             analyzer="$(command -v apkanalyzer || true)"
@@ -287,27 +312,27 @@ jobs:
               "packageName": "com.etonify.meow_client",
               "assets": assets,
           }
-          Path("build/release-apks/etonify-update.json").write_text(
+          Path("build/release-apks/hydrabox-update.json").write_text(
               json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
               encoding="utf-8",
           )
           PY
-          cat build/release-apks/etonify-update.json
+          cat build/release-apks/hydrabox-update.json
 
       - name: Upload APK artifact
-        uses: actions/upload-artifact@v6.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: etonify-release-apks-${{ github.run_number }}
+          name: hydrabox-release-apks-${{ github.run_number }}
           path: |
             build/release-apks/*.apk
-            build/release-apks/etonify-update.json
+            build/release-apks/hydrabox-update.json
           if-no-files-found: error
           retention-days: 14
 
       - name: Upload Dart debug symbols
-        uses: actions/upload-artifact@v6.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: etonify-dart-debug-info-${{ github.run_number }}
+          name: hydrabox-dart-debug-info-${{ github.run_number }}
           path: build/debug-info/android/**
           if-no-files-found: error
           retention-days: 30
@@ -317,6 +342,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           notes_file="build/release-notes.md"
           if [ -f CHANGELOG.md ]; then
             awk -v version="$RELEASE_VERSION" '
@@ -335,18 +361,28 @@ jobs:
           Dart obfuscation is enabled. Debug symbols are attached as a separate workflow artifact.
 
           Assets:
-          - etonify-v${RELEASE_VERSION}-universal.apk
-          - etonify-v${RELEASE_VERSION}-arm64-v8a.apk
-          - etonify-v${RELEASE_VERSION}-armeabi-v7a.apk
-          - etonify-v${RELEASE_VERSION}-x86_64.apk
+          - hydrabox-v${RELEASE_VERSION}-universal.apk
+          - hydrabox-v${RELEASE_VERSION}-arm64-v8a.apk
+          - hydrabox-v${RELEASE_VERSION}-armeabi-v7a.apk
+          - hydrabox-v${RELEASE_VERSION}-x86_64.apk
           EOF
 
-          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+          if gh release view "$TAG_NAME" --json isDraft,targetCommitish > release-state.json 2>/dev/null; then
+            if [ "$(jq -r '.isDraft' release-state.json)" != "true" ]; then
+              echo "::error title=Published release exists::Refusing to replace ${TAG_NAME}" >&2
+              exit 1
+            fi
+            release_target="$(jq -r '.targetCommitish' release-state.json)"
+            if [ "$release_target" != "$GITHUB_SHA" ]; then
+              echo "::error title=Release target mismatch::${TAG_NAME} targets ${release_target}, build is ${GITHUB_SHA}" >&2
+              exit 1
+            fi
             gh release edit "$TAG_NAME" --title "$RELEASE_TITLE" --notes-file "$notes_file"
-            gh release upload "$TAG_NAME" build/release-apks/*.apk build/release-apks/etonify-update.json --clobber
+            gh release upload "$TAG_NAME" build/release-apks/*.apk build/release-apks/hydrabox-update.json --clobber
           else
-            gh release create "$TAG_NAME" build/release-apks/*.apk build/release-apks/etonify-update.json \
+            gh release create "$TAG_NAME" build/release-apks/*.apk build/release-apks/hydrabox-update.json \
               --draft \
+              --target "$GITHUB_SHA" \
               --title "$RELEASE_TITLE" \
               --notes-file "$notes_file"
           fi

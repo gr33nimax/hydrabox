@@ -1,4 +1,4 @@
-name: Etonify · Sync extended libbox
+name: HydraCore · Sync extended libbox
 
 on:
   push:
@@ -38,6 +38,9 @@ env:
   CORE_REPOSITORY: "https://github.com/gr33nimax/etonify-core.git"
   CORE_BRANCH: "extended-integration"
   CORE_RELEASE_REPOSITORY: "gr33nimax/etonify-core"
+  CORE_DISTRIBUTION_ID: "io.hydrabox.hydracore"
+  CORE_DISTRIBUTION_NAME: "HydraCore"
+  CORE_UPSTREAM_PROJECT: "etonify-core"
 
 jobs:
   sync-libbox:
@@ -46,7 +49,7 @@ jobs:
     timeout-minutes: 120
 
     steps:
-      - name: Checkout Etonify and pinned core source
+      - name: Checkout HydraBox and pinned core source
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           fetch-depth: 0
@@ -110,15 +113,21 @@ jobs:
             echo "::error title=Core version mismatch::Expected $EXPECTED_CORE_VERSION, found $core_version"
             exit 1
           fi
-          release_tag="$(tr -d '\r\n' < etonify-core/release/ETONIFY_VERSION)"
+          release_tag="$(tr -d '\r\n' < etonify-core/release/HYDRACORE_VERSION)"
           if ! [[ "$release_tag" =~ ^[0-9A-Za-z][0-9A-Za-z._+-]{0,127}$ ]]; then
-            echo "::error title=Invalid core release tag::Found '${release_tag}' in release/ETONIFY_VERSION"
+            echo "::error title=Invalid core release tag::Found '${release_tag}' in release/HYDRACORE_VERSION"
+            exit 1
+          fi
+          etonify_version="$(tr -d '\r\n' < etonify-core/release/ETONIFY_VERSION)"
+          if ! [[ "$etonify_version" =~ ^[0-9A-Za-z][0-9A-Za-z._+-]{0,127}$ ]]; then
+            echo "::error title=Invalid Etonify provenance version::Found '${etonify_version}'"
             exit 1
           fi
 
           artifact_version="$(printf '%s' "$core_version" | tr '/[:space:]' '--')"
           echo "version=$core_version" >> "$GITHUB_OUTPUT"
           echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+          echo "etonify_version=$etonify_version" >> "$GITHUB_OUTPUT"
           echo "artifact_version=$artifact_version" >> "$GITHUB_OUTPUT"
           echo "commit=$checkout_commit" >> "$GITHUB_OUTPUT"
           echo "Building $core_version from $checkout_commit for release $release_tag"
@@ -218,9 +227,9 @@ jobs:
       - name: Prepare verified libbox artifacts
         shell: bash
         env:
-          ANDROID_NDK_HOME: ${{ steps.setup_ndk.outputs.ndk-path }}
           CORE_VERSION: ${{ steps.core_metadata.outputs.version }}
           CORE_RELEASE_TAG: ${{ steps.core_metadata.outputs.release_tag }}
+          CORE_ETONIFY_VERSION: ${{ steps.core_metadata.outputs.etonify_version }}
           CORE_COMMIT: ${{ steps.core_metadata.outputs.commit }}
           LIBBOX_ANDROID_API: ${{ steps.android_build.outputs.android_api }}
           LIBBOX_BUILD_TAGS: ${{ steps.android_build.outputs.tags }}
@@ -235,21 +244,6 @@ jobs:
             cd "$libs"
             sha256sum libbox.aar > libbox.sha256
           )
-
-          gomobile_binary="$(go env GOPATH)/bin/gomobile"
-          gomobile_version="$(
-            go version -m "$gomobile_binary" |
-              awk '$1 == "mod" && $2 == "github.com/sagernet/gomobile" { print $3; exit }'
-          )"
-          test -n "$gomobile_version"
-
-          ndk_revision="$(
-            awk -F= '$1 ~ /^Pkg\.Revision[[:space:]]*$/ {
-              gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2)
-              print $2
-            }' "$ANDROID_NDK_HOME/source.properties"
-          )"
-          test -n "$ndk_revision"
 
           export REBUILT_LIBBOX_SHA256="$(
             sha256sum "$libs/libbox.aar" | awk '{print $1}'
@@ -339,7 +333,7 @@ jobs:
           export LIBBOX_SOURCES_SHA256="$published_sources_sha"
           export LIBBOX_SIZE_BYTES="$published_size"
           printf '%s  libbox.aar\n' "$LIBBOX_SHA256" > "$libs/libbox.sha256"
-          export CORE_RELEASE_TAG CORE_COMMIT
+          export CORE_RELEASE_TAG CORE_ETONIFY_VERSION CORE_COMMIT
           export LIBBOX_ANDROID_API LIBBOX_BUILD_TAGS
           python3 - "$release_tmp/provenance.json" <<'PY'
           import json
@@ -350,9 +344,15 @@ jobs:
           provenance = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
           expected = {
               "artifact": "libbox.aar",
+              "distribution_id": os.environ["CORE_DISTRIBUTION_ID"],
+              "distribution_name": os.environ["CORE_DISTRIBUTION_NAME"],
+              "upstream_project": os.environ["CORE_UPSTREAM_PROJECT"],
               "sha256": os.environ["LIBBOX_SHA256"].lower(),
               "source_commit": os.environ["CORE_COMMIT"],
-              "etonify_version": os.environ["CORE_RELEASE_TAG"],
+              "source_version": os.environ["CORE_VERSION"],
+              "hydracore_version": os.environ["CORE_RELEASE_TAG"],
+              "etonify_version": os.environ["CORE_ETONIFY_VERSION"],
+              "android_ndk_requested": os.environ["ANDROID_NDK_VERSION"],
               "build_tags": os.environ["LIBBOX_BUILD_TAGS"],
               "android_api": int(os.environ["LIBBOX_ANDROID_API"]),
           }
@@ -370,17 +370,29 @@ jobs:
                       f"{field}: expected {expected_value!r}, got {actual_value!r}"
                   )
               raise SystemExit(1)
+          for field in ("go", "gomobile", "java", "android_ndk"):
+              value = actual.get(field)
+              if (
+                  not isinstance(value, str)
+                  or not value.strip()
+                  or any(ord(character) < 32 for character in value)
+              ):
+                  print(
+                      f"::error title=Invalid published provenance::"
+                      f"{field} must be a non-empty string without control characters"
+                  )
+                  raise SystemExit(1)
           print("Published provenance matches the authoritative libbox release asset.")
           PY
 
-          export CORE_VERSION CORE_RELEASE_TAG CORE_COMMIT
+          export CORE_VERSION CORE_RELEASE_TAG CORE_ETONIFY_VERSION CORE_COMMIT
           export CORE_REPOSITORY CORE_BRANCH
           export LIBBOX_ANDROID_API LIBBOX_BUILD_TAGS
-          export GOMOBILE_ACTUAL="$gomobile_version"
-          export GO_ACTUAL="$(go version)"
-          export JAVA_ACTUAL="$(java --version 2>&1 | sed -n '1p')"
-          export ANDROID_NDK_ACTUAL="$ndk_revision"
-          export ANDROID_NDK_REQUESTED="$ANDROID_NDK_VERSION"
+          export PUBLISHED_GO="$(jq --exit-status --raw-output '.go' "$release_tmp/provenance.json")"
+          export PUBLISHED_GOMOBILE="$(jq --exit-status --raw-output '.gomobile' "$release_tmp/provenance.json")"
+          export PUBLISHED_JAVA="$(jq --exit-status --raw-output '.java' "$release_tmp/provenance.json")"
+          export PUBLISHED_ANDROID_NDK="$(jq --exit-status --raw-output '.android_ndk' "$release_tmp/provenance.json")"
+          export PUBLISHED_ANDROID_NDK_REQUESTED="$(jq --exit-status --raw-output '.android_ndk_requested' "$release_tmp/provenance.json")"
           python3 - <<'PY'
           import json
           import os
@@ -389,20 +401,24 @@ jobs:
           provenance = {
               "schema_version": 2,
               "artifact": "libbox.aar",
+              "distribution_id": os.environ["CORE_DISTRIBUTION_ID"],
+              "distribution_name": os.environ["CORE_DISTRIBUTION_NAME"],
+              "upstream_project": os.environ["CORE_UPSTREAM_PROJECT"],
               "sha256": os.environ["LIBBOX_SHA256"],
               "sources_sha256": os.environ["LIBBOX_SOURCES_SHA256"],
               "size_bytes": int(os.environ["LIBBOX_SIZE_BYTES"]),
               "download_url": os.environ["LIBBOX_DOWNLOAD_URL"],
               "core_version": os.environ["CORE_VERSION"],
               "release_tag": os.environ["CORE_RELEASE_TAG"],
+              "etonify_version": os.environ["CORE_ETONIFY_VERSION"],
               "source_repository": os.environ["CORE_REPOSITORY"],
               "source_branch": os.environ["CORE_BRANCH"],
               "source_commit": os.environ["CORE_COMMIT"],
-              "go": os.environ["GO_ACTUAL"],
-              "gomobile": os.environ["GOMOBILE_ACTUAL"],
-              "java": os.environ["JAVA_ACTUAL"],
-              "android_ndk": os.environ["ANDROID_NDK_ACTUAL"],
-              "android_ndk_requested": os.environ["ANDROID_NDK_REQUESTED"],
+              "go": os.environ["PUBLISHED_GO"],
+              "gomobile": os.environ["PUBLISHED_GOMOBILE"],
+              "java": os.environ["PUBLISHED_JAVA"],
+              "android_ndk": os.environ["PUBLISHED_ANDROID_NDK"],
+              "android_ndk_requested": os.environ["PUBLISHED_ANDROID_NDK_REQUESTED"],
               "android_api": int(os.environ["LIBBOX_ANDROID_API"]),
               "build_tags": os.environ["LIBBOX_BUILD_TAGS"],
           }
@@ -427,7 +443,7 @@ jobs:
       - name: Upload built libbox for inspection
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: etonify-libbox-${{ steps.core_metadata.outputs.artifact_version }}-${{ github.run_number }}
+          name: hydracore-libbox-${{ steps.core_metadata.outputs.artifact_version }}-${{ github.run_number }}
           path: |
             android/app/libs/libbox.aar
             android/app/libs/libbox.provenance.json

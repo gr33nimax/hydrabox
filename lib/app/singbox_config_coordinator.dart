@@ -474,7 +474,11 @@ class SingboxConfigCoordinator {
     late final SingboxConfigBuildResult result;
     try {
       result = await buildSingboxConfigInBackground(input);
-      if (validateConfig && input.capabilities.supportsConfigCheck) {
+      final requiresHydraBoxValidation =
+          input.activeSubscription?.sourceMetadata['format'] ==
+          'hydrabox.io/subscription/v1';
+      if ((validateConfig || requiresHydraBoxValidation) &&
+          input.capabilities.supportsConfigCheck) {
         await SingboxRuntime.instance.checkConfig(
           await _configContentForValidation(result),
         );

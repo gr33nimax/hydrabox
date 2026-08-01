@@ -108,7 +108,7 @@ class SecureHiveStorage {
   /// Loads the data key protected by Android Keystore.
   ///
   /// Android must never silently fall back to plaintext. Non-Android builds
-  /// remain unencrypted because Etonify's production target is Android.
+  /// remain unencrypted because HydraBox's production target is Android.
   static Future<void> init() async {
     if (_initialized) return;
     final inFlight = _initialization;

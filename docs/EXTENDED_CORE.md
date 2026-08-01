@@ -1,7 +1,10 @@
-# Extended sing-box core
+# HydraCore compatibility and protocol surface
 
-Etonify is built against the [`shtorm-7/sing-box-extended`](https://github.com/shtorm-7/sing-box-extended)
+HydraBox uses the public name **HydraCore** for its runtime. HydraCore is based
+on the [`shtorm-7/sing-box-extended`](https://github.com/shtorm-7/sing-box-extended)
 `extended` line through the `gr33nimax/etonify-core` integration submodule.
+This naming does not imply independent upstream authorship; see
+[UPSTREAM.md](../UPSTREAM.md).
 The Android AAR is produced from the checked-out submodule commit; the
 provenance file next to the AAR records the exact commit, Go/gomobile/NDK
 versions and build tags.
@@ -43,7 +46,7 @@ a share-link representation should publish a full sing-box JSON config.
 Treat complete sing-box JSON documents as trusted executable configuration.
 They may declare listeners, local-file providers and management services, so
 importing an untrusted document can expose local ports or grant it access to
-resources available to the Etonify process. This warning does not reduce the
+resources available to the HydraBox process. This warning does not reduce the
 extended core surface; it makes the authority granted to a full config
 explicit.
 

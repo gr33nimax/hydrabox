@@ -44,7 +44,7 @@ class AppRootShell extends StatelessWidget {
         return MaterialApp(
           navigatorKey: navigatorKey,
           debugShowCheckedModeBanner: false,
-          title: 'Etonify',
+          title: 'HydraBox',
           theme: lightTheme,
           darkTheme: darkTheme,
           themeMode: themeMode,

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
@@ -12,10 +13,14 @@ import 'package:meow_client/logging/app_log_store.dart';
 import 'package:meow_client/models/subscription.dart';
 
 import 'location_aliases.dart';
+import 'hydrabox_subscription_crypto.dart';
+import 'hydrabox_subscription_time.dart';
 import 'outbound_schema.dart';
+import 'parsers/hydrabox_subscription_parser.dart';
 import 'subscription_failure.dart';
 import 'subscription_fetcher.dart';
 import 'subscription_parser.dart';
+import 'subscription_storage_id.dart';
 
 class SubscriptionImportResult {
   const SubscriptionImportResult({required this.subscription, this.warning});
@@ -42,43 +47,83 @@ class SubscriptionStore {
   static const _legacyMetaBoxName = 'subscriptions';
   static const _legacyPayloadBoxName = 'subscription_payloads';
   static const _legacySummaryBoxName = 'subscription_summaries';
-  static const _storageSchemaVersionKey = '__etonify_storage_schema_version__';
+  static const _storageSchemaVersionKey = subscriptionStorageSchemaVersionKey;
   static const _storageSchemaVersion = 2;
   static const _localFileImportScheme = 'meow-file';
+  static const _payloadGenerationSeparator =
+      subscriptionPayloadGenerationSeparator;
   static Box? _metaBox;
   static Box? _payloadBox;
+  static bool _initialized = false;
+  static Future<void>? _initialization;
   static final Map<String, Future<void>> _subscriptionWriteLocks =
       <String, Future<void>>{};
+  static final Queue<_StoreMutationWaiter> _storeMutationWaiters =
+      Queue<_StoreMutationWaiter>();
+  static int _activeStoreMutations = 0;
+  static bool _exclusiveStoreMutationActive = false;
+  static Future<void> _hydraTrustWriteLock = Future<void>.value();
   static final Map<String, Future<Subscription>> _refreshesInFlight =
       <String, Future<Subscription>>{};
 
   // ─────────────────── Lifecycle ───────────────────
 
   /// Opens the Hive box. Must be called before any other method.
-  static Future<void> init() async {
-    if (_metaBox != null) {
-      return;
+  static Future<void> init() {
+    if (_initialized) {
+      return Future<void>.value();
     }
+    final inFlight = _initialization;
+    if (inFlight != null) {
+      return inFlight;
+    }
+    late final Future<void> tracked;
+    tracked = _initialize().whenComplete(() {
+      if (identical(_initialization, tracked)) {
+        _initialization = null;
+      }
+    });
+    _initialization = tracked;
+    return tracked;
+  }
+
+  static Future<void> _initialize() async {
     final totalStopwatch = Stopwatch()..start();
+    Box? metaBox;
+    Box? payloadBox;
+    var openedMetaBox = false;
+    var openedPayloadBox = false;
     try {
       await SecureHiveStorage.init();
       final metaStopwatch = Stopwatch()..start();
-      _metaBox = Hive.isBoxOpen(_metaBoxName)
-          ? Hive.box(_metaBoxName)
-          : await Hive.openBox(
-              _metaBoxName,
-              encryptionCipher: SecureHiveStorage.cipher,
-            );
+      if (Hive.isBoxOpen(_metaBoxName)) {
+        metaBox = Hive.box(_metaBoxName);
+      } else {
+        metaBox = await Hive.openBox(
+          _metaBoxName,
+          encryptionCipher: SecureHiveStorage.cipher,
+        );
+        openedMetaBox = true;
+      }
       metaStopwatch.stop();
       final payloadStopwatch = Stopwatch()..start();
-      _payloadBox = Hive.isBoxOpen(_payloadBoxName)
-          ? Hive.box(_payloadBoxName)
-          : await Hive.openBox(
-              _payloadBoxName,
-              encryptionCipher: SecureHiveStorage.cipher,
-            );
+      if (Hive.isBoxOpen(_payloadBoxName)) {
+        payloadBox = Hive.box(_payloadBoxName);
+      } else {
+        payloadBox = await Hive.openBox(
+          _payloadBoxName,
+          encryptionCipher: SecureHiveStorage.cipher,
+        );
+        openedPayloadBox = true;
+      }
       payloadStopwatch.stop();
+      // Publish both handles together. Concurrent callers cannot observe this
+      // intermediate state because they await the same initialization future.
+      _metaBox = metaBox;
+      _payloadBox = payloadBox;
       await _runStorageMigrations();
+      _assertStoredSourcePolicies();
+      await _reconcileStoredHydraBoxTrustTuples();
       await Future.wait<void>([
         HiveStorageDiagnostics.logBoxOnce(
           label: _metaBoxName,
@@ -96,7 +141,28 @@ class SubscriptionStore {
         'storage metrics',
         'subscriptionStorageReadyMs=${totalStopwatch.elapsedMilliseconds}',
       );
+      _initialized = true;
     } catch (error, stackTrace) {
+      // Never leave a half-initialized store looking ready. Close only boxes
+      // opened by this attempt; an already-open Hive box may be owned by a
+      // caller or test fixture and must remain untouched.
+      _initialized = false;
+      _metaBox = null;
+      _payloadBox = null;
+      if (openedPayloadBox && payloadBox?.isOpen == true) {
+        try {
+          await payloadBox!.close();
+        } catch (_) {
+          // Preserve the original initialization failure.
+        }
+      }
+      if (openedMetaBox && metaBox?.isOpen == true) {
+        try {
+          await metaBox!.close();
+        } catch (_) {
+          // Preserve the original initialization failure.
+        }
+      }
       AppLogStore.error(
         'subscription storage',
         'Failed to initialize Hive subscription boxes: '
@@ -109,7 +175,13 @@ class SubscriptionStore {
   static Future<void> _runStorageMigrations() async {
     final storedVersion =
         (_metaStore.get(_storageSchemaVersionKey) as num?)?.toInt() ?? 0;
-    if (storedVersion >= _storageSchemaVersion) {
+    if (storedVersion > _storageSchemaVersion) {
+      throw UnsupportedError(
+        'Subscription storage schema $storedVersion is newer than supported '
+        'schema $_storageSchemaVersion',
+      );
+    }
+    if (storedVersion == _storageSchemaVersion) {
       return;
     }
     await _migratePlaintextBox(_legacyMetaBoxName, _metaStore);
@@ -136,6 +208,30 @@ class SubscriptionStore {
     try {
       if (legacyBox.isNotEmpty) {
         final legacyValues = Map<dynamic, dynamic>.from(legacyBox.toMap());
+        if (legacyName == _legacyMetaBoxName) {
+          for (final value in legacyValues.values) {
+            if (value is! String) continue;
+            try {
+              final map = jsonDecode(value) as Map<String, dynamic>;
+              final url = map['url']?.toString() ?? '';
+              if (_subscriptionUrlHasHydraBoxKeyQuery(url)) {
+                throw UnsupportedError(
+                  'Stored HydraBox hbx-key must not appear in a URL query',
+                );
+              }
+              if (!Platform.isAndroid && _subscriptionUrlHasHydraBoxKey(url)) {
+                throw UnsupportedError(
+                  'Persistent hbx-key subscriptions require Android '
+                  'Keystore-backed storage',
+                );
+              }
+            } on UnsupportedError {
+              rethrow;
+            } catch (_) {
+              // Existing corrupt metadata is handled by the normal reader.
+            }
+          }
+        }
         final missingValues = <dynamic, dynamic>{
           for (final entry in legacyValues.entries)
             if (!secureBox.containsKey(entry.key)) entry.key: entry.value,
@@ -173,6 +269,7 @@ class SubscriptionStore {
     String id,
     Future<T> Function() action,
   ) async {
+    validateSubscriptionStorageId(id);
     final previous = _subscriptionWriteLocks[id] ?? Future<void>.value();
     late final Future<T> next;
     late final Future<void> queued;
@@ -191,6 +288,96 @@ class SubscriptionStore {
         _subscriptionWriteLocks.remove(id);
       }
     }
+  }
+
+  static Future<T> _withStoreMutationPermit<T>(
+    Future<T> Function() action,
+  ) async {
+    final waiter = _StoreMutationWaiter(exclusive: false);
+    _storeMutationWaiters.add(waiter);
+    _drainStoreMutationWaiters();
+    await waiter.ready.future;
+    try {
+      return await action();
+    } finally {
+      _activeStoreMutations--;
+      _drainStoreMutationWaiters();
+    }
+  }
+
+  static Future<T> _withExclusiveStoreMutation<T>(
+    Future<T> Function() action,
+  ) async {
+    final waiter = _StoreMutationWaiter(exclusive: true);
+    _storeMutationWaiters.add(waiter);
+    _drainStoreMutationWaiters();
+    await waiter.ready.future;
+    try {
+      return await action();
+    } finally {
+      _exclusiveStoreMutationActive = false;
+      _drainStoreMutationWaiters();
+    }
+  }
+
+  static void _drainStoreMutationWaiters() {
+    if (_exclusiveStoreMutationActive || _storeMutationWaiters.isEmpty) {
+      return;
+    }
+    if (_activeStoreMutations == 0 && _storeMutationWaiters.first.exclusive) {
+      final waiter = _storeMutationWaiters.removeFirst();
+      _exclusiveStoreMutationActive = true;
+      waiter.ready.complete();
+      return;
+    }
+    if (_storeMutationWaiters.first.exclusive) {
+      return;
+    }
+    while (_storeMutationWaiters.isNotEmpty &&
+        !_storeMutationWaiters.first.exclusive) {
+      final waiter = _storeMutationWaiters.removeFirst();
+      _activeStoreMutations++;
+      waiter.ready.complete();
+    }
+  }
+
+  static Future<T> _withSubscriptionMutationLock<T>(
+    String id,
+    Future<T> Function() action,
+  ) {
+    return _withStoreMutationPermit(
+      () => _withSubscriptionWriteLock(id, action),
+    );
+  }
+
+  static Future<T> _withSubscriptionWriteLocks<T>(
+    List<String> sortedIds,
+    Future<T> Function() action, [
+    int index = 0,
+  ]) {
+    if (index >= sortedIds.length) {
+      return action();
+    }
+    return _withSubscriptionWriteLock(
+      sortedIds[index],
+      () => _withSubscriptionWriteLocks(sortedIds, action, index + 1),
+    );
+  }
+
+  static Future<T> _withHydraTrustWriteLock<T>(
+    Future<T> Function() action,
+  ) async {
+    final previous = _hydraTrustWriteLock;
+    late final Future<T> next;
+    late final Future<void> queued;
+    next = previous
+        .catchError((_) {
+          // A failed trust write must not poison the global tuple queue.
+        })
+        .then((_) => action());
+    queued = next.then<void>((_) {}, onError: (_) {});
+    _hydraTrustWriteLock = queued;
+    return next;
   }
 
   static DateTime _operationDeadline(Duration? timeout) {
@@ -258,7 +445,7 @@ class SubscriptionStore {
     return Isolate.run(() {
       return _decodeMetadataSnapshot(metadataSnapshot)
           .map((metadata) {
-            final raw = payloadSnapshot[metadata.id];
+            final raw = payloadSnapshot[_payloadKeyForMetadata(metadata)];
             return raw == null ? metadata : _withPayloadFromRaw(metadata, raw);
           })
           .toList(growable: false);
@@ -322,31 +509,36 @@ class SubscriptionStore {
 
   /// Gets a single subscription by ID, or null.
   static Subscription? get(String id) {
-    final raw = _metaStore.get(id);
-    if (raw is! String) return null;
-    try {
-      final metadata = Subscription.fromMetadataMap(
-        jsonDecode(raw) as Map<String, dynamic>,
-      );
-      return _withPayload(metadata);
-    } catch (_) {
-      return null;
-    }
+    final metadata = _readMetadata(id);
+    return metadata == null ? null : _withPayload(metadata);
   }
 
   /// Loads one complete subscription without decoding its payload on the UI
   /// isolate. Hive values are copied before the worker starts.
   static Future<Subscription?> getInBackground(String id) async {
+    if (!isSafeSubscriptionStorageId(id)) {
+      return null;
+    }
     final metadataRaw = _metaStore.get(id);
     if (metadataRaw is! String) {
       return null;
     }
-    final payloadRaw = _payloadStore.get(id);
+    late final Subscription metadata;
+    try {
+      metadata = Subscription.fromMetadataMap(
+        jsonDecode(metadataRaw) as Map<String, dynamic>,
+      );
+      if (metadata.id != id || !isSafeSubscriptionStorageId(metadata.id)) {
+        return null;
+      }
+    } catch (_) {
+      return null;
+    }
+    final payloadRaw = _payloadStore.get(_payloadKeyForMetadata(metadata));
+    final metadataMap = metadata.toMetadataMap();
     return Isolate.run(() {
       try {
-        final metadata = Subscription.fromMetadataMap(
-          jsonDecode(metadataRaw) as Map<String, dynamic>,
-        );
+        final metadata = Subscription.fromMetadataMap(metadataMap);
         return payloadRaw is String
             ? _withPayloadFromRaw(metadata, payloadRaw)
             : metadata;
@@ -379,7 +571,10 @@ class SubscriptionStore {
   /// [payloadJsonFor] for a multi-megabyte profile on the UI isolate would
   /// undo the startup benefit of compressed storage.
   static String? payloadSnapshotFor(String id) {
-    final raw = _payloadStore.get(id);
+    final metadata = _readMetadata(id);
+    final raw = _payloadStore.get(
+      metadata == null ? id : _payloadKeyForMetadata(metadata),
+    );
     return raw is String ? raw : null;
   }
 
@@ -391,7 +586,7 @@ class SubscriptionStore {
   static Future<Subscription> withPayloadInBackground(
     Subscription metadata,
   ) async {
-    final raw = _payloadStore.get(metadata.id);
+    final raw = _payloadStore.get(_payloadKeyForMetadata(metadata));
     if (raw is! String) {
       return metadata;
     }
@@ -403,26 +598,226 @@ class SubscriptionStore {
   }
 
   /// Saves (creates or updates) a subscription.
-  static Future<void> save(Subscription sub) async {
-    await _withSubscriptionWriteLock(sub.id, () => _saveUnlocked(sub));
+  static Future<void> save(Subscription sub, {bool allowCreate = false}) async {
+    await _withSubscriptionMutationLock(sub.id, () async {
+      final currentMetadata = _readMetadata(sub.id);
+      if (!allowCreate && currentMetadata == null) {
+        throw StateError('Subscription ${sub.id} not found');
+      }
+      final currentIsHydraBox =
+          currentMetadata?.sourceMetadata['format'] ==
+          'hydrabox.io/subscription/v1';
+      final proposedIsHydraBox =
+          sub.sourceMetadata['format'] == 'hydrabox.io/subscription/v1';
+      if (currentIsHydraBox || proposedIsHydraBox) {
+        if (currentMetadata == null ||
+            !currentIsHydraBox ||
+            !proposedIsHydraBox) {
+          throw const FormatException(
+            'HydraBox subscriptions must be created or converted only by the '
+            'strict import parser',
+          );
+        }
+        _validateHydraBoxMetadataTransition(
+          currentMetadata.sourceMetadata,
+          sub.sourceMetadata,
+        );
+        for (final key in const {
+          'format',
+          'issuer',
+          'subscription_id',
+          'channel',
+          'sequence',
+          'encrypted',
+          'key_id',
+          'payload_sha256',
+        }) {
+          if (currentMetadata.sourceMetadata[key] != sub.sourceMetadata[key]) {
+            throw const FormatException(
+              'A local metadata edit cannot replace HydraBox trusted payload '
+              'state',
+            );
+          }
+        }
+        _ensureSubscriptionUnchanged(
+          current: currentMetadata,
+          expectedPayloadKey: _payloadKeyForMetadata(sub),
+          operation: 'saving subscription metadata',
+        );
+        final current = _withPayload(currentMetadata);
+        await _saveUnlocked(
+          sub.copyWith(
+            rawContent: current.rawContent,
+            outbounds: current.outbounds,
+            groups: current.groups,
+            profiles: current.profiles,
+            nativeConfig: current.nativeConfig,
+            clearNativeConfig: current.nativeConfig == null,
+            sourceMetadata: current.sourceMetadata,
+          ),
+        );
+        return;
+      }
+      if (currentMetadata != null) {
+        _ensureSubscriptionUnchanged(
+          current: currentMetadata,
+          expectedPayloadKey: _payloadKeyForMetadata(sub),
+          operation: 'saving the subscription',
+        );
+      }
+      await _saveUnlocked(sub);
+    });
+  }
+
+  static Future<void> _saveParsedImport(Subscription subscription) {
+    return _withSubscriptionMutationLock(
+      subscription.id,
+      () => _saveUnlocked(subscription),
+    );
   }
 
   static Future<void> _saveUnlocked(Subscription sub) async {
+    _validatePersistentSourcePolicy(sub);
     final payload = await Isolate.run(
       () => _encodeStoredPayload(jsonEncode(sub.toPayloadMap())),
       debugName: 'meow-encode-subscription-payload',
     );
-    await _metaStore.put(sub.id, jsonEncode(sub.toMetadataMap()));
-    await _payloadStore.put(sub.id, payload);
+    final isHydraBox =
+        sub.sourceMetadata['format'] == 'hydrabox.io/subscription/v1';
+    if (!isHydraBox) {
+      final current = _readMetadata(sub.id);
+      if (current != null) {
+        _validateHydraBoxMetadataTransition(
+          current.sourceMetadata,
+          sub.sourceMetadata,
+        );
+      }
+      await _commitPayloadGenerationUnlocked(sub, payload);
+      return;
+    }
+    await _withHydraTrustWriteLock(() async {
+      final current = _readMetadata(sub.id);
+      if (current != null) {
+        _validateHydraBoxMetadataTransition(
+          current.sourceMetadata,
+          sub.sourceMetadata,
+        );
+      }
+      _validateHydraBoxTupleAgainstStoredMetadata(
+        subscriptionId: sub.id,
+        proposed: sub.sourceMetadata,
+      );
+      await _commitPayloadGenerationUnlocked(sub, payload);
+    });
   }
 
   /// Saves only lightweight subscription metadata.
   static Future<void> saveMetadata(Subscription sub) async {
-    await _withSubscriptionWriteLock(sub.id, () => _saveMetadataUnlocked(sub));
+    await _withSubscriptionMutationLock(
+      sub.id,
+      () => _saveMetadataUnlocked(sub),
+    );
   }
 
   static Future<void> _saveMetadataUnlocked(Subscription sub) async {
-    await _metaStore.put(sub.id, jsonEncode(sub.toMetadataMap()));
+    _validatePersistentSourcePolicy(sub);
+    final current = _readMetadata(sub.id);
+    if (current == null) {
+      throw StateError(
+        'Subscription ${sub.id} not found; metadata-only writes cannot create '
+        'subscriptions',
+      );
+    }
+    _ensureSubscriptionUnchanged(
+      current: current,
+      expectedPayloadKey: _payloadKeyForMetadata(sub),
+      operation: 'saving subscription metadata',
+    );
+    final payloadKey = _payloadKeyForMetadata(current);
+    final metadata = sub.copyWith(
+      payloadStorageKey: payloadKey == sub.id ? '' : payloadKey,
+      sourceMetadata: current.sourceMetadata,
+    );
+    await _metaStore.put(sub.id, jsonEncode(metadata.toMetadataMap()));
+    await _metaStore.flush();
+  }
+
+  /// Commits a payload by writing a new immutable generation first and only
+  /// then atomically switching the metadata pointer. A crash before the
+  /// pointer switch leaves the previous complete payload selected. Runtime
+  /// validation and last-known-good activation are separate concerns.
+  static Future<void> _commitPayloadGenerationUnlocked(
+    Subscription sub,
+    String encodedPayload,
+  ) async {
+    validateSubscriptionStorageId(sub.id);
+    final previousMetadataRaw = _metaStore.get(sub.id);
+    final current = _readMetadata(sub.id);
+    final oldKey = current == null ? null : _payloadKeyForMetadata(current);
+    final newKey =
+        '${sub.id}$_payloadGenerationSeparator${SubscriptionFetcher.generateId()}';
+
+    await _payloadStore.put(newKey, encodedPayload);
+    await _payloadStore.flush();
+    final committedMetadata = sub.copyWith(payloadStorageKey: newKey);
+    try {
+      await _metaStore.put(
+        sub.id,
+        jsonEncode(committedMetadata.toMetadataMap()),
+      );
+      await _metaStore.flush();
+    } catch (error, stackTrace) {
+      // Hive updates its in-memory map before flush completes. Restore the
+      // previous pointer before deleting the candidate so the live process
+      // cannot observe metadata that references a removed generation. If the
+      // rollback itself cannot be made durable, retain the candidate payload:
+      // either possible metadata pointer will then still resolve after restart.
+      var metadataRestored = false;
+      try {
+        if (previousMetadataRaw == null) {
+          await _metaStore.delete(sub.id);
+        } else {
+          await _metaStore.put(sub.id, previousMetadataRaw);
+        }
+        await _metaStore.flush();
+        metadataRestored = true;
+      } catch (rollbackError) {
+        AppLogStore.warning(
+          'subscription storage',
+          'Unable to restore metadata pointer for ${sub.id}: $rollbackError',
+        );
+      }
+      if (metadataRestored) {
+        try {
+          await _payloadStore.delete(newKey);
+          await _payloadStore.flush();
+        } catch (cleanupError) {
+          AppLogStore.warning(
+            'subscription storage',
+            'Unable to remove uncommitted payload for ${sub.id}: '
+                '$cleanupError',
+          );
+        }
+      }
+      Error.throwWithStackTrace(error, stackTrace);
+    }
+
+    final staleKeys = <String>{?oldKey, sub.id}
+      ..remove(newKey)
+      ..removeWhere((key) => key.isEmpty);
+    if (staleKeys.isNotEmpty) {
+      try {
+        await _payloadStore.deleteAll(staleKeys);
+        await _payloadStore.flush();
+      } catch (error) {
+        // The new generation is already committed. Stale encrypted payloads
+        // are harmless and can be cleaned on a later successful save/delete.
+        AppLogStore.warning(
+          'subscription storage',
+          'Unable to clean stale payload generation for ${sub.id}: $error',
+        );
+      }
+    }
   }
 
   static Future<bool> saveLatestPingsInBackground(
@@ -439,7 +834,7 @@ class SubscriptionStore {
         const <String, Map<String, String?>>{},
   }) async {
     var saved = false;
-    await _withSubscriptionWriteLock(id, () async {
+    await _withSubscriptionMutationLock(id, () async {
       saved = await _saveOutboundRuntimeInfoInBackgroundUnlocked(
         id,
         latestPings: latestPings,
@@ -487,7 +882,12 @@ class SubscriptionStore {
     if (updates.isEmpty) {
       return false;
     }
-    final raw = _payloadStore.get(id);
+    final metadata = _readMetadata(id);
+    if (metadata == null) {
+      return false;
+    }
+    final payloadKey = _payloadKeyForMetadata(metadata);
+    final raw = _payloadStore.get(payloadKey);
     if (raw is! String || raw.isEmpty) {
       return false;
     }
@@ -498,25 +898,73 @@ class SubscriptionStore {
     if (updatedRaw == null || updatedRaw == raw) {
       return false;
     }
-    await _payloadStore.put(id, updatedRaw);
+    await _commitPayloadGenerationUnlocked(metadata, updatedRaw);
     return true;
   }
 
   /// Deletes a subscription by ID.
   static Future<void> delete(String id) async {
+    await _withSubscriptionMutationLock(id, () => _deleteUnlocked(id));
+  }
+
+  static Future<void> _deleteUnlocked(String id) async {
+    final metadata = _readMetadata(id);
+    final payloadKeys = <String>{id};
+    if (metadata != null) {
+      payloadKeys.add(_payloadKeyForMetadata(metadata));
+    }
+    final generationPrefix = '$id$_payloadGenerationSeparator';
+    for (final key in _payloadStore.keys) {
+      if (key is String && key.startsWith(generationPrefix)) {
+        payloadKeys.add(key);
+      }
+    }
     await _metaStore.delete(id);
-    await _payloadStore.delete(id);
+    await _metaStore.flush();
+    await _payloadStore.deleteAll(payloadKeys);
+    await _payloadStore.flush();
   }
 
   static Future<void> deleteMany(Iterable<String> ids) async {
-    await _metaStore.deleteAll(ids);
-    await _payloadStore.deleteAll(ids);
+    final normalizedIds = ids.toSet().toList(growable: false)..sort();
+    if (normalizedIds.isEmpty) return;
+    for (final id in normalizedIds) {
+      validateSubscriptionStorageId(id);
+    }
+    await _withStoreMutationPermit(
+      () => _withSubscriptionWriteLocks(normalizedIds, () async {
+        final payloadKeys = <String>{...normalizedIds};
+        final generationPrefixes = normalizedIds
+            .map((id) => '$id$_payloadGenerationSeparator')
+            .toList(growable: false);
+        for (final id in normalizedIds) {
+          final metadata = _readMetadata(id);
+          if (metadata != null) {
+            payloadKeys.add(_payloadKeyForMetadata(metadata));
+          }
+        }
+        for (final key in _payloadStore.keys) {
+          if (key is String &&
+              generationPrefixes.any((prefix) => key.startsWith(prefix))) {
+            payloadKeys.add(key);
+          }
+        }
+        await _metaStore.deleteAll(normalizedIds);
+        await _metaStore.flush();
+        await _payloadStore.deleteAll(payloadKeys);
+        await _payloadStore.flush();
+      }),
+    );
   }
 
   /// Deletes all subscriptions.
   static Future<void> clear() async {
-    await _metaStore.clear();
-    await _payloadStore.clear();
+    await _withExclusiveStoreMutation(() async {
+      await _metaStore.clear();
+      await _metaStore.flush();
+      await _payloadStore.clear();
+      await _payloadStore.flush();
+    });
   }
 
   // ─────────────────── High-level operations ───────────────────
@@ -539,6 +987,7 @@ class SubscriptionStore {
   }) async {
     final id = SubscriptionFetcher.generateId();
     final deadline = _operationDeadline(operationTimeout);
+    var parsedHydraBox = false;
     _throwIfImportCancelled(isCancelled);
     try {
       final result = await _withDeadline(
@@ -551,6 +1000,9 @@ class SubscriptionStore {
         'subscription import',
       );
       _throwIfImportCancelled(isCancelled);
+      parsedHydraBox =
+          result.parseResult.format == SubscriptionFormat.hydraboxV1;
+      _validateHydraBoxSource(result.parseResult);
 
       final payload = await _withDeadline(
         _buildSubscriptionPayloadAsync(
@@ -565,6 +1017,10 @@ class SubscriptionStore {
       );
       _throwIfImportCancelled(isCancelled);
       final outbounds = payload.outbounds;
+      final selectedProfile = _preferredHydraBoxProfile(
+        payload.profiles,
+        defaultId: result.parseResult.defaultProfileId,
+      );
       if (!_hasUsableOutbounds(outbounds) &&
           !_allowsEmptySelectableEntries(result.parseResult)) {
         throw const SubscriptionContentException(
@@ -581,10 +1037,10 @@ class SubscriptionStore {
           url: url,
         ),
         url: url,
-        selectedProxyTag: _selectedProxyTagForOutbounds(
-          outbounds,
-          groups: payload.groups,
-        ),
+        selectedProxyTag:
+            selectedProfile?.runtimeTag ??
+            _selectedProxyTagForOutbounds(outbounds, groups: payload.groups),
+        selectedProfileId: selectedProfile?.id ?? '',
         sortOrder: _nextSortOrder(),
         lastUpdated: DateTime.now().millisecondsSinceEpoch,
         autoRefreshMinutes: result.headerInfo.updateIntervalHours != null
@@ -593,6 +1049,9 @@ class SubscriptionStore {
         rawContent: result.rawContent,
         outbounds: outbounds,
         groups: payload.groups,
+        profiles: payload.profiles,
+        nativeConfig: result.parseResult.nativeConfig,
+        sourceMetadata: result.parseResult.sourceMetadata,
         urlTestConfig: const UrlTestConfig(),
         info: result.headerInfo.copyWith(
           happCryptoLink:
@@ -610,12 +1069,12 @@ class SubscriptionStore {
 
       _logLikelyHwidWarning(sub);
       _throwIfImportCancelled(isCancelled);
-      await save(sub);
+      await _saveParsedImport(sub);
       if (isCancelled?.call() ?? false) {
         await delete(id);
         throw const SubscriptionImportCancelledException();
       }
-      return SubscriptionImportResult(subscription: sub);
+      return SubscriptionImportResult(subscription: get(id) ?? sub);
     } catch (error) {
       if (error is SubscriptionImportCancelledException ||
           (isCancelled?.call() ?? false)) {
@@ -624,8 +1083,19 @@ class SubscriptionStore {
       if (error is TimeoutException) {
         AppLogStore.warning(
           'subscription',
-          'Initial subscription import timed out for "$url": $error',
+          'Initial subscription import timed out for '
+              '"${_safeSubscriptionUrlForLog(url)}": ${error.runtimeType}',
         );
+        rethrow;
+      }
+      if (error is FormatException ||
+          error is UnsupportedError ||
+          parsedHydraBox ||
+          _subscriptionUrlHasHydraBoxKey(url)) {
+        // A key-bearing source is an explicit encryption policy. Do not turn
+        // authentication, transport, format, or trust failures from an
+        // authenticated/recognized HydraBox source into a saved legacy
+        // placeholder that could be mistaken for an accepted subscription.
         rethrow;
       }
       final sub = Subscription(
@@ -643,17 +1113,21 @@ class SubscriptionStore {
         info: requestInfo,
       );
       _throwIfImportCancelled(isCancelled);
-      await save(sub);
+      await save(sub, allowCreate: true);
       if (isCancelled?.call() ?? false) {
         await delete(id);
         throw const SubscriptionImportCancelledException();
       }
       AppLogStore.warning(
         'subscription',
-        'Initial subscription import failed for "$url", '
-            'saved placeholder entry instead: $error',
+        'Initial subscription import failed for '
+            '"${_safeSubscriptionUrlForLog(url)}", '
+            'saved placeholder entry instead: ${error.runtimeType}',
       );
-      return SubscriptionImportResult(subscription: sub, warning: error);
+      return SubscriptionImportResult(
+        subscription: get(id) ?? sub,
+        warning: error,
+      );
     }
   }
 
@@ -661,17 +1135,33 @@ class SubscriptionStore {
     String content, {
     String? customName,
     String? sourceName,
+    String? decryptionKey,
     Duration? operationTimeout,
     bool Function()? isCancelled,
   }) async {
     final deadline = _operationDeadline(operationTimeout);
     _throwIfImportCancelled(isCancelled);
     final parseResult = await _withDeadline(
-      SubscriptionParser.parseInBackground(content),
+      SubscriptionParser.parseInBackground(
+        content,
+        decryptionKey: decryptionKey,
+      ),
       deadline,
       'subscription file import',
     );
     _throwIfImportCancelled(isCancelled);
+    if (parseResult.format == SubscriptionFormat.hydraboxV1 &&
+        parseResult.sourceMetadata['encrypted'] == true) {
+      // A local file has no durable secret-bearing source URI. Until HydraBox
+      // has a Keystore-backed per-file key record and a restore-time key
+      // prompt, saving this result would create a subscription that succeeds
+      // once but cannot be authenticated again by reparse or backup restore.
+      throw UnsupportedError(
+        'Persistent encrypted HydraBox file import is not available yet; '
+        'use a key-bearing HTTPS subscription URL',
+      );
+    }
+    _validateHydraBoxSource(parseResult);
     final payload = await _withDeadline(
       _buildSubscriptionPayloadAsync(
         parseResult,
@@ -685,6 +1175,10 @@ class SubscriptionStore {
     );
     _throwIfImportCancelled(isCancelled);
     final outbounds = payload.outbounds;
+    final selectedProfile = _preferredHydraBoxProfile(
+      payload.profiles,
+      defaultId: parseResult.defaultProfileId,
+    );
     if (!_hasUsableOutbounds(outbounds) &&
         !_allowsEmptySelectableEntries(parseResult)) {
       throw const SubscriptionContentException(
@@ -703,26 +1197,345 @@ class SubscriptionStore {
         url: localUrl,
       ),
       url: localUrl,
-      selectedProxyTag: _selectedProxyTagForOutbounds(
-        outbounds,
-        groups: payload.groups,
-      ),
+      selectedProxyTag:
+          selectedProfile?.runtimeTag ??
+          _selectedProxyTagForOutbounds(outbounds, groups: payload.groups),
+      selectedProfileId: selectedProfile?.id ?? '',
       sortOrder: _nextSortOrder(),
       lastUpdated: DateTime.now().millisecondsSinceEpoch,
       disableAutoUpdate: true,
       rawContent: content,
       outbounds: outbounds,
       groups: payload.groups,
+      profiles: payload.profiles,
+      nativeConfig: parseResult.nativeConfig,
+      sourceMetadata: parseResult.sourceMetadata,
       urlTestConfig: const UrlTestConfig(),
     );
 
     _throwIfImportCancelled(isCancelled);
-    await save(sub);
+    await _saveParsedImport(sub);
     if (isCancelled?.call() ?? false) {
       await delete(sub.id);
       throw const SubscriptionImportCancelledException();
     }
-    return SubscriptionImportResult(subscription: sub);
+    return SubscriptionImportResult(subscription: get(sub.id) ?? sub);
+  }
+
+  /// Imports one decoded backup record. HydraBox payload projections and trust
+  /// metadata from the backup are never authoritative: the original wire
+  /// payload is parsed again and all executable/runtime fields are rebuilt.
+  static Future<void> importFromBackup(Subscription subscription) async {
+    await importBackupBatch(<Subscription>[subscription]);
+  }
+
+  /// Validates every backup record before the first write, then applies the
+  /// prepared batch under the exclusive store barrier. If a storage write
+  /// fails, all affected metadata and payload generations are restored.
+  static Future<void> importBackupBatch(
+    List<Subscription> subscriptions,
+  ) async {
+    if (subscriptions.isEmpty) return;
+
+    final prepared = <Subscription>[];
+    for (final subscription in subscriptions) {
+      prepared.add(await _prepareBackupImport(subscription));
+    }
+
+    await _withExclusiveStoreMutation(() async {
+      final normalized = <Subscription>[];
+      final ids = <String>{};
+      final proposedHydraTuples = <String, String>{};
+      for (final candidate in prepared) {
+        validateSubscriptionStorageId(candidate.id);
+        if (!ids.add(candidate.id)) {
+          throw const FormatException(
+            'Backup contains duplicate subscription storage IDs',
+          );
+        }
+        final current = _readMetadata(candidate.id);
+        final subscription = _normalizeBackupLocalState(candidate, current);
+        _validatePersistentSourcePolicy(subscription);
+        final currentIsHydraBox =
+            current?.sourceMetadata['format'] == 'hydrabox.io/subscription/v1';
+        final proposedIsHydraBox =
+            subscription.sourceMetadata['format'] ==
+            'hydrabox.io/subscription/v1';
+        if (currentIsHydraBox && !proposedIsHydraBox) {
+          throw const FormatException(
+            'A backup cannot replace a HydraBox record with legacy payload',
+          );
+        }
+        if (proposedIsHydraBox) {
+          if (current != null) {
+            _validateHydraBoxMetadataTransition(
+              current.sourceMetadata,
+              subscription.sourceMetadata,
+            );
+          }
+          final tupleKey = _hydraBoxTrustTupleKey(subscription.sourceMetadata);
+          if (tupleKey == null) {
+            throw const FormatException(
+              'Invalid HydraBox durable trust metadata',
+            );
+          }
+          final previousOwner = proposedHydraTuples[tupleKey];
+          if (previousOwner != null && previousOwner != subscription.id) {
+            throw const FormatException(
+              'Backup contains duplicate HydraBox trust tuples',
+            );
+          }
+          proposedHydraTuples[tupleKey] = subscription.id;
+          _validateHydraBoxTupleAgainstStoredMetadata(
+            subscriptionId: subscription.id,
+            proposed: subscription.sourceMetadata,
+          );
+        }
+        normalized.add(subscription);
+      }
+
+      final metadataBefore = <String, dynamic>{
+        for (final id in ids) id: _metaStore.get(id),
+      };
+      final metadataKeysBefore = <String>{
+        for (final id in ids)
+          if (_metaStore.containsKey(id)) id,
+      };
+      final payloadBefore = <dynamic, dynamic>{};
+      for (final key in _payloadStore.keys) {
+        if (key is String && _payloadKeyBelongsToAnyId(key, ids)) {
+          payloadBefore[key] = _payloadStore.get(key);
+        }
+      }
+
+      try {
+        for (final subscription in normalized) {
+          await _saveUnlocked(subscription);
+        }
+      } catch (error, stackTrace) {
+        try {
+          await _metaStore.deleteAll(ids);
+          await _metaStore.flush();
+          final currentPayloadKeys = <dynamic>[
+            for (final key in _payloadStore.keys)
+              if (key is String && _payloadKeyBelongsToAnyId(key, ids)) key,
+          ];
+          if (currentPayloadKeys.isNotEmpty) {
+            await _payloadStore.deleteAll(currentPayloadKeys);
+          }
+          if (payloadBefore.isNotEmpty) {
+            await _payloadStore.putAll(payloadBefore);
+          }
+          await _payloadStore.flush();
+          final metadataToRestore = <dynamic, dynamic>{
+            for (final id in metadataKeysBefore) id: metadataBefore[id],
+          };
+          if (metadataToRestore.isNotEmpty) {
+            await _metaStore.putAll(metadataToRestore);
+          }
+          await _metaStore.flush();
+        } catch (rollbackError, rollbackStackTrace) {
+          Error.throwWithStackTrace(
+            StateError(
+              'Backup import failed and storage rollback was incomplete: '
+              '${rollbackError.runtimeType}',
+            ),
+            rollbackStackTrace,
+          );
+        }
+        Error.throwWithStackTrace(error, stackTrace);
+      }
+    });
+  }
+
+  static bool _payloadKeyBelongsToAnyId(String key, Set<String> ids) {
+    for (final id in ids) {
+      if (key == id || key.startsWith('$id$_payloadGenerationSeparator')) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static Future<Subscription> _prepareBackupImport(
+    Subscription subscription,
+  ) async {
+    validateSubscriptionStorageId(subscription.id);
+    final claimsHydraBox =
+        subscription.sourceMetadata['format'] == 'hydrabox.io/subscription/v1';
+    final rawContent = subscription.rawContent;
+    Uri? sourceUri;
+    var hasHydraBoxKeyPolicy = false;
+    if (subscription.url.trim().isNotEmpty) {
+      try {
+        sourceUri = SubscriptionFetcher.parseRequestUri(subscription.url);
+        if (HydraBoxJweCodec.hasKeyQueryParameter(sourceUri)) {
+          throw const FormatException(
+            'HydraBox hbx-key is allowed only in the URI fragment',
+          );
+        }
+        hasHydraBoxKeyPolicy = HydraBoxJweCodec.hasKeyFragment(sourceUri);
+      } on FormatException {
+        rethrow;
+      } catch (_) {
+        sourceUri = null;
+      }
+    }
+    final requiresStrictHydraBoxImport =
+        claimsHydraBox ||
+        HydraBoxSubscriptionParser.looksLike(rawContent) ||
+        hasHydraBoxKeyPolicy;
+    if (!requiresStrictHydraBoxImport) {
+      return subscription.copyWith(payloadStorageKey: '');
+    }
+    if (rawContent.trim().isEmpty) {
+      throw const FormatException(
+        'HydraBox backup record is missing its original wire payload',
+      );
+    }
+    String? decryptionKey;
+    if (sourceUri != null) {
+      try {
+        final hasKeyPolicy = HydraBoxJweCodec.hasKeyFragment(sourceUri);
+        decryptionKey = HydraBoxJweCodec.keyFromUri(sourceUri);
+        if (hasKeyPolicy && decryptionKey == null) {
+          throw const FormatException(
+            'HydraBox hbx-key fragment must contain one valid key value',
+          );
+        }
+      } on FormatException {
+        rethrow;
+      } catch (_) {
+        // Encrypted HydraBox content fails closed in the strict parser below.
+      }
+    }
+
+    final parseResult = await SubscriptionParser.parseInBackground(
+      rawContent,
+      decryptionKey: decryptionKey,
+    );
+    if (parseResult.format != SubscriptionFormat.hydraboxV1) {
+      throw const FormatException(
+        'HydraBox backup metadata does not match its wire payload',
+      );
+    }
+    _validateHydraBoxSource(parseResult);
+    final parsedNativeConfig = parseResult.nativeConfig;
+    if (claimsHydraBox) {
+      for (final key in const {
+        'format',
+        'issuer',
+        'subscription_id',
+        'channel',
+        'sequence',
+        'encrypted',
+        'key_id',
+        'payload_sha256',
+      }) {
+        if (subscription.sourceMetadata[key] !=
+            parseResult.sourceMetadata[key]) {
+          throw FormatException(
+            'HydraBox backup trust field "$key" does not match the wire payload',
+          );
+        }
+      }
+      if (subscription.nativeConfig == null ||
+          parsedNativeConfig == null ||
+          !_jsonValuesEqual(subscription.nativeConfig, parsedNativeConfig)) {
+        throw const FormatException(
+          'HydraBox backup native config does not match the wire payload',
+        );
+      }
+    }
+
+    final payload = await _buildSubscriptionPayloadAsync(
+      parseResult,
+      providerName: _providerNameHint(
+        customName: subscription.name,
+        headerTitle: subscription.info?.title,
+      ),
+    );
+    final rebuiltOutbounds = _preserveUserState(
+      subscription.outbounds,
+      payload.outbounds,
+    );
+    final selectedProfile = _preferredHydraBoxProfile(
+      payload.profiles,
+      preferredId: subscription.selectedProfileId,
+      preferredRuntimeTag: subscription.selectedProxyTag,
+      defaultId: parseResult.defaultProfileId,
+    );
+    final rebuilt = subscription.copyWith(
+      selectedProxyTag:
+          selectedProfile?.runtimeTag ??
+          _selectedProxyTagForOutbounds(
+            rebuiltOutbounds,
+            preferredTag: subscription.selectedProxyTag,
+            groups: payload.groups,
+          ),
+      selectedProfileId: selectedProfile?.id ?? '',
+      rawContent: rawContent,
+      outbounds: rebuiltOutbounds,
+      groups: payload.groups,
+      profiles: payload.profiles,
+      nativeConfig: parsedNativeConfig,
+      sourceMetadata: parseResult.sourceMetadata,
+      payloadStorageKey: '',
+    );
+    return rebuilt;
+  }
+
+  static Subscription _normalizeBackupLocalState(
+    Subscription imported,
+    Subscription? current,
+  ) {
+    final sameSource = current != null && current.url == imported.url;
+    final importedInfo = imported.info;
+    final currentInfo = sameSource ? current.info : null;
+    final sanitizedInfo = SubscriptionInfo(
+      title: importedInfo?.title,
+      upload: importedInfo?.upload,
+      download: importedInfo?.download,
+      total: importedInfo?.total,
+      expire: importedInfo?.expire,
+      supportUrl: _safeWebUrl(importedInfo?.supportUrl),
+      webPageUrl: _safeWebUrl(importedInfo?.webPageUrl),
+      updateIntervalHours: importedInfo?.updateIntervalHours,
+      happCryptoLink: currentInfo?.happCryptoLink,
+      newUrl: currentInfo?.newUrl,
+      ignoreSubscriptionMoved: currentInfo?.ignoreSubscriptionMoved ?? false,
+      perAppProxyMode: currentInfo?.perAppProxyMode,
+      perAppProxyList: currentInfo?.perAppProxyList,
+      customUserAgent: currentInfo?.customUserAgent,
+      customRequestHeader: currentInfo?.customRequestHeader,
+      requireHwid: currentInfo?.requireHwid ?? false,
+      customHwid: currentInfo?.customHwid,
+    );
+    return imported.copyWith(
+      payloadStorageKey: '',
+      lastUpdated: sameSource
+          ? current.lastUpdated
+          : DateTime.now().millisecondsSinceEpoch,
+      info: sanitizedInfo,
+    );
+  }
+
+  static String? _safeWebUrl(String? value) {
+    final normalized = value?.trim() ?? '';
+    if (normalized.isEmpty) return null;
+    final uri = Uri.tryParse(normalized);
+    if (uri == null ||
+        uri.host.isEmpty ||
+        (uri.scheme.toLowerCase() != 'https' &&
+            uri.scheme.toLowerCase() != 'http')) {
+      return null;
+    }
+    return uri.toString();
+  }
+
+  static bool _jsonValuesEqual(dynamic left, dynamic right) {
+    return jsonEncode(_stableOutboundIdentityValue(left)) ==
+        jsonEncode(_stableOutboundIdentityValue(right));
   }
 
   static void _throwIfImportCancelled(bool Function()? isCancelled) {
@@ -759,6 +1572,8 @@ class SubscriptionStore {
     if (isLocalFileImportUrl(existingBeforeFetch.url)) {
       throw StateError('Manual imports cannot be refreshed');
     }
+    final expectedPayloadKey = _payloadKeyForMetadata(existingBeforeFetch);
+    final expectedUrl = existingBeforeFetch.url;
 
     final deadline = _operationDeadline(operationTimeout);
     final result = await _withDeadline(
@@ -770,6 +1585,7 @@ class SubscriptionStore {
       deadline,
       'subscription refresh',
     );
+    _validateHydraBoxRefresh(existingBeforeFetch, result.parseResult);
     final payload = await _withDeadline(
       _buildSubscriptionPayloadAsync(
         result.parseResult,
@@ -790,11 +1606,22 @@ class SubscriptionStore {
       );
     }
 
-    return _withSubscriptionWriteLock(id, () async {
+    return _withSubscriptionMutationLock(id, () async {
       final existing = get(id);
       if (existing == null) {
         throw StateError('Subscription $id not found');
       }
+      // The fetch and parse happen outside the write lock. Another writer may
+      // commit a newer trusted sequence while they are in flight, so validate
+      // again against the state read inside the same critical section as the
+      // payload commit.
+      _validateHydraBoxRefresh(existing, result.parseResult);
+      _ensureSubscriptionUnchanged(
+        current: existing,
+        expectedPayloadKey: expectedPayloadKey,
+        expectedUrl: expectedUrl,
+        operation: 'refreshing the subscription',
+      );
       final existingMovedUrl = existing.info?.newUrl;
       final nextMovedUrl = result.headerInfo.newUrl;
       final preserveMovedIgnore =
@@ -807,20 +1634,33 @@ class SubscriptionStore {
         existing.outbounds,
         outbounds,
       );
+      final selectedProfile = _preferredHydraBoxProfile(
+        payload.profiles,
+        preferredId: existing.selectedProfileId,
+        preferredRuntimeTag: existing.selectedProxyTag,
+        defaultId: result.parseResult.defaultProfileId,
+      );
 
       final updated = existing.copyWith(
         name: existing.name,
         url: existing.url,
-        selectedProxyTag: _selectedProxyTagForOutbounds(
-          preservedOutbounds,
-          preferredTag: existing.selectedProxyTag,
-          groups: payload.groups,
-        ),
+        selectedProxyTag:
+            selectedProfile?.runtimeTag ??
+            _selectedProxyTagForOutbounds(
+              preservedOutbounds,
+              preferredTag: existing.selectedProxyTag,
+              groups: payload.groups,
+            ),
+        selectedProfileId: selectedProfile?.id ?? '',
         sortOrder: existing.sortOrder,
         lastUpdated: DateTime.now().millisecondsSinceEpoch,
         rawContent: result.rawContent,
         outbounds: preservedOutbounds,
         groups: payload.groups,
+        profiles: payload.profiles,
+        nativeConfig: result.parseResult.nativeConfig,
+        clearNativeConfig: result.parseResult.nativeConfig == null,
+        sourceMetadata: result.parseResult.sourceMetadata,
         autoRefreshMinutes: result.headerInfo.updateIntervalHours != null
             ? result.headerInfo.updateIntervalHours! * 60
             : existing.autoRefreshMinutes,
@@ -836,7 +1676,7 @@ class SubscriptionStore {
 
       _logLikelyHwidWarning(updated);
       await _saveUnlocked(updated);
-      return updated;
+      return get(id) ?? updated;
     });
   }
 
@@ -855,8 +1695,24 @@ class SubscriptionStore {
         SubscriptionContentFailureKind.emptyResponse,
       );
     }
+    final expectedPayloadKey = _payloadKeyForMetadata(existingBeforeParse);
+    final expectedUrl = existingBeforeParse.url;
 
-    final parseResult = await SubscriptionParser.parseInBackground(rawContent);
+    final sourceUri = SubscriptionFetcher.parseRequestUri(
+      existingBeforeParse.url,
+    );
+    final hasHydraBoxKeyPolicy = HydraBoxJweCodec.hasKeyFragment(sourceUri);
+    final decryptionKey = HydraBoxJweCodec.keyFromUri(sourceUri);
+    if (hasHydraBoxKeyPolicy && decryptionKey == null) {
+      throw const FormatException(
+        'HydraBox hbx-key fragment must contain one valid key value',
+      );
+    }
+    final parseResult = await SubscriptionParser.parseInBackground(
+      rawContent,
+      decryptionKey: decryptionKey,
+    );
+    _validateHydraBoxRefresh(existingBeforeParse, parseResult);
     if (parseResult.outbounds.isEmpty &&
         !_allowsEmptySelectableEntries(parseResult)) {
       throw const SubscriptionContentException(
@@ -879,27 +1735,50 @@ class SubscriptionStore {
       );
     }
 
-    return _withSubscriptionWriteLock(id, () async {
+    return _withSubscriptionMutationLock(id, () async {
       final existing = get(id);
       if (existing == null) {
         throw StateError('Subscription $id not found');
       }
+      // Parsing saved content is also outside the write lock. Re-check the
+      // anti-replay state after re-reading the subscription under the lock so
+      // a concurrent refresh cannot be overwritten by an older parse result.
+      _validateHydraBoxRefresh(existing, parseResult);
+      _ensureSubscriptionUnchanged(
+        current: existing,
+        expectedPayloadKey: expectedPayloadKey,
+        expectedUrl: expectedUrl,
+        operation: 'reparsing the subscription',
+      );
       final preservedOutbounds = _preserveUserState(
         existing.outbounds,
         reparsedOutbounds,
       );
+      final selectedProfile = _preferredHydraBoxProfile(
+        payload.profiles,
+        preferredId: existing.selectedProfileId,
+        preferredRuntimeTag: existing.selectedProxyTag,
+        defaultId: parseResult.defaultProfileId,
+      );
 
       final updated = existing.copyWith(
-        selectedProxyTag: _selectedProxyTagForOutbounds(
-          preservedOutbounds,
-          preferredTag: existing.selectedProxyTag,
-          groups: payload.groups,
-        ),
+        selectedProxyTag:
+            selectedProfile?.runtimeTag ??
+            _selectedProxyTagForOutbounds(
+              preservedOutbounds,
+              preferredTag: existing.selectedProxyTag,
+              groups: payload.groups,
+            ),
+        selectedProfileId: selectedProfile?.id ?? '',
         outbounds: preservedOutbounds,
         groups: payload.groups,
+        profiles: payload.profiles,
+        nativeConfig: parseResult.nativeConfig,
+        clearNativeConfig: parseResult.nativeConfig == null,
+        sourceMetadata: parseResult.sourceMetadata,
       );
       await _saveUnlocked(updated);
-      return updated;
+      return get(id) ?? updated;
     });
   }
 
@@ -928,27 +1807,19 @@ class SubscriptionStore {
     if (summaries.isEmpty) {
       return;
     }
-    final updates = <dynamic, String>{};
     for (final entry in summaries.entries) {
-      final raw = _metaStore.get(entry.key);
-      if (raw is! String) {
-        continue;
-      }
-      try {
-        final metadata =
-            Subscription.fromMetadataMap(
-              jsonDecode(raw) as Map<String, dynamic>,
-            ).copyWith(
-              cachedVisibleProxyCount: entry.value.visibleProxyCount,
-              hasRawPayload: entry.value.hasRawPayload,
-            );
-        updates[entry.key] = jsonEncode(metadata.toMetadataMap());
-      } catch (_) {
-        // Leave corrupt metadata untouched; getAllMetadata already skips it.
-      }
-    }
-    if (updates.isNotEmpty) {
-      await _metaStore.putAll(updates);
+      await _withSubscriptionMutationLock(entry.key, () async {
+        final current = _readMetadata(entry.key);
+        if (current == null) return;
+        final updated = current.copyWith(
+          cachedVisibleProxyCount: entry.value.visibleProxyCount,
+          hasRawPayload: entry.value.hasRawPayload,
+        );
+        // Re-read and patch only the current generation while holding the
+        // subscription lock. A stale summary must never restore an older
+        // anti-replay sequence or payload pointer after a concurrent refresh.
+        await _saveMetadataUnlocked(updated);
+      });
     }
   }
 
@@ -959,11 +1830,17 @@ class SubscriptionStore {
     String? preferredTag,
     List<SubscriptionGroup> groups = const [],
   }) {
-    if (outbounds.isEmpty) {
+    final selectableOutbounds = outbounds
+        .where(
+          (outbound) =>
+              !outbound.info.deleted && outbound.config['_group_only'] != true,
+        )
+        .toList(growable: false);
+    if (selectableOutbounds.isEmpty) {
       return '';
     }
-    if (outbounds.length == 1) {
-      return outbounds.first.tag;
+    if (selectableOutbounds.length == 1) {
+      return selectableOutbounds.first.tag;
     }
     final normalizedPreferred = normalizeProxySelectionTag(preferredTag ?? '');
     if (normalizedPreferred.isEmpty) {
@@ -972,11 +1849,7 @@ class SubscriptionStore {
     if (isLowestProxyTag(normalizedPreferred)) {
       return lowestProxyTag;
     }
-    final liveOutboundTags = outbounds
-        .where(
-          (outbound) =>
-              !outbound.info.deleted && outbound.config['_group_only'] != true,
-        )
+    final liveOutboundTags = selectableOutbounds
         .map((outbound) => outbound.tag)
         .toSet();
     for (final group in groups) {
@@ -985,8 +1858,8 @@ class SubscriptionStore {
         return normalizedPreferred;
       }
     }
-    for (final outbound in outbounds) {
-      if (outbound.tag == normalizedPreferred && !outbound.info.deleted) {
+    for (final outbound in selectableOutbounds) {
+      if (outbound.tag == normalizedPreferred) {
         return normalizedPreferred;
       }
     }
@@ -1004,7 +1877,270 @@ class SubscriptionStore {
     // A complete sing-box document can be intentionally inbound-, service-,
     // provider- or DNS-only. Its raw payload is still consumed by the runtime
     // builder even though there is no app-selectable outbound to materialize.
-    return parseResult.format == SubscriptionFormat.singboxConfig;
+    return parseResult.format == SubscriptionFormat.singboxConfig ||
+        parseResult.format == SubscriptionFormat.hydraboxV1;
+  }
+
+  static void _validateHydraBoxSource(ParseResult parseResult) {
+    if (parseResult.format != SubscriptionFormat.hydraboxV1) {
+      return;
+    }
+    HydraBoxSubscriptionTimePolicy.validate(parseResult.sourceMetadata);
+  }
+
+  static void _validateHydraBoxRefresh(
+    Subscription existing,
+    ParseResult incoming,
+  ) {
+    _validateHydraBoxSource(incoming);
+    if (existing.sourceMetadata['format'] == 'hydrabox.io/subscription/v1' &&
+        incoming.format != SubscriptionFormat.hydraboxV1) {
+      throw const FormatException(
+        'Refusing to replace a HydraBox subscription with a legacy format',
+      );
+    }
+    _validateHydraBoxMetadataTransition(
+      existing.sourceMetadata,
+      incoming.sourceMetadata,
+    );
+  }
+
+  static void _validateHydraBoxMetadataTransition(
+    Map<String, dynamic> oldMetadata,
+    Map<String, dynamic> next,
+  ) {
+    if (oldMetadata['format'] != 'hydrabox.io/subscription/v1') {
+      return;
+    }
+    if (next['format'] != 'hydrabox.io/subscription/v1') {
+      throw const FormatException(
+        'Refusing to replace a HydraBox subscription with a legacy format',
+      );
+    }
+    for (final key in const ['issuer', 'subscription_id', 'channel']) {
+      if (oldMetadata[key]?.toString() != next[key]?.toString()) {
+        throw FormatException(
+          'HydraBox refresh changed trusted identity field "$key"',
+        );
+      }
+    }
+    if (oldMetadata['encrypted'] == true && next['encrypted'] != true) {
+      throw const FormatException(
+        'Refusing encrypted-to-plaintext HydraBox downgrade',
+      );
+    }
+    final oldSequence = (oldMetadata['sequence'] as num?)?.toInt() ?? -1;
+    final nextSequence = (next['sequence'] as num?)?.toInt() ?? -1;
+    if (nextSequence < oldSequence) {
+      throw FormatException(
+        'HydraBox sequence rollback: $nextSequence < $oldSequence',
+      );
+    }
+    if (nextSequence == oldSequence &&
+        oldMetadata['payload_sha256']?.toString() !=
+            next['payload_sha256']?.toString()) {
+      throw const FormatException(
+        'HydraBox publisher equivocation: same sequence, different payload',
+      );
+    }
+  }
+
+  static Future<void> _reconcileStoredHydraBoxTrustTuples() async {
+    final groups = <String, List<({String id, Subscription subscription})>>{};
+    for (final rawKey in _metaStore.keys) {
+      if (rawKey == _storageSchemaVersionKey || rawKey is! String) continue;
+      final subscription = _readMetadata(rawKey);
+      if (subscription == null) continue;
+      final tupleKey = _hydraBoxTrustTupleKey(subscription.sourceMetadata);
+      if (tupleKey == null) continue;
+      groups
+          .putIfAbsent(
+            tupleKey,
+            () => <({String id, Subscription subscription})>[],
+          )
+          .add((id: rawKey, subscription: subscription));
+    }
+
+    var changed = false;
+    var blockedCount = 0;
+    for (final entries in groups.values) {
+      entries.sort((left, right) => left.id.compareTo(right.id));
+      String? winnerId;
+      var blockReason = 'duplicate_tuple';
+      if (entries.length == 1) {
+        winnerId = entries.single.id;
+      } else {
+        final encryptedCandidates = entries
+            .where(
+              (entry) => entry.subscription.sourceMetadata['encrypted'] == true,
+            )
+            .toList(growable: false);
+        final candidates = encryptedCandidates.isNotEmpty
+            ? encryptedCandidates
+            : entries;
+        final highestSequence = candidates
+            .map(
+              (entry) =>
+                  _storedHydraBoxSequence(entry.subscription.sourceMetadata),
+            )
+            .reduce((left, right) => left > right ? left : right);
+        final highest = candidates
+            .where(
+              (entry) =>
+                  _storedHydraBoxSequence(entry.subscription.sourceMetadata) ==
+                  highestSequence,
+            )
+            .toList(growable: false);
+        final highestDigests = highest
+            .map(
+              (entry) =>
+                  _storedHydraBoxDigest(entry.subscription.sourceMetadata),
+            )
+            .toSet();
+        if (highestDigests.length == 1) {
+          winnerId = highest.first.id;
+        } else {
+          blockReason = 'publisher_equivocation';
+        }
+      }
+
+      for (final entry in entries) {
+        final shouldBlock = winnerId == null || entry.id != winnerId;
+        final sourceMetadata = Map<String, dynamic>.from(
+          entry.subscription.sourceMetadata,
+        );
+        final wasBlocked = sourceMetadata['trust_blocked'] == true;
+        final previousReason = sourceMetadata['trust_block_reason']?.toString();
+        if (shouldBlock) {
+          sourceMetadata['trust_blocked'] = true;
+          sourceMetadata['trust_block_reason'] = blockReason;
+          blockedCount++;
+        } else {
+          sourceMetadata.remove('trust_blocked');
+          sourceMetadata.remove('trust_block_reason');
+        }
+        if (wasBlocked == shouldBlock &&
+            (!shouldBlock || previousReason == blockReason)) {
+          continue;
+        }
+        final updated = entry.subscription.copyWith(
+          sourceMetadata: sourceMetadata,
+        );
+        await _metaStore.put(entry.id, jsonEncode(updated.toMetadataMap()));
+        changed = true;
+      }
+    }
+    if (changed) {
+      await _metaStore.flush();
+      AppLogStore.warning(
+        'subscription trust',
+        'Reconciled stored HydraBox trust tuples; blocked=$blockedCount',
+      );
+    }
+  }
+
+  static void _validateHydraBoxTupleAgainstStoredMetadata({
+    required String subscriptionId,
+    required Map<String, dynamic> proposed,
+  }) {
+    final tupleKey = _hydraBoxTrustTupleKey(proposed);
+    final proposedSequence = proposed['sequence'];
+    final proposedDigest = proposed['payload_sha256'];
+    if (tupleKey == null ||
+        proposedSequence is! int ||
+        proposedSequence < 0 ||
+        proposedSequence > 9007199254740991 ||
+        proposedDigest is! String ||
+        !RegExp(r'^[0-9a-f]{64}$').hasMatch(proposedDigest) ||
+        proposed['encrypted'] is! bool) {
+      throw const FormatException('Invalid HydraBox durable trust metadata');
+    }
+
+    var highestSequence = -1;
+    final highestDigests = <String>{};
+    var encryptionWasRequired = false;
+    String? activeDuplicateId;
+    for (final rawKey in _metaStore.keys) {
+      if (rawKey == _storageSchemaVersionKey || rawKey is! String) continue;
+      final stored = _readMetadata(rawKey);
+      if (stored == null ||
+          _hydraBoxTrustTupleKey(stored.sourceMetadata) != tupleKey) {
+        continue;
+      }
+      final storedMetadata = stored.sourceMetadata;
+      encryptionWasRequired =
+          encryptionWasRequired || storedMetadata['encrypted'] == true;
+      final storedSequence = _storedHydraBoxSequence(storedMetadata);
+      final storedDigest = _storedHydraBoxDigest(storedMetadata);
+      if (storedSequence > highestSequence) {
+        highestSequence = storedSequence;
+        highestDigests
+          ..clear()
+          ..add(storedDigest);
+      } else if (storedSequence == highestSequence) {
+        highestDigests.add(storedDigest);
+      }
+      if (rawKey != subscriptionId && storedMetadata['trust_blocked'] != true) {
+        activeDuplicateId ??= rawKey;
+      }
+    }
+
+    if (encryptionWasRequired && proposed['encrypted'] != true) {
+      throw const FormatException(
+        'Refusing encrypted-to-plaintext HydraBox downgrade',
+      );
+    }
+    if (proposedSequence < highestSequence) {
+      throw FormatException(
+        'HydraBox sequence rollback: $proposedSequence < $highestSequence',
+      );
+    }
+    if (proposedSequence == highestSequence &&
+        (highestDigests.length != 1 ||
+            !highestDigests.contains(proposedDigest))) {
+      throw const FormatException(
+        'HydraBox publisher equivocation: same sequence, different payload',
+      );
+    }
+    if (activeDuplicateId != null) {
+      throw const FormatException(
+        'This HydraBox publisher/subscription/channel tuple is already stored',
+      );
+    }
+  }
+
+  static String? _hydraBoxTrustTupleKey(Map<String, dynamic> metadata) {
+    if (metadata['format'] != 'hydrabox.io/subscription/v1') return null;
+    final issuer = metadata['issuer'];
+    final subscriptionId = metadata['subscription_id'];
+    final channel = metadata['channel'];
+    if (issuer is! String ||
+        issuer.isEmpty ||
+        subscriptionId is! String ||
+        subscriptionId.isEmpty ||
+        channel is! String ||
+        channel.isEmpty) {
+      return null;
+    }
+    return jsonEncode(<String>[issuer, subscriptionId, channel]);
+  }
+
+  static int _storedHydraBoxSequence(Map<String, dynamic> metadata) {
+    final value = metadata['sequence'];
+    if (value is int && value >= 0 && value <= 9007199254740991) {
+      return value;
+    }
+    // Corrupt durable trust state must fail closed instead of lowering the
+    // remembered high-water mark.
+    return 9007199254740991;
+  }
+
+  static String _storedHydraBoxDigest(Map<String, dynamic> metadata) {
+    final value = metadata['payload_sha256'];
+    if (value is String && RegExp(r'^[0-9a-f]{64}$').hasMatch(value)) {
+      return value;
+    }
+    return '<invalid-digest>';
   }
 
   /// Converts parsed outbound configs into [Outbound] model objects.
@@ -1018,7 +2154,13 @@ class SubscriptionStore {
         .toList(growable: false);
   }
 
-  static Future<({List<Outbound> outbounds, List<SubscriptionGroup> groups})>
+  static Future<
+    ({
+      List<Outbound> outbounds,
+      List<SubscriptionGroup> groups,
+      List<SubscriptionProfile> profiles,
+    })
+  >
   _buildSubscriptionPayloadAsync(
     ParseResult parseResult, {
     String? providerName,
@@ -1050,7 +2192,107 @@ class SubscriptionStore {
         )
         .where((group) => group.outboundTags.isNotEmpty)
         .toList(growable: false);
-    return (outbounds: outbounds, groups: groups);
+    _validateHydraBoxRuntimeTagIdentity(parseResult, outbounds);
+    final profiles = _resolveHydraBoxProfiles(parseResult.profiles, outbounds);
+    return (outbounds: outbounds, groups: groups, profiles: profiles);
+  }
+
+  static void _validateHydraBoxRuntimeTagIdentity(
+    ParseResult parseResult,
+    List<Outbound> outbounds,
+  ) {
+    if (parseResult.format != SubscriptionFormat.hydraboxV1) {
+      return;
+    }
+    final seen = <String>{};
+    for (final outbound in outbounds) {
+      final sourceSection =
+          outbound.config['_etonify_source_index_section']?.toString() ??
+          outbound.config['_etonify_source_section']?.toString() ??
+          '';
+      if (sourceSection != 'outbounds' && sourceSection != 'endpoints') {
+        continue;
+      }
+      final originalTag =
+          outbound.config['_etonify_original_tag']?.toString() ?? '';
+      final projectedConfigTag = outbound.config['tag']?.toString() ?? '';
+      if (originalTag.isEmpty ||
+          originalTag != originalTag.trim() ||
+          outbound.tag != originalTag ||
+          projectedConfigTag != originalTag ||
+          !seen.add('$sourceSection\u0000$originalTag')) {
+        throw FormatException(
+          'HydraBox native runtime tag identity changed during import; '
+          'opaque native references cannot be rewritten safely',
+        );
+      }
+    }
+  }
+
+  static List<SubscriptionProfile> _resolveHydraBoxProfiles(
+    List<HydraBoxParsedProfile> parsedProfiles,
+    List<Outbound> outbounds,
+  ) {
+    if (parsedProfiles.isEmpty) {
+      return const [];
+    }
+    final resolved = <SubscriptionProfile>[];
+    for (final profile in parsedProfiles) {
+      final matches = outbounds
+          .where((outbound) {
+            final sourceSection =
+                outbound.config['_etonify_source_index_section']?.toString() ??
+                outbound.config['_etonify_source_section']?.toString() ??
+                '';
+            final sourceTag =
+                outbound.config['_etonify_original_tag']?.toString() ?? '';
+            return sourceSection == profile.entrypointSection &&
+                sourceTag == profile.entrypointTag;
+          })
+          .toList(growable: false);
+      if (matches.length != 1) {
+        throw FormatException(
+          'HydraBox profile "${profile.id}" entrypoint did not resolve '
+          'exactly once after normalization',
+        );
+      }
+      resolved.add(
+        SubscriptionProfile(
+          id: profile.id,
+          name: profile.name,
+          entrypointSection: profile.entrypointSection,
+          entrypointTag: profile.entrypointTag,
+          runtimeTag: matches.single.tag,
+          enabled: profile.enabled,
+          country: profile.country,
+          metadata: profile.metadata,
+        ),
+      );
+    }
+    return resolved;
+  }
+
+  static SubscriptionProfile? _preferredHydraBoxProfile(
+    List<SubscriptionProfile> profiles, {
+    String? preferredId,
+    String? preferredRuntimeTag,
+    String? defaultId,
+  }) {
+    final enabled = profiles.where((profile) => profile.enabled);
+    for (final id in [preferredId, defaultId]) {
+      final normalized = id?.trim() ?? '';
+      if (normalized.isEmpty) continue;
+      for (final profile in enabled) {
+        if (profile.id == normalized) return profile;
+      }
+    }
+    final preferredTag = preferredRuntimeTag?.trim() ?? '';
+    if (preferredTag.isNotEmpty) {
+      for (final profile in enabled) {
+        if (profile.runtimeTag == preferredTag) return profile;
+      }
+    }
+    return enabled.firstOrNull;
   }
 
   static ({
@@ -1399,6 +2641,10 @@ class SubscriptionStore {
   ) => _buildOutbounds(parsedConfigs);
 
   @visibleForTesting
+  static Future<void> saveParsedImportForTest(Subscription subscription) =>
+      _saveParsedImport(subscription);
+
+  @visibleForTesting
   static String selectedProxyTagForOutboundsForTest(
     List<Outbound> outbounds, {
     String? preferredTag,
@@ -1430,6 +2676,92 @@ class SubscriptionStore {
     return url.trim().startsWith('$_localFileImportScheme://');
   }
 
+  static String _safeSubscriptionUrlForLog(String value) {
+    try {
+      final uri = SubscriptionFetcher.parseRequestUri(value);
+      final redacted = HydraBoxJweCodec.uriWithoutSecretFragment(uri);
+      final scheme = redacted.scheme.toLowerCase();
+      if (scheme.isEmpty || redacted.host.isEmpty) {
+        return '<subscription-source>';
+      }
+      final host = redacted.host.contains(':')
+          ? '[${redacted.host}]'
+          : redacted.host;
+      final port = redacted.hasPort
+          ? redacted.port
+          : switch (scheme) {
+              'https' => 443,
+              'http' => 80,
+              _ => 0,
+            };
+      return port == 0 ? '$scheme://$host' : '$scheme://$host:$port';
+    } catch (_) {
+      return '<invalid-subscription-url>';
+    }
+  }
+
+  static bool _subscriptionUrlHasHydraBoxKey(String value) {
+    try {
+      return HydraBoxJweCodec.hasKeyFragment(
+        SubscriptionFetcher.parseRequestUri(value),
+      );
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static bool _subscriptionUrlHasHydraBoxKeyQuery(String value) {
+    try {
+      return HydraBoxJweCodec.hasKeyQueryParameter(
+        SubscriptionFetcher.parseRequestUri(value),
+      );
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static void _validatePersistentSourcePolicy(Subscription subscription) {
+    if (_subscriptionUrlHasHydraBoxKeyQuery(subscription.url)) {
+      throw const FormatException(
+        'HydraBox hbx-key is allowed only in the URI fragment',
+      );
+    }
+    if (!Platform.isAndroid &&
+        _subscriptionUrlHasHydraBoxKey(subscription.url)) {
+      throw UnsupportedError(
+        'Persistent hbx-key subscriptions require Android '
+        'Keystore-backed storage',
+      );
+    }
+  }
+
+  static void _assertStoredSourcePolicies() {
+    for (final key in _metaStore.keys) {
+      if (key == _storageSchemaVersionKey) continue;
+      final raw = _metaStore.get(key);
+      if (raw is! String) continue;
+      try {
+        final map = jsonDecode(raw) as Map<String, dynamic>;
+        final url = map['url']?.toString() ?? '';
+        if (_subscriptionUrlHasHydraBoxKeyQuery(url)) {
+          throw UnsupportedError(
+            'Stored HydraBox hbx-key must not appear in a URL query',
+          );
+        }
+        if (!Platform.isAndroid && _subscriptionUrlHasHydraBoxKey(url)) {
+          throw UnsupportedError(
+            'Refusing plaintext persistence of an hbx-key subscription on '
+            'this platform',
+          );
+        }
+      } on UnsupportedError {
+        rethrow;
+      } catch (_) {
+        // Corrupt unrelated metadata is skipped by normal reads as well.
+      }
+    }
+  }
+
   static String? localFileImportDisplayName(String url) {
     if (!isLocalFileImportUrl(url)) {
       return null;
@@ -1456,12 +2788,16 @@ class SubscriptionStore {
   }
 
   static Future<void> _saveOrdered(List<Subscription> subscriptions) async {
-    final payload = <dynamic, String>{};
     for (var i = 0; i < subscriptions.length; i++) {
-      final normalized = subscriptions[i].copyWith(sortOrder: i);
-      payload[normalized.id] = jsonEncode(normalized.toMetadataMap());
+      final id = subscriptions[i].id;
+      await _withSubscriptionMutationLock(id, () async {
+        final current = _readMetadata(id);
+        if (current == null) return;
+        // The caller's list may have been captured before a refresh. Preserve
+        // every current trust/payload field and change only the ordering value.
+        await _saveMetadataUnlocked(current.copyWith(sortOrder: i));
+      });
     }
-    await _metaStore.putAll(payload);
   }
 
   static void _logBuildWarningEntries(List<dynamic> warnings) {
@@ -1474,11 +2810,60 @@ class SubscriptionStore {
   }
 
   static Subscription _withPayload(Subscription metadata) {
-    final raw = _payloadStore.get(metadata.id);
+    final raw = _payloadStore.get(_payloadKeyForMetadata(metadata));
     if (raw is! String) {
       return metadata;
     }
     return _withPayloadFromRaw(metadata, raw);
+  }
+
+  static Subscription? _readMetadata(String id) {
+    if (!isSafeSubscriptionStorageId(id)) {
+      return null;
+    }
+    final raw = _metaStore.get(id);
+    if (raw is! String) return null;
+    try {
+      final subscription = Subscription.fromMetadataMap(
+        jsonDecode(raw) as Map<String, dynamic>,
+      );
+      if (subscription.id != id ||
+          !isSafeSubscriptionStorageId(subscription.id)) {
+        return null;
+      }
+      return subscription;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static String _payloadKeyForMetadata(Subscription metadata) {
+    if (!isSafeSubscriptionStorageId(metadata.id)) {
+      return '';
+    }
+    final candidate = metadata.payloadStorageKey.trim();
+    final expectedPrefix = '${metadata.id}$_payloadGenerationSeparator';
+    if (candidate.startsWith(expectedPrefix) &&
+        candidate.length > expectedPrefix.length) {
+      return candidate;
+    }
+    return metadata.id;
+  }
+
+  static void _ensureSubscriptionUnchanged({
+    required Subscription current,
+    required String expectedPayloadKey,
+    String? expectedUrl,
+    required String operation,
+  }) {
+    final currentPayloadKey = _payloadKeyForMetadata(current);
+    if (currentPayloadKey != expectedPayloadKey ||
+        (expectedUrl != null && current.url != expectedUrl)) {
+      throw StateError(
+        'Subscription ${current.id} changed while $operation; retry with the '
+        'latest revision',
+      );
+    }
   }
 
   static Subscription _withPayloadFromRaw(Subscription metadata, String raw) {
@@ -1504,6 +2889,29 @@ class SubscriptionStore {
                 .where((group) => group.tag.isNotEmpty)
                 .toList() ??
             const [],
+        profiles:
+            (map['profiles'] as List?)
+                ?.map(
+                  (entry) => SubscriptionProfile.fromMap(
+                    Map<String, dynamic>.from(entry as Map),
+                  ),
+                )
+                .where((profile) => profile.id.isNotEmpty)
+                .toList(growable: false) ??
+            const [],
+        nativeConfig: map['native_config'] is Map
+            ? Map<String, dynamic>.from(map['native_config'] as Map)
+            : null,
+        clearNativeConfig: map['native_config'] is! Map,
+        sourceMetadata: <String, dynamic>{
+          ...Map<String, dynamic>.from(
+            map['source_metadata'] as Map? ?? const {},
+          ),
+          // Durable trust state is authoritative over the immutable payload
+          // copy. This preserves startup reconciliation blocks while retaining
+          // opaque payload-only extension metadata.
+          ...metadata.sourceMetadata,
+        },
       );
     } catch (_) {
       return metadata;
@@ -1527,22 +2935,32 @@ class SubscriptionStore {
           continue;
         }
         final subscription = Subscription.fromMap(map);
+        if (!isSafeSubscriptionStorageId(subscription.id)) {
+          continue;
+        }
+        _validatePersistentSourcePolicy(subscription);
         updatedMetadata[subscription.id] = jsonEncode(
           subscription.toMetadataMap(),
         );
         updatedPayloads[subscription.id] = jsonEncode(
           subscription.toPayloadMap(),
         );
+      } on UnsupportedError {
+        rethrow;
       } catch (_) {
         // Leave corrupt legacy entries untouched so they can still be inspected.
       }
     }
 
-    if (updatedMetadata.isNotEmpty) {
-      await _metaStore.putAll(updatedMetadata);
-    }
     if (updatedPayloads.isNotEmpty) {
       await _payloadStore.putAll(updatedPayloads);
+      await _payloadStore.flush();
+    }
+    // Metadata is destructive here because it removes the only embedded copy
+    // of the payload. Switch it only after the split payload is durable.
+    if (updatedMetadata.isNotEmpty) {
+      await _metaStore.putAll(updatedMetadata);
+      await _metaStore.flush();
     }
   }
 
@@ -2093,6 +3511,13 @@ String? _rewriteOutboundRuntimeInfoPayload(
   } catch (_) {
     return null;
   }
+}
+
+class _StoreMutationWaiter {
+  _StoreMutationWaiter({required this.exclusive});
+
+  final bool exclusive;
+  final Completer<void> ready = Completer<void>();
 }
 
 const _compressedPayloadPrefix = 'gzip-base64-v1:';

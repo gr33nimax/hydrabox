@@ -20,7 +20,7 @@ class SettingsAboutPage extends StatefulWidget {
   });
 
   static final Uri _coreSourceUri = Uri.parse(
-    'https://github.com/yamixdev/etonify-core/tree/etonify-dev',
+    'https://github.com/gr33nimax/etonify-core/tree/extended-integration',
   );
   static final Uri _telegramUri = Uri.parse('https://t.me/etonify');
   static final Uri _contactUri = Uri.parse('https://t.me/etonify?direct');
@@ -207,7 +207,7 @@ class _AboutInfoCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Etonify',
+              'HydraBox',
               style: theme.textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.w800,
                 letterSpacing: 0,
@@ -240,7 +240,7 @@ class _AboutInfoCard extends StatelessWidget {
                 ),
                 _AboutActionChip(
                   icon: Icons.code_rounded,
-                  label: 'yamixdev/etonify-core',
+                  label: 'gr33nimax/etonify-core',
                   onTap: onOpenCoreSource,
                 ),
                 _AboutActionChip(
@@ -605,7 +605,7 @@ class _MeowTeamPage extends StatelessWidget {
           const Gap(28),
           Center(
             child: Text(
-              '© 2026 MeowTeam™',
+              'Etonify upstream · © 2026 MeowTeam',
               style: theme.textTheme.labelLarge?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
                 fontWeight: FontWeight.w700,

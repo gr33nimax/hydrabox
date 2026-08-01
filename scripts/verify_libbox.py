@@ -27,7 +27,8 @@ HASH_FILE = LIBS / "libbox.sha256"
 PROVENANCE_FILE = LIBS / "libbox.provenance.json"
 CORE_PATH = ROOT / "etonify-core"
 BASELINE_FILE = CORE_PATH / "release" / "ETONIFY_BASELINE"
-VERSION_FILE = CORE_PATH / "release" / "ETONIFY_VERSION"
+VERSION_FILE = CORE_PATH / "release" / "HYDRACORE_VERSION"
+ETONIFY_VERSION_FILE = CORE_PATH / "release" / "ETONIFY_VERSION"
 GITMODULES = ROOT / ".gitmodules"
 REQUIRED_ANDROID_ABIS = {
     "armeabi-v7a",
@@ -206,7 +207,6 @@ def main() -> None:
         fail("libbox provenance SHA-256 does not match the bundled AAR")
     if parsed_provenance.size_bytes != AAR.stat().st_size:
         fail("libbox provenance size_bytes does not match the bundled AAR")
-
     actual_sources_hash = sha256(SOURCES)
     if (
         str(provenance.get("sources_sha256", "")).lower()
@@ -247,14 +247,22 @@ def main() -> None:
         )
 
     if not VERSION_FILE.is_file():
-        fail("etonify-core/release/ETONIFY_VERSION is missing")
+        fail("etonify-core/release/HYDRACORE_VERSION is missing")
     pinned_release_tag = VERSION_FILE.read_text(encoding="utf-8").strip()
     if not pinned_release_tag:
+        fail("etonify-core/release/HYDRACORE_VERSION is empty")
+    if not ETONIFY_VERSION_FILE.is_file():
+        fail("etonify-core/release/ETONIFY_VERSION is missing")
+    pinned_etonify_version = ETONIFY_VERSION_FILE.read_text(
+        encoding="utf-8",
+    ).strip()
+    if not pinned_etonify_version:
         fail("etonify-core/release/ETONIFY_VERSION is empty")
     validate_core_pins(
         parsed_provenance,
         source_commit=gitlink_commit,
         release_tag=pinned_release_tag,
+        etonify_version=pinned_etonify_version,
     )
 
     baseline = baseline_settings()

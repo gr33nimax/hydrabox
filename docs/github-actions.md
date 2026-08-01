@@ -1,4 +1,4 @@
-# GitHub Actions for Etonify
+# GitHub Actions for HydraBox
 
 This repository contains two useful workflows:
 
@@ -18,8 +18,11 @@ ANDROID_KEYSTORE_BASE64
 ANDROID_KEYSTORE_PASSWORD
 ANDROID_KEY_ALIAS
 ANDROID_KEY_PASSWORD
-HAPP_CRYPTO_ASSETS_PASSPHRASE
 ```
+
+`HAPP_CRYPTO_ASSETS_PASSPHRASE` is optional and must be configured only when
+the distributor has independently verified rights to restore and redistribute
+the inherited Happ assets.
 
 ## Create a Release Keystore
 
@@ -27,21 +30,24 @@ On Windows:
 
 ```powershell
 keytool -genkeypair -v `
-  -keystore etonify-release.jks `
+  -keystore hydrabox-release.jks `
   -keyalg RSA `
   -keysize 2048 `
   -validity 10000 `
-  -alias etonify
+  -alias hydrabox
 ```
 
-Keep this file private. If you lose it, you may not be able to update APKs signed with the same identity.
+Keep this file private. If you lose it, you may not be able to update APKs
+signed with the same identity. Retaining `com.etonify.meow_client` alone does
+not make HydraBox an installable upgrade from Etonify: that also requires an
+authorized matching signing certificate or signing lineage.
 
 ## Convert Keystore to Base64
 
 On Windows:
 
 ```powershell
-[Convert]::ToBase64String([IO.File]::ReadAllBytes("etonify-release.jks")) | Set-Clipboard
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("hydrabox-release.jks")) | Set-Clipboard
 ```
 
 Paste the clipboard value into `ANDROID_KEYSTORE_BASE64`.
@@ -52,13 +58,16 @@ Use the keystore password as `ANDROID_KEYSTORE_PASSWORD`, the alias as `ANDROID_
 
 GitHub Actions secrets are limited to 48 KB, so the public repository does not store raw `assets/happ_crypto` and does not store a large base64 zip secret.
 
-Instead, official release builds decrypt an encrypted archive committed to the repository:
+An inherited encrypted archive may be committed to the repository:
 
 ```text
 .github/private/happ_crypto_assets.zip.gpg
 ```
 
-Only the decryption passphrase is stored as the `HAPP_CRYPTO_ASSETS_PASSPHRASE` repository secret.
+Encryption does not grant redistribution rights. The workflow leaves these
+assets excluded by default. A distributor may enable the
+`include_private_happ_assets` input and configure
+`HAPP_CRYPTO_ASSETS_PASSPHRASE` only after verifying the necessary rights.
 
 Create a zip archive from your local private assets:
 
@@ -76,7 +85,8 @@ gpg --symmetric --cipher-algo AES256 --output .github\private\happ_crypto_assets
 
 Use the same passphrase you typed into GPG as `HAPP_CRYPTO_ASSETS_PASSPHRASE`.
 
-The release workflow validates that these files are present after restore:
+When explicitly enabled, the release workflow validates that these files are
+present after restore:
 
 ```text
 selectors.json
@@ -85,7 +95,8 @@ crypt51_rsa_keys.json
 native_rsa_keys.json
 ```
 
-These assets are still included in official APKs. APK obfuscation makes casual reverse engineering harder, but it does not make bundled assets secret.
+APK obfuscation can make casual reverse engineering harder, but it does not
+make bundled assets secret or change their license. See [NOTICE.md](../NOTICE.md).
 
 ## Build Signed APKs
 
@@ -95,14 +106,12 @@ Manual build:
 2. Select `Android Release APK`.
 3. Click `Run workflow`.
 4. Use `build_name` as `0.1.0` or `v0.1.0`; both are normalized.
-5. Download APKs from the workflow artifact or from the created draft release.
+5. Leave `include_private_happ_assets` disabled unless redistribution rights
+   have been verified.
+6. Download APKs from the workflow artifact or from the created draft release.
 
-Release tag build:
-
-```powershell
-git tag 0.1.0
-git push origin 0.1.0
-```
+The checked-in workflow is manual (`workflow_dispatch`); pushing a tag alone
+does not start a release build.
 
 The workflow normalizes release metadata like this:
 
@@ -112,13 +121,21 @@ release tag:  0.1.0
 release title: v0.1.0
 ```
 
-The updater inside Etonify expects these release asset names:
+HydraBox builds keep automatic updates disabled unless both
+`HYDRABOX_UPDATE_REPOSITORY_OWNER` and `HYDRABOX_UPDATE_REPOSITORY_NAME` are
+provided as Dart defines. The Android release workflow derives both values from
+its GitHub-provided `GITHUB_REPOSITORY` (`owner/name`), so a release build follows
+the repository that produced it instead of consuming the upstream Etonify
+release channel.
+
+When a HydraBox-controlled source is configured, the updater expects these
+release asset names:
 
 ```text
-etonify-v0.1.0-universal.apk
-etonify-v0.1.0-arm64-v8a.apk
-etonify-v0.1.0-armeabi-v7a.apk
-etonify-v0.1.0-x86_64.apk
+hydrabox-v0.1.0-universal.apk
+hydrabox-v0.1.0-arm64-v8a.apk
+hydrabox-v0.1.0-armeabi-v7a.apk
+hydrabox-v0.1.0-x86_64.apk
 ```
 
 The app first looks for the APK matching the current device ABI, then falls back to `universal`.

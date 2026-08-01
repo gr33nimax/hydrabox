@@ -2,8 +2,10 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
+import 'hydrabox_subscription_crypto.dart';
 import 'outbound_schema.dart';
 import 'parsers/clash_parser.dart';
+import 'parsers/hydrabox_subscription_parser.dart';
 import 'parsers/link_parser.dart';
 import 'parsers/singbox_config_parser.dart';
 import 'parsers/sip008_parser.dart';
@@ -12,6 +14,7 @@ import 'parsers/xray_config_parser.dart';
 
 /// The format that was detected during parsing.
 enum SubscriptionFormat {
+  hydraboxV1,
   singboxConfig,
   xrayConfig,
   sip008,
@@ -29,6 +32,10 @@ class ParseResult {
     required this.outbounds,
     this.groups = const [],
     this.bodyMeta = const {},
+    this.profiles = const [],
+    this.nativeConfig,
+    this.defaultProfileId,
+    this.sourceMetadata = const {},
   });
 
   final SubscriptionFormat format;
@@ -44,11 +51,28 @@ class ParseResult {
   /// (e.g. `#profile-title`, `#subscription-userinfo`, etc.)
   final Map<String, String> bodyMeta;
 
+  /// Explicit UI profiles supplied by HydraBox Subscription v1.
+  final List<HydraBoxParsedProfile> profiles;
+
+  /// Opaque native sing-box document retained for runtime assembly.
+  final Map<String, dynamic>? nativeConfig;
+
+  /// Stable publisher profile identifier selected by default.
+  final String? defaultProfileId;
+
+  /// Issuer, sequence, digest and transport-security state.
+  final Map<String, dynamic> sourceMetadata;
+
   Map<String, dynamic> toMap() => {
     'format': format.name,
     'outbounds': outbounds,
     if (groups.isNotEmpty) 'groups': groups.map((g) => g.toMap()).toList(),
     'bodyMeta': bodyMeta,
+    if (profiles.isNotEmpty)
+      'profiles': profiles.map((profile) => profile.toMap()).toList(),
+    if (nativeConfig != null) 'nativeConfig': nativeConfig,
+    if (defaultProfileId != null) 'defaultProfileId': defaultProfileId,
+    if (sourceMetadata.isNotEmpty) 'sourceMetadata': sourceMetadata,
   };
 
   factory ParseResult.fromMap(Map<String, dynamic> map) {
@@ -71,6 +95,20 @@ class ParseResult {
       bodyMeta: (map['bodyMeta'] as Map? ?? const <String, dynamic>{}).map(
         (key, value) => MapEntry(key.toString(), value.toString()),
       ),
+      profiles: (map['profiles'] as List? ?? const [])
+          .map(
+            (entry) => HydraBoxParsedProfile.fromMap(
+              Map<String, dynamic>.from(entry as Map),
+            ),
+          )
+          .toList(growable: false),
+      nativeConfig: map['nativeConfig'] is Map
+          ? Map<String, dynamic>.from(map['nativeConfig'] as Map)
+          : null,
+      defaultProfileId: map['defaultProfileId']?.toString(),
+      sourceMetadata: map['sourceMetadata'] is Map
+          ? Map<String, dynamic>.from(map['sourceMetadata'] as Map)
+          : const {},
     );
   }
 }
@@ -151,23 +189,29 @@ class ParsedOutboundGroup {
 class SubscriptionParser {
   SubscriptionParser._();
 
-  static Future<ParseResult> parseInBackground(String content) async {
-    final payload = await compute(_parseSubscriptionContent, content);
+  static Future<ParseResult> parseInBackground(
+    String content, {
+    String? decryptionKey,
+  }) async {
+    final payload = await compute(_parseSubscriptionContent, {
+      'content': content,
+      'decryption_key': ?decryptionKey,
+    });
     return ParseResult.fromMap(Map<String, dynamic>.from(payload));
   }
 
   /// Parses [content] by trying all known formats in priority order.
   ///
   /// Priority:
-  /// 1. Sing-box JSON config (has "outbounds" with "type")
-  /// 2. Xray JSON config (has "outbounds" with "protocol")
-  /// 3. SIP008 JSON (has "servers" array)
-  /// 4. Clash YAML (has "proxies:" key)
-  /// 5. WireGuard .conf (has [Interface] + [Peer])
-  /// 6. Base64-decoded proxy links
-  /// 7. Raw proxy links (one per line)
-  static ParseResult parse(String content) {
-    content = content.trim();
+  /// 1. HydraBox v1 envelope/JWE (fail closed)
+  /// 2. Sing-box JSON config (has "outbounds" with "type")
+  /// 3. Xray JSON config (has "outbounds" with "protocol")
+  /// 4. SIP008 JSON (has "servers" array)
+  /// 5. Clash YAML (has "proxies:" key)
+  /// 6. WireGuard .conf (has [Interface] + [Peer])
+  /// 7. Base64-decoded proxy links
+  /// 8. Raw proxy links (one per line)
+  static ParseResult parse(String content, {String? decryptionKey}) {
     if (content.isEmpty) {
       return const ParseResult(
         format: SubscriptionFormat.unknown,
@@ -176,6 +220,49 @@ class SubscriptionParser {
     }
 
     // ── 1. Try JSON-based formats ──
+    if (decryptionKey != null) {
+      if (decryptionKey.isEmpty || decryptionKey != decryptionKey.trim()) {
+        throw const FormatException('The supplied hbx-key is invalid');
+      }
+      if (!HydraBoxJweCodec.looksLike(content)) {
+        throw const FormatException(
+          'An hbx-key was supplied but the subscription is not encrypted JWE',
+        );
+      }
+    }
+
+    // HydraBox is checked against the original wire string. Trimming first
+    // would let an oversized response hide bytes in surrounding JSON
+    // whitespace before the v1 outer-response limit runs.
+    if (HydraBoxSubscriptionParser.looksLike(content)) {
+      final parsed = HydraBoxSubscriptionParser.parse(
+        content,
+        decryptionKey: decryptionKey,
+      );
+      return ParseResult(
+        format: SubscriptionFormat.hydraboxV1,
+        outbounds: _normalizeOutbounds(
+          parsed.outbounds,
+          preserveUnknownFields: true,
+        ),
+        bodyMeta: parsed.bodyMeta,
+        profiles: parsed.profiles,
+        nativeConfig: parsed.nativeConfig,
+        defaultProfileId: parsed.defaultProfileId,
+        sourceMetadata: parsed.sourceMetadata,
+      );
+    }
+
+    // Legacy formats retain their historical surrounding-whitespace
+    // normalization and their independent transport limits.
+    content = content.trim();
+    if (content.isEmpty) {
+      return const ParseResult(
+        format: SubscriptionFormat.unknown,
+        outbounds: [],
+      );
+    }
+
     if (_looksLikeJson(content)) {
       // Sing-box config
       if (SingboxConfigParser.canParse(content)) {
@@ -586,6 +673,9 @@ class SubscriptionParser {
   };
 }
 
-Map<String, dynamic> _parseSubscriptionContent(String content) {
-  return SubscriptionParser.parse(content).toMap();
+Map<String, dynamic> _parseSubscriptionContent(Map<String, dynamic> input) {
+  return SubscriptionParser.parse(
+    input['content']?.toString() ?? '',
+    decryptionKey: input['decryption_key']?.toString(),
+  ).toMap();
 }

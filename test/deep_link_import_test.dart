@@ -17,6 +17,23 @@ void main() {
       expect(request.sourceType, DeepLinkImportSource.etonifyImport);
     });
 
+    test(
+      'accepts the HydraBox import scheme without removing legacy aliases',
+      () {
+        final request = DeepLinkImportRequest.fromPayload({
+          'url': 'https://example.com/hydrabox-subscription',
+          'name': 'HydraBox example',
+          'scheme': 'hydrabox',
+        });
+
+        expect(request, isNotNull);
+        expect(request!.url, 'https://example.com/hydrabox-subscription');
+        expect(request.name, 'HydraBox example');
+        expect(request.scheme, 'hydrabox');
+        expect(request.sourceType, DeepLinkImportSource.etonifyImport);
+      },
+    );
+
     test('normalizes happ add links without explicit scheme', () {
       final request = DeepLinkImportRequest.fromPayload({
         'url': 'happ://add/google.com',
