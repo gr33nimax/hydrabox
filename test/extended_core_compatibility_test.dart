@@ -1031,46 +1031,47 @@ void main() {
     );
   });
 
-  test('remote policy v2 rejects WDTT runtime authority and resource abuse', () {
-    final mutations = <void Function(Map<String, dynamic>)>[
-      (endpoint) => endpoint['workers'] = 37,
-      (endpoint) => endpoint['vk_hashes'] = ['a', 'b', 'c', 'd', 'e'],
-      (endpoint) => endpoint['device_id'] = 'publisher-owned',
-      (endpoint) => endpoint['listen_port'] = 9000,
-      (endpoint) => endpoint['detour'] = 'profile-out',
-      (endpoint) => endpoint['vk_auth'] = 'account',
-    ];
-    final key = base64Url
-        .encode(List<int>.generate(32, (index) => index))
-        .replaceAll('=', '');
-    for (final mutate in mutations) {
-      final source = _hydraboxBuilderDocument();
-      final runtime = source['runtime'] as Map<String, dynamic>;
-      final native = runtime['document'] as Map<String, dynamic>;
-      final endpoint = <String, dynamic>{
-        'type': 'wdtt',
-        'tag': 'provider-wdtt',
-        'server': '203.0.113.10',
-        'server_port': 56000,
-        'password': 'subscription-secret',
-        'vk_hashes': ['hash'],
-      };
-      mutate(endpoint);
-      native['endpoints'] = [endpoint];
-      source['default_profile_id'] = 'wdtt-profile';
-      source['profiles'] = [
-        {
-          'id': 'wdtt-profile',
-          'name': {'default': 'WDTT'},
-          'entrypoint': {'section': 'endpoints', 'tag': 'provider-wdtt'},
-        },
+  test(
+    'remote policy v2 rejects WDTT runtime authority and resource abuse',
+    () {
+      final mutations = <void Function(Map<String, dynamic>)>[
+        (endpoint) => endpoint['workers'] = 37,
+        (endpoint) => endpoint['vk_hashes'] = ['a', 'b', 'c', 'd', 'e'],
+        (endpoint) => endpoint['device_id'] = 'publisher-owned',
+        (endpoint) => endpoint['listen_port'] = 9000,
+        (endpoint) => endpoint['detour'] = 'profile-out',
+        (endpoint) => endpoint['vk_auth'] = 'account',
       ];
-      final encrypted = HydraBoxJweCodec.encrypt(
-        jsonEncode(source),
-        encodedKey: key,
-      );
-      expect(
-        () {
+      final key = base64Url
+          .encode(List<int>.generate(32, (index) => index))
+          .replaceAll('=', '');
+      for (final mutate in mutations) {
+        final source = _hydraboxBuilderDocument();
+        final runtime = source['runtime'] as Map<String, dynamic>;
+        final native = runtime['document'] as Map<String, dynamic>;
+        final endpoint = <String, dynamic>{
+          'type': 'wdtt',
+          'tag': 'provider-wdtt',
+          'server': '203.0.113.10',
+          'server_port': 56000,
+          'password': 'subscription-secret',
+          'vk_hashes': ['hash'],
+        };
+        mutate(endpoint);
+        native['endpoints'] = [endpoint];
+        source['default_profile_id'] = 'wdtt-profile';
+        source['profiles'] = [
+          {
+            'id': 'wdtt-profile',
+            'name': {'default': 'WDTT'},
+            'entrypoint': {'section': 'endpoints', 'tag': 'provider-wdtt'},
+          },
+        ];
+        final encrypted = HydraBoxJweCodec.encrypt(
+          jsonEncode(source),
+          encodedKey: key,
+        );
+        expect(() {
           final subscription = _hydraboxSubscriptionFromContent(
             encrypted,
             decryptionKey: key,
@@ -1083,11 +1084,10 @@ void main() {
               supportsWdtt: true,
             ),
           ).buildPlan();
-        },
-        throwsA(anyOf(isA<FormatException>(), isA<StateError>())),
-      );
-    }
-  });
+        }, throwsA(anyOf(isA<FormatException>(), isA<StateError>())));
+      }
+    },
+  );
 
   test('HydraBox builder refuses tag remapping for persisted opaque data', () {
     final subscription = _hydraboxSubscriptionFromContent(
@@ -1770,10 +1770,7 @@ Subscription _hydraboxSubscriptionFromContent(
   String source, {
   String? decryptionKey,
 }) {
-  final parsed = SubscriptionParser.parse(
-    source,
-    decryptionKey: decryptionKey,
-  );
+  final parsed = SubscriptionParser.parse(source, decryptionKey: decryptionKey);
   final payload = SubscriptionStore.buildSubscriptionPayloadForTest(parsed);
   final outbounds = payload.outbounds
       .map(Outbound.fromMap)

@@ -277,10 +277,7 @@ class SubscriptionParser {
           // A full sing-box document is already authored against a concrete
           // core schema. Preserve every field so extended protocols and
           // future transports reach libbox unchanged.
-          outbounds: _normalizeOutbounds(
-            parsed,
-            preserveUnknownFields: true,
-          ),
+          outbounds: _normalizeOutbounds(parsed, preserveUnknownFields: true),
         );
       }
 

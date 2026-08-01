@@ -230,10 +230,7 @@ void main() {
       {
         'id': 'invalid-wdtt',
         'name': {'default': 'Invalid WDTT'},
-        'entrypoint': {
-          'section': 'outbounds',
-          'tag': 'invalid-wdtt-outbound',
-        },
+        'entrypoint': {'section': 'outbounds', 'tag': 'invalid-wdtt-outbound'},
       },
     ];
 

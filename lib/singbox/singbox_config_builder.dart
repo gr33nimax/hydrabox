@@ -1403,7 +1403,9 @@ class SingboxConfigBuilder {
       final workers = endpoint['workers'];
       if (workers != null &&
           (workers is! int || workers < 1 || workers > maximumWorkers)) {
-        throw StateError('$field.workers must be between 1 and $maximumWorkers');
+        throw StateError(
+          '$field.workers must be between 1 and $maximumWorkers',
+        );
       }
       final obfs = endpoint['obfs'] ?? 'audio';
       if (obfs is! String ||
