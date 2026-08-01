@@ -129,7 +129,7 @@ jobs:
             clean_log="$(mktemp)"
             sed -E $'s/\\x1B\\[[0-9;]*[[:alpha:]]//g' "$log_file" > "$clean_log"
             echo "::group::Flutter test failure diagnostics"
-            grep -E -- '-[[:space:]]*[0-9]+:|\[E\]|Expected:|Actual:|Some tests failed|[0-9]+ tests passed|^package:' "$clean_log" \
+            grep -E -- '-[[:space:]]*(1|2|3):|\[E\]|Expected:|Actual:|Some tests failed|[0-9]+ tests passed|^package:' "$clean_log" \
               | head -n 300 || true
             grep -E -- 'Some tests failed|[0-9]+ tests passed' "$clean_log" | tail -n 20 || true
             echo "::endgroup::"
