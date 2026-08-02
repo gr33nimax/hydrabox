@@ -1040,11 +1040,11 @@ class AppLocalizationsRu extends AppLocalizations {
       'DNS over HTTPS. Шифрованный DNS через HTTPS, часто лучше через прокси.';
 
   @override
-  String get dnsPreferIpv6Title => 'Предпочитать IPv6';
+  String get dnsPreferIpv6Title => 'Использовать IPv6';
 
   @override
   String get dnsPreferIpv6Subtitle =>
-      'Приоритет IPv6, если доступны обе версии адреса';
+      'Только IPv4, если выключено; при включении — приоритет IPv6';
 
   @override
   String get urlTestUrlTitle => 'URL проверки';

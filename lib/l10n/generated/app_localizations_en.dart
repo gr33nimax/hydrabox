@@ -1040,11 +1040,11 @@ class AppLocalizationsEn extends AppLocalizations {
       'DNS over HTTPS. Encrypted DNS over HTTPS, often best through proxy.';
 
   @override
-  String get dnsPreferIpv6Title => 'Prefer IPv6';
+  String get dnsPreferIpv6Title => 'Enable IPv6';
 
   @override
   String get dnsPreferIpv6Subtitle =>
-      'Prefer IPv6 when both address versions are available';
+      'Use IPv4 only when off; prefer IPv6 when enabled';
 
   @override
   String get urlTestUrlTitle => 'Test URL';

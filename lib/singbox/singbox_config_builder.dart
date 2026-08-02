@@ -389,7 +389,13 @@ class SingboxConfigBuilder {
         'final': dnsFinal,
         'independent_cache': true,
         'cache_capacity': 4096,
-        if (dnsPreferIpv6) 'strategy': 'prefer_ipv6',
+        // Android applications issue AAAA queries independently. Leaving the
+        // strategy unset (or merely preferring IPv4) still returns IPv6
+        // answers, so a browser can select an unreachable IPv6 destination
+        // through a proxy whose exit has no working IPv6 route. Default to a
+        // fail-safe IPv4-only answer set; the existing preference switch opts
+        // back into dual-stack operation with IPv6 first.
+        'strategy': dnsPreferIpv6 ? 'prefer_ipv6' : 'ipv4_only',
       },
       'inbounds': [
         if (vpnInboundEnabled)

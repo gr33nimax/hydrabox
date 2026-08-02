@@ -2039,6 +2039,27 @@ void main() {
     expect(tun['address'], contains('fdfe:dcba:9876::1/126'));
   });
 
+  test(
+    'DNS defaults to IPv4-only and IPv6 preference opts into dual stack',
+    () {
+      const subscription = Subscription(
+        id: 'dns-address-family',
+        name: 'DNS address family',
+        url: 'https://example.com/sub',
+        outbounds: [],
+      );
+
+      final safeDefault = _defaultBuilder(subscription).build();
+      expect((safeDefault['dns'] as Map)['strategy'], 'ipv4_only');
+
+      final ipv6Preferred = _defaultBuilder(
+        subscription,
+        dnsPreferIpv6: true,
+      ).build();
+      expect((ipv6Preferred['dns'] as Map)['strategy'], 'prefer_ipv6');
+    },
+  );
+
   test('VPN TUN and local proxy can run in the same service config', () {
     const subscription = Subscription(
       id: 'vpn-with-local-proxy',
@@ -2346,6 +2367,7 @@ SingboxConfigBuilder _defaultBuilder(
   String? adBlockAllowRuleSetPath,
   String dnsDirectResolver = 'udp://1.1.1.1',
   String dnsProxyResolver = 'https://dns.cloudflare.com/dns-query',
+  bool dnsPreferIpv6 = false,
   String russiaDnsDirectResolver = defaultRussiaDnsDirectResolver,
   LibboxCapabilities capabilities = LibboxCapabilities.bundledLegacy,
 }) {
@@ -2363,7 +2385,7 @@ SingboxConfigBuilder _defaultBuilder(
     proxyPassword: proxyPassword,
     dnsDirectResolver: dnsDirectResolver,
     dnsProxyResolver: dnsProxyResolver,
-    dnsPreferIpv6: false,
+    dnsPreferIpv6: dnsPreferIpv6,
     russiaDnsDirectResolver: russiaDnsDirectResolver,
     urlTestUrl: urlTestUrl,
     urlTestIntervalSeconds: urlTestIntervalSeconds,
