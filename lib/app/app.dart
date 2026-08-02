@@ -5058,9 +5058,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     );
   }
 
-  String? _selectedConcretePreconnectTarget() =>
-      _concretePreconnectTargetFor(_selectedProxyTag);
-
   bool _canRunPreconnectUrlTestForTag(String tag) =>
       Platform.isAndroid &&
       !_connected &&
