@@ -1,5 +1,14 @@
 # HydraBox changelog
 
+## [0.3.0-beta.6]
+
+- Reinitialize the WDTT worker generation immediately after Android reports a
+  physical network-interface change instead of waiting for stale TURN/DTLS
+  sockets to time out.
+- Preserve the current lease, credential binding, and runtime identity during
+  handoff. Reconnection therefore stays on the VK/WDTT path and does not fetch
+  the HydraBox subscription again.
+
 ## [0.3.0-beta.5]
 
 - Stabilized WDTT across Wi-Fi/mobile handoffs with a runtime-scoped worker
