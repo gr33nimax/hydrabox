@@ -6,8 +6,6 @@
 
 <img width="220" alt="HydraBox logo" src="assets/branding/hydrabox-logo.png" />
 
-<img width="1672" height="941" alt="HydraBox interface" src="https://github.com/user-attachments/assets/c5a9780c-6b26-45e1-9458-42c23e204dde" />
-
 [![Client checks](https://github.com/gr33nimax/hydrabox/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/gr33nimax/hydrabox/actions/workflows/ci.yml)
 [![Android](https://img.shields.io/badge/platform-Android-3DDC84?style=flat-square&logo=android)](#)
 [![Flutter](https://img.shields.io/badge/built%20with-Flutter-02569B?style=flat-square&logo=flutter)](#)
@@ -84,11 +82,11 @@ Android unit/lint/assembly gates, and CodeQL. Contributions target `main`; see
 ## Credits and license
 
 HydraBox began as a fork of
-[Etonify](https://github.com/yamixdev/Etonify). We are grateful to MeowTeam and
-all upstream contributors whose work made this project possible. HydraBox is
-now maintained independently for the Hydra ecosystem while preserving the
-complete source history, corresponding source, copyright notices, and
-licenses. Exact lineage and retained compatibility identifiers are documented
-in [CREDITS.md](CREDITS.md), [NOTICE.md](NOTICE.md), and
+[Etonify](https://github.com/yamixdev/Etonify) by MeowTeam. We are grateful to
+the team and all upstream contributors whose work made this project possible.
+HydraBox is now maintained independently for the Hydra ecosystem while
+preserving the complete source history, corresponding source, copyright
+notices, and licenses. Exact lineage and retained compatibility identifiers
+are documented in [CREDITS.md](CREDITS.md), [NOTICE.md](NOTICE.md), and
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The project is distributed
 under [GPL-3.0-or-later](LICENSE).
