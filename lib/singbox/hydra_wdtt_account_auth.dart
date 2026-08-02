@@ -22,14 +22,21 @@ bool isHydraWdttAccountCredentialError(String? error) {
 }
 
 HydraWdttAccountChallenge? findHydraWdttAccountChallenge(
-  Subscription? subscription,
-) {
+  Subscription? subscription, {
+  String? error,
+}) {
   if (subscription == null || subscription.wdttCredentials.isEmpty) {
     return null;
   }
   final allowedRefs = subscription.wdttCredentials
       .map((credential) => credential.credentialRef)
       .toSet();
+  final challengeRef = RegExp(
+    r'credential_ref "([A-Za-z0-9][A-Za-z0-9._:-]*)"',
+  ).firstMatch(error ?? '')?.group(1);
+  if (challengeRef != null && !allowedRefs.contains(challengeRef)) {
+    return null;
+  }
   final endpoints = subscription.nativeConfig?['endpoints'];
   if (endpoints is! List) return null;
 
@@ -43,6 +50,7 @@ HydraWdttAccountChallenge? findHydraWdttAccountChallenge(
     if (auth != 'auto' && auth != 'account') continue;
     final credentialRef = endpoint['credential_ref']?.toString().trim() ?? '';
     if (!allowedRefs.contains(credentialRef)) continue;
+    if (challengeRef != null && credentialRef != challengeRef) continue;
     final hashes = endpoint['vk_hashes'];
     if (hashes is! List) continue;
     for (final rawHash in hashes) {

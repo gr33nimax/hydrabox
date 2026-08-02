@@ -134,7 +134,7 @@ internal object HydraWdttVkAuthManager {
         val cleanRef = credentialRef.trim()
         val cleanHash = hash.trim()
         val invalidRef = cleanRef.length !in 1..256 || cleanRef.any { character ->
-            character.isWhitespace() || character.isISOControl() ||
+            character.isWhitespace() || Character.isISOControl(character) ||
                 character in "|/\\?#@"
         }
         if (invalidRef || !hashPattern.matches(cleanHash)) {

@@ -41,6 +41,24 @@ void main() {
     );
   });
 
+  test('selects the credential_ref named by HydraCore', () {
+    final selected = findHydraWdttAccountChallenge(
+      subscription(),
+      error:
+          '$hydraWdttAccountCredentialsRequiredMessage '
+          'for credential_ref "$credentialRef"',
+    );
+    final unknown = findHydraWdttAccountChallenge(
+      subscription(),
+      error:
+          '$hydraWdttAccountCredentialsRequiredMessage '
+          'for credential_ref "wdtt:other"',
+    );
+
+    expect(selected?.credentialRef, credentialRef);
+    expect(unknown, isNull);
+  });
+
   test('recognizes stable HydraCore account and captcha errors', () {
     expect(
       isHydraWdttAccountCredentialError(

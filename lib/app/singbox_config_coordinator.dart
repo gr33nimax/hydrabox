@@ -471,6 +471,7 @@ class SingboxConfigCoordinator {
     }
     final challenge = findHydraWdttAccountChallenge(
       _readSnapshot().activeSubscription,
+      error: result.error,
     );
     if (challenge == null) return result;
 

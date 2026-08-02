@@ -842,7 +842,7 @@ class SingboxRuntime {
     if (!Platform.isAndroid) {
       return const AppVersionInfo(
         packageName: '',
-        versionName: '0.2.3',
+        versionName: '',
         versionCode: 0,
       );
     }
@@ -863,7 +863,7 @@ class SingboxRuntime {
     } on MissingPluginException {
       return const AppVersionInfo(
         packageName: '',
-        versionName: '0.2.3',
+        versionName: '',
         versionCode: 0,
       );
     }
