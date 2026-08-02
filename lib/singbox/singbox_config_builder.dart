@@ -2348,15 +2348,17 @@ class SingboxConfigBuilder {
 
   Map<String, String> _dnsDialFields({required String server, String? detour}) {
     final normalizedDetour = _normalizeDnsDetour(detour);
+    final fields = <String, String>{};
     if (normalizedDetour != null) {
-      return {'detour': normalizedDetour};
+      fields['detour'] = normalizedDetour;
     }
     if (InternetAddress.tryParse(server) == null) {
-      // A direct encrypted DNS server cannot resolve its own hostname. Use
-      // Android's current-network resolver solely for this bootstrap lookup.
-      return const {'domain_resolver': 'dns-local'};
+      // A DNS server cannot resolve its own hostname through the final DNS
+      // route. Use Android's current-network resolver solely for bootstrap,
+      // while preserving the requested proxy detour for the DNS connection.
+      fields['domain_resolver'] = 'dns-local';
     }
-    return const {};
+    return fields;
   }
 
   String? _normalizeDnsDetour(String? detour) {

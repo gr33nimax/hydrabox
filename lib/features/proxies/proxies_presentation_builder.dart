@@ -66,11 +66,6 @@ class ProxiesPresentationCallbacks {
     required this.removeProxyChain,
     required this.isProxyChainTag,
     required this.changeHideActiveProxyIp,
-    required this.runPreconnectUrlTest,
-    required this.runPreconnectUrlTestForTag,
-    required this.canRunPreconnectUrlTestForTag,
-    required this.preconnectUrlTestInFlight,
-    required this.preconnectUrlTestEnabled,
   });
 
   final ValueChanged<ProxySort> changeSort;
@@ -88,11 +83,6 @@ class ProxiesPresentationCallbacks {
   final Future<void> Function(String chainTag) removeProxyChain;
   final bool Function(String tag) isProxyChainTag;
   final ValueChanged<bool> changeHideActiveProxyIp;
-  final Future<void> Function() runPreconnectUrlTest;
-  final Future<void> Function(String tag) runPreconnectUrlTestForTag;
-  final bool Function(String tag) canRunPreconnectUrlTestForTag;
-  final bool preconnectUrlTestInFlight;
-  final bool preconnectUrlTestEnabled;
 }
 
 class ProxiesPresentationBuilder {
@@ -167,11 +157,6 @@ class ProxiesPresentationBuilder {
       progressiveBlurEnabled: data.progressiveBlurEnabled,
       onSelected: callbacks.selectProxy,
       onUrlTest: callbacks.runUrlTest,
-      onPreconnectUrlTest: callbacks.runPreconnectUrlTest,
-      onPreconnectUrlTestForTag: callbacks.runPreconnectUrlTestForTag,
-      canRunPreconnectUrlTestForTag: callbacks.canRunPreconnectUrlTestForTag,
-      preconnectUrlTestInFlight: callbacks.preconnectUrlTestInFlight,
-      preconnectUrlTestEnabled: callbacks.preconnectUrlTestEnabled,
       onActiveProxyIpRefresh: callbacks.refreshActiveProxyIp,
       outboundForTag: callbacks.outboundForTag,
       loadProxyChainTargetSources: callbacks.loadProxyChainTargetSources,

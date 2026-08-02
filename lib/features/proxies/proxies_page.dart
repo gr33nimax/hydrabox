@@ -301,11 +301,6 @@ class ProxiesPage extends StatefulWidget {
     required this.progressiveBlurEnabled,
     required this.onSelected,
     required this.onUrlTest,
-    this.onPreconnectUrlTest,
-    this.onPreconnectUrlTestForTag,
-    this.canRunPreconnectUrlTestForTag,
-    this.preconnectUrlTestInFlight = false,
-    this.preconnectUrlTestEnabled = false,
     this.outboundForTag,
     this.loadProxyChainTargetSources,
     this.loadProxyChainTargetsForSource,
@@ -344,11 +339,6 @@ class ProxiesPage extends StatefulWidget {
   final bool progressiveBlurEnabled;
   final ValueChanged<String> onSelected;
   final Future<void> Function() onUrlTest;
-  final Future<void> Function()? onPreconnectUrlTest;
-  final Future<void> Function(String tag)? onPreconnectUrlTestForTag;
-  final bool Function(String tag)? canRunPreconnectUrlTestForTag;
-  final bool preconnectUrlTestInFlight;
-  final bool preconnectUrlTestEnabled;
   final Outbound? Function(String tag)? outboundForTag;
   final Future<List<AppProfileSummary>> Function()? loadProxyChainTargetSources;
   final Future<List<AppProxySummary>> Function(String subscriptionId)?
@@ -708,9 +698,6 @@ class _ProxiesPageState extends State<ProxiesPage> {
                 runtimeStates: widget.runtimeStates,
                 routeAnimation: animation,
                 onSelected: widget.onSelected,
-                onPreconnectUrlTestForTag: widget.onPreconnectUrlTestForTag,
-                canRunPreconnectUrlTestForTag:
-                    widget.canRunPreconnectUrlTestForTag,
                 outboundForTag: widget.outboundForTag,
                 initialSort: _sort,
                 onSortChanged: (value) {
@@ -885,37 +872,6 @@ class _ProxiesPageState extends State<ProxiesPage> {
                   onPressed: () => widget.onUrlTest(),
                   tooltip: l10n.urlTestTitle,
                   child: const Icon(FluentIcons.flash_24_filled),
-                ),
-              ),
-            if (!widget.connected && widget.onPreconnectUrlTest != null)
-              Positioned(
-                right: 16,
-                bottom: footerHeight + 16,
-                child: FloatingActionButton.extended(
-                  key: const ValueKey('preconnect-urltest-action'),
-                  onPressed:
-                      widget.preconnectUrlTestEnabled &&
-                          !widget.preconnectUrlTestInFlight
-                      ? () => widget.onPreconnectUrlTest!()
-                      : null,
-                  tooltip: Localizations.localeOf(context).languageCode == 'ru'
-                      ? 'Проверить выбранный сервер'
-                      : 'Check selected server',
-                  icon: widget.preconnectUrlTestInFlight
-                      ? const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(FluentIcons.pulse_24_regular),
-                  label: Text(
-                    widget.preconnectUrlTestInFlight
-                        ? (Localizations.localeOf(context).languageCode == 'ru'
-                              ? 'Проверяем…'
-                              : 'Checking…')
-                        : (Localizations.localeOf(context).languageCode == 'ru'
-                              ? 'Проверить выбранный'
-                              : 'Check selected'),
-                  ),
                 ),
               ),
           ],
@@ -1130,13 +1086,6 @@ class _ProxiesPageState extends State<ProxiesPage> {
               : () => _openProxyShareSheet(proxy),
           onOpenGroup: proxy.isGroup
               ? (rect) => _openGroupOutbounds(proxy, rect)
-              : null,
-          onPreconnectUrlTest:
-              !proxy.isGroup &&
-                  widget.onPreconnectUrlTestForTag != null &&
-                  (widget.canRunPreconnectUrlTestForTag?.call(proxy.tag) ??
-                      false)
-              ? () => unawaited(widget.onPreconnectUrlTestForTag!(proxy.tag))
               : null,
         );
         final runtimeStates = widget.runtimeStates;

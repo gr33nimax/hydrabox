@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:collection';
-import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:io';
 import 'dart:math';
@@ -70,7 +69,6 @@ import 'package:meow_client/models/app_view_models.dart';
 import 'package:meow_client/models/proxy_runtime_visual_state.dart';
 import 'package:meow_client/models/subscription.dart';
 import 'package:meow_client/singbox/core_config_migration.dart';
-import 'package:meow_client/singbox/preconnect_url_test_policy.dart';
 import 'package:meow_client/singbox/singbox_config_builder.dart';
 import 'package:meow_client/singbox/singbox_runtime.dart';
 import 'package:meow_client/theme/demo_app_theme.dart';
@@ -130,10 +128,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   bool _settingsBackupOperationInFlight = false;
   bool _locationLookupInFlight = false;
   int _selectedNavigationIndex = 0;
-  bool _preconnectUrlTestInFlight = false;
-  int _preconnectUrlTestGeneration = 0;
-  String _preconnectUrlTestTarget = '';
-  final Set<String> _preconnectMeasuredTags = <String>{};
   String _activeProfileId = '';
   String _selectedProxyTag = '';
   String _clientVersionLabel = _fallbackClientVersionLabel;
@@ -533,9 +527,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     return ProxyRuntimeVisualState(
       latency: proxy.latency,
       latencyFresh: proxy.latencyFresh,
-      latencyChecking:
-          proxy.latencyChecking ||
-          (_preconnectUrlTestInFlight && proxy.tag == _preconnectUrlTestTarget),
+      latencyChecking: proxy.latencyChecking,
       latencyUnavailable: proxy.latencyUnavailable,
       latencyError: proxy.latencyError,
       networkUnavailable:
@@ -1804,8 +1796,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
 
   @override
   void dispose() {
-    _preconnectUrlTestGeneration++;
-    unawaited(SingboxRuntime.instance.cancelPreconnectUrlTest());
     WidgetsBinding.instance.removeObserver(this);
     _subscriptionAutoRefreshTimer?.cancel();
     _latencyCoordinator.dispose();
@@ -2667,7 +2657,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   }
 
   void _applySettingsChange(AppSettingsChange Function() mutate) {
-    _invalidatePreconnectUrlTest('settings_changed');
     late final AppSettingsChange change;
     setState(() {
       change = mutate();
@@ -2907,7 +2896,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   }
 
   void _suspendForegroundWork() {
-    _invalidatePreconnectUrlTest('app_background');
     unawaited(_syncRuntimeUiForeground(false));
     _proxyChainTargetSourceCache.clear();
     _resumeForegroundSyncTimer?.cancel();
@@ -3170,9 +3158,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
 
   Future<void> _toggleConnection({String source = 'unknown'}) async {
     _haptic();
-    if (!_connected) {
-      _invalidatePreconnectUrlTest('connect_requested');
-    }
     if (_connectionPhase == AppConnectionPhase.stopping) {
       _runtimeIntent.queueStartAfterStop();
       AppLogStore.info(
@@ -3408,8 +3393,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     if (activeSubscription == null || _selectedProxyTag == tag) {
       return;
     }
-
-    _invalidatePreconnectUrlTest('server_changed');
 
     final previousTag = _selectedProxyTag;
     final previousProxy = _displayProxyForSelectedTag(previousTag);
@@ -4104,7 +4087,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     bool restartRuntimeOnApply = false,
     bool urlTestAfterApply = false,
   }) async {
-    _invalidatePreconnectUrlTest('subscription_changed');
     final resolved = await _subscriptionCoordinator.resolveMetadata(
       activeSubscriptionId: preferredSubscriptionId ?? _activeProfileId,
       selectedProxyTag: preferredProxyTag ?? _selectedProxyTag,
@@ -5044,175 +5026,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     );
   }
 
-  String? _concretePreconnectTargetFor(String selectedTag) {
-    _ensureActiveLookupCaches();
-    return resolvePreconnectUrlTestTarget(
-      selectedTag: selectedTag,
-      groupsByTag: _activeGroupByTagLookup,
-      runtimeGroupSelections: _runtimeGroupSelections,
-      outboundsByTag: _activeOutboundByTagLookup,
-      proxyChainTags: {
-        for (final chain in _activeSubscription?.proxyChains ?? const [])
-          chain.tag,
-      },
-    );
-  }
-
-  bool _canRunPreconnectUrlTestForTag(String tag) =>
-      Platform.isAndroid &&
-      !_connected &&
-      !_connectionBusy &&
-      !_preconnectUrlTestInFlight &&
-      _latencyCoordinator.capabilities.supportsPreconnectUrlTest &&
-      _concretePreconnectTargetFor(tag) != null;
-
-  bool get _canRunPreconnectUrlTest =>
-      _canRunPreconnectUrlTestForTag(_selectedProxyTag);
-
-  void _invalidatePreconnectUrlTest(String reason) {
-    _preconnectUrlTestGeneration++;
-    final affectedTags = <String>{
-      ..._preconnectMeasuredTags,
-      if (_preconnectUrlTestTarget.isNotEmpty) _preconnectUrlTestTarget,
-    };
-    for (final tag in _preconnectMeasuredTags) {
-      _runtimeLatencies.remove(tag);
-      _proxyRuntime.runtimeLatencyTimes.remove(tag);
-      _unavailableLatencyTags.remove(tag);
-      _latencyErrors.remove(tag);
-      _latencyFailureCounts.remove(tag);
-    }
-    _preconnectMeasuredTags.clear();
-    final hadActiveProbe = _preconnectUrlTestInFlight;
-    _preconnectUrlTestInFlight = false;
-    _preconnectUrlTestTarget = '';
-    if (hadActiveProbe) {
-      AppLogStore.info('latency', 'pre-connect URLTest cancelled: $reason');
-    }
-    unawaited(SingboxRuntime.instance.cancelPreconnectUrlTest());
-    if (affectedTags.isNotEmpty) {
-      _publishProxyRuntimeVisualStatesForTags(
-        affectedTags,
-        notifyRevision: true,
-      );
-    }
-  }
-
-  Future<void> _runSelectedServerPreconnectUrlTest() =>
-      _runServerPreconnectUrlTest(_selectedProxyTag);
-
-  Future<void> _runServerPreconnectUrlTest(String requestedTag) async {
-    if (_connected || _connectionBusy || _preconnectUrlTestInFlight) {
-      return;
-    }
-    final target = _concretePreconnectTargetFor(requestedTag);
-    if (target == null) {
-      _showAppSnackBar(
-        Localizations.localeOf(context).languageCode == 'ru'
-            ? 'Выберите конкретный сервер, а не автоматическую группу.'
-            : 'Select a concrete server instead of an automatic group.',
-      );
-      return;
-    }
-    if (!_latencyCoordinator.capabilities.supportsPreconnectUrlTest) {
-      _showAppSnackBar(
-        Localizations.localeOf(context).languageCode == 'ru'
-            ? 'Установленная версия HydraCore не поддерживает проверку до подключения.'
-            : 'The installed HydraCore does not support pre-connect checks.',
-      );
-      return;
-    }
-    _haptic();
-    final generation = ++_preconnectUrlTestGeneration;
-    final subscriptionId = _activeProfileId;
-    final networkGeneration = _networkInterfaceGeneration;
-    setState(() {
-      _preconnectUrlTestInFlight = true;
-      _preconnectUrlTestTarget = target;
-    });
-    _publishProxyRuntimeVisualStatesForTags(<String>{target});
-
-    try {
-      final build = await _configCoordinator
-          .buildCurrentSingboxConfigInBackground(
-            dropStale: false,
-            prepareConfig: false,
-            returnConfig: true,
-          );
-      if (build == null ||
-          !mounted ||
-          generation != _preconnectUrlTestGeneration ||
-          subscriptionId != _activeProfileId ||
-          networkGeneration != _networkInterfaceGeneration) {
-        return;
-      }
-      final config = build.configJson.isNotEmpty
-          ? build.configJson
-          : jsonEncode(build.plan.config);
-      final probe = await SingboxRuntime.instance.preconnectUrlTest(
-        config: config,
-        groupTag: 'select',
-        targetOutboundTag: target,
-        url: _urlTestUrl,
-        timeoutMillis: _urlTestTimeoutSeconds * 1000,
-        deadlineMillis: (_urlTestTimeoutSeconds * 1000 + 5000)
-            .clamp(1000, 120000)
-            .toInt(),
-      );
-      if (!mounted ||
-          generation != _preconnectUrlTestGeneration ||
-          subscriptionId != _activeProfileId ||
-          networkGeneration != _networkInterfaceGeneration) {
-        return;
-      }
-      _preconnectMeasuredTags.add(target);
-      _proxyRuntime.runtimeLatencyTimes[target] = probe.timeSeconds;
-      _invalidatedLatencyTags.remove(target);
-      if (probe.available) {
-        _runtimeLatencies[target] = probe.delayMillis;
-        _unavailableLatencyTags.remove(target);
-        _latencyErrors.remove(target);
-        _latencyFailureCounts.remove(target);
-      } else {
-        _runtimeLatencies.remove(target);
-        _unavailableLatencyTags.add(target);
-        _latencyErrors[target] = probe.error.isEmpty
-            ? 'URL test failed'
-            : probe.error;
-        _latencyFailureCounts[target] =
-            (_latencyFailureCounts[target] ?? 0) + 1;
-      }
-      AppLogStore.info(
-        'latency',
-        'pre-connect URLTest completed target=$target status=${probe.status} '
-            'delayMs=${probe.delayMillis} errorCode=${probe.errorCode}',
-      );
-    } catch (error) {
-      if (!mounted || generation != _preconnectUrlTestGeneration) {
-        return;
-      }
-      AppLogStore.warning(
-        'latency',
-        'pre-connect URLTest failed target=$target error=$error',
-      );
-      _showAppSnackBar(
-        Localizations.localeOf(context).languageCode == 'ru'
-            ? 'Не удалось проверить сервер: $error'
-            : 'Could not check the server: $error',
-      );
-    } finally {
-      if (mounted && generation == _preconnectUrlTestGeneration) {
-        setState(() {
-          _preconnectUrlTestInFlight = false;
-          _preconnectUrlTestTarget = '';
-        });
-        _publishProxyRuntimeVisualStatesForTags(<String>{
-          target,
-        }, notifyRevision: true);
-      }
-    }
-  }
-
   Future<void> _handleRuntimeLifecycleTimeout(
     RuntimeLifecycleResult result,
   ) async {
@@ -5649,7 +5462,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   }
 
   void _handleRuntimeNetworkEvent(Map<String, dynamic> event) {
-    _invalidatePreconnectUrlTest('network_changed');
     final reason = event['reason']?.toString() ?? 'network';
     final interfaceName = event['interfaceName']?.toString();
     final interfaceIndex = (event['interfaceIndex'] as num?)?.toInt() ?? 0;
@@ -7131,11 +6943,6 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         removeProxyChain: _removeProxyChain,
         isProxyChainTag: _isProxyChainTag,
         changeHideActiveProxyIp: _setHideServerIp,
-        runPreconnectUrlTest: _runSelectedServerPreconnectUrlTest,
-        runPreconnectUrlTestForTag: _runServerPreconnectUrlTest,
-        canRunPreconnectUrlTestForTag: _canRunPreconnectUrlTestForTag,
-        preconnectUrlTestInFlight: _preconnectUrlTestInFlight,
-        preconnectUrlTestEnabled: _canRunPreconnectUrlTest,
       ),
     );
     if (standalone) {

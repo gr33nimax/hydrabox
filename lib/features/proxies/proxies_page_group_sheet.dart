@@ -9,8 +9,6 @@ class _GroupOutboundsSheet extends StatelessWidget {
     this.runtimeStates,
     required this.routeAnimation,
     required this.onSelected,
-    this.onPreconnectUrlTestForTag,
-    this.canRunPreconnectUrlTestForTag,
     this.outboundForTag,
     required this.initialSort,
     this.onSortChanged,
@@ -23,8 +21,6 @@ class _GroupOutboundsSheet extends StatelessWidget {
   final ProxyRuntimeVisualStore? runtimeStates;
   final Animation<double> routeAnimation;
   final ValueChanged<String> onSelected;
-  final Future<void> Function(String tag)? onPreconnectUrlTestForTag;
-  final bool Function(String tag)? canRunPreconnectUrlTestForTag;
   final Outbound? Function(String tag)? outboundForTag;
   final ProxySort initialSort;
   final ValueChanged<ProxySort>? onSortChanged;
@@ -39,8 +35,6 @@ class _GroupOutboundsSheet extends StatelessWidget {
       runtimeStates: runtimeStates,
       routeAnimation: routeAnimation,
       onSelected: onSelected,
-      onPreconnectUrlTestForTag: onPreconnectUrlTestForTag,
-      canRunPreconnectUrlTestForTag: canRunPreconnectUrlTestForTag,
       outboundForTag: outboundForTag,
       initialSort: initialSort,
       onSortChanged: onSortChanged,
@@ -57,8 +51,6 @@ class _GroupOutboundsSheetBody extends StatefulWidget {
     this.runtimeStates,
     required this.routeAnimation,
     required this.onSelected,
-    this.onPreconnectUrlTestForTag,
-    this.canRunPreconnectUrlTestForTag,
     this.outboundForTag,
     required this.initialSort,
     this.onSortChanged,
@@ -71,8 +63,6 @@ class _GroupOutboundsSheetBody extends StatefulWidget {
   final ProxyRuntimeVisualStore? runtimeStates;
   final Animation<double> routeAnimation;
   final ValueChanged<String> onSelected;
-  final Future<void> Function(String tag)? onPreconnectUrlTestForTag;
-  final bool Function(String tag)? canRunPreconnectUrlTestForTag;
   final Outbound? Function(String tag)? outboundForTag;
   final ProxySort initialSort;
   final ValueChanged<ProxySort>? onSortChanged;
@@ -226,11 +216,6 @@ class _GroupOutboundsSheetBodyState extends State<_GroupOutboundsSheetBody> {
         animate: false,
         onTap: onTap,
         onLongPress: onLongPress,
-        onPreconnectUrlTest:
-            widget.onPreconnectUrlTestForTag != null &&
-                (widget.canRunPreconnectUrlTestForTag?.call(proxy.tag) ?? false)
-            ? () => unawaited(widget.onPreconnectUrlTestForTag!(proxy.tag))
-            : null,
       );
     }
 

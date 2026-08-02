@@ -1021,58 +1021,28 @@ void main() {
     expect(find.text('No subscriptions yet'), findsNothing);
   });
 
-  testWidgets(
-    'pre-connect test supports selected action and concrete server rows',
-    (tester) async {
-      var probeCount = 0;
-      String? probedTag;
-      Future<void> pump({required bool enabled, bool checking = false}) {
-        return tester.pumpWidget(
-          MaterialApp(
-            supportedLocales: AppLocalizations.supportedLocales,
-            localizationsDelegates: AppLocalizations.localizationsDelegates,
-            home: ProxiesPage(
-              proxies: <AppProxySummary>[_proxy('proxy-1', 'Amsterdam')],
-              selectedTag: enabled ? 'proxy-1' : '',
-              connected: false,
-              progressiveBlurEnabled: false,
-              onSelected: (_) {},
-              onUrlTest: () async {},
-              onPreconnectUrlTest: () async => probeCount++,
-              onPreconnectUrlTestForTag: (tag) async {
-                probeCount++;
-                probedTag = tag;
-              },
-              canRunPreconnectUrlTestForTag: (_) => enabled && !checking,
-              preconnectUrlTestEnabled: enabled,
-              preconnectUrlTestInFlight: checking,
-            ),
-          ),
-        );
-      }
+  testWidgets('does not expose server ping while disconnected', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        supportedLocales: AppLocalizations.supportedLocales,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        home: ProxiesPage(
+          proxies: <AppProxySummary>[_proxy('proxy-1', 'Amsterdam')],
+          selectedTag: 'proxy-1',
+          connected: false,
+          progressiveBlurEnabled: false,
+          onSelected: (_) {},
+          onUrlTest: () async {},
+        ),
+      ),
+    );
 
-      await pump(enabled: false);
-      await tester.tap(find.byKey(const ValueKey('preconnect-urltest-action')));
-      expect(probeCount, 0);
-      expect(find.text('Check selected'), findsOneWidget);
-
-      await pump(enabled: true);
-      await tester.tap(find.byKey(const ValueKey('preconnect-urltest-action')));
-      await tester.pump();
-      expect(probeCount, 1);
-
-      await tester.tap(
-        find.byKey(const ValueKey('preconnect-urltest-proxy-1')),
-      );
-      await tester.pump();
-      expect(probeCount, 2);
-      expect(probedTag, 'proxy-1');
-
-      await pump(enabled: false, checking: true);
-      expect(find.text('Checking…'), findsOneWidget);
-      expect(find.byType(CircularProgressIndicator), findsOneWidget);
-    },
-  );
+    expect(
+      find.byKey(const ValueKey('preconnect-urltest-action')),
+      findsNothing,
+    );
+    expect(find.byIcon(Icons.network_ping_rounded), findsNothing);
+  });
 
   testWidgets('active proxy delay indicator keeps visual ping tap target', (
     tester,
