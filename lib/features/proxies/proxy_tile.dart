@@ -15,6 +15,7 @@ class ProxyTile extends StatelessWidget {
     this.runtimeState,
     this.onOpenGroup,
     this.onLongPress,
+    this.onPreconnectUrlTest,
   });
 
   final AppProxySummary proxy;
@@ -29,6 +30,7 @@ class ProxyTile extends StatelessWidget {
   final VoidCallback onTap;
   final ValueChanged<Rect>? onOpenGroup;
   final VoidCallback? onLongPress;
+  final VoidCallback? onPreconnectUrlTest;
 
   @override
   Widget build(BuildContext context) {
@@ -156,9 +158,31 @@ class ProxyTile extends StatelessWidget {
           ),
           const SizedBox(width: 10),
           SizedBox(
-            width: selecting ? 104 : 72,
+            width: selecting || onPreconnectUrlTest != null ? 104 : 72,
             child: !groupHandleVisible
-                ? latencyLabel
+                ? onPreconnectUrlTest == null
+                      ? latencyLabel
+                      : Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            Expanded(child: latencyLabel),
+                            IconButton(
+                              key: ValueKey('preconnect-urltest-${proxy.tag}'),
+                              visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints.tightFor(
+                                width: 32,
+                                height: 32,
+                              ),
+                              tooltip: l10n.urlTestTitle,
+                              onPressed: onPreconnectUrlTest,
+                              icon: const Icon(
+                                Icons.network_ping_rounded,
+                                size: 18,
+                              ),
+                            ),
+                          ],
+                        )
                 : GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: onOpenGroup == null

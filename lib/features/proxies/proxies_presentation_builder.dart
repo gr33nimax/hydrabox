@@ -67,6 +67,8 @@ class ProxiesPresentationCallbacks {
     required this.isProxyChainTag,
     required this.changeHideActiveProxyIp,
     required this.runPreconnectUrlTest,
+    required this.runPreconnectUrlTestForTag,
+    required this.canRunPreconnectUrlTestForTag,
     required this.preconnectUrlTestInFlight,
     required this.preconnectUrlTestEnabled,
   });
@@ -87,6 +89,8 @@ class ProxiesPresentationCallbacks {
   final bool Function(String tag) isProxyChainTag;
   final ValueChanged<bool> changeHideActiveProxyIp;
   final Future<void> Function() runPreconnectUrlTest;
+  final Future<void> Function(String tag) runPreconnectUrlTestForTag;
+  final bool Function(String tag) canRunPreconnectUrlTestForTag;
   final bool preconnectUrlTestInFlight;
   final bool preconnectUrlTestEnabled;
 }
@@ -164,6 +168,8 @@ class ProxiesPresentationBuilder {
       onSelected: callbacks.selectProxy,
       onUrlTest: callbacks.runUrlTest,
       onPreconnectUrlTest: callbacks.runPreconnectUrlTest,
+      onPreconnectUrlTestForTag: callbacks.runPreconnectUrlTestForTag,
+      canRunPreconnectUrlTestForTag: callbacks.canRunPreconnectUrlTestForTag,
       preconnectUrlTestInFlight: callbacks.preconnectUrlTestInFlight,
       preconnectUrlTestEnabled: callbacks.preconnectUrlTestEnabled,
       onActiveProxyIpRefresh: callbacks.refreshActiveProxyIp,

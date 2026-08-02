@@ -1022,9 +1022,10 @@ void main() {
   });
 
   testWidgets(
-    'pre-connect test is selected-only and does not imply VPN state',
+    'pre-connect test supports selected action and concrete server rows',
     (tester) async {
       var probeCount = 0;
+      String? probedTag;
       Future<void> pump({required bool enabled, bool checking = false}) {
         return tester.pumpWidget(
           MaterialApp(
@@ -1038,6 +1039,11 @@ void main() {
               onSelected: (_) {},
               onUrlTest: () async {},
               onPreconnectUrlTest: () async => probeCount++,
+              onPreconnectUrlTestForTag: (tag) async {
+                probeCount++;
+                probedTag = tag;
+              },
+              canRunPreconnectUrlTestForTag: (_) => enabled && !checking,
               preconnectUrlTestEnabled: enabled,
               preconnectUrlTestInFlight: checking,
             ),
@@ -1054,6 +1060,13 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('preconnect-urltest-action')));
       await tester.pump();
       expect(probeCount, 1);
+
+      await tester.tap(
+        find.byKey(const ValueKey('preconnect-urltest-proxy-1')),
+      );
+      await tester.pump();
+      expect(probeCount, 2);
+      expect(probedTag, 'proxy-1');
 
       await pump(enabled: false, checking: true);
       expect(find.text('Checking…'), findsOneWidget);
@@ -1173,6 +1186,52 @@ void main() {
 
     expect(find.text('42 ms', findRichText: true), findsNothing);
     expect(find.text('73 ms', findRichText: true), findsOneWidget);
+  });
+
+  testWidgets('compact home keeps the full HydraBox brand before version', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        supportedLocales: AppLocalizations.supportedLocales,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        home: HomePage(
+          state: const HomeViewState(
+            connected: false,
+            connecting: false,
+            resolvingProxy: false,
+            connectionStatusLabel: '',
+            activeProfile: null,
+            activeProxy: null,
+            hideServerIp: false,
+            hapticEnabled: false,
+            speedBytesPerSecond: 0,
+            trafficBytes: 0,
+            brandName: 'HydraBox',
+            versionLabel: '0.3.0-beta.3',
+          ),
+          actions: HomeViewActions(
+            toggleConnection: () {},
+            refreshLatency: () {},
+            openSubscriptions: () {},
+            addSubscription: () {},
+            openSettings: () {},
+            openChangelog: () {},
+          ),
+          bottomInset: 0,
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('home-brand-name')), findsOneWidget);
+    expect(find.text('HydraBox'), findsOneWidget);
+    expect(find.byKey(const ValueKey('home-version-badge')), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('active proxy footer hides IP and traffic when disconnected', (

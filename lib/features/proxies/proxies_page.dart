@@ -302,6 +302,8 @@ class ProxiesPage extends StatefulWidget {
     required this.onSelected,
     required this.onUrlTest,
     this.onPreconnectUrlTest,
+    this.onPreconnectUrlTestForTag,
+    this.canRunPreconnectUrlTestForTag,
     this.preconnectUrlTestInFlight = false,
     this.preconnectUrlTestEnabled = false,
     this.outboundForTag,
@@ -343,6 +345,8 @@ class ProxiesPage extends StatefulWidget {
   final ValueChanged<String> onSelected;
   final Future<void> Function() onUrlTest;
   final Future<void> Function()? onPreconnectUrlTest;
+  final Future<void> Function(String tag)? onPreconnectUrlTestForTag;
+  final bool Function(String tag)? canRunPreconnectUrlTestForTag;
   final bool preconnectUrlTestInFlight;
   final bool preconnectUrlTestEnabled;
   final Outbound? Function(String tag)? outboundForTag;
@@ -704,6 +708,9 @@ class _ProxiesPageState extends State<ProxiesPage> {
                 runtimeStates: widget.runtimeStates,
                 routeAnimation: animation,
                 onSelected: widget.onSelected,
+                onPreconnectUrlTestForTag: widget.onPreconnectUrlTestForTag,
+                canRunPreconnectUrlTestForTag:
+                    widget.canRunPreconnectUrlTestForTag,
                 outboundForTag: widget.outboundForTag,
                 initialSort: _sort,
                 onSortChanged: (value) {
@@ -1123,6 +1130,13 @@ class _ProxiesPageState extends State<ProxiesPage> {
               : () => _openProxyShareSheet(proxy),
           onOpenGroup: proxy.isGroup
               ? (rect) => _openGroupOutbounds(proxy, rect)
+              : null,
+          onPreconnectUrlTest:
+              !proxy.isGroup &&
+                  widget.onPreconnectUrlTestForTag != null &&
+                  (widget.canRunPreconnectUrlTestForTag?.call(proxy.tag) ??
+                      false)
+              ? () => unawaited(widget.onPreconnectUrlTestForTag!(proxy.tag))
               : null,
         );
         final runtimeStates = widget.runtimeStates;

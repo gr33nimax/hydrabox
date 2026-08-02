@@ -173,9 +173,7 @@ void main() {
   test(
     'persistent encrypted HydraBox file import fails closed without key storage',
     () async {
-      final key = base64Url
-          .encode(List<int>.filled(32, 7))
-          .replaceAll('=', '');
+      final key = base64Url.encode(List<int>.filled(32, 7)).replaceAll('=', '');
       final encrypted = HydraBoxJweCodec.encrypt(
         jsonEncode(_hydraboxPersistenceDocument()),
         encodedKey: key,
@@ -401,11 +399,48 @@ void main() {
     },
   );
 
+  test('selection metadata rebases onto the latest payload revision', () async {
+    const original = Subscription(
+      id: 'rebased-selection',
+      name: 'Original',
+      url: 'https://provider.example/subscription',
+      selectedProxyTag: 'proxy-1',
+      rawContent: 'vless://old-payload',
+    );
+    await SubscriptionStore.save(original, allowCreate: true);
+    final stale = SubscriptionStore.get(original.id)!;
+
+    await SubscriptionStore.save(
+      stale.copyWith(
+        name: 'Refreshed',
+        lastUpdated: 123,
+        rawContent: 'vless://new-payload',
+      ),
+    );
+    final latestPointer =
+        SubscriptionStore.getAllMetadata().single.payloadStorageKey;
+
+    await SubscriptionStore.saveSelectedProxyMetadata(
+      stale.copyWith(
+        selectedProxyTag: 'proxy-2',
+        selectedProfileId: 'profile-2',
+      ),
+    );
+
+    final stored = SubscriptionStore.get(original.id)!;
+    expect(stored.payloadStorageKey, latestPointer);
+    expect(stored.rawContent, 'vless://new-payload');
+    expect(stored.name, 'Refreshed');
+    expect(stored.lastUpdated, 123);
+    expect(stored.selectedProxyTag, 'proxy-2');
+    expect(stored.selectedProfileId, 'profile-2');
+  });
+
   test(
     'stale legacy reparse cannot replace a newer payload revision',
     () async {
       final oldRaw = List<String>.generate(
-      3000,
+        3000,
         (index) =>
             'vless://3a1a58e6-e167-4d9f-8b60-34fee9ee51e9@old$index.example:443'
             '?encryption=none&security=tls#Old$index',
@@ -735,11 +770,19 @@ void main() {
       await SubscriptionStore.cachePayloadSummaries({
         imported.subscription.id: (visibleProxyCount: 41, hasRawPayload: true),
       });
+      await SubscriptionStore.saveSelectedProxyMetadata(
+        staleOrder.single.copyWith(
+          selectedProxyTag: 'runtime-profile-2',
+          selectedProfileId: 'profile-2',
+        ),
+      );
 
       final storedMetadata = SubscriptionStore.getAllMetadata().single;
       expect(storedMetadata.sourceMetadata['sequence'], 12);
       expect(storedMetadata.payloadStorageKey, committedPointer);
       expect(storedMetadata.cachedVisibleProxyCount, 41);
+      expect(storedMetadata.selectedProxyTag, 'runtime-profile-2');
+      expect(storedMetadata.selectedProfileId, 'profile-2');
       expect(
         SubscriptionStore.get(imported.subscription.id)!.rawContent,
         newerRaw,

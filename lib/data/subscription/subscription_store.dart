@@ -719,6 +719,30 @@ class SubscriptionStore {
     );
   }
 
+  /// Persists only the active outbound/profile selection against the latest
+  /// metadata revision. Payload refreshes may commit a new immutable payload
+  /// generation while the UI is switching configuration; that must not turn
+  /// a harmless selection write into a startup failure or roll trusted
+  /// HydraBox state back to the stale UI snapshot.
+  static Future<void> saveSelectedProxyMetadata(Subscription sub) async {
+    await _withSubscriptionMutationLock(sub.id, () async {
+      final current = _readMetadata(sub.id);
+      if (current == null) {
+        throw StateError(
+          'Subscription ${sub.id} not found; selection writes cannot create '
+          'subscriptions',
+        );
+      }
+      final rebased = current.copyWith(
+        selectedProxyTag: sub.selectedProxyTag.trim(),
+        selectedProfileId: sub.selectedProfileId.trim(),
+      );
+      _validatePersistentSourcePolicy(rebased);
+      await _metaStore.put(sub.id, jsonEncode(rebased.toMetadataMap()));
+      await _metaStore.flush();
+    });
+  }
+
   static Future<void> _saveMetadataUnlocked(Subscription sub) async {
     _validatePersistentSourcePolicy(sub);
     final current = _readMetadata(sub.id);

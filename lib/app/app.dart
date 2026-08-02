@@ -3523,7 +3523,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   }) async {
     try {
       await Future.wait<void>([
-        SubscriptionStore.saveMetadata(updatedSubscription),
+        SubscriptionStore.saveSelectedProxyMetadata(updatedSubscription),
         _persistState(),
       ]);
       if (prepareConfigSnapshot) {
@@ -3570,7 +3570,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     }
     if (activeSubscription.selectedProxyTag == tag) {
       await Future.wait<void>([
-        SubscriptionStore.saveMetadata(activeSubscription),
+        SubscriptionStore.saveSelectedProxyMetadata(activeSubscription),
         _persistState(),
       ]);
       return;
@@ -3592,7 +3592,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
           'selected=$tag previous=${activeSubscription.selectedProxyTag}',
     );
     await Future.wait<void>([
-      SubscriptionStore.saveMetadata(updatedSubscription),
+      SubscriptionStore.saveSelectedProxyMetadata(updatedSubscription),
       _persistState(),
     ]);
   }
@@ -5044,10 +5044,10 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     );
   }
 
-  String? _selectedConcretePreconnectTarget() {
+  String? _concretePreconnectTargetFor(String selectedTag) {
     _ensureActiveLookupCaches();
     return resolvePreconnectUrlTestTarget(
-      selectedTag: _selectedProxyTag,
+      selectedTag: selectedTag,
       groupsByTag: _activeGroupByTagLookup,
       runtimeGroupSelections: _runtimeGroupSelections,
       outboundsByTag: _activeOutboundByTagLookup,
@@ -5058,13 +5058,19 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     );
   }
 
-  bool get _canRunPreconnectUrlTest =>
+  String? _selectedConcretePreconnectTarget() =>
+      _concretePreconnectTargetFor(_selectedProxyTag);
+
+  bool _canRunPreconnectUrlTestForTag(String tag) =>
       Platform.isAndroid &&
       !_connected &&
       !_connectionBusy &&
       !_preconnectUrlTestInFlight &&
       _latencyCoordinator.capabilities.supportsPreconnectUrlTest &&
-      _selectedConcretePreconnectTarget() != null;
+      _concretePreconnectTargetFor(tag) != null;
+
+  bool get _canRunPreconnectUrlTest =>
+      _canRunPreconnectUrlTestForTag(_selectedProxyTag);
 
   void _invalidatePreconnectUrlTest(String reason) {
     _preconnectUrlTestGeneration++;
@@ -5095,11 +5101,14 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _runSelectedServerPreconnectUrlTest() async {
+  Future<void> _runSelectedServerPreconnectUrlTest() =>
+      _runServerPreconnectUrlTest(_selectedProxyTag);
+
+  Future<void> _runServerPreconnectUrlTest(String requestedTag) async {
     if (_connected || _connectionBusy || _preconnectUrlTestInFlight) {
       return;
     }
-    final target = _selectedConcretePreconnectTarget();
+    final target = _concretePreconnectTargetFor(requestedTag);
     if (target == null) {
       _showAppSnackBar(
         Localizations.localeOf(context).languageCode == 'ru'
@@ -7126,6 +7135,8 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
         isProxyChainTag: _isProxyChainTag,
         changeHideActiveProxyIp: _setHideServerIp,
         runPreconnectUrlTest: _runSelectedServerPreconnectUrlTest,
+        runPreconnectUrlTestForTag: _runServerPreconnectUrlTest,
+        canRunPreconnectUrlTestForTag: _canRunPreconnectUrlTestForTag,
         preconnectUrlTestInFlight: _preconnectUrlTestInFlight,
         preconnectUrlTestEnabled: _canRunPreconnectUrlTest,
       ),
