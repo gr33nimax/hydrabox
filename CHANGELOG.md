@@ -8,7 +8,11 @@
   platform launcher assets.
 - Consolidated source lineage, licenses, and retained compatibility identifiers
   in the credits and third-party notice set.
-- Deferred WDTT and preserved its implementation history in `archive/wdtt`.
+- Added HydraBox Subscription v2 and subscription-native WDTT endpoints.
+- Added Keystore-backed device-grant persistence and a process-local HydraCore
+  credential bridge; grants never enter native runtime JSON or profile exports.
+- Added the 9/18/36 WDTT worker contract, 15-minute leases refreshed after
+  10 minutes, and hot worker-generation rotation without a VPN restart.
 
 ## [0.3.0-beta.3]
 

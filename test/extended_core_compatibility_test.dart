@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:meow_client/data/local/app_settings_store.dart';
+import 'package:meow_client/data/subscription/hydrabox_subscription_crypto.dart';
 import 'package:meow_client/data/subscription/outbound_schema.dart';
 import 'package:meow_client/data/subscription/subscription_parser.dart';
 import 'package:meow_client/data/subscription/subscription_store.dart';
@@ -86,6 +87,7 @@ void main() {
         'vpn-server',
         'vpn-client',
         'wireguard',
+        'wdtt',
         'warp',
         'tailscale',
       }),
@@ -149,6 +151,7 @@ void main() {
         'with_quic',
         'with_dhcp',
         'with_wireguard',
+        'with_wdtt',
         'with_masque',
         'with_mtproxy',
         'with_ccm',
@@ -1019,7 +1022,7 @@ void main() {
     },
   );
 
-  test('checked-in HydraBox example matches the exact policy-v1 manifest', () {
+  test('checked-in HydraBox example matches the exact policy-v2 manifest', () {
     final source = File(
       'docs/examples/hydrabox-subscription-v1.json',
     ).readAsStringSync();
@@ -1041,6 +1044,78 @@ void main() {
     expect(plan.hasRawCoreConfig, isTrue);
   });
 
+  test('HydraBox v2 activates WDTT by credential_ref without serializing grant', () {
+    final key = base64Url.encode(List<int>.filled(32, 9)).replaceAll('=', '');
+    const deviceId =
+        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const credentialRef = 'wdtt:user-1:device-1';
+    final source = {
+      'api_version': 'hydrabox.io/subscription/v2',
+      'kind': 'SubscriptionData',
+      'issuer': 'https://provider.example',
+      'subscription_id': 'builder-wdtt',
+      'channel': 'stable',
+      'sequence': 12,
+      'issued_at': '2026-07-30T18:00:00Z',
+      'default_profile_id': 'wdtt-profile',
+      'runtime': {
+        'format': 'sing-box-json',
+        'document': {
+          'endpoints': [
+            {
+              'type': 'wdtt',
+              'tag': 'wdtt-main',
+              'server': 'wdtt.example',
+              'server_port': 4433,
+              'credential_ref': credentialRef,
+              'vk_hashes': ['hash-1', 'hash-2', 'hash-3', 'hash-4'],
+              'workers': 18,
+              'obfs': 'audio',
+              'vk_auth': 'auto',
+              'vk_anon_path': 'vkcalls',
+            },
+          ],
+        },
+      },
+      'profiles': [
+        {
+          'id': 'wdtt-profile',
+          'name': {'default': 'WDTT'},
+          'entrypoint': {'section': 'endpoints', 'tag': 'wdtt-main'},
+          'enabled': true,
+        },
+      ],
+      'credentials': [
+        {
+          'kind': 'wdtt_device_grant',
+          'credential_ref': credentialRef,
+          'device_id': deviceId,
+          'device_grant':
+              'hwdtt1_${List<String>.filled(43, 'A').join()}',
+        },
+      ],
+    };
+    final encrypted = HydraBoxJweCodec.encrypt(
+      jsonEncode(source),
+      encodedKey: key,
+    );
+    final subscription = _hydraboxSubscriptionFromContent(
+      encrypted,
+      decryptionKey: key,
+    );
+
+    final plan = _defaultBuilder(
+      subscription,
+      capabilities: _hydraboxTestCapabilities(),
+    ).buildPlan();
+    final endpoint = (plan.config['endpoints'] as List).single as Map;
+    expect(endpoint['type'], 'wdtt');
+    expect(endpoint['credential_ref'], credentialRef);
+    expect(endpoint, isNot(contains('device_grant')));
+    expect(endpoint, isNot(contains('password')));
+    expect(subscription.wdttCredentials.single.deviceGrant, startsWith('hwdtt1_'));
+  });
+
   test('endpoint-only configs stay selectable and never become outbounds', () {
     final rawEndpoints = <Map<String, dynamic>>[
       {
@@ -1049,6 +1124,18 @@ void main() {
         'address': ['10.0.0.2/32'],
         'private_key': 'opaque',
         'peers': const [],
+      },
+      {
+        'type': 'wdtt',
+        'tag': 'wdtt',
+        'server': 'wdtt.example',
+        'server_port': 4433,
+        'credential_ref': 'wdtt:local:test',
+        'vk_hashes': const ['hash-1'],
+        'workers': 18,
+        'obfs': 'audio',
+        'vk_auth': 'auto',
+        'vk_anon_path': 'vkcalls',
       },
       {'type': 'warp', 'tag': 'warp', 'private_key': 'opaque'},
       {
@@ -1591,8 +1678,14 @@ Subscription _subscriptionFromContent(String source) {
   );
 }
 
-Subscription _hydraboxSubscriptionFromContent(String source) {
-  final parsed = SubscriptionParser.parse(source);
+Subscription _hydraboxSubscriptionFromContent(
+  String source, {
+  String? decryptionKey,
+}) {
+  final parsed = SubscriptionParser.parse(
+    source,
+    decryptionKey: decryptionKey,
+  );
   final payload = SubscriptionStore.buildSubscriptionPayloadForTest(parsed);
   final outbounds = payload.outbounds
       .map(Outbound.fromMap)
@@ -1638,6 +1731,7 @@ Subscription _hydraboxSubscriptionFromContent(String source) {
     outbounds: outbounds,
     profiles: profiles,
     nativeConfig: parsed.nativeConfig,
+    wdttCredentials: parsed.wdttCredentials,
     sourceMetadata: parsed.sourceMetadata,
   );
 }
@@ -1766,7 +1860,7 @@ SingboxConfigBuilder _defaultBuilder(
 }
 
 LibboxCapabilities _hydraboxTestCapabilities({
-  int remotePolicyVersion = 1,
+  int remotePolicyVersion = 2,
   Set<String> extraTopLevelFields = const <String>{},
   Set<String> extraOutboundTypes = const <String>{},
   Set<String> extraEndpointTypes = const <String>{},
@@ -1780,6 +1874,17 @@ LibboxCapabilities _hydraboxTestCapabilities({
       'core_version': 'test',
       'upstream_project': 'etonify-core',
       'supports_config_check': true,
+      'supports_wdtt': true,
+      'supports_wdtt_credential_bridge': true,
+      'supports_wdtt_hot_rotation': true,
+      'wdtt_min_workers': 9,
+      'wdtt_recommended_workers': 18,
+      'wdtt_max_workers': 36,
+      'wdtt_lease_ttl_seconds': 900,
+      'wdtt_lease_refresh_after_seconds': 600,
+      'wdtt_max_hashes': 4,
+      'wdtt_auth_modes': const ['auto', 'anonymous', 'account'],
+      'wdtt_obfs_modes': const ['audio', 'video'],
       'remote_policy_version': remotePolicyVersion,
       'remote_safe_top_level_fields': <String>{
         r'$schema',
@@ -1793,6 +1898,7 @@ LibboxCapabilities _hydraboxTestCapabilities({
       }.toList(),
       'remote_safe_endpoint_types': <String>{
         'wireguard',
+        'wdtt',
         ...extraEndpointTypes,
       }.toList(),
       'remote_safe_dns_server_types': const <String>[],

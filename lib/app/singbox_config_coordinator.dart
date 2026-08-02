@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:meow_client/app/app_background_tasks.dart';
 import 'package:meow_client/app/runtime_lifecycle_controller.dart';
 import 'package:meow_client/data/local/app_settings_store.dart';
+import 'package:meow_client/data/subscription/parsers/hydrabox_subscription_parser.dart';
 import 'package:meow_client/logging/app_log_store.dart';
 import 'package:meow_client/models/subscription.dart';
 import 'package:meow_client/singbox/libbox_capabilities.dart';
@@ -370,6 +371,10 @@ class SingboxConfigCoordinator {
         );
         return;
       }
+      await _installActiveHydraWdttCredentials();
+      if (!_isMounted() || !_isCurrentApply(generation)) {
+        return;
+      }
       _setPhase(
         policy == RuntimeApplyPolicy.fullServiceRestart
             ? SingboxConfigCoordinatorPhase.stopping
@@ -432,7 +437,8 @@ class SingboxConfigCoordinator {
   Future<RuntimeLifecycleResult> startRuntimeWithBuild(
     SingboxConfigBuildResult build, {
     required bool useVpn,
-  }) {
+  }) async {
+    await _installActiveHydraWdttCredentials();
     return _runtimeLifecycle.startRuntimeWithBuild(
       build: build,
       useVpn: useVpn,
@@ -442,6 +448,12 @@ class SingboxConfigCoordinator {
       trimMemory: _trimRuntimeStartMemory,
       onWatchdogTimeout: _onRuntimeLifecycleTimeout,
     );
+  }
+
+  Future<void> _installActiveHydraWdttCredentials() {
+    final credentials =
+        _readSnapshot().activeSubscription?.wdttCredentials ?? const [];
+    return SingboxRuntime.instance.replaceHydraWdttCredentials(credentials);
   }
 
   Future<SingboxConfigBuildResult?> buildCurrentSingboxConfigInBackground({
@@ -474,9 +486,10 @@ class SingboxConfigCoordinator {
     late final SingboxConfigBuildResult result;
     try {
       result = await buildSingboxConfigInBackground(input);
-      final requiresHydraBoxValidation =
-          input.activeSubscription?.sourceMetadata['format'] ==
-          'hydrabox.io/subscription/v1';
+      final requiresHydraBoxValidation = HydraBoxSubscriptionParser
+          .isSupportedSourceFormat(
+            input.activeSubscription?.sourceMetadata['format'],
+          );
       if ((validateConfig || requiresHydraBoxValidation) &&
           input.capabilities.supportsConfigCheck) {
         await SingboxRuntime.instance.checkConfig(

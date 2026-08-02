@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hydrabox.invalid/schema/hydrabox-subscription-v2.schema.json",
+  "title": "HydraBox SubscriptionData v2",
+  "type": "object",
+  "required": [
+    "api_version",
+    "kind",
+    "issuer",
+    "subscription_id",
+    "sequence",
+    "issued_at",
+    "runtime",
+    "profiles"
+  ],
+  "properties": {
+    "api_version": {"const": "hydrabox.io/subscription/v2"},
+    "kind": {"const": "SubscriptionData"},
+    "issuer": {"type": "string", "format": "uri", "pattern": "^https://"},
+    "subscription_id": {"$ref": "#/$defs/id"},
+    "channel": {"$ref": "#/$defs/id"},
+    "sequence": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "issued_at": {"type": "string", "format": "date-time"},
+    "not_before": {"type": "string", "format": "date-time"},
+    "expires_at": {"type": "string", "format": "date-time"},
+    "default_profile_id": {"$ref": "#/$defs/id"},
+    "metadata": {"type": "object"},
+    "compatibility": {"type": "object"},
+    "update": {"type": "object"},
+    "runtime": {
+      "type": "object",
+      "required": ["format", "document"],
+      "properties": {
+        "format": {"const": "sing-box-json"},
+        "ownership": {"type": "object"},
+        "document": {"type": "object"},
+        "extensions": {"type": "object"}
+      },
+      "additionalProperties": false
+    },
+    "profiles": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {"$ref": "#/$defs/profile"}
+    },
+    "credentials": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {"$ref": "#/$defs/wdttCredential"}
+    },
+    "required_extensions": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "extensions": {"type": "object"}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "profile": {
+      "type": "object",
+      "required": ["id", "name", "entrypoint"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "name": {},
+        "description": {},
+        "entrypoint": {
+          "type": "object",
+          "required": ["section", "tag"],
+          "properties": {
+            "section": {"enum": ["outbounds", "endpoints"]},
+            "tag": {"type": "string", "minLength": 1, "maxLength": 512}
+          },
+          "additionalProperties": false
+        },
+        "enabled": {"type": "boolean"},
+        "country": {"type": "string", "pattern": "^[A-Za-z]{2}$"},
+        "tags": {"type": "array", "items": {"type": "string"}},
+        "required_features": {"type": "array", "items": {"type": "string"}},
+        "extensions": {"type": "object"}
+      },
+      "additionalProperties": false
+    },
+    "wdttCredential": {
+      "type": "object",
+      "required": ["kind", "credential_ref", "device_id", "device_grant"],
+      "properties": {
+        "kind": {"const": "wdtt_device_grant"},
+        "credential_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "device_id": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "device_grant": {
+          "type": "string",
+          "pattern": "^hwdtt1_[A-Za-z0-9_-]{43}$"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 import 'package:meow_client/core/lowest_proxy_groups.dart';
+import 'package:meow_client/models/subscription.dart';
 
 import '../hydrabox_subscription_crypto.dart';
 import '../strict_json.dart';
@@ -61,6 +62,7 @@ class HydraBoxParsedSubscription {
     required this.profiles,
     required this.defaultProfileId,
     required this.bodyMeta,
+    this.wdttCredentials = const [],
     required this.sourceMetadata,
   });
 
@@ -69,10 +71,11 @@ class HydraBoxParsedSubscription {
   final List<HydraBoxParsedProfile> profiles;
   final String? defaultProfileId;
   final Map<String, String> bodyMeta;
+  final List<HydraBoxWdttCredential> wdttCredentials;
   final Map<String, dynamic> sourceMetadata;
 }
 
-/// Parser for the explicit-profile HydraBox Subscription v1 format.
+/// Parser for explicit-profile HydraBox Subscription v1/v2 documents.
 ///
 /// `profiles` is the only source of selectable UI entries. The nested native
 /// sing-box document remains opaque and is retained in full for HydraCore
@@ -80,7 +83,9 @@ class HydraBoxParsedSubscription {
 class HydraBoxSubscriptionParser {
   HydraBoxSubscriptionParser._();
 
-  static const apiVersion = 'hydrabox.io/subscription/v1';
+  static const apiVersionV1 = 'hydrabox.io/subscription/v1';
+  static const apiVersionV2 = 'hydrabox.io/subscription/v2';
+  static const apiVersion = apiVersionV2;
   static const kind = 'SubscriptionData';
   static const _maxOuterBytes = 16 * 1024 * 1024;
   static const _maxPlaintextBytes = 12 * 1024 * 1024;
@@ -112,6 +117,7 @@ class HydraBoxSubscriptionParser {
     'update',
     'runtime',
     'profiles',
+    'credentials',
     'required_extensions',
     'extensions',
   };
@@ -133,6 +139,29 @@ class HydraBoxSubscriptionParser {
     'extensions',
   };
   static const _nonProfileOutboundTypes = {'direct', 'block', 'dns'};
+  static final RegExp _deviceIdPattern = RegExp(r'^[0-9a-f]{64}$');
+  static final RegExp _deviceGrantPattern = RegExp(
+    r'^hwdtt1_[A-Za-z0-9_-]{43}$',
+  );
+  static final RegExp _vkHashPattern = RegExp(r'^[A-Za-z0-9._~:-]{1,256}$');
+  static const _wdttEndpointKeys = {
+    'type',
+    'tag',
+    'server',
+    'server_port',
+    'credential_ref',
+    'vk_hashes',
+    'workers',
+    'obfs',
+    'vk_auth',
+    'vk_anon_path',
+  };
+  static const _wdttCredentialKeys = {
+    'kind',
+    'credential_ref',
+    'device_id',
+    'device_grant',
+  };
   static const _appOwnedDnsServerTags = {
     'dns-remote',
     'dns-direct',
@@ -165,6 +194,9 @@ class HydraBoxSubscriptionParser {
         kinds.length > 1;
   }
 
+  static bool isSupportedSourceFormat(Object? value) =>
+      value == apiVersionV1 || value == apiVersionV2;
+
   /// Re-applies the non-local-authority policy to a hydrated/native document.
   /// Runtime builders use this defense-in-depth boundary so serialized backup
   /// projections can never bypass the strict wire parser.
@@ -173,9 +205,33 @@ class HydraBoxSubscriptionParser {
     _indexNativeEntries(config);
   }
 
+  /// Revalidates persisted v2 secret-to-endpoint bindings before activation.
+  static void validateWdttRuntimeBinding(
+    Map<String, dynamic> config,
+    List<HydraBoxWdttCredential> credentials, {
+    required Object? sourceFormat,
+  }) {
+    final api = sourceFormat?.toString() ?? '';
+    if (!isSupportedSourceFormat(api)) {
+      throw const FormatException('Unsupported persisted HydraBox format');
+    }
+    _validateCredentials(
+      credentials.isEmpty
+          ? null
+          : credentials
+                .map((credential) => credential.toMap())
+                .toList(growable: false),
+      apiVersion: api,
+      encrypted: true,
+      expectedDeviceId: null,
+      nativeEntries: _indexNativeEntries(config),
+    );
+  }
+
   static HydraBoxParsedSubscription parse(
     String content, {
     String? decryptionKey,
+    String? expectedDeviceId,
   }) {
     if (utf8.encode(content).length > _maxOuterBytes) {
       throw const FormatException(
@@ -210,7 +266,7 @@ class HydraBoxSubscriptionParser {
       );
     }
     final document = Map<String, dynamic>.from(decoded);
-    _validateEnvelope(document);
+    final documentApiVersion = _validateEnvelope(document);
 
     final runtime = _requiredMap(document, 'runtime');
     _rejectUnknownKeys(runtime, _knownRuntimeKeys, field: 'runtime');
@@ -218,13 +274,20 @@ class HydraBoxSubscriptionParser {
     _validateExtensionsMap(runtime['extensions'], field: 'runtime.extensions');
     if (runtime['format'] != 'sing-box-json') {
       throw const FormatException(
-        'HydraBox v1 supports runtime.format "sing-box-json" only',
+        'HydraBox supports runtime.format "sing-box-json" only',
       );
     }
     _validateRuntimeOwnership(runtime['ownership']);
     final nativeConfig = _cloneMap(_requiredMap(runtime, 'document'));
     _validateRuntimeDocumentSafety(nativeConfig);
     final nativeEntries = _indexNativeEntries(nativeConfig);
+    final wdttCredentials = _validateCredentials(
+      document['credentials'],
+      apiVersion: documentApiVersion,
+      encrypted: encrypted,
+      expectedDeviceId: expectedDeviceId,
+      nativeEntries: nativeEntries,
+    );
 
     final rawProfiles = document['profiles'];
     if (rawProfiles is! List) {
@@ -455,8 +518,9 @@ class HydraBoxSubscriptionParser {
       profiles: profiles,
       defaultProfileId: defaultProfileId,
       bodyMeta: bodyMeta,
+      wdttCredentials: wdttCredentials,
       sourceMetadata: {
-        'format': apiVersion,
+        'format': documentApiVersion,
         'issuer': document['issuer'],
         'subscription_id': document['subscription_id'],
         'channel': document['channel'] ?? 'stable',
@@ -470,6 +534,8 @@ class HydraBoxSubscriptionParser {
           'default_profile_id': defaultProfileId,
         'encrypted': encrypted,
         'device_binding': encrypted,
+        if (wdttCredentials.isNotEmpty)
+          'device_id': wdttCredentials.first.deviceId,
         'key_id': ?keyId,
         'payload_sha256': sha256.convert(utf8.encode(plaintext)).toString(),
         if (document['extensions'] is Map)
@@ -482,9 +548,9 @@ class HydraBoxSubscriptionParser {
     );
   }
 
-  static void _validateEnvelope(Map<String, dynamic> document) {
+  static String _validateEnvelope(Map<String, dynamic> document) {
     final api = document['api_version']?.toString() ?? '';
-    if (api != apiVersion) {
+    if (!isSupportedSourceFormat(api)) {
       throw FormatException('Unsupported HydraBox api_version "$api"');
     }
     if (document['kind'] != kind) {
@@ -551,9 +617,200 @@ class HydraBoxSubscriptionParser {
           'Required extension "$name" has no extensions entry',
         );
       }
-      // v1 has no built-in must-understand extension handlers yet.
+      // No built-in must-understand extension handlers exist yet.
       throw FormatException('Unsupported required extension "$name"');
     }
+    return api;
+  }
+
+  static List<HydraBoxWdttCredential> _validateCredentials(
+    dynamic value, {
+    required String apiVersion,
+    required bool encrypted,
+    required String? expectedDeviceId,
+    required Map<String, Map<String, dynamic>> nativeEntries,
+  }) {
+    final endpointRefs = <String>{};
+    for (final entry in nativeEntries.entries) {
+      final item = entry.value;
+      if (item['type']?.toString().trim().toLowerCase() != 'wdtt') continue;
+      if (!entry.key.startsWith('endpoints\u0000')) {
+        throw const FormatException(
+          'WDTT is supported only as a runtime endpoint',
+        );
+      }
+      if (apiVersion != apiVersionV2) {
+        throw const FormatException(
+          'WDTT endpoints require HydraBox Subscription v2',
+        );
+      }
+      _rejectUnknownKeys(
+        item,
+        _wdttEndpointKeys,
+        field: 'runtime.document WDTT endpoint',
+      );
+      _rejectExplicitNulls(
+        item,
+        _wdttEndpointKeys,
+        field: 'runtime.document WDTT endpoint',
+      );
+      final server = item['server'];
+      if (server is! String ||
+          server.isEmpty ||
+          server.length > 253 ||
+          server != server.trim() ||
+          server.contains(RegExp(r'[\s\x00-\x1F/?#@]'))) {
+        throw const FormatException('Invalid HydraBox WDTT server');
+      }
+      final port = item['server_port'];
+      if (port is! int || port < 1 || port > 65535) {
+        throw const FormatException('Invalid HydraBox WDTT server_port');
+      }
+      final credentialRef = _validateCredentialRef(
+        item['credential_ref'],
+        field: 'runtime.document WDTT endpoint credential_ref',
+      );
+      if (!endpointRefs.add(credentialRef)) {
+        throw FormatException(
+          'Duplicate HydraBox WDTT credential_ref "$credentialRef"',
+        );
+      }
+      final hashes = item['vk_hashes'];
+      if (hashes is! List ||
+          hashes.isEmpty ||
+          hashes.length > 4 ||
+          hashes.any(
+            (hash) => hash is! String || !_vkHashPattern.hasMatch(hash),
+          ) ||
+          hashes.map((hash) => hash.toString()).toSet().length !=
+              hashes.length) {
+        throw const FormatException(
+          'HydraBox WDTT vk_hashes must contain 1..4 unique hashes',
+        );
+      }
+      final workers = item['workers'] ?? 18;
+      if (workers is! int || !const {9, 18, 27, 36}.contains(workers)) {
+        throw const FormatException(
+          'HydraBox WDTT workers must be 9, 18, 27, or 36',
+        );
+      }
+      if (!const {'audio', 'video'}.contains(item['obfs'] ?? 'audio')) {
+        throw const FormatException('Invalid HydraBox WDTT obfs mode');
+      }
+      if (!const {
+        'auto',
+        'anonymous',
+        'account',
+      }.contains(item['vk_auth'] ?? 'auto')) {
+        throw const FormatException('Invalid HydraBox WDTT VK auth mode');
+      }
+      if ((item['vk_anon_path'] ?? 'vkcalls') != 'vkcalls') {
+        throw const FormatException(
+          'Invalid HydraBox WDTT anonymous authentication path',
+        );
+      }
+    }
+
+    if (value == null) {
+      if (endpointRefs.isNotEmpty) {
+        throw const FormatException(
+          'HydraBox WDTT endpoints require encrypted credentials',
+        );
+      }
+      return const [];
+    }
+    if (apiVersion != apiVersionV2) {
+      throw const FormatException(
+        'HydraBox credentials require Subscription v2',
+      );
+    }
+    if (!encrypted) {
+      throw const FormatException(
+        'HydraBox WDTT credentials are allowed only inside JWE',
+      );
+    }
+    if (value is! List || value.length > _maxProfiles) {
+      throw const FormatException(
+        'HydraBox credentials must be a bounded array',
+      );
+    }
+    final normalizedExpected = expectedDeviceId?.trim() ?? '';
+    if (normalizedExpected.isNotEmpty &&
+        !_deviceIdPattern.hasMatch(normalizedExpected)) {
+      throw const FormatException('Invalid expected HydraBox device_id');
+    }
+    final credentialRefs = <String>{};
+    final credentials = <HydraBoxWdttCredential>[];
+    for (var index = 0; index < value.length; index++) {
+      final raw = value[index];
+      if (raw is! Map) {
+        throw FormatException('credentials[$index] must be an object');
+      }
+      final item = Map<String, dynamic>.from(raw);
+      _rejectUnknownKeys(
+        item,
+        _wdttCredentialKeys,
+        field: 'credentials[$index]',
+      );
+      _rejectExplicitNulls(
+        item,
+        _wdttCredentialKeys,
+        field: 'credentials[$index]',
+      );
+      if (item.length != _wdttCredentialKeys.length ||
+          item['kind'] != 'wdtt_device_grant') {
+        throw FormatException(
+          'credentials[$index] must be a WDTT device grant',
+        );
+      }
+      final credentialRef = _validateCredentialRef(
+        item['credential_ref'],
+        field: 'credentials[$index].credential_ref',
+      );
+      if (!credentialRefs.add(credentialRef)) {
+        throw FormatException(
+          'Duplicate HydraBox credential_ref "$credentialRef"',
+        );
+      }
+      final deviceId = item['device_id'];
+      if (deviceId is! String || !_deviceIdPattern.hasMatch(deviceId)) {
+        throw FormatException('credentials[$index].device_id is invalid');
+      }
+      if (normalizedExpected.isNotEmpty && deviceId != normalizedExpected) {
+        throw FormatException(
+          'credentials[$index].device_id does not match this device',
+        );
+      }
+      final grant = item['device_grant'];
+      if (grant is! String || !_deviceGrantPattern.hasMatch(grant)) {
+        throw FormatException('credentials[$index].device_grant is invalid');
+      }
+      credentials.add(
+        HydraBoxWdttCredential(
+          credentialRef: credentialRef,
+          deviceId: deviceId,
+          deviceGrant: grant,
+        ),
+      );
+    }
+    if (endpointRefs.length != credentialRefs.length ||
+        !endpointRefs.containsAll(credentialRefs)) {
+      throw const FormatException(
+        'HydraBox WDTT endpoint and credential bindings differ',
+      );
+    }
+    return List.unmodifiable(credentials);
+  }
+
+  static String _validateCredentialRef(dynamic value, {required String field}) {
+    final ref = value is String ? value : '';
+    if (ref.isEmpty ||
+        ref.length > 256 ||
+        ref != ref.trim() ||
+        !_idPattern.hasMatch(ref)) {
+      throw FormatException('$field is invalid');
+    }
+    return ref;
   }
 
   static void _validateMetadata(dynamic value) {

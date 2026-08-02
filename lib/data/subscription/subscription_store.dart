@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:meow_client/core/lowest_proxy_groups.dart';
@@ -11,6 +12,7 @@ import 'package:meow_client/data/local/hive_storage_diagnostics.dart';
 import 'package:meow_client/data/local/secure_hive_storage.dart';
 import 'package:meow_client/logging/app_log_store.dart';
 import 'package:meow_client/models/subscription.dart';
+import 'package:meow_client/singbox/singbox_runtime.dart';
 
 import 'location_aliases.dart';
 import 'hydrabox_subscription_crypto.dart';
@@ -604,11 +606,10 @@ class SubscriptionStore {
       if (!allowCreate && currentMetadata == null) {
         throw StateError('Subscription ${sub.id} not found');
       }
-      final currentIsHydraBox =
-          currentMetadata?.sourceMetadata['format'] ==
-          'hydrabox.io/subscription/v1';
-      final proposedIsHydraBox =
-          sub.sourceMetadata['format'] == 'hydrabox.io/subscription/v1';
+      final currentIsHydraBox = HydraBoxSubscriptionParser
+          .isSupportedSourceFormat(currentMetadata?.sourceMetadata['format']);
+      final proposedIsHydraBox = HydraBoxSubscriptionParser
+          .isSupportedSourceFormat(sub.sourceMetadata['format']);
       if (currentIsHydraBox || proposedIsHydraBox) {
         if (currentMetadata == null ||
             !currentIsHydraBox ||
@@ -653,6 +654,7 @@ class SubscriptionStore {
             profiles: current.profiles,
             nativeConfig: current.nativeConfig,
             clearNativeConfig: current.nativeConfig == null,
+            wdttCredentials: current.wdttCredentials,
             sourceMetadata: current.sourceMetadata,
           ),
         );
@@ -679,11 +681,12 @@ class SubscriptionStore {
   static Future<void> _saveUnlocked(Subscription sub) async {
     _validatePersistentSourcePolicy(sub);
     final payload = await Isolate.run(
-      () => _encodeStoredPayload(jsonEncode(sub.toPayloadMap())),
+      () => _encodeStoredPayload(jsonEncode(sub.toSecurePayloadMap())),
       debugName: 'meow-encode-subscription-payload',
     );
-    final isHydraBox =
-        sub.sourceMetadata['format'] == 'hydrabox.io/subscription/v1';
+    final isHydraBox = HydraBoxSubscriptionParser.isSupportedSourceFormat(
+      sub.sourceMetadata['format'],
+    );
     if (!isHydraBox) {
       final current = _readMetadata(sub.id);
       if (current != null) {
@@ -1024,8 +1027,7 @@ class SubscriptionStore {
         'subscription import',
       );
       _throwIfImportCancelled(isCancelled);
-      parsedHydraBox =
-          result.parseResult.format == SubscriptionFormat.hydraboxV1;
+      parsedHydraBox = result.parseResult.format.isHydraBox;
       _validateHydraBoxSource(result.parseResult);
 
       final payload = await _withDeadline(
@@ -1075,6 +1077,7 @@ class SubscriptionStore {
         groups: payload.groups,
         profiles: payload.profiles,
         nativeConfig: result.parseResult.nativeConfig,
+        wdttCredentials: result.parseResult.wdttCredentials,
         sourceMetadata: result.parseResult.sourceMetadata,
         urlTestConfig: const UrlTestConfig(),
         info: result.headerInfo.copyWith(
@@ -1174,7 +1177,7 @@ class SubscriptionStore {
       'subscription file import',
     );
     _throwIfImportCancelled(isCancelled);
-    if (parseResult.format == SubscriptionFormat.hydraboxV1 &&
+    if (parseResult.format.isHydraBox &&
         parseResult.sourceMetadata['encrypted'] == true) {
       // A local file has no durable secret-bearing source URI. Until HydraBox
       // has a Keystore-backed per-file key record and a restore-time key
@@ -1233,6 +1236,7 @@ class SubscriptionStore {
       groups: payload.groups,
       profiles: payload.profiles,
       nativeConfig: parseResult.nativeConfig,
+      wdttCredentials: parseResult.wdttCredentials,
       sourceMetadata: parseResult.sourceMetadata,
       urlTestConfig: const UrlTestConfig(),
     );
@@ -1280,11 +1284,10 @@ class SubscriptionStore {
         final current = _readMetadata(candidate.id);
         final subscription = _normalizeBackupLocalState(candidate, current);
         _validatePersistentSourcePolicy(subscription);
-        final currentIsHydraBox =
-            current?.sourceMetadata['format'] == 'hydrabox.io/subscription/v1';
-        final proposedIsHydraBox =
-            subscription.sourceMetadata['format'] ==
-            'hydrabox.io/subscription/v1';
+        final currentIsHydraBox = HydraBoxSubscriptionParser
+            .isSupportedSourceFormat(current?.sourceMetadata['format']);
+        final proposedIsHydraBox = HydraBoxSubscriptionParser
+            .isSupportedSourceFormat(subscription.sourceMetadata['format']);
         if (currentIsHydraBox && !proposedIsHydraBox) {
           throw const FormatException(
             'A backup cannot replace a HydraBox record with legacy payload',
@@ -1385,8 +1388,9 @@ class SubscriptionStore {
     Subscription subscription,
   ) async {
     validateSubscriptionStorageId(subscription.id);
-    final claimsHydraBox =
-        subscription.sourceMetadata['format'] == 'hydrabox.io/subscription/v1';
+    final claimsHydraBox = HydraBoxSubscriptionParser.isSupportedSourceFormat(
+      subscription.sourceMetadata['format'],
+    );
     final rawContent = subscription.rawContent;
     Uri? sourceUri;
     var hasHydraBoxKeyPolicy = false;
@@ -1438,11 +1442,12 @@ class SubscriptionStore {
       rawContent,
       decryptionKey: decryptionKey,
     );
-    if (parseResult.format != SubscriptionFormat.hydraboxV1) {
+    if (!parseResult.format.isHydraBox) {
       throw const FormatException(
         'HydraBox backup metadata does not match its wire payload',
       );
     }
+    await _validateHydraBoxBackupDeviceBinding(parseResult);
     _validateHydraBoxSource(parseResult);
     final parsedNativeConfig = parseResult.nativeConfig;
     if (claimsHydraBox) {
@@ -1503,10 +1508,29 @@ class SubscriptionStore {
       groups: payload.groups,
       profiles: payload.profiles,
       nativeConfig: parsedNativeConfig,
+      wdttCredentials: parseResult.wdttCredentials,
       sourceMetadata: parseResult.sourceMetadata,
       payloadStorageKey: '',
     );
     return rebuilt;
+  }
+
+  static Future<void> _validateHydraBoxBackupDeviceBinding(
+    ParseResult parseResult,
+  ) async {
+    final credentials = parseResult.wdttCredentials;
+    if (credentials.isEmpty) return;
+    final issuer = parseResult.sourceMetadata['issuer']?.toString() ?? '';
+    final identity = await SingboxRuntime.instance.getHydraDeviceId(issuer);
+    final expectedDeviceId = sha256.convert(utf8.encode(identity)).toString();
+    if (credentials.any(
+      (credential) => credential.deviceId != expectedDeviceId,
+    )) {
+      throw const FormatException(
+        'HydraBox WDTT backup grant belongs to another device; refresh the '
+        'subscription on this device',
+      );
+    }
   }
 
   static Subscription _normalizeBackupLocalState(
@@ -1684,6 +1708,7 @@ class SubscriptionStore {
         profiles: payload.profiles,
         nativeConfig: result.parseResult.nativeConfig,
         clearNativeConfig: result.parseResult.nativeConfig == null,
+        wdttCredentials: result.parseResult.wdttCredentials,
         sourceMetadata: result.parseResult.sourceMetadata,
         autoRefreshMinutes: result.headerInfo.updateIntervalHours != null
             ? result.headerInfo.updateIntervalHours! * 60
@@ -1799,6 +1824,7 @@ class SubscriptionStore {
         profiles: payload.profiles,
         nativeConfig: parseResult.nativeConfig,
         clearNativeConfig: parseResult.nativeConfig == null,
+        wdttCredentials: parseResult.wdttCredentials,
         sourceMetadata: parseResult.sourceMetadata,
       );
       await _saveUnlocked(updated);
@@ -1902,11 +1928,11 @@ class SubscriptionStore {
     // provider- or DNS-only. Its raw payload is still consumed by the runtime
     // builder even though there is no app-selectable outbound to materialize.
     return parseResult.format == SubscriptionFormat.singboxConfig ||
-        parseResult.format == SubscriptionFormat.hydraboxV1;
+        parseResult.format.isHydraBox;
   }
 
   static void _validateHydraBoxSource(ParseResult parseResult) {
-    if (parseResult.format != SubscriptionFormat.hydraboxV1) {
+    if (!parseResult.format.isHydraBox) {
       return;
     }
     HydraBoxSubscriptionTimePolicy.validate(parseResult.sourceMetadata);
@@ -1917,8 +1943,10 @@ class SubscriptionStore {
     ParseResult incoming,
   ) {
     _validateHydraBoxSource(incoming);
-    if (existing.sourceMetadata['format'] == 'hydrabox.io/subscription/v1' &&
-        incoming.format != SubscriptionFormat.hydraboxV1) {
+    if (HydraBoxSubscriptionParser.isSupportedSourceFormat(
+          existing.sourceMetadata['format'],
+        ) &&
+        !incoming.format.isHydraBox) {
       throw const FormatException(
         'Refusing to replace a HydraBox subscription with a legacy format',
       );
@@ -1933,12 +1961,20 @@ class SubscriptionStore {
     Map<String, dynamic> oldMetadata,
     Map<String, dynamic> next,
   ) {
-    if (oldMetadata['format'] != 'hydrabox.io/subscription/v1') {
+    if (!HydraBoxSubscriptionParser.isSupportedSourceFormat(
+      oldMetadata['format'],
+    )) {
       return;
     }
-    if (next['format'] != 'hydrabox.io/subscription/v1') {
+    if (!HydraBoxSubscriptionParser.isSupportedSourceFormat(next['format'])) {
       throw const FormatException(
         'Refusing to replace a HydraBox subscription with a legacy format',
+      );
+    }
+    if (oldMetadata['format'] == HydraBoxSubscriptionParser.apiVersionV2 &&
+        next['format'] != HydraBoxSubscriptionParser.apiVersionV2) {
+      throw const FormatException(
+        'Refusing a HydraBox Subscription v2 to v1 downgrade',
       );
     }
     for (final key in const ['issuer', 'subscription_id', 'channel']) {
@@ -2134,7 +2170,11 @@ class SubscriptionStore {
   }
 
   static String? _hydraBoxTrustTupleKey(Map<String, dynamic> metadata) {
-    if (metadata['format'] != 'hydrabox.io/subscription/v1') return null;
+    if (!HydraBoxSubscriptionParser.isSupportedSourceFormat(
+      metadata['format'],
+    )) {
+      return null;
+    }
     final issuer = metadata['issuer'];
     final subscriptionId = metadata['subscription_id'];
     final channel = metadata['channel'];
@@ -2225,7 +2265,7 @@ class SubscriptionStore {
     ParseResult parseResult,
     List<Outbound> outbounds,
   ) {
-    if (parseResult.format != SubscriptionFormat.hydraboxV1) {
+    if (!parseResult.format.isHydraBox) {
       return;
     }
     final seen = <String>{};

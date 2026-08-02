@@ -82,6 +82,7 @@ REQUIRED_REGISTRY_MARKERS = {
     "vpn-server endpoint": "vpn.RegisterServerEndpoint(registry)",
     "vpn-client endpoint": "vpn.RegisterClientEndpoint(registry)",
     "wireguard/warp endpoints": "registerWireGuardEndpoint(registry)",
+    "WDTT endpoint": "registerWDTTEndpoint(registry)",
     "tailscale endpoint": "registerTailscaleEndpoint(registry)",
     # DNS transports.
     "TCP DNS": "transport.RegisterTCP(registry)",
@@ -141,6 +142,9 @@ REQUIRED_TAGGED_IMPLEMENTATIONS = {
     CORE / "include" / "wireguard.go": {
         "WireGuard endpoint": "wireguard.RegisterEndpoint(registry)",
         "WARP endpoint": "warp.RegisterEndpoint(registry)",
+    },
+    CORE / "include" / "wdtt.go": {
+        "WDTT endpoint": "wdtt.RegisterEndpoint(registry)",
     },
     CORE / "include" / "masque.go": {
         "MASQUE outbound": "masque.RegisterOutbound(registry)",
@@ -213,6 +217,7 @@ REQUIRED_EXACT_CONSTANTS = {
         "TypeTrafficLimiter": "traffic-limiter",
         "TypeRateLimiter": "rate-limiter",
         "TypeWireGuard": "wireguard",
+        "TypeWDTT": "wdtt",
         "TypeWARP": "warp",
         "TypeTailscale": "tailscale",
         "TypeVPNClient": "vpn-client",

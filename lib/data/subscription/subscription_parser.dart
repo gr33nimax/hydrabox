@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:meow_client/models/subscription.dart';
 
 import 'hydrabox_subscription_crypto.dart';
 import 'outbound_schema.dart';
@@ -15,6 +16,7 @@ import 'parsers/xray_config_parser.dart';
 /// The format that was detected during parsing.
 enum SubscriptionFormat {
   hydraboxV1,
+  hydraboxV2,
   singboxConfig,
   xrayConfig,
   sip008,
@@ -23,6 +25,12 @@ enum SubscriptionFormat {
   rawLinks,
   wireguardConfig,
   unknown,
+}
+
+extension SubscriptionFormatHydraBox on SubscriptionFormat {
+  bool get isHydraBox =>
+      this == SubscriptionFormat.hydraboxV1 ||
+      this == SubscriptionFormat.hydraboxV2;
 }
 
 /// Result of parsing subscription content.
@@ -35,6 +43,7 @@ class ParseResult {
     this.profiles = const [],
     this.nativeConfig,
     this.defaultProfileId,
+    this.wdttCredentials = const [],
     this.sourceMetadata = const {},
   });
 
@@ -51,7 +60,7 @@ class ParseResult {
   /// (e.g. `#profile-title`, `#subscription-userinfo`, etc.)
   final Map<String, String> bodyMeta;
 
-  /// Explicit UI profiles supplied by HydraBox Subscription v1.
+  /// Explicit UI profiles supplied by HydraBox Subscription v1/v2.
   final List<HydraBoxParsedProfile> profiles;
 
   /// Opaque native sing-box document retained for runtime assembly.
@@ -59,6 +68,9 @@ class ParseResult {
 
   /// Stable publisher profile identifier selected by default.
   final String? defaultProfileId;
+
+  /// Device-bound grants installed into HydraCore outside runtime JSON.
+  final List<HydraBoxWdttCredential> wdttCredentials;
 
   /// Issuer, sequence, digest and transport-security state.
   final Map<String, dynamic> sourceMetadata;
@@ -72,6 +84,10 @@ class ParseResult {
       'profiles': profiles.map((profile) => profile.toMap()).toList(),
     if (nativeConfig != null) 'nativeConfig': nativeConfig,
     if (defaultProfileId != null) 'defaultProfileId': defaultProfileId,
+    if (wdttCredentials.isNotEmpty)
+      'wdttCredentials': wdttCredentials
+          .map((credential) => credential.toMap())
+          .toList(growable: false),
     if (sourceMetadata.isNotEmpty) 'sourceMetadata': sourceMetadata,
   };
 
@@ -106,6 +122,14 @@ class ParseResult {
           ? Map<String, dynamic>.from(map['nativeConfig'] as Map)
           : null,
       defaultProfileId: map['defaultProfileId']?.toString(),
+      wdttCredentials: (map['wdttCredentials'] as List? ?? const [])
+          .whereType<Map>()
+          .map(
+            (entry) => HydraBoxWdttCredential.fromMap(
+              Map<String, dynamic>.from(entry),
+            ),
+          )
+          .toList(growable: false),
       sourceMetadata: map['sourceMetadata'] is Map
           ? Map<String, dynamic>.from(map['sourceMetadata'] as Map)
           : const {},
@@ -192,10 +216,12 @@ class SubscriptionParser {
   static Future<ParseResult> parseInBackground(
     String content, {
     String? decryptionKey,
+    String? expectedDeviceId,
   }) async {
     final payload = await compute(_parseSubscriptionContent, {
       'content': content,
       'decryption_key': ?decryptionKey,
+      'expected_device_id': ?expectedDeviceId,
     });
     return ParseResult.fromMap(Map<String, dynamic>.from(payload));
   }
@@ -203,7 +229,7 @@ class SubscriptionParser {
   /// Parses [content] by trying all known formats in priority order.
   ///
   /// Priority:
-  /// 1. HydraBox v1 envelope/JWE (fail closed)
+  /// 1. HydraBox v1/v2 envelope/JWE (fail closed)
   /// 2. Sing-box JSON config (has "outbounds" with "type")
   /// 3. Xray JSON config (has "outbounds" with "protocol")
   /// 4. SIP008 JSON (has "servers" array)
@@ -211,7 +237,11 @@ class SubscriptionParser {
   /// 6. WireGuard .conf (has [Interface] + [Peer])
   /// 7. Base64-decoded proxy links
   /// 8. Raw proxy links (one per line)
-  static ParseResult parse(String content, {String? decryptionKey}) {
+  static ParseResult parse(
+    String content, {
+    String? decryptionKey,
+    String? expectedDeviceId,
+  }) {
     if (content.isEmpty) {
       return const ParseResult(
         format: SubscriptionFormat.unknown,
@@ -238,9 +268,14 @@ class SubscriptionParser {
       final parsed = HydraBoxSubscriptionParser.parse(
         content,
         decryptionKey: decryptionKey,
+        expectedDeviceId: expectedDeviceId,
       );
       return ParseResult(
-        format: SubscriptionFormat.hydraboxV1,
+        format:
+            parsed.sourceMetadata['format'] ==
+                HydraBoxSubscriptionParser.apiVersionV2
+            ? SubscriptionFormat.hydraboxV2
+            : SubscriptionFormat.hydraboxV1,
         outbounds: _normalizeOutbounds(
           parsed.outbounds,
           preserveUnknownFields: true,
@@ -249,6 +284,7 @@ class SubscriptionParser {
         profiles: parsed.profiles,
         nativeConfig: parsed.nativeConfig,
         defaultProfileId: parsed.defaultProfileId,
+        wdttCredentials: parsed.wdttCredentials,
         sourceMetadata: parsed.sourceMetadata,
       );
     }
@@ -677,5 +713,6 @@ Map<String, dynamic> _parseSubscriptionContent(Map<String, dynamic> input) {
   return SubscriptionParser.parse(
     input['content']?.toString() ?? '',
     decryptionKey: input['decryption_key']?.toString(),
+    expectedDeviceId: input['expected_device_id']?.toString(),
   ).toMap();
 }

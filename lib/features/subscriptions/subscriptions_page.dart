@@ -12,6 +12,7 @@ import 'package:meow_client/core/widgets/app_notice.dart';
 import 'package:meow_client/data/backup/etonify_backup_service.dart';
 import 'package:meow_client/data/subscription/happ_crypto_link.dart';
 import 'package:meow_client/data/subscription/hydrabox_subscription_crypto.dart';
+import 'package:meow_client/data/subscription/parsers/hydrabox_subscription_parser.dart';
 import 'package:meow_client/data/subscription/subscription_failure.dart';
 import 'package:meow_client/data/subscription/subscription_fetcher.dart';
 import 'package:meow_client/data/subscription/subscription_store.dart';

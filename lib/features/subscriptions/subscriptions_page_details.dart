@@ -451,7 +451,9 @@ class _SubscriptionDetailsPageState extends State<_SubscriptionDetailsPage> {
     final migratedUrl = info?.newUrl;
     final movedIgnored = info?.ignoreSubscriptionMoved == true;
     final hydraMetadata = subscription.sourceMetadata;
-    final isHydraBox = hydraMetadata['format'] == 'hydrabox.io/subscription/v1';
+    final isHydraBox = HydraBoxSubscriptionParser.isSupportedSourceFormat(
+      hydraMetadata['format'],
+    );
     final isRussian = Localizations.localeOf(context).languageCode == 'ru';
     final userVisibleOutbounds = subscription.outbounds
         .where((outbound) => outbound.config['_group_only'] != true)
@@ -836,7 +838,8 @@ class _SubscriptionDetailsPageState extends State<_SubscriptionDetailsPage> {
                                   label: Text(
                                     hydraMetadata['encrypted'] == true
                                         ? 'JWE · A256GCM'
-                                        : 'HydraBox v1',
+                                        : hydraMetadata['format']?.toString() ??
+                                              'HydraBox',
                                   ),
                                 ),
                                 if (hydraMetadata['device_binding'] == true)

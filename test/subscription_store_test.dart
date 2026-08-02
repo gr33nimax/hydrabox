@@ -29,6 +29,34 @@ void main() {
     AppLogStore.clear();
   });
 
+  test('WDTT grants serialize only in the secure payload projection', () {
+    const grant =
+        'hwdtt1_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+    const credential = HydraBoxWdttCredential(
+      credentialRef: 'wdtt:user-1:device-1',
+      deviceId:
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      deviceGrant: grant,
+    );
+    const subscription = Subscription(
+      id: 'wdtt-secure-payload',
+      name: 'WDTT',
+      url: 'https://provider.example/subscription',
+      wdttCredentials: [credential],
+    );
+
+    expect(jsonEncode(subscription.toMap()), isNot(contains(grant)));
+    final secure = subscription.toSecurePayloadMap();
+    expect(jsonEncode(secure), contains(grant));
+
+    final restored = Subscription.fromMap({
+      ...subscription.toMetadataMap(),
+      ...secure,
+    });
+    expect(restored.wdttCredentials, hasLength(1));
+    expect(restored.wdttCredentials.single.deviceGrant, grant);
+  });
+
   tearDownAll(() async {
     await SubscriptionStore.clear();
     await Hive.close();

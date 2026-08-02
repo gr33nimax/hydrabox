@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:meow_client/models/subscription.dart';
 import 'package:meow_client/singbox/libbox_capabilities.dart';
 import 'package:meow_client/singbox/singbox_api.g.dart' as pigeon;
 
@@ -911,6 +912,24 @@ class SingboxRuntime {
       () => _hostApi.checkConfig(config),
       () => _methods.invokeMethod<void>('checkConfig', {'config': config}),
     );
+  }
+
+  /// Atomically replaces process-local WDTT device grants in HydraCore.
+  /// Secrets travel over the in-process bridge and never enter sing-box JSON.
+  Future<void> replaceHydraWdttCredentials(
+    List<HydraBoxWdttCredential> credentials,
+  ) async {
+    if (!Platform.isAndroid) {
+      if (credentials.isNotEmpty) {
+        throw UnsupportedError('Hydra WDTT credentials are Android-only.');
+      }
+      return;
+    }
+    await _methods.invokeMethod<void>('replaceHydraWdttCredentials', {
+      'credentials': credentials
+          .map((credential) => credential.toMap())
+          .toList(growable: false),
+    });
   }
 
   Future<Map<String, dynamic>> getPerformanceSnapshot() async {

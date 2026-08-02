@@ -37,8 +37,10 @@ release promise.
 ## Features
 
 - Android VPN TUN mode powered by HydraCore.
-- Versioned HydraBox Subscription v1 with JWE A256GCM transport and lossless
+- Versioned HydraBox Subscription v1/v2 with JWE A256GCM transport and lossless
   storage of the native runtime document.
+- Subscription-native WDTT endpoints with device-bound grants, 9/18/36 worker
+  policy, 15-minute leases, automatic renewal, and hot generation rotation.
 - Fail-closed capability and remote-safety validation before activation.
 - URL, QR, file, clipboard, and deep-link subscription import.
 - Local HTTP/SOCKS mixed proxy for manual clients.
@@ -57,7 +59,8 @@ release promise.
 The decryption key is carried only in the URL fragment and is not sent to the
 subscription server. The exact schema, trust boundary, validation rules, and
 test vectors are documented in
-[HydraBox Subscription v1](docs/hydrabox-subscription-v1.md).
+[HydraBox Subscription v2](docs/hydrabox-subscription-v2.md). The v1 contract
+remains documented for compatibility and can be upgraded in place.
 
 ## Security model
 

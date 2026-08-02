@@ -364,7 +364,7 @@ class SubscriptionGroup {
   }
 }
 
-/// Stable UI identity declared by HydraBox Subscription v1.
+/// Stable UI identity declared by HydraBox Subscription v1/v2.
 ///
 /// A profile points at a native sing-box outbound or endpoint but is not
 /// itself a native runtime object. [runtimeTag] is the resolved compatibility
@@ -490,6 +490,37 @@ class SubscriptionProxyChain {
   }
 }
 
+/// Device-bound WDTT grant supplied inside an encrypted HydraBox v2 envelope.
+///
+/// This value is persisted only by [Subscription.toSecurePayloadMap]. Public
+/// exports deliberately use [Subscription.toMap], which never serializes it.
+class HydraBoxWdttCredential {
+  const HydraBoxWdttCredential({
+    required this.credentialRef,
+    required this.deviceId,
+    required this.deviceGrant,
+  });
+
+  final String credentialRef;
+  final String deviceId;
+  final String deviceGrant;
+
+  Map<String, dynamic> toMap() => {
+    'kind': 'wdtt_device_grant',
+    'credential_ref': credentialRef,
+    'device_id': deviceId,
+    'device_grant': deviceGrant,
+  };
+
+  factory HydraBoxWdttCredential.fromMap(Map<String, dynamic> map) {
+    return HydraBoxWdttCredential(
+      credentialRef: map['credential_ref']?.toString() ?? '',
+      deviceId: map['device_id']?.toString() ?? '',
+      deviceGrant: map['device_grant']?.toString() ?? '',
+    );
+  }
+}
+
 /// Full subscription model
 class Subscription {
   const Subscription({
@@ -512,6 +543,7 @@ class Subscription {
     this.profiles = const [],
     this.proxyChains = const [],
     this.nativeConfig,
+    this.wdttCredentials = const [],
     this.sourceMetadata = const {},
     this.urlTestConfig = const UrlTestConfig(),
     this.info,
@@ -539,6 +571,7 @@ class Subscription {
   final List<SubscriptionProfile> profiles;
   final List<SubscriptionProxyChain> proxyChains;
   final Map<String, dynamic>? nativeConfig;
+  final List<HydraBoxWdttCredential> wdttCredentials;
   final Map<String, dynamic> sourceMetadata;
   final UrlTestConfig urlTestConfig;
   final SubscriptionInfo? info;
@@ -592,6 +625,15 @@ class Subscription {
       'profiles': profiles.map((profile) => profile.toMap()).toList(),
     if (nativeConfig != null) 'native_config': nativeConfig,
     if (sourceMetadata.isNotEmpty) 'source_metadata': sourceMetadata,
+  };
+
+  /// Payload written only to the Android Keystore-backed encrypted Hive box.
+  Map<String, dynamic> toSecurePayloadMap() => {
+    ...toPayloadMap(),
+    if (wdttCredentials.isNotEmpty)
+      'wdtt_credentials': wdttCredentials
+          .map((credential) => credential.toMap())
+          .toList(growable: false),
   };
 
   Map<String, dynamic> toMap() => {...toMetadataMap(), ...toPayloadMap()};
@@ -676,6 +718,14 @@ class Subscription {
       nativeConfig: map['native_config'] is Map
           ? Map<String, dynamic>.from(map['native_config'] as Map)
           : null,
+      wdttCredentials: (map['wdtt_credentials'] as List? ?? const [])
+          .whereType<Map>()
+          .map(
+            (entry) => HydraBoxWdttCredential.fromMap(
+              Map<String, dynamic>.from(entry),
+            ),
+          )
+          .toList(growable: false),
       sourceMetadata: Map<String, dynamic>.from(
         map['source_metadata'] as Map? ?? metadata.sourceMetadata,
       ),
@@ -703,6 +753,7 @@ class Subscription {
     List<SubscriptionProxyChain>? proxyChains,
     Map<String, dynamic>? nativeConfig,
     bool clearNativeConfig = false,
+    List<HydraBoxWdttCredential>? wdttCredentials,
     Map<String, dynamic>? sourceMetadata,
     UrlTestConfig? urlTestConfig,
     SubscriptionInfo? info,
@@ -737,6 +788,7 @@ class Subscription {
       nativeConfig: clearNativeConfig
           ? null
           : nativeConfig ?? this.nativeConfig,
+      wdttCredentials: wdttCredentials ?? this.wdttCredentials,
       sourceMetadata: sourceMetadata ?? this.sourceMetadata,
       urlTestConfig: urlTestConfig ?? this.urlTestConfig,
       info: info ?? this.info,

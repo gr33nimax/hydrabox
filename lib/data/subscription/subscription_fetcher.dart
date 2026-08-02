@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:meow_client/logging/app_log_store.dart';
 import 'package:meow_client/models/subscription.dart';
@@ -123,6 +124,7 @@ class SubscriptionFetcher {
             url: url,
             rawContent: rawContent,
             decryptionKey: decryptionKey,
+            expectedDeviceId: _expectedHydraDeviceId(headers),
             headerValue: (name) => responseHeaders[name.toLowerCase()],
           );
         } on SubscriptionContentException {
@@ -161,6 +163,7 @@ class SubscriptionFetcher {
           url: url,
           rawContent: rawContent,
           decryptionKey: decryptionKey,
+          expectedDeviceId: _expectedHydraDeviceId(headers),
           headerValue: (name) {
             final values = response.headers[name];
             if (values == null || values.isEmpty) return null;
@@ -399,6 +402,7 @@ class SubscriptionFetcher {
     required String url,
     required String rawContent,
     String? decryptionKey,
+    String? expectedDeviceId,
     required String? Function(String name) headerValue,
   }) async {
     _validateResponseContent(rawContent);
@@ -420,31 +424,32 @@ class SubscriptionFetcher {
     } else if (declaredHydraMediaType == HydraBoxJweCodec.mediaType &&
         HydraBoxJweCodec.looksLike(rawContent)) {
       throw const FormatException(
-        'HydraBox subscription media type requires plaintext v1 JSON',
+        'HydraBox subscription media type requires plaintext JSON',
       );
     }
     final parseResult = await SubscriptionParser.parseInBackground(
       rawContent,
       decryptionKey: decryptionKey,
+      expectedDeviceId: expectedDeviceId,
     );
     if (declaredHydraMediaType == HydraBoxJweCodec.mediaType &&
-        (parseResult.format != SubscriptionFormat.hydraboxV1 ||
+        (!parseResult.format.isHydraBox ||
             parseResult.sourceMetadata['encrypted'] == true)) {
       throw const FormatException(
-        'HydraBox subscription media type requires plaintext v1 JSON',
+        'HydraBox subscription media type requires plaintext JSON',
       );
     }
     if (declaredHydraMediaType == _joseJsonMediaType &&
-        (parseResult.format != SubscriptionFormat.hydraboxV1 ||
+        (!parseResult.format.isHydraBox ||
             parseResult.sourceMetadata['encrypted'] != true)) {
       throw const FormatException(
-        'application/jose+json HydraBox response must contain v1 JWE',
+        'application/jose+json HydraBox response must contain HydraBox JWE',
       );
     }
     final requestUri = HydraBoxJweCodec.uriWithoutSecretFragment(
       parseRequestUri(url),
     );
-    if (parseResult.format == SubscriptionFormat.hydraboxV1 &&
+    if (parseResult.format.isHydraBox &&
         requestUri.scheme.toLowerCase() != 'https') {
       throw HttpException(
         'HydraBox subscriptions require HTTPS',
@@ -457,6 +462,18 @@ class SubscriptionFetcher {
       parseResult: parseResult,
       url: url,
     );
+  }
+
+  static String? _expectedHydraDeviceId(Map<String, String> headers) {
+    final identity = headers.entries
+        .where((entry) => entry.key.toLowerCase() == 'x-hydra-hwid')
+        .map((entry) => entry.value.trim())
+        .firstOrNull;
+    if (identity == null ||
+        !RegExp(r'^hbx1_[A-Za-z0-9_-]{43}$').hasMatch(identity)) {
+      return null;
+    }
+    return sha256.convert(utf8.encode(identity)).toString();
   }
 
   static String? _declaredHydraBoxMediaType(String? rawContentType) {

@@ -2005,6 +2005,44 @@ class MainActivity : FlutterFragmentActivity() {
                     }
                 }
 
+                "replaceHydraWdttCredentials" -> {
+                    val credentials =
+                        call.argument<List<Map<String, Any?>>>("credentials") ?: emptyList()
+                    ioExecutor.execute {
+                        runCatching {
+                            require(credentials.size <= 4096) {
+                                "Too many Hydra WDTT credentials"
+                            }
+                            Libbox.clearHydraWDTTCredentials()
+                            try {
+                                credentials.forEach { credential ->
+                                    require(credential["kind"] == "wdtt_device_grant") {
+                                        "Invalid Hydra WDTT credential kind"
+                                    }
+                                    Libbox.setHydraWDTTCredential(
+                                        credential["credential_ref"] as? String ?: "",
+                                        credential["device_id"] as? String ?: "",
+                                        credential["device_grant"] as? String ?: "",
+                                    )
+                                }
+                            } catch (error: Throwable) {
+                                Libbox.clearHydraWDTTCredentials()
+                                throw error
+                            }
+                        }.onSuccess {
+                            mainHandler.post { result.success(null) }
+                        }.onFailure { error ->
+                            mainHandler.post {
+                                result.error(
+                                    "wdtt_credential_bridge_failed",
+                                    error.message ?: error.toString(),
+                                    null,
+                                )
+                            }
+                        }
+                    }
+                }
+
                 "getConfigPath" -> {
                     result.success(MeowApplication.configFile.absolutePath)
                 }

@@ -45,10 +45,21 @@ void main() {
           "supports_close_connections": true,
           "supports_reality_spider_x": true,
           "tun_stacks": ["SYSTEM", "gvisor", "mixed", ""],
-          "remote_policy_version": 1,
+          "supports_wdtt": true,
+          "supports_wdtt_credential_bridge": true,
+          "supports_wdtt_hot_rotation": true,
+          "wdtt_min_workers": 9,
+          "wdtt_recommended_workers": 18,
+          "wdtt_max_workers": 36,
+          "wdtt_lease_ttl_seconds": 900,
+          "wdtt_lease_refresh_after_seconds": 600,
+          "wdtt_max_hashes": 4,
+          "wdtt_auth_modes": ["auto", "anonymous", "account"],
+          "wdtt_obfs_modes": ["audio", "video"],
+          "remote_policy_version": 2,
           "remote_safe_top_level_fields": ["outbounds", "endpoints"],
           "remote_safe_outbound_types": ["trojan", "future-leaf"],
-          "remote_safe_endpoint_types": ["wireguard"],
+          "remote_safe_endpoint_types": ["wireguard", "wdtt"],
           "remote_safe_dns_server_types": ["https"],
           "remote_safe_provider_types": [],
           "future_field": "ignored"
@@ -85,6 +96,12 @@ void main() {
       expect(capabilities.supportsTunStack(' GVISOR '), isTrue);
       expect(capabilities.supportsTunStack('mixed'), isTrue);
       expect(capabilities.hasRemoteSafetyManifest, isTrue);
+      expect(capabilities.hasHydraWdttContract, isTrue);
+      expect(capabilities.wdttMinWorkers, 9);
+      expect(capabilities.wdttRecommendedWorkers, 18);
+      expect(capabilities.wdttMaxWorkers, 36);
+      expect(capabilities.wdttLeaseTtlSeconds, 900);
+      expect(capabilities.wdttLeaseRefreshAfterSeconds, 600);
       expect(capabilities.remoteSafeTopLevelFields, {'outbounds', 'endpoints'});
       expect(capabilities.remoteSafeOutboundTypes, {'trojan', 'future-leaf'});
       expect(capabilities.remoteSafeProviderTypes, isEmpty);
@@ -110,11 +127,11 @@ void main() {
 
     test('unknown capability and remote-policy versions fail closed', () {
       final unknownApi = LibboxCapabilities.parseOrLegacy(
-        '{"api_version":2,"remote_policy_version":1,'
+        '{"api_version":2,"remote_policy_version":2,'
         '"remote_safe_top_level_fields":["outbounds"]}',
       );
       final unknownPolicy = LibboxCapabilities.parseOrLegacy(
-        '{"api_version":1,"remote_policy_version":2,'
+        '{"api_version":1,"remote_policy_version":3,'
         '"remote_safe_top_level_fields":["outbounds"]}',
       );
 
@@ -126,11 +143,11 @@ void main() {
 
     test('fractional capability and remote-policy versions fail closed', () {
       final fractionalApi = LibboxCapabilities.parseOrLegacy(
-        '{"api_version":1.9,"remote_policy_version":1,'
+        '{"api_version":1.9,"remote_policy_version":2,'
         '"remote_safe_top_level_fields":["outbounds"]}',
       );
       final fractionalPolicy = LibboxCapabilities.parseOrLegacy(
-        '{"api_version":1,"remote_policy_version":1.9,'
+        '{"api_version":1,"remote_policy_version":2.9,'
         '"remote_safe_top_level_fields":["outbounds"]}',
       );
 

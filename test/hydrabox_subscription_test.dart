@@ -73,6 +73,60 @@ void main() {
     },
   };
 
+  Map<String, dynamic> wdttDocument() {
+    const deviceId =
+        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const credentialRef = 'wdtt:user-1:device-1';
+    return {
+      'api_version': HydraBoxSubscriptionParser.apiVersionV2,
+      'kind': 'SubscriptionData',
+      'issuer': 'https://provider.example',
+      'subscription_id': 'customer-main',
+      'channel': 'stable',
+      'sequence': 43,
+      'issued_at': '2026-07-30T18:00:00Z',
+      'default_profile_id': 'wdtt-primary',
+      'metadata': {
+        'name': {'default': 'HydraBox WDTT test'},
+      },
+      'runtime': {
+        'format': 'sing-box-json',
+        'document': {
+          'endpoints': [
+            {
+              'type': 'wdtt',
+              'tag': 'wdtt-primary',
+              'server': 'wdtt.example',
+              'server_port': 4433,
+              'credential_ref': credentialRef,
+              'vk_hashes': ['hash-1', 'hash-2', 'hash-3', 'hash-4'],
+              'workers': 18,
+              'obfs': 'audio',
+              'vk_auth': 'auto',
+              'vk_anon_path': 'vkcalls',
+            },
+          ],
+        },
+      },
+      'profiles': [
+        {
+          'id': 'wdtt-primary',
+          'name': {'default': 'WDTT primary'},
+          'entrypoint': {'section': 'endpoints', 'tag': 'wdtt-primary'},
+          'enabled': true,
+        },
+      ],
+      'credentials': [
+        {
+          'kind': 'wdtt_device_grant',
+          'credential_ref': credentialRef,
+          'device_id': deviceId,
+          'device_grant': 'hwdtt1_${List.filled(43, 'A').join()}',
+        },
+      ],
+    };
+  }
+
   test('explicit profiles are distinct from native runtime objects', () {
     final result = SubscriptionParser.parse(jsonEncode(document()));
 
@@ -205,10 +259,88 @@ void main() {
   });
 
   test('unsupported HydraBox major never falls back to a legacy parser', () {
-    final source = document()..['api_version'] = 'hydrabox.io/subscription/v2';
+    final source = document()..['api_version'] = 'hydrabox.io/subscription/v3';
 
     expect(
       () => SubscriptionParser.parse(jsonEncode(source)),
+      throwsFormatException,
+    );
+  });
+
+  test('v2 JWE binds one WDTT endpoint to one device grant', () {
+    final key = encodeKey(List<int>.generate(32, (index) => index + 1));
+    final encrypted = HydraBoxJweCodec.encrypt(
+      jsonEncode(wdttDocument()),
+      encodedKey: key,
+      nonce: Uint8List.fromList(List<int>.generate(12, (index) => index + 1)),
+    );
+
+    final parsed = SubscriptionParser.parse(
+      encrypted,
+      decryptionKey: key,
+      expectedDeviceId:
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    );
+
+    expect(parsed.format, SubscriptionFormat.hydraboxV2);
+    expect(parsed.wdttCredentials, hasLength(1));
+    expect(parsed.wdttCredentials.single.credentialRef, 'wdtt:user-1:device-1');
+    expect(parsed.wdttCredentials.single.deviceGrant, startsWith('hwdtt1_'));
+    final endpoint = (parsed.nativeConfig?['endpoints'] as List).single as Map;
+    expect(endpoint['credential_ref'], 'wdtt:user-1:device-1');
+    expect(endpoint, isNot(contains('device_grant')));
+    expect(endpoint, isNot(contains('password')));
+  });
+
+  test('v2 WDTT credentials fail closed outside JWE or on device mismatch', () {
+    final plaintext = jsonEncode(wdttDocument());
+    expect(
+      () => SubscriptionParser.parse(plaintext),
+      throwsFormatException,
+    );
+
+    final key = encodeKey(List<int>.filled(32, 7));
+    final encrypted = HydraBoxJweCodec.encrypt(
+      plaintext,
+      encodedKey: key,
+      nonce: Uint8List.fromList(List<int>.generate(12, (index) => index + 2)),
+    );
+    expect(
+      () => SubscriptionParser.parse(
+        encrypted,
+        decryptionKey: key,
+        expectedDeviceId:
+            'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      ),
+      throwsFormatException,
+    );
+  });
+
+  test('v2 WDTT enforces worker groups and exact credential binding', () {
+    final invalidWorkers = wdttDocument();
+    final runtime = invalidWorkers['runtime'] as Map<String, dynamic>;
+    final native = runtime['document'] as Map<String, dynamic>;
+    final endpoint = (native['endpoints'] as List).single as Map<String, dynamic>;
+    endpoint['workers'] = 8;
+    final key = encodeKey(List<int>.filled(32, 8));
+    final invalidWorkersJwe = HydraBoxJweCodec.encrypt(
+      jsonEncode(invalidWorkers),
+      encodedKey: key,
+      nonce: Uint8List.fromList(List<int>.generate(12, (index) => index + 3)),
+    );
+    expect(
+      () => SubscriptionParser.parse(invalidWorkersJwe, decryptionKey: key),
+      throwsFormatException,
+    );
+
+    final missingCredential = wdttDocument()..remove('credentials');
+    final missingCredentialJwe = HydraBoxJweCodec.encrypt(
+      jsonEncode(missingCredential),
+      encodedKey: key,
+      nonce: Uint8List.fromList(List<int>.generate(12, (index) => index + 4)),
+    );
+    expect(
+      () => SubscriptionParser.parse(missingCredentialJwe, decryptionKey: key),
       throwsFormatException,
     );
   });

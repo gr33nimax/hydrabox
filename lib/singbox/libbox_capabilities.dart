@@ -28,6 +28,17 @@ class LibboxCapabilities {
     required this.supportsCloseConnections,
     required this.supportsRealitySpiderX,
     required this.tunStacks,
+    this.supportsWdtt = false,
+    this.supportsWdttCredentialBridge = false,
+    this.supportsWdttHotRotation = false,
+    this.wdttMinWorkers = 0,
+    this.wdttRecommendedWorkers = 0,
+    this.wdttMaxWorkers = 0,
+    this.wdttLeaseTtlSeconds = 0,
+    this.wdttLeaseRefreshAfterSeconds = 0,
+    this.wdttMaxHashes = 0,
+    this.wdttAuthModes = const <String>{},
+    this.wdttObfsModes = const <String>{},
     this.remotePolicyVersion = 0,
     this.remoteSafeTopLevelFields = const <String>{},
     this.remoteSafeOutboundTypes = const <String>{},
@@ -38,7 +49,7 @@ class LibboxCapabilities {
 
   static const hydraCoreId = 'io.hydrabox.hydracore';
   static const supportedApiVersion = 1;
-  static const supportedRemotePolicyVersion = 1;
+  static const supportedRemotePolicyVersion = 2;
 
   static const bundledLegacy = LibboxCapabilities(
     apiVersion: 0,
@@ -136,6 +147,29 @@ class LibboxCapabilities {
         supportsCloseConnections: _readBool(json, 'supports_close_connections'),
         supportsRealitySpiderX: _readBool(json, 'supports_reality_spider_x'),
         tunStacks: _readStringSet(json, 'tun_stacks'),
+        supportsWdtt: _readBool(json, 'supports_wdtt'),
+        supportsWdttCredentialBridge: _readBool(
+          json,
+          'supports_wdtt_credential_bridge',
+        ),
+        supportsWdttHotRotation: _readBool(
+          json,
+          'supports_wdtt_hot_rotation',
+        ),
+        wdttMinWorkers: _readInt(json, 'wdtt_min_workers'),
+        wdttRecommendedWorkers: _readInt(
+          json,
+          'wdtt_recommended_workers',
+        ),
+        wdttMaxWorkers: _readInt(json, 'wdtt_max_workers'),
+        wdttLeaseTtlSeconds: _readInt(json, 'wdtt_lease_ttl_seconds'),
+        wdttLeaseRefreshAfterSeconds: _readInt(
+          json,
+          'wdtt_lease_refresh_after_seconds',
+        ),
+        wdttMaxHashes: _readInt(json, 'wdtt_max_hashes'),
+        wdttAuthModes: _readStringSet(json, 'wdtt_auth_modes'),
+        wdttObfsModes: _readStringSet(json, 'wdtt_obfs_modes'),
         remotePolicyVersion: _readInt(json, 'remote_policy_version'),
         remoteSafeTopLevelFields: _readStringSet(
           json,
@@ -212,6 +246,17 @@ class LibboxCapabilities {
   final bool supportsCloseConnections;
   final bool supportsRealitySpiderX;
   final Set<String> tunStacks;
+  final bool supportsWdtt;
+  final bool supportsWdttCredentialBridge;
+  final bool supportsWdttHotRotation;
+  final int wdttMinWorkers;
+  final int wdttRecommendedWorkers;
+  final int wdttMaxWorkers;
+  final int wdttLeaseTtlSeconds;
+  final int wdttLeaseRefreshAfterSeconds;
+  final int wdttMaxHashes;
+  final Set<String> wdttAuthModes;
+  final Set<String> wdttObfsModes;
   final int remotePolicyVersion;
   final Set<String> remoteSafeTopLevelFields;
   final Set<String> remoteSafeOutboundTypes;
@@ -228,4 +273,19 @@ class LibboxCapabilities {
       hasVersionedContract &&
       remotePolicyVersion == supportedRemotePolicyVersion &&
       remoteSafeTopLevelFields.isNotEmpty;
+
+  bool get hasHydraWdttContract =>
+      hasVersionedContract &&
+      coreId == hydraCoreId &&
+      supportsWdtt &&
+      supportsWdttCredentialBridge &&
+      supportsWdttHotRotation &&
+      wdttMinWorkers == 9 &&
+      wdttRecommendedWorkers == 18 &&
+      wdttMaxWorkers == 36 &&
+      wdttLeaseTtlSeconds == 900 &&
+      wdttLeaseRefreshAfterSeconds == 600 &&
+      wdttMaxHashes == 4 &&
+      wdttAuthModes.containsAll(const {'auto', 'anonymous', 'account'}) &&
+      wdttObfsModes.containsAll(const {'audio', 'video'});
 }

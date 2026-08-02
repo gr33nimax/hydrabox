@@ -177,9 +177,9 @@ class SingboxConfigBuilder {
             !isValidProxyPassword(proxyPassword))) {
       throw StateError('Local proxy requires valid access credentials');
     }
-    final strictHydraBox =
-        activeSubscription?.sourceMetadata['format'] ==
-        'hydrabox.io/subscription/v1';
+    final strictHydraBox = HydraBoxSubscriptionParser.isSupportedSourceFormat(
+      activeSubscription?.sourceMetadata['format'],
+    );
     if (strictHydraBox) {
       if (activeSubscription?.sourceMetadata['trust_blocked'] == true) {
         throw StateError(
@@ -625,9 +625,9 @@ class SingboxConfigBuilder {
       return generated;
     }
 
-    final strictHydraBox =
-        activeSubscription?.sourceMetadata['format'] ==
-        'hydrabox.io/subscription/v1';
+    final strictHydraBox = HydraBoxSubscriptionParser.isSupportedSourceFormat(
+      activeSubscription?.sourceMetadata['format'],
+    );
     final merged = _cloneJsonMap(raw);
     if (strictHydraBox) {
       merged.remove('services');
@@ -879,9 +879,9 @@ class SingboxConfigBuilder {
   }
 
   Map<String, dynamic>? _readRawSingboxConfig() {
-    final strictHydraBox =
-        activeSubscription?.sourceMetadata['format'] ==
-        'hydrabox.io/subscription/v1';
+    final strictHydraBox = HydraBoxSubscriptionParser.isSupportedSourceFormat(
+      activeSubscription?.sourceMetadata['format'],
+    );
     try {
       final embedded = activeSubscription?.nativeConfig;
       if (strictHydraBox && embedded == null) {
@@ -1158,6 +1158,72 @@ class SingboxConfigBuilder {
       }
     }
 
+    if (capabilities.remotePolicyVersion == 2) {
+      const v2TopLevelFields = {r'$schema', 'outbounds', 'endpoints'};
+      const v2OutboundTypes = {
+        'socks',
+        'http',
+        'vmess',
+        'trojan',
+        'naive',
+        'shadowtls',
+        'vless',
+        'mieru',
+        'anytls',
+        'trusttunnel',
+        'hysteria',
+        'hysteria2',
+        'tuic',
+        'sudoku',
+        'snell',
+      };
+      const v2EndpointTypes = {'wireguard', 'wdtt'};
+      for (final rawKey in native.keys) {
+        final key = rawKey.toString();
+        if (!v2TopLevelFields.contains(key)) {
+          throw StateError(
+            'runtime.document.$key is not part of HydraBox remote policy v2',
+          );
+        }
+      }
+      validateTypedEntries(
+        native['outbounds'],
+        field: 'runtime.document.outbounds',
+        safeTypes: v2OutboundTypes,
+      );
+      validateTypedEntries(
+        native['endpoints'],
+        field: 'runtime.document.endpoints',
+        safeTypes: v2EndpointTypes,
+      );
+      _validateHydraBoxV1WireGuardResourceLimits(native);
+      _validateHydraBoxV1ReferenceGraph(native);
+
+      final endpoints = native['endpoints'];
+      final hasWdtt = endpoints is List &&
+          endpoints.whereType<Map>().any(
+            (endpoint) =>
+                endpoint['type']?.toString().trim().toLowerCase() == 'wdtt',
+          );
+      if (hasWdtt && !capabilities.hasHydraWdttContract) {
+        throw StateError(
+          'The installed HydraCore does not publish the required WDTT '
+          'contract (9/18/36 workers, 15-minute lease, hot rotation)',
+        );
+      }
+      try {
+        HydraBoxSubscriptionParser.validateWdttRuntimeBinding(
+          native,
+          activeSubscription?.wdttCredentials ?? const [],
+          sourceFormat: activeSubscription?.sourceMetadata['format'],
+        );
+      } on FormatException catch (error) {
+        throw StateError(
+          'HydraBox WDTT credential binding is invalid: ${error.message}',
+        );
+      }
+    }
+
     validateTypedEntries(
       native['outbounds'],
       field: 'runtime.document.outbounds',
@@ -1325,7 +1391,7 @@ class SingboxConfigBuilder {
           final child = rawEntry.value;
           if (folded == 'domain_resolver' && child != null) {
             throw StateError(
-              '$field.$key is not available in remote policy v1 because DNS '
+              '$field.$key is not available in this remote policy because DNS '
               'ownership remains local to HydraBox',
             );
           }
@@ -1376,7 +1442,7 @@ class SingboxConfigBuilder {
     for (final tag in entriesByTag.keys) {
       if (visit(tag)) {
         throw StateError(
-          'HydraBox remote policy v1 rejects cyclic outbound/endpoint detours',
+          'HydraBox remote policy rejects cyclic outbound/endpoint detours',
         );
       }
     }
