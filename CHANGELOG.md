@@ -1,5 +1,16 @@
 # HydraBox changelog
 
+## [0.3.0-beta.5]
+
+- Stabilized WDTT across Wi-Fi/mobile handoffs with a runtime-scoped worker
+  identity. Reconnecting a logical worker now replaces its stale DTLS channel
+  without consuming another quota slot.
+- Kept lease renewal and reconnection on the existing VK/WDTT control path, so
+  a mobile-network allowlist does not require ordinary Internet access or a
+  HydraBox subscription refresh.
+- Updated the pinned server runtime so access-state reloads preserve live lease
+  keys and worker accounting while revocation still terminates affected slots.
+
 ## [0.3.0-beta.4]
 
 - Established `hydrabox` as the canonical repository and public product name.
