@@ -29,6 +29,7 @@ import androidx.core.content.FileProvider
 import com.etonify.meow_client.singbox.MeowBoxService
 import com.etonify.meow_client.singbox.MeowDefaultNetworkMonitor
 import com.etonify.meow_client.singbox.MeowDiagnostics
+import com.etonify.meow_client.singbox.MeowForegroundNotification
 import com.etonify.meow_client.singbox.MeowLogSanitizer
 import com.etonify.meow_client.singbox.MeowProxyService
 import com.etonify.meow_client.singbox.MeowVpnPlatformInterface
@@ -36,6 +37,8 @@ import com.etonify.meow_client.singbox.MeowVpnService
 import com.etonify.meow_client.singbox.SingboxController
 import com.etonify.meow_client.generated.FlutterError as PigeonFlutterError
 import com.etonify.meow_client.generated.NetworkInterfaceStateMessage
+import com.etonify.meow_client.generated.PreconnectUrlTestRequestMessage
+import com.etonify.meow_client.generated.PreconnectUrlTestResultMessage
 import com.etonify.meow_client.generated.RuntimeFlagsMessage
 import com.etonify.meow_client.generated.SingboxHostApi
 import com.etonify.meow_client.generated.UrlTestRequestMessage
@@ -969,6 +972,16 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     private fun dispatchStartAfterConfigWrite(useVpn: Boolean, result: MethodChannel.Result) {
+        SingboxController.cancelPreconnectUrlTest("connect_requested") { cancellation ->
+            cancellation.onSuccess {
+                dispatchStartAfterPreconnectCleanup(useVpn, result)
+            }.onFailure {
+                result.error("preconnect_cleanup_failed", it.message, null)
+            }
+        }
+    }
+
+    private fun dispatchStartAfterPreconnectCleanup(useVpn: Boolean, result: MethodChannel.Result) {
         Log.i(TAG, "start requested useVpn=$useVpn running=${SingboxController.running} mode=${SingboxController.serviceMode}")
         SingboxController.log(
             "info",
@@ -1053,6 +1066,20 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     private fun dispatchApplyConfigAfterConfigWrite(
+        useVpn: Boolean,
+        restartCore: Boolean,
+        result: MethodChannel.Result,
+    ) {
+        SingboxController.cancelPreconnectUrlTest("config_changed") { cancellation ->
+            cancellation.onSuccess {
+                dispatchApplyConfigAfterPreconnectCleanup(useVpn, restartCore, result)
+            }.onFailure {
+                result.error("preconnect_cleanup_failed", it.message, null)
+            }
+        }
+    }
+
+    private fun dispatchApplyConfigAfterPreconnectCleanup(
         useVpn: Boolean,
         restartCore: Boolean,
         result: MethodChannel.Result,
@@ -1185,7 +1212,10 @@ class MainActivity : FlutterFragmentActivity() {
             } else {
                 batteryTemperatureTenths / 10.0
             },
-        )
+        ).apply {
+            putAll(SingboxController.performanceCounters())
+            put("notificationUpdateCount", MeowForegroundNotification.updateCount())
+        }
     }
 
     private fun runtimeStatusMap(): Map<String?, Any?> {
@@ -1605,6 +1635,41 @@ class MainActivity : FlutterFragmentActivity() {
                     }
                 }
 
+                override fun preconnectUrlTest(
+                    request: PreconnectUrlTestRequestMessage,
+                    callback: (Result<PreconnectUrlTestResultMessage>) -> Unit,
+                ) {
+                    SingboxController.preconnectUrlTest(
+                        config = request.config,
+                        groupTag = request.groupTag,
+                        targetOutboundTag = request.targetOutboundTag,
+                        url = request.url,
+                        timeoutMillis = request.timeoutMillis.toInt(),
+                        deadlineMillis = request.deadlineMillis.toInt(),
+                    ) { probeResult ->
+                        probeResult.onSuccess { value ->
+                            callback(
+                                Result.success(
+                                    PreconnectUrlTestResultMessage(
+                                        tag = value.tag,
+                                        delayMillis = value.delayMillis,
+                                        timeSeconds = value.timeSeconds,
+                                        status = value.status,
+                                        error = value.error,
+                                        errorCode = value.errorCode,
+                                    ),
+                                ),
+                            )
+                        }.onFailure {
+                            callback(errorResult("preconnect_urltest_failed", it.message))
+                        }
+                    }
+                }
+
+                override fun cancelPreconnectUrlTest(callback: (Result<Unit>) -> Unit) {
+                    SingboxController.cancelPreconnectUrlTest("flutter_request", callback)
+                }
+
                 override fun removeUrlTestOutbounds(
                     groupTag: String,
                     outboundTags: List<String?>,
@@ -1682,6 +1747,20 @@ class MainActivity : FlutterFragmentActivity() {
                         Result.success(
                             Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "",
                         ),
+                    )
+                }
+
+                override fun getHydraDeviceId(
+                    canonicalOrigin: String,
+                    callback: (Result<String>) -> Unit,
+                ) {
+                    callback(
+                        runCatching {
+                            HydraDeviceIdentity.forOrigin(
+                                applicationContext,
+                                canonicalOrigin,
+                            )
+                        },
                     )
                 }
 
@@ -2132,6 +2211,50 @@ class MainActivity : FlutterFragmentActivity() {
                     }
                 }
 
+                "preconnectUrlTest" -> {
+                    val config = call.argument<String>("config").orEmpty()
+                    val groupTag = call.argument<String>("groupTag").orEmpty()
+                    val targetOutboundTag = call.argument<String>("targetOutboundTag").orEmpty()
+                    if (config.isBlank() || groupTag.isBlank() || targetOutboundTag.isBlank()) {
+                        result.error(
+                            "invalid_preconnect_request",
+                            "Config, group tag and selected outbound are required",
+                            null,
+                        )
+                        return@setMethodCallHandler
+                    }
+                    SingboxController.preconnectUrlTest(
+                        config = config,
+                        groupTag = groupTag,
+                        targetOutboundTag = targetOutboundTag,
+                        url = call.argument<String>("url").orEmpty(),
+                        timeoutMillis = call.argument<Number>("timeoutMillis")?.toInt() ?: 5_000,
+                        deadlineMillis = call.argument<Number>("deadlineMillis")?.toInt() ?: 10_000,
+                    ) { probeResult ->
+                        probeResult.onSuccess { value ->
+                            result.success(
+                                mapOf(
+                                    "tag" to value.tag,
+                                    "delayMillis" to value.delayMillis,
+                                    "timeSeconds" to value.timeSeconds,
+                                    "status" to value.status,
+                                    "error" to value.error,
+                                    "errorCode" to value.errorCode,
+                                ),
+                            )
+                        }.onFailure {
+                            result.error("preconnect_urltest_failed", it.message, null)
+                        }
+                    }
+                }
+
+                "cancelPreconnectUrlTest" -> {
+                    SingboxController.cancelPreconnectUrlTest("flutter_method_channel") { cancellation ->
+                        cancellation.onSuccess { result.success(true) }
+                            .onFailure { result.error("preconnect_cleanup_failed", it.message, null) }
+                    }
+                }
+
                 "removeUrlTestOutbounds" -> {
                     val groupTag = call.argument<String>("groupTag")?.trim().orEmpty()
                     val outboundTags = call.argument<List<*>>("outboundTags").orEmpty()
@@ -2285,6 +2408,15 @@ class MainActivity : FlutterFragmentActivity() {
                     )
                 }
 
+                "getHydraDeviceId" -> {
+                    val canonicalOrigin = call.argument<String>("canonicalOrigin").orEmpty()
+                    runCatching {
+                        HydraDeviceIdentity.forOrigin(applicationContext, canonicalOrigin)
+                    }.onSuccess(result::success).onFailure { error ->
+                        result.error("hydra_device_id_failed", error.message, null)
+                    }
+                }
+
                 "getSubscriptionRequestDeviceInfo" -> {
                     val locale = resources.configuration.locales?.get(0)?.language
                         ?: java.util.Locale.getDefault().language
@@ -2345,6 +2477,11 @@ class MainActivity : FlutterFragmentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         dispatchImportDeepLink(intent)
+    }
+
+    override fun onStop() {
+        SingboxController.cancelPreconnectUrlTest("activity_stopped")
+        super.onStop()
     }
 
     override fun onDestroy() {

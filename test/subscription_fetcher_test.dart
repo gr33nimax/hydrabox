@@ -176,6 +176,53 @@ void main() {
       expect(redirected, {'User-Agent': 'Etonify/test', 'Accept': '*/*'});
     });
 
+    test('Hydra JWE request forces identity headers and strips raw HWID', () {
+      const hydraId = 'hbx1_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+      SubscriptionFetcher.configureAppVersion('0.3.0-beta.3');
+      final headers = SubscriptionFetcher.hydraRequestHeadersForTest(const {
+        'User-Agent': 'Spoofed/1',
+        'Accept': '*/*',
+        'X-HWID': 'raw-android-id',
+        'X-Hydra-HWID': 'spoofed',
+        'Authorization': 'Bearer provider-token',
+      }, hydraId);
+
+      expect(headers['User-Agent'], 'HydraBox/0.3.0-beta.3');
+      expect(headers['Accept'], 'application/jose+json');
+      expect(headers['X-Hydra-HWID'], hydraId);
+      expect(headers, isNot(contains('X-HWID')));
+      expect(headers['Authorization'], 'Bearer provider-token');
+    });
+
+    test('Hydra origin is canonical and excludes path and default port', () {
+      expect(
+        SubscriptionFetcher.canonicalHttpsOriginForTest(
+          Uri.parse('https://EXAMPLE.com:443/a/subscription?format=hydrabox'),
+        ),
+        'https://example.com',
+      );
+      expect(
+        SubscriptionFetcher.canonicalHttpsOriginForTest(
+          Uri.parse('https://example.com:9443/subscription'),
+        ),
+        'https://example.com:9443',
+      );
+    });
+
+    test('cross-origin redirect removes Hydra device identity', () {
+      final redirected =
+          SubscriptionFetcher.headersForCrossOriginRedirectForTest({
+            'User-Agent': 'HydraBox/0.3.0',
+            'Accept': 'application/jose+json',
+            'X-Hydra-HWID': 'hbx1_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+          });
+
+      expect(redirected, {
+        'User-Agent': 'HydraBox/0.3.0',
+        'Accept': 'application/jose+json',
+      });
+    });
+
     test('rejects secret query values over plain HTTP', () {
       expect(
         () => SubscriptionFetcher.validateRequestSecurityForTest(

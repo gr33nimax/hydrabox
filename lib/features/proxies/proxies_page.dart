@@ -301,6 +301,9 @@ class ProxiesPage extends StatefulWidget {
     required this.progressiveBlurEnabled,
     required this.onSelected,
     required this.onUrlTest,
+    this.onPreconnectUrlTest,
+    this.preconnectUrlTestInFlight = false,
+    this.preconnectUrlTestEnabled = false,
     this.outboundForTag,
     this.loadProxyChainTargetSources,
     this.loadProxyChainTargetsForSource,
@@ -339,6 +342,9 @@ class ProxiesPage extends StatefulWidget {
   final bool progressiveBlurEnabled;
   final ValueChanged<String> onSelected;
   final Future<void> Function() onUrlTest;
+  final Future<void> Function()? onPreconnectUrlTest;
+  final bool preconnectUrlTestInFlight;
+  final bool preconnectUrlTestEnabled;
   final Outbound? Function(String tag)? outboundForTag;
   final Future<List<AppProfileSummary>> Function()? loadProxyChainTargetSources;
   final Future<List<AppProxySummary>> Function(String subscriptionId)?
@@ -371,6 +377,8 @@ class ProxiesPage extends StatefulWidget {
 
 class _ProxiesPageState extends State<ProxiesPage> {
   late ProxySort _sort;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
   List<AppProxySummary> _visibleItems = const [];
   Timer? _runtimeResortTimer;
   ValueListenable<ProxyPanelMetrics>? _observedSheetMetrics;
@@ -430,6 +438,7 @@ class _ProxiesPageState extends State<ProxiesPage> {
   @override
   void dispose() {
     _runtimeResortTimer?.cancel();
+    _searchController.dispose();
     widget.runtimeStates?.revision.removeListener(_onRuntimeStatesChanged);
     _observedSheetMetrics?.removeListener(_onSheetMetricsChanged);
     super.dispose();
@@ -520,6 +529,9 @@ class _ProxiesPageState extends State<ProxiesPage> {
       if (parentTag != null && parentTag.isNotEmpty) {
         continue;
       }
+      if (!_matchesSearch(proxy)) {
+        continue;
+      }
       if (_isPinnedHeaderProxy(proxy)) {
         pinnedItems.add(proxy);
       } else if (shouldShowProxyForSort(
@@ -535,6 +547,25 @@ class _ProxiesPageState extends State<ProxiesPage> {
     _visibleItems = [...pinnedItems, ...visibleItems];
     _invalidateVisibleEntries();
     _visibleEntriesImpl();
+  }
+
+  bool _matchesSearch(AppProxySummary proxy) {
+    final query = _searchQuery;
+    if (query.isEmpty) return true;
+    return proxy.displayName.toLowerCase().contains(query) ||
+        proxy.tag.toLowerCase().contains(query) ||
+        proxy.server.toLowerCase().contains(query) ||
+        proxy.protocolLabel.toLowerCase().contains(query) ||
+        proxy.countryCode.toLowerCase().contains(query);
+  }
+
+  void _setSearchQuery(String value) {
+    final next = value.trim().toLowerCase();
+    if (next == _searchQuery) return;
+    setState(() {
+      _searchQuery = next;
+      _rebuildVisibleItems();
+    });
   }
 
   bool _isPinnedHeaderProxy(AppProxySummary proxy) =>
@@ -765,7 +796,7 @@ class _ProxiesPageState extends State<ProxiesPage> {
     }
 
     final topPadding = appSystemStatusBarInset(context);
-    final headerHeight = topPadding + kToolbarHeight;
+    final headerHeight = topPadding + kToolbarHeight + 68;
     final footerHeight = appBottomNavigationTotalHeight(context);
     final listTopPadding = widget.progressiveBlurEnabled
         ? headerHeight + 8
@@ -794,6 +825,31 @@ class _ProxiesPageState extends State<ProxiesPage> {
             icon: const Icon(FluentIcons.arrow_sort_24_regular),
           ),
         ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(68),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: SearchBar(
+              controller: _searchController,
+              hintText: MaterialLocalizations.of(context).searchFieldLabel,
+              leading: const Icon(FluentIcons.search_24_regular),
+              trailing: [
+                if (_searchQuery.isNotEmpty)
+                  IconButton(
+                    tooltip: MaterialLocalizations.of(
+                      context,
+                    ).deleteButtonTooltip,
+                    onPressed: () {
+                      _searchController.clear();
+                      _setSearchQuery('');
+                    },
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+              ],
+              onChanged: _setSearchQuery,
+            ),
+          ),
+        ),
       ),
       body: ColoredBox(
         color: theme.scaffoldBackgroundColor,
@@ -822,6 +878,37 @@ class _ProxiesPageState extends State<ProxiesPage> {
                   onPressed: () => widget.onUrlTest(),
                   tooltip: l10n.urlTestTitle,
                   child: const Icon(FluentIcons.flash_24_filled),
+                ),
+              ),
+            if (!widget.connected && widget.onPreconnectUrlTest != null)
+              Positioned(
+                right: 16,
+                bottom: footerHeight + 16,
+                child: FloatingActionButton.extended(
+                  key: const ValueKey('preconnect-urltest-action'),
+                  onPressed:
+                      widget.preconnectUrlTestEnabled &&
+                          !widget.preconnectUrlTestInFlight
+                      ? () => widget.onPreconnectUrlTest!()
+                      : null,
+                  tooltip: Localizations.localeOf(context).languageCode == 'ru'
+                      ? 'Проверить выбранный сервер'
+                      : 'Check selected server',
+                  icon: widget.preconnectUrlTestInFlight
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(FluentIcons.pulse_24_regular),
+                  label: Text(
+                    widget.preconnectUrlTestInFlight
+                        ? (Localizations.localeOf(context).languageCode == 'ru'
+                              ? 'Проверяем…'
+                              : 'Checking…')
+                        : (Localizations.localeOf(context).languageCode == 'ru'
+                              ? 'Проверить выбранный'
+                              : 'Check selected'),
+                  ),
                 ),
               ),
           ],

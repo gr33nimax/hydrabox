@@ -28,6 +28,7 @@ void main() {
           "core_version": "1.13.14-etonify",
           "upstream_project": "etonify-core",
           "supports_targeted_url_test": true,
+          "supports_preconnect_url_test": true,
           "supports_group_url_test_sessions": true,
           "supports_structured_probe_errors": true,
           "supports_outbound_external_info": true,
@@ -61,6 +62,7 @@ void main() {
       expect(capabilities.coreVersion, '1.13.14-etonify');
       expect(capabilities.upstreamProject, 'etonify-core');
       expect(capabilities.supportsTargetedUrlTest, isTrue);
+      expect(capabilities.supportsPreconnectUrlTest, isTrue);
       expect(capabilities.supportsGroupUrlTestSessions, isTrue);
       expect(capabilities.supportsStructuredProbeErrors, isTrue);
       expect(capabilities.supportsOutboundExternalInfo, isTrue);
@@ -95,6 +97,7 @@ void main() {
 
       expect(capabilities.hasVersionedContract, isTrue);
       expect(capabilities.supportsTargetedUrlTest, isFalse);
+      expect(capabilities.supportsPreconnectUrlTest, isFalse);
       expect(capabilities.supportsConfigCheck, isFalse);
       expect(capabilities.supportsRealitySpiderX, isFalse);
       expect(capabilities.tunStacks, isEmpty);

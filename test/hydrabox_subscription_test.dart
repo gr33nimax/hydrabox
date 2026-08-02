@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -369,25 +370,31 @@ void main() {
     );
   });
 
-  test('JWE output matches an independent AES-GCM interoperability vector', () {
-    const key = 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8';
-    const plaintext = '{"api_version":"hydrabox.io/subscription/v1"}';
-    const expected =
-        '{"protected":"eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2R0NNIiwidHlwIjoiaGJ4K2p3ZSIsImN0eSI6ImFwcGxpY2F0aW9uL3ZuZC5oeWRyYWJveC5zdWJzY3JpcHRpb24ranNvbiIsImtpZCI6ImludGVyb3AtMSJ9",'
-        '"iv":"AQIDBAUGBwgJCgsM",'
-        '"ciphertext":"fsg7pYXLhuM-0QoofjHQCio6hYz2Dz-9jzaWC-3DFLbnlvKvGtyD8Z_ai8e4",'
-        '"tag":"yrtx9yOYMab46V-9dqy3oQ"}';
-
-    expect(
-      HydraBoxJweCodec.encrypt(
-        plaintext,
-        encodedKey: key,
-        keyId: 'interop-1',
-        nonce: Uint8List.fromList(List<int>.generate(12, (index) => index + 1)),
-      ),
-      expected,
+  test('JWE output matches the shared HYDRA interoperability vector', () {
+    final vector = Map<String, dynamic>.from(
+      jsonDecode(File('test/fixtures/hydrabox-jwe-v1.json').readAsStringSync())
+          as Map,
     );
-    expect(HydraBoxJweCodec.decrypt(expected, encodedKey: key), plaintext);
+    final key = vector['key'] as String;
+    final plaintext = jsonEncode(vector['plaintext']);
+    final expected = Map<String, dynamic>.from(vector['jwe'] as Map);
+    final encrypted = HydraBoxJweCodec.encrypt(
+      plaintext,
+      encodedKey: key,
+      keyId: vector['kid'] as String,
+      nonce: Uint8List.fromList(
+        List<int>.generate(
+          12,
+          (index) => int.parse(
+            (vector['iv_hex'] as String).substring(index * 2, index * 2 + 2),
+            radix: 16,
+          ),
+        ),
+      ),
+    );
+
+    expect(jsonDecode(encrypted), expected);
+    expect(HydraBoxJweCodec.decrypt(encrypted, encodedKey: key), plaintext);
   });
 
   test('supplying an hbx-key rejects a plaintext subscription', () {

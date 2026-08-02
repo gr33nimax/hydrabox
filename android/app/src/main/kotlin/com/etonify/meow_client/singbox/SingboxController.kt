@@ -21,10 +21,20 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
 object SingboxController {
+    data class PreconnectURLTestResult(
+        val tag: String,
+        val delayMillis: Long,
+        val timeSeconds: Long,
+        val status: String,
+        val error: String,
+        val errorCode: String,
+    )
+
     private const val TAG = "MeowSingbox"
     private const val STATUS_EVENT_THROTTLE_MS = 1_000L
     private const val GROUPS_EVENT_THROTTLE_COOL_MS = 1_500L
@@ -56,8 +66,19 @@ object SingboxController {
     ).apply {
         allowCoreThreadTimeOut(true)
     }
+    private val preconnectExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "MeowPreconnectURLTest").apply { isDaemon = true }
+    }
+    private val preconnectCancelExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "MeowPreconnectCancel").apply { isDaemon = true }
+    }
+    private val preconnectLock = Any()
+    private val preconnectGeneration = AtomicLong(0L)
+    private var preconnectSession: io.nekohasekai.libbox.StandaloneURLTestSession? = null
     private val statusEventScheduled = AtomicBoolean(false)
     private val groupsEventScheduled = AtomicBoolean(false)
+    private val statusCallbackCount = AtomicLong(0L)
+    private val groupsCallbackCount = AtomicLong(0L)
     private val runtimeGeneration = AtomicLong(0)
     private val runtimeStartGeneration = AtomicLong(0)
     private val lastNoInterfaceReassertUptimeMs = AtomicLong(0L)
@@ -147,6 +168,7 @@ object SingboxController {
 
         override fun writeGroups(message: OutboundGroupIterator?) {
             if (message == null || !commandClientLifecycle.acceptsEvents(epoch)) return
+            groupsCallbackCount.incrementAndGet()
             val now = SystemClock.uptimeMillis()
             val groups = mutableListOf<Map<String, Any?>>()
             val selectedGroups = mutableListOf<String>()
@@ -264,6 +286,7 @@ object SingboxController {
 
         override fun writeStatus(message: StatusMessage?) {
             if (message == null || !commandClientLifecycle.acceptsEvents(epoch)) return
+            statusCallbackCount.incrementAndGet()
             uplink = message.uplink
             downlink = message.downlink
             uplinkTotal = message.uplinkTotal
@@ -430,6 +453,9 @@ object SingboxController {
         }
         if (running) {
             connectClient()
+        }
+        if (!value) {
+            cancelPreconnectUrlTest("app_background")
         }
     }
 
@@ -739,7 +765,9 @@ object SingboxController {
                     addCommand(Libbox.CommandGroup)
                     addCommand(Libbox.CommandLog)
                     addCommand(Libbox.CommandStatus)
-                    statusInterval = if (MeowApplication.performanceMode == "economy") 2_000L else 1_000L
+                    statusInterval = CommandStatusIntervalPolicy.intervalNanos(
+                        MeowApplication.performanceMode,
+                    )
                 }
                 client = Libbox.newCommandClient(createCommandClientHandler(epoch), options)
                 commandClient = client
@@ -775,6 +803,14 @@ object SingboxController {
             disconnectClientOnExecutor("async")
         }
     }
+
+    fun performanceCounters(): Map<String, Long> = linkedMapOf(
+        "commandStatusIntervalNanos" to CommandStatusIntervalPolicy.intervalNanos(
+            MeowApplication.performanceMode,
+        ),
+        "statusCallbackCount" to statusCallbackCount.get(),
+        "groupsCallbackCount" to groupsCallbackCount.get(),
+    )
 
     fun disconnectClientBlocking(timeoutMs: Long = 1_500L): Boolean {
         cancelCommandClientReconnect("blocking_disconnect")
@@ -935,6 +971,97 @@ object SingboxController {
         }
     }
 
+    fun preconnectUrlTest(
+        config: String,
+        groupTag: String,
+        targetOutboundTag: String,
+        url: String,
+        timeoutMillis: Int,
+        deadlineMillis: Int,
+        callback: (Result<PreconnectURLTestResult>) -> Unit,
+    ) {
+        val generation = preconnectGeneration.incrementAndGet()
+        log(
+            "info",
+            "preconnect URLTest requested group=$groupTag target=$targetOutboundTag " +
+                "timeoutMs=$timeoutMillis deadlineMs=$deadlineMillis",
+        )
+        preconnectExecutor.execute {
+            val result = runCatching {
+                check(!running) { "pre-connect URL test is unavailable while connected" }
+                check(config.isNotBlank()) { "pre-connect URL test config is empty" }
+                check(groupTag.isNotBlank() && targetOutboundTag.isNotBlank()) {
+                    "pre-connect URL test requires a selected concrete server"
+                }
+                MeowApplication.ensureLibboxSetup()
+                val session = Libbox.newStandaloneURLTestSession(
+                    MeowProxyPlatformInterface(MeowApplication.application),
+                )
+                synchronized(preconnectLock) {
+                    if (generation != preconnectGeneration.get()) {
+                        session.close()
+                        throw CancellationException("pre-connect URL test cancelled")
+                    }
+                    preconnectSession = session
+                }
+                try {
+                    val normalizedTimeout = timeoutMillis.coerceIn(500, 30_000)
+                    val normalizedDeadline = deadlineMillis.coerceIn(normalizedTimeout, 120_000)
+                    val nativeResult = session.run(
+                        config,
+                        groupTag.trim(),
+                        targetOutboundTag.trim(),
+                        url.trim(),
+                        normalizedTimeout,
+                        normalizedDeadline,
+                    )
+                    if (generation != preconnectGeneration.get()) {
+                        throw CancellationException("pre-connect URL test cancelled")
+                    }
+                    PreconnectURLTestResult(
+                        tag = nativeResult.tag,
+                        delayMillis = nativeResult.delayMillis,
+                        timeSeconds = nativeResult.timeSeconds,
+                        status = nativeResult.status,
+                        error = nativeResult.error,
+                        errorCode = nativeResult.errorCode,
+                    )
+                } finally {
+                    synchronized(preconnectLock) {
+                        if (preconnectSession === session) {
+                            preconnectSession = null
+                        }
+                    }
+                    session.close()
+                }
+            }
+            result.onFailure {
+                log(
+                    if (it is CancellationException) "debug" else "error",
+                    "preconnect URLTest failed target=$targetOutboundTag error=${it.message}",
+                )
+            }
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    fun cancelPreconnectUrlTest(
+        reason: String,
+        callback: ((Result<Unit>) -> Unit)? = null,
+    ) {
+        preconnectGeneration.incrementAndGet()
+        val session = synchronized(preconnectLock) { preconnectSession }
+        if (session == null) {
+            callback?.let { mainHandler.post { it(Result.success(Unit)) } }
+            return
+        }
+        preconnectCancelExecutor.execute {
+            val result = runCatching { session.close() }
+            log("debug", "preconnect URLTest cancelled reason=$reason cleaned=${result.isSuccess}")
+            callback?.let { completion -> mainHandler.post { completion(result.map { Unit }) } }
+        }
+    }
+
     fun removeUrlTestOutbounds(groupTag: String, outboundTags: List<String>, callback: (Result<Unit>) -> Unit) {
         log(
             "info",
@@ -983,6 +1110,7 @@ object SingboxController {
         interfaceIndex: Int,
         networkGeneration: Long,
     ) {
+        cancelPreconnectUrlTest("network_changed")
         emit(
             mapOf(
                 "type" to "network",

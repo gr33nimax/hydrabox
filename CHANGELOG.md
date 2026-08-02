@@ -10,6 +10,18 @@
   in the credits and third-party notice set.
 - Deferred WDTT and preserved its implementation history in `archive/wdtt`.
 
+## [0.3.0-beta.3]
+
+- Fixed the Android status polling unit mismatch that could drive idle CPU and
+  battery usage, and added native callback/notification performance counters.
+- Added a cancellable, selected-server pre-connect URLTest session with no TUN
+  or local inbounds.
+- Added origin-scoped Android Hydra device IDs and strict JWE subscription
+  transport headers with cross-origin redirect stripping.
+- Replaced the proxy drawer with persistent Home, Servers, and More navigation,
+  refreshed the Material 3 visual system, and regenerated platform icons from
+  the canonical dotted green hydra.
+
 ## [0.3.0-beta.2]
 
 - Added HydraBox Subscription v1 with authenticated JWE transport, explicit

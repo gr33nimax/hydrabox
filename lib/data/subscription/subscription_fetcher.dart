@@ -91,7 +91,10 @@ class SubscriptionFetcher {
     _logFetchStart(uri, requestInfo);
 
     try {
-      final headers = await _requestHeaders(requestInfo);
+      final headers = await _requestHeaders(
+        requestInfo,
+        hydraOrigin: decryptionKey == null ? null : _canonicalHttpsOrigin(uri),
+      );
       _validateRequestSecurity(uri, headers);
       if (Platform.isAndroid) {
         try {
@@ -182,9 +185,16 @@ class SubscriptionFetcher {
   }
 
   static Future<Map<String, String>> _requestHeaders(
-    SubscriptionInfo? requestInfo,
-  ) async {
+    SubscriptionInfo? requestInfo, {
+    String? hydraOrigin,
+  }) async {
     final customHeaders = _parseCustomHeaders(requestInfo?.customRequestHeader);
+    if (hydraOrigin != null) {
+      final hydraHwid = await SingboxRuntime.instance.getHydraDeviceId(
+        hydraOrigin,
+      );
+      return _hydraRequestHeaders(customHeaders, hydraHwid);
+    }
     final headers = <String, String>{
       'User-Agent': requestInfo?.customUserAgent?.trim().isNotEmpty == true
           ? requestInfo!.customUserAgent!.trim()
@@ -201,6 +211,38 @@ class SubscriptionFetcher {
       }
     }
     return headers;
+  }
+
+  static Map<String, String> _hydraRequestHeaders(
+    Map<String, String> customHeaders,
+    String hydraHwid,
+  ) => <String, String>{
+    for (final entry in customHeaders.entries)
+      if (!_isHydraIdentityHeader(entry.key)) entry.key: entry.value,
+    'User-Agent': defaultUserAgent,
+    'Accept': _joseJsonMediaType,
+    'X-Hydra-HWID': hydraHwid,
+  };
+
+  static bool _isHydraIdentityHeader(String name) => const {
+    'user-agent',
+    'accept',
+    'x-hydra-hwid',
+    'x-hwid',
+    'x-device-id',
+    'x-client-id',
+    'x-installation-id',
+  }.contains(name.trim().toLowerCase());
+
+  static String _canonicalHttpsOrigin(Uri uri) {
+    if (uri.scheme.toLowerCase() != 'https' || uri.host.isEmpty) {
+      throw HttpException('HydraBox subscriptions require HTTPS', uri: uri);
+    }
+    return Uri(
+      scheme: 'https',
+      host: uri.host.toLowerCase(),
+      port: uri.port == 443 ? null : uri.port,
+    ).toString();
   }
 
   static Future<HttpClientResponse> _openWithSafeRedirects(
@@ -342,6 +384,16 @@ class SubscriptionFetcher {
   static Map<String, String> headersForCrossOriginRedirectForTest(
     Map<String, String> headers,
   ) => _headersForCrossOriginRedirect(headers);
+
+  @visibleForTesting
+  static Map<String, String> hydraRequestHeadersForTest(
+    Map<String, String> customHeaders,
+    String hydraHwid,
+  ) => _hydraRequestHeaders(customHeaders, hydraHwid);
+
+  @visibleForTesting
+  static String canonicalHttpsOriginForTest(Uri uri) =>
+      _canonicalHttpsOrigin(uri);
 
   static Future<FetchResult> _buildResult({
     required String url,

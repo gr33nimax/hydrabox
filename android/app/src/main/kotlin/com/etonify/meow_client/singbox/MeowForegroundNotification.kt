@@ -14,6 +14,7 @@ import android.os.Looper
 import android.os.SystemClock
 import com.etonify.meow_client.MainActivity
 import com.etonify.meow_client.R
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.max
 
 /**
@@ -56,6 +57,9 @@ internal class MeowForegroundNotification(
         private const val PREF_URLTEST_TIMEOUT = "urltest_timeout"
         private const val PREF_URLTEST_CONCURRENCY = "urltest_concurrency"
         private const val PREF_URLTEST_DEADLINE = "urltest_deadline"
+        private val notificationUpdateCount = AtomicLong(0L)
+
+        fun updateCount(): Long = notificationUpdateCount.get()
     }
 
     private data class UrlTestRequest(
@@ -423,6 +427,7 @@ internal class MeowForegroundNotification(
             synchronized(this) {
                 if (foregroundStarted) {
                     notificationManager.notify(notificationId, buildNotification())
+                    notificationUpdateCount.incrementAndGet()
                 }
             }
         }

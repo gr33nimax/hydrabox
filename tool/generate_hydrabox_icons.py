@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Generate platform launcher icons from the canonical HydraBox logo.
+"""Generate platform launcher icons from the canonical HydraBox hydra mark.
 
-The script does not redraw the mark. It only resizes the checked-in master PNG
-and adds a white safety field for icon formats that apply their own mask.
+The script does not redraw the mark. It only resizes the checked-in transparent
+master and adds a calm safety field for icon formats that require an opaque icon.
 Pillow is needed only when regenerating artwork.
 """
 
@@ -15,15 +15,30 @@ from PIL import Image
 
 
 ROOT = Path(__file__).resolve().parents[1]
-MASTER_ASSET = ROOT / "assets" / "branding" / "hydrabox-logo.png"
+MASTER_ASSET = ROOT / "assets" / "branding" / "hydrabox-mark.png"
+BACKGROUND = (246, 249, 246)
 
 
 def resized(master: Image.Image, size: int, *, scale: float = 1.0) -> Image.Image:
     draw_size = round(size * scale)
     artwork = master.resize((draw_size, draw_size), Image.Resampling.LANCZOS)
-    image = Image.new("RGB", (size, size), "white")
+    image = Image.new("RGB", (size, size), BACKGROUND)
     offset = (size - draw_size) // 2
-    image.paste(artwork, (offset, offset))
+    image.paste(artwork, (offset, offset), artwork)
+    return image
+
+
+def transparent_resized(
+    master: Image.Image,
+    size: int,
+    *,
+    scale: float = 1.0,
+) -> Image.Image:
+    draw_size = round(size * scale)
+    artwork = master.resize((draw_size, draw_size), Image.Resampling.LANCZOS)
+    image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    offset = (size - draw_size) // 2
+    image.alpha_composite(artwork, (offset, offset))
     return image
 
 
@@ -60,21 +75,15 @@ def generate_asset_catalog(master: Image.Image, catalog: Path) -> None:
 
 
 def write_monochrome(master: Image.Image, destination: Path, size: int) -> None:
-    source = master.resize((size, size), Image.Resampling.LANCZOS).convert("RGB")
-    alpha = [
-        min(255, max(0, (green - max(red, blue)) * 4))
-        for red, green, blue in source.getdata()
-    ]
-    image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    alpha_image = Image.new("L", (size, size))
-    alpha_image.putdata(alpha)
-    image.putalpha(alpha_image)
+    source = transparent_resized(master, size)
+    image = Image.new("RGBA", (size, size), (255, 255, 255, 0))
+    image.putalpha(source.getchannel("A"))
     destination.parent.mkdir(parents=True, exist_ok=True)
     image.save(destination, format="PNG", optimize=True)
 
 
 def main() -> None:
-    master = Image.open(MASTER_ASSET).convert("RGB")
+    master = Image.open(MASTER_ASSET).convert("RGBA")
 
     android_res = ROOT / "android" / "app" / "src" / "main" / "res"
     for density, pixels in {
@@ -87,7 +96,11 @@ def main() -> None:
         write_png(master, android_res / f"mipmap-{density}" / "ic_launcher.png", pixels)
 
     drawable = android_res / "drawable-nodpi"
-    write_png(master, drawable / "hydrabox_launcher_foreground.png", 640)
+    transparent_resized(master, 640).save(
+        drawable / "hydrabox_launcher_foreground.png",
+        format="PNG",
+        optimize=True,
+    )
     write_monochrome(master, drawable / "hydrabox_launcher_monochrome.png", 640)
 
     web = ROOT / "web"

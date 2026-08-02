@@ -469,6 +469,7 @@ class HydraBoxSubscriptionParser {
         if (defaultProfileId != null && defaultProfileId.isNotEmpty)
           'default_profile_id': defaultProfileId,
         'encrypted': encrypted,
+        'device_binding': encrypted,
         'key_id': ?keyId,
         'payload_sha256': sha256.convert(utf8.encode(plaintext)).toString(),
         if (document['extensions'] is Map)

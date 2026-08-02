@@ -40,7 +40,7 @@ class AppVersionInfo {
 
   String get displayVersion {
     final normalized = versionName.trim();
-    return normalized.isEmpty ? '0.3.0-beta.2' : normalized;
+    return normalized.isEmpty ? '0.3.0-beta.3' : normalized;
   }
 
   int get updateBuildNumber => normalizeSplitApkVersionCode(versionCode);
@@ -83,6 +83,26 @@ class NetworkInterfaceSnapshot {
 
   bool get usable =>
       available && interfaceName.trim().isNotEmpty && interfaceIndex >= 0;
+}
+
+class PreconnectUrlTestResult {
+  const PreconnectUrlTestResult({
+    required this.tag,
+    required this.delayMillis,
+    required this.timeSeconds,
+    required this.status,
+    required this.error,
+    required this.errorCode,
+  });
+
+  final String tag;
+  final int delayMillis;
+  final int timeSeconds;
+  final String status;
+  final String error;
+  final String errorCode;
+
+  bool get available => status == 'available' && delayMillis > 0;
 }
 
 class SingboxRuntime {
@@ -477,6 +497,81 @@ class SingboxRuntime {
     );
   }
 
+  Future<PreconnectUrlTestResult> preconnectUrlTest({
+    required String config,
+    required String groupTag,
+    required String targetOutboundTag,
+    String url = '',
+    int timeoutMillis = 5000,
+    int deadlineMillis = 10000,
+  }) async {
+    if (!Platform.isAndroid) {
+      throw UnsupportedError('Pre-connect URLTest is Android-only.');
+    }
+    final normalizedGroup = groupTag.trim();
+    final normalizedTarget = targetOutboundTag.trim();
+    if (config.trim().isEmpty ||
+        normalizedGroup.isEmpty ||
+        normalizedTarget.isEmpty) {
+      throw ArgumentError(
+        'Config, group tag and a concrete selected outbound are required.',
+      );
+    }
+    return _withMethodChannelFallback(
+      () async {
+        final value = await _hostApi.preconnectUrlTest(
+          pigeon.PreconnectUrlTestRequestMessage(
+            config: config,
+            groupTag: normalizedGroup,
+            targetOutboundTag: normalizedTarget,
+            url: url.trim(),
+            timeoutMillis: timeoutMillis,
+            deadlineMillis: deadlineMillis,
+          ),
+        );
+        return PreconnectUrlTestResult(
+          tag: value.tag,
+          delayMillis: value.delayMillis,
+          timeSeconds: value.timeSeconds,
+          status: value.status,
+          error: value.error,
+          errorCode: value.errorCode,
+        );
+      },
+      () async {
+        final value =
+            await _methods.invokeMapMethod<String, dynamic>(
+              'preconnectUrlTest',
+              <String, Object?>{
+                'config': config,
+                'groupTag': normalizedGroup,
+                'targetOutboundTag': normalizedTarget,
+                'url': url.trim(),
+                'timeoutMillis': timeoutMillis,
+                'deadlineMillis': deadlineMillis,
+              },
+            ) ??
+            const <String, dynamic>{};
+        return PreconnectUrlTestResult(
+          tag: value['tag']?.toString() ?? normalizedTarget,
+          delayMillis: (value['delayMillis'] as num?)?.toInt() ?? 0,
+          timeSeconds: (value['timeSeconds'] as num?)?.toInt() ?? 0,
+          status: value['status']?.toString() ?? 'unavailable',
+          error: value['error']?.toString() ?? '',
+          errorCode: value['errorCode']?.toString() ?? '',
+        );
+      },
+    );
+  }
+
+  Future<void> cancelPreconnectUrlTest() {
+    if (!Platform.isAndroid) return Future<void>.value();
+    return _withMethodChannelFallback(
+      () => _hostApi.cancelPreconnectUrlTest(),
+      () => _methods.invokeMethod<void>('cancelPreconnectUrlTest'),
+    );
+  }
+
   Future<void> removeUrlTestOutbounds({
     required String groupTag,
     required Iterable<String> outboundTags,
@@ -691,6 +786,23 @@ class SingboxRuntime {
       () => _methods.invokeMethod<String>('getAndroidId'),
     );
     return value ?? '';
+  }
+
+  Future<String> getHydraDeviceId(String canonicalOrigin) async {
+    if (!Platform.isAndroid) {
+      throw UnsupportedError('Hydra device identity is Android-only.');
+    }
+    final value = await _withMethodChannelFallback<String?>(
+      () => _hostApi.getHydraDeviceId(canonicalOrigin),
+      () => _methods.invokeMethod<String>('getHydraDeviceId', <String, Object?>{
+        'canonicalOrigin': canonicalOrigin,
+      }),
+    );
+    final normalized = value?.trim() ?? '';
+    if (!RegExp(r'^hbx1_[A-Za-z0-9_-]{43}$').hasMatch(normalized)) {
+      throw StateError('Android returned an invalid Hydra device identity.');
+    }
+    return normalized;
   }
 
   Future<Map<String, dynamic>> getSubscriptionRequestDeviceInfo() async {

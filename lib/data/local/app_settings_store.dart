@@ -198,7 +198,7 @@ class AppSettingsState {
   final String proxySort;
   final String localeCode;
   final AppThemePreference themePreference;
-  final String accentColorHex; // e.g. "2D5BFF" or "default"
+  final String accentColorHex; // e.g. "2D5BFF", "dynamic" or brand "default"
   final bool hapticEnabled;
   final bool statusNotificationEnabled;
   final NotificationTrafficDisplayMode notificationTrafficDisplayMode;

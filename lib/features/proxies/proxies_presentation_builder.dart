@@ -66,6 +66,9 @@ class ProxiesPresentationCallbacks {
     required this.removeProxyChain,
     required this.isProxyChainTag,
     required this.changeHideActiveProxyIp,
+    required this.runPreconnectUrlTest,
+    required this.preconnectUrlTestInFlight,
+    required this.preconnectUrlTestEnabled,
   });
 
   final ValueChanged<ProxySort> changeSort;
@@ -83,6 +86,9 @@ class ProxiesPresentationCallbacks {
   final Future<void> Function(String chainTag) removeProxyChain;
   final bool Function(String tag) isProxyChainTag;
   final ValueChanged<bool> changeHideActiveProxyIp;
+  final Future<void> Function() runPreconnectUrlTest;
+  final bool preconnectUrlTestInFlight;
+  final bool preconnectUrlTestEnabled;
 }
 
 class ProxiesPresentationBuilder {
@@ -137,6 +143,40 @@ class ProxiesPresentationBuilder {
       expandedHeaderExtent: 1,
       sheetCornerRadius: proxyPanelScreenCornerRadius,
       onHeaderTap: panelGestures.onHeaderTap,
+    );
+  }
+
+  Widget buildStandalone() {
+    return ProxiesPage(
+      proxies: data.proxies,
+      groupChildrenByTag: data.groupChildrenByTag,
+      selectedTag: data.selectedTag,
+      activeProxy: data.activeProxy,
+      activeProxyHideIp: data.hideActiveProxyIp,
+      connected: data.connected,
+      hapticEnabled: data.hapticEnabled,
+      speedBytesPerSecond: data.speedBytesPerSecond,
+      trafficBytes: data.trafficBytes,
+      trafficListenable: data.trafficListenable,
+      initialSort: data.initialSort,
+      onSortChanged: callbacks.changeSort,
+      progressiveBlurEnabled: data.progressiveBlurEnabled,
+      onSelected: callbacks.selectProxy,
+      onUrlTest: callbacks.runUrlTest,
+      onPreconnectUrlTest: callbacks.runPreconnectUrlTest,
+      preconnectUrlTestInFlight: callbacks.preconnectUrlTestInFlight,
+      preconnectUrlTestEnabled: callbacks.preconnectUrlTestEnabled,
+      onActiveProxyIpRefresh: callbacks.refreshActiveProxyIp,
+      outboundForTag: callbacks.outboundForTag,
+      loadProxyChainTargetSources: callbacks.loadProxyChainTargetSources,
+      loadProxyChainTargetsForSource: callbacks.loadProxyChainTargetsForSource,
+      onAddProxyChain: callbacks.addProxyChain,
+      onChangeProxyChainDetour: callbacks.changeProxyChainDetour,
+      onRenameProxyChain: callbacks.renameProxyChain,
+      onRemoveProxyChain: callbacks.removeProxyChain,
+      isProxyChainTag: callbacks.isProxyChainTag,
+      onActiveProxyHideIpChanged: callbacks.changeHideActiveProxyIp,
+      runtimeStates: data.runtimeStates,
     );
   }
 }

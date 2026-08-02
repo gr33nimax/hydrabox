@@ -18,10 +18,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeTab => 'Home';
 
   @override
-  String get proxiesTab => 'Proxies';
+  String get proxiesTab => 'Servers';
 
   @override
-  String get proxiesTitle => 'Proxies';
+  String get proxiesTitle => 'Servers';
 
   @override
   String get proxySwitching => 'Switching';
@@ -228,7 +228,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get legalPrivacyBody =>
-      '# HydraBox Privacy Policy\n\n## Summary\n\nHydraBox has **no advertising, analytics SDKs, or hidden tracking**. HydraBox maintainers do not sell user data or automatically receive your VPN keys.\n\n## Data stored on the device\n\nSubscriptions, profiles, selected servers, settings, diagnostic logs, and downloaded rule files are stored locally. Backups and exports may contain access keys, so keep them private.\n\n## Network requests\n\n- Subscription imports and refreshes contact the address supplied by the user. That server can see normal request information, including the IP address.\n- Client and routing-rule update checks contact GitHub and the sources named in the interface.\n- HWID is sent to a subscription service only for profiles where the user enables it.\n\n## Android permissions\n\n- **VPN service** creates the system VPN tunnel.\n- **QUERY_ALL_PACKAGES** is used only to display installed apps for split tunneling. The app list is not sent to HydraBox maintainers.\n- **Camera** is used only to scan QR codes.\n- **Notifications** display VPN service state.\n- **APK installation** is used only for user-approved updates. Android shows a separate system confirmation.\n\n## Logs and messages\n\nLogs are stored locally until the user exports or sends them. Review exported files before sharing publicly. HydraBox has no built-in maintainer messaging channel.';
+      '# HydraBox Privacy Policy\n\n## Summary\n\nHydraBox has **no advertising, analytics SDKs, or hidden tracking**. HydraBox maintainers do not sell user data or automatically receive your VPN keys.\n\n## Data stored on the device\n\nSubscriptions, profiles, selected servers, settings, diagnostic logs, and downloaded rule files are stored locally. Backups and exports may contain access keys, so keep them private.\n\n## Network requests\n\n- Subscription imports and refreshes contact the address supplied by the user. That server can see normal request information, including the IP address.\n- Client and routing-rule update checks contact GitHub and the sources named in the interface.\n- An HTTPS HydraBox JWE link automatically sends its provider an origin-scoped pseudonymous device ID. It is derived on Android without exposing the raw Android ID to Flutter, differs between providers, and is stripped on cross-origin redirects. Ordinary third-party subscriptions send an HWID only when the user enables that profile option.\n\n## Android permissions\n\n- **VPN service** creates the system VPN tunnel.\n- **QUERY_ALL_PACKAGES** is used only to display installed apps for split tunneling. The app list is not sent to HydraBox maintainers.\n- **Camera** is used only to scan QR codes.\n- **Notifications** display VPN service state.\n- **APK installation** is used only for user-approved updates. Android shows a separate system confirmation.\n\n## Logs and messages\n\nLogs are stored locally until the user exports or sends them. Review exported files before sharing publicly. HydraBox has no built-in maintainer messaging channel.';
 
   @override
   String get coreVersionLabel => 'Core version';

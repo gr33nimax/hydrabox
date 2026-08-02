@@ -119,13 +119,13 @@ abstract class AppLocalizations {
   /// No description provided for @proxiesTab.
   ///
   /// In en, this message translates to:
-  /// **'Proxies'**
+  /// **'Servers'**
   String get proxiesTab;
 
   /// No description provided for @proxiesTitle.
   ///
   /// In en, this message translates to:
-  /// **'Proxies'**
+  /// **'Servers'**
   String get proxiesTitle;
 
   /// No description provided for @proxySwitching.
@@ -440,7 +440,6 @@ abstract class AppLocalizations {
   /// **'core source code'**
   String get aboutCoreSourceLabel;
 
-
   /// No description provided for @legalTermsTitle.
   ///
   /// In en, this message translates to:
@@ -495,7 +494,6 @@ abstract class AppLocalizations {
   /// **'I have read it'**
   String get legalDocumentReadAction;
 
-
   /// No description provided for @legalImportBlockedMessage.
   ///
   /// In en, this message translates to:
@@ -505,13 +503,13 @@ abstract class AppLocalizations {
   /// No description provided for @legalTermsBody.
   ///
   /// In en, this message translates to:
-  /// **'# HydraBox Terms of Use\n\nHydraBox is an Android VPN client that does not sell or provide VPN servers. Support and security contacts are published in the project repository.'**
+  /// **'# HydraBox Terms of Use\n\n## What the app does\n\nHydraBox is an Android VPN client. **It does not sell or provide VPN servers:** users add subscriptions, profiles, and servers from third-party providers.\n\n## User responsibility\n\nUse HydraBox according to applicable law and service rules. Do not use it for attacks, fraud, malware, harassment, or other illegal activity.\n\n- You are responsible for added profiles and access keys.\n- Third-party providers determine their own service terms.\n- HydraBox maintainers do not control subscription content or third-party server traffic.\n\n## Operation and updates\n\nHydraBox is provided **as is**. We improve reliability and security, but cannot guarantee every server, route, DNS resolver, carrier, or modified Android firmware. Updates are installed only after user action and Android system confirmation.\n\n## Support\n\nHydraBox support and security contacts are published in the project repository.\n\nBy continuing, you confirm that you have read these terms and accept responsibility for using the app.'**
   String get legalTermsBody;
 
   /// No description provided for @legalPrivacyBody.
   ///
   /// In en, this message translates to:
-  /// **'# HydraBox Privacy Policy\n\nHydraBox has no advertising, analytics SDKs, or hidden tracking. Logs remain local until the user exports them.'**
+  /// **'# HydraBox Privacy Policy\n\n## Summary\n\nHydraBox has **no advertising, analytics SDKs, or hidden tracking**. HydraBox maintainers do not sell user data or automatically receive your VPN keys.\n\n## Data stored on the device\n\nSubscriptions, profiles, selected servers, settings, diagnostic logs, and downloaded rule files are stored locally. Backups and exports may contain access keys, so keep them private.\n\n## Network requests\n\n- Subscription imports and refreshes contact the address supplied by the user. That server can see normal request information, including the IP address.\n- Client and routing-rule update checks contact GitHub and the sources named in the interface.\n- An HTTPS HydraBox JWE link automatically sends its provider an origin-scoped pseudonymous device ID. It is derived on Android without exposing the raw Android ID to Flutter, differs between providers, and is stripped on cross-origin redirects. Ordinary third-party subscriptions send an HWID only when the user enables that profile option.\n\n## Android permissions\n\n- **VPN service** creates the system VPN tunnel.\n- **QUERY_ALL_PACKAGES** is used only to display installed apps for split tunneling. The app list is not sent to HydraBox maintainers.\n- **Camera** is used only to scan QR codes.\n- **Notifications** display VPN service state.\n- **APK installation** is used only for user-approved updates. Android shows a separate system confirmation.\n\n## Logs and messages\n\nLogs are stored locally until the user exports or sends them. Review exported files before sharing publicly. HydraBox has no built-in maintainer messaging channel.'**
   String get legalPrivacyBody;
 
   /// No description provided for @coreVersionLabel.

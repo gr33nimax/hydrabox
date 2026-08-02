@@ -772,6 +772,7 @@ Map<String, dynamic> _sourceMetadataSummary(Map<String, dynamic> source) {
     'expires_at',
     'default_profile_id',
     'encrypted',
+    'device_binding',
     'key_id',
     'payload_sha256',
     'trust_blocked',

@@ -22,7 +22,7 @@ void main() {
         store: MemoryAppSettingsStore(
           const AppSettingsState(
             onboardingCompleted: true,
-            acceptedLegalVersion: '0.2.1',
+            acceptedLegalVersion: '0.3.0',
             acceptedLegalAtMillis: 1,
             activeProfileId: '',
             selectedProxyTag: '',
@@ -73,7 +73,10 @@ void main() {
     expect(find.text('HydraBox'), findsOneWidget);
     expect(find.text('MeowVPN'), findsNothing);
     expect(find.text('No subscriptions yet'), findsOneWidget);
-    expect(find.byIcon(Icons.settings_rounded), findsOneWidget);
+    expect(find.byKey(const ValueKey('main-navigation-shell')), findsOneWidget);
+    expect(find.text('Home'), findsOneWidget);
+    expect(find.text('Servers'), findsOneWidget);
+    expect(find.text('More'), findsOneWidget);
   });
 
   testWidgets('welcome uses HydraBox before onboarding is completed', (
@@ -135,13 +138,15 @@ void main() {
     expect(find.byIcon(Icons.settings_rounded), findsNothing);
   });
 
-  testWidgets('opens settings page from home header', (tester) async {
+  testWidgets('opens settings from the More navigation destination', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       MeowClient(
         store: MemoryAppSettingsStore(
           const AppSettingsState(
             onboardingCompleted: true,
-            acceptedLegalVersion: '0.2.1',
+            acceptedLegalVersion: '0.3.0',
             acceptedLegalAtMillis: 1,
             activeProfileId: '',
             selectedProxyTag: '',
@@ -189,7 +194,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byIcon(Icons.settings_rounded));
+    await tester.tap(find.text('More'));
     await tester.pumpAndSettle();
 
     expect(find.text('Settings'), findsOneWidget);
@@ -370,10 +375,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(panelProgress, greaterThan(.95));
-    expect(find.text('Proxies'), findsOneWidget);
+    expect(find.text('Servers'), findsOneWidget);
     expect(find.text('Paris'), findsOneWidget);
 
-    await tester.drag(find.text('Proxies'), const Offset(0, 80));
+    await tester.drag(find.text('Servers'), const Offset(0, 80));
     await tester.pumpAndSettle();
 
     expect(panelProgress, closeTo(0, .01));
@@ -600,15 +605,15 @@ void main() {
     await pumpAt(.20);
     expect(find.text('Active Poland'), findsOneWidget);
     expect(opacityFor('Active Poland'), greaterThan(0));
-    expect(opacityFor('Proxies'), 0);
+    expect(opacityFor('Servers'), 0);
 
     await pumpAt(.42);
     expect(opacityFor('Active Poland'), 0);
-    expect(opacityFor('Proxies'), 0);
+    expect(opacityFor('Servers'), 0);
 
     await pumpAt(.70);
     expect(opacityFor('Active Poland'), 0);
-    expect(opacityFor('Proxies'), greaterThan(0));
+    expect(opacityFor('Servers'), greaterThan(0));
   });
 
   testWidgets('closed proxy panel does not build proxy rows', (tester) async {
@@ -1015,6 +1020,46 @@ void main() {
     expect(find.text(l10n.noProxies), findsOneWidget);
     expect(find.text('No subscriptions yet'), findsNothing);
   });
+
+  testWidgets(
+    'pre-connect test is selected-only and does not imply VPN state',
+    (tester) async {
+      var probeCount = 0;
+      Future<void> pump({required bool enabled, bool checking = false}) {
+        return tester.pumpWidget(
+          MaterialApp(
+            supportedLocales: AppLocalizations.supportedLocales,
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            home: ProxiesPage(
+              proxies: <AppProxySummary>[_proxy('proxy-1', 'Amsterdam')],
+              selectedTag: enabled ? 'proxy-1' : '',
+              connected: false,
+              progressiveBlurEnabled: false,
+              onSelected: (_) {},
+              onUrlTest: () async {},
+              onPreconnectUrlTest: () async => probeCount++,
+              preconnectUrlTestEnabled: enabled,
+              preconnectUrlTestInFlight: checking,
+            ),
+          ),
+        );
+      }
+
+      await pump(enabled: false);
+      await tester.tap(find.byKey(const ValueKey('preconnect-urltest-action')));
+      expect(probeCount, 0);
+      expect(find.text('Check selected'), findsOneWidget);
+
+      await pump(enabled: true);
+      await tester.tap(find.byKey(const ValueKey('preconnect-urltest-action')));
+      await tester.pump();
+      expect(probeCount, 1);
+
+      await pump(enabled: false, checking: true);
+      expect(find.text('Checking…'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    },
+  );
 
   testWidgets('active proxy delay indicator keeps visual ping tap target', (
     tester,

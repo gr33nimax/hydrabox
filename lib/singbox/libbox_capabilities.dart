@@ -11,6 +11,7 @@ class LibboxCapabilities {
     required this.coreVersion,
     this.upstreamProject = '',
     required this.supportsTargetedUrlTest,
+    this.supportsPreconnectUrlTest = false,
     required this.supportsGroupUrlTestSessions,
     required this.supportsStructuredProbeErrors,
     required this.supportsOutboundExternalInfo,
@@ -94,6 +95,10 @@ class LibboxCapabilities {
         coreVersion: _readString(json, 'core_version'),
         upstreamProject: _readString(json, 'upstream_project'),
         supportsTargetedUrlTest: _readBool(json, 'supports_targeted_url_test'),
+        supportsPreconnectUrlTest: _readBool(
+          json,
+          'supports_preconnect_url_test',
+        ),
         supportsGroupUrlTestSessions: _readBool(
           json,
           'supports_group_url_test_sessions',
@@ -190,6 +195,7 @@ class LibboxCapabilities {
   final String coreVersion;
   final String upstreamProject;
   final bool supportsTargetedUrlTest;
+  final bool supportsPreconnectUrlTest;
   final bool supportsGroupUrlTestSessions;
   final bool supportsStructuredProbeErrors;
   final bool supportsOutboundExternalInfo;

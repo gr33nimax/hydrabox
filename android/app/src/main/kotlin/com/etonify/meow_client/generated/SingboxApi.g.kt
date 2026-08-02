@@ -361,6 +361,114 @@ data class UrlTestRequestMessage (
     return result
   }
 }
+
+/** Generated class from Pigeon that represents data sent in messages. */
+data class PreconnectUrlTestRequestMessage (
+  val config: String,
+  val groupTag: String,
+  val targetOutboundTag: String,
+  val url: String,
+  val timeoutMillis: Long,
+  val deadlineMillis: Long
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): PreconnectUrlTestRequestMessage {
+      val config = pigeonVar_list[0] as String
+      val groupTag = pigeonVar_list[1] as String
+      val targetOutboundTag = pigeonVar_list[2] as String
+      val url = pigeonVar_list[3] as String
+      val timeoutMillis = pigeonVar_list[4] as Long
+      val deadlineMillis = pigeonVar_list[5] as Long
+      return PreconnectUrlTestRequestMessage(config, groupTag, targetOutboundTag, url, timeoutMillis, deadlineMillis)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      config,
+      groupTag,
+      targetOutboundTag,
+      url,
+      timeoutMillis,
+      deadlineMillis,
+    )
+  }
+  override fun equals(other: Any?): Boolean {
+    if (other == null || other.javaClass != javaClass) {
+      return false
+    }
+    if (this === other) {
+      return true
+    }
+    val other = other as PreconnectUrlTestRequestMessage
+    return SingboxApiPigeonUtils.deepEquals(this.config, other.config) && SingboxApiPigeonUtils.deepEquals(this.groupTag, other.groupTag) && SingboxApiPigeonUtils.deepEquals(this.targetOutboundTag, other.targetOutboundTag) && SingboxApiPigeonUtils.deepEquals(this.url, other.url) && SingboxApiPigeonUtils.deepEquals(this.timeoutMillis, other.timeoutMillis) && SingboxApiPigeonUtils.deepEquals(this.deadlineMillis, other.deadlineMillis)
+  }
+
+  override fun hashCode(): Int {
+    var result = javaClass.hashCode()
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.config)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.groupTag)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.targetOutboundTag)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.url)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.timeoutMillis)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.deadlineMillis)
+    return result
+  }
+}
+
+/** Generated class from Pigeon that represents data sent in messages. */
+data class PreconnectUrlTestResultMessage (
+  val tag: String,
+  val delayMillis: Long,
+  val timeSeconds: Long,
+  val status: String,
+  val error: String,
+  val errorCode: String
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): PreconnectUrlTestResultMessage {
+      val tag = pigeonVar_list[0] as String
+      val delayMillis = pigeonVar_list[1] as Long
+      val timeSeconds = pigeonVar_list[2] as Long
+      val status = pigeonVar_list[3] as String
+      val error = pigeonVar_list[4] as String
+      val errorCode = pigeonVar_list[5] as String
+      return PreconnectUrlTestResultMessage(tag, delayMillis, timeSeconds, status, error, errorCode)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      tag,
+      delayMillis,
+      timeSeconds,
+      status,
+      error,
+      errorCode,
+    )
+  }
+  override fun equals(other: Any?): Boolean {
+    if (other == null || other.javaClass != javaClass) {
+      return false
+    }
+    if (this === other) {
+      return true
+    }
+    val other = other as PreconnectUrlTestResultMessage
+    return SingboxApiPigeonUtils.deepEquals(this.tag, other.tag) && SingboxApiPigeonUtils.deepEquals(this.delayMillis, other.delayMillis) && SingboxApiPigeonUtils.deepEquals(this.timeSeconds, other.timeSeconds) && SingboxApiPigeonUtils.deepEquals(this.status, other.status) && SingboxApiPigeonUtils.deepEquals(this.error, other.error) && SingboxApiPigeonUtils.deepEquals(this.errorCode, other.errorCode)
+  }
+
+  override fun hashCode(): Int {
+    var result = javaClass.hashCode()
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.tag)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.delayMillis)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.timeSeconds)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.status)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.error)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.errorCode)
+    return result
+  }
+}
 private open class SingboxApiPigeonCodec : StandardMessageCodec() {
   override fun readValueOfType(type: Byte, buffer: ByteBuffer): Any? {
     return when (type) {
@@ -379,6 +487,16 @@ private open class SingboxApiPigeonCodec : StandardMessageCodec() {
           UrlTestRequestMessage.fromList(it)
         }
       }
+      132.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          PreconnectUrlTestRequestMessage.fromList(it)
+        }
+      }
+      133.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          PreconnectUrlTestResultMessage.fromList(it)
+        }
+      }
       else -> super.readValueOfType(type, buffer)
     }
   }
@@ -394,6 +512,14 @@ private open class SingboxApiPigeonCodec : StandardMessageCodec() {
       }
       is UrlTestRequestMessage -> {
         stream.write(131)
+        writeValue(stream, value.toList())
+      }
+      is PreconnectUrlTestRequestMessage -> {
+        stream.write(132)
+        writeValue(stream, value.toList())
+      }
+      is PreconnectUrlTestResultMessage -> {
+        stream.write(133)
         writeValue(stream, value.toList())
       }
       else -> super.writeValue(stream, value)
@@ -419,12 +545,15 @@ interface SingboxHostApi {
   fun addOutbound(selectorTag: String, outboundJson: String, callback: (Result<Unit>) -> Unit)
   fun removeOutbound(selectorTag: String, outboundTag: String, callback: (Result<Unit>) -> Unit)
   fun urlTest(request: UrlTestRequestMessage, callback: (Result<Unit>) -> Unit)
+  fun preconnectUrlTest(request: PreconnectUrlTestRequestMessage, callback: (Result<PreconnectUrlTestResultMessage>) -> Unit)
+  fun cancelPreconnectUrlTest(callback: (Result<Unit>) -> Unit)
   fun removeUrlTestOutbounds(groupTag: String, outboundTags: List<String?>, callback: (Result<Unit>) -> Unit)
   fun status(callback: (Result<Map<String?, Any?>>) -> Unit)
   fun lookupOutboundExternalInfo(outboundTag: String, callback: (Result<Map<String?, Any?>>) -> Unit)
   fun getNetworkInterfaceState(callback: (Result<NetworkInterfaceStateMessage>) -> Unit)
   fun exportLogs(content: String, suggestedName: String, callback: (Result<String?>) -> Unit)
   fun getAndroidId(callback: (Result<String>) -> Unit)
+  fun getHydraDeviceId(canonicalOrigin: String, callback: (Result<String>) -> Unit)
   fun getSubscriptionRequestDeviceInfo(callback: (Result<Map<String?, Any?>>) -> Unit)
   fun getPlatformDeviceInfo(callback: (Result<Map<String?, Any?>>) -> Unit)
   fun getAppVersionInfo(callback: (Result<Map<String?, Any?>>) -> Unit)
@@ -734,6 +863,43 @@ interface SingboxHostApi {
         }
       }
       run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.meow_client.SingboxHostApi.preconnectUrlTest$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val requestArg = args[0] as PreconnectUrlTestRequestMessage
+            api.preconnectUrlTest(requestArg) { result: Result<PreconnectUrlTestResultMessage> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(SingboxApiPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(SingboxApiPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.meow_client.SingboxHostApi.cancelPreconnectUrlTest$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { _, reply ->
+            api.cancelPreconnectUrlTest{ result: Result<Unit> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(SingboxApiPigeonUtils.wrapError(error))
+              } else {
+                reply.reply(SingboxApiPigeonUtils.wrapResult(null))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
         val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.meow_client.SingboxHostApi.removeUrlTestOutbounds$separatedMessageChannelSuffix", codec)
         if (api != null) {
           channel.setMessageHandler { message, reply ->
@@ -835,6 +1001,26 @@ interface SingboxHostApi {
         if (api != null) {
           channel.setMessageHandler { _, reply ->
             api.getAndroidId{ result: Result<String> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(SingboxApiPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(SingboxApiPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.meow_client.SingboxHostApi.getHydraDeviceId$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val canonicalOriginArg = args[0] as String
+            api.getHydraDeviceId(canonicalOriginArg) { result: Result<String> ->
               val error = result.exceptionOrNull()
               if (error != null) {
                 reply.reply(SingboxApiPigeonUtils.wrapError(error))

@@ -132,4 +132,13 @@ class HomePresentationBuilder {
       showActiveProxyFooter: false,
     );
   }
+
+  Widget buildStandalone({double bottomInset = 0}) {
+    return HomePage(
+      state: data.toViewState(),
+      actions: callbacks.toViewActions(),
+      bottomInset: bottomInset,
+      showActiveProxyFooter: true,
+    );
+  }
 }

@@ -911,7 +911,7 @@ class AppSettingsController {
   }
 
   static String normalizeAccentColorHex(String value) => switch (value) {
-    'dynamic-2' || 'dynamic-3' => 'default',
+    'dynamic-2' || 'dynamic-3' => 'dynamic',
     _ => value,
   };
 

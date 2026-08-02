@@ -67,6 +67,42 @@ class UrlTestRequestMessage {
   bool force;
 }
 
+class PreconnectUrlTestRequestMessage {
+  PreconnectUrlTestRequestMessage({
+    required this.config,
+    required this.groupTag,
+    required this.targetOutboundTag,
+    required this.url,
+    required this.timeoutMillis,
+    required this.deadlineMillis,
+  });
+
+  String config;
+  String groupTag;
+  String targetOutboundTag;
+  String url;
+  int timeoutMillis;
+  int deadlineMillis;
+}
+
+class PreconnectUrlTestResultMessage {
+  PreconnectUrlTestResultMessage({
+    required this.tag,
+    required this.delayMillis,
+    required this.timeSeconds,
+    required this.status,
+    required this.error,
+    required this.errorCode,
+  });
+
+  String tag;
+  int delayMillis;
+  int timeSeconds;
+  String status;
+  String error;
+  String errorCode;
+}
+
 @HostApi()
 abstract class SingboxHostApi {
   @async
@@ -115,6 +151,14 @@ abstract class SingboxHostApi {
   void urlTest(UrlTestRequestMessage request);
 
   @async
+  PreconnectUrlTestResultMessage preconnectUrlTest(
+    PreconnectUrlTestRequestMessage request,
+  );
+
+  @async
+  void cancelPreconnectUrlTest();
+
+  @async
   void removeUrlTestOutbounds(String groupTag, List<String?> outboundTags);
 
   @async
@@ -131,6 +175,9 @@ abstract class SingboxHostApi {
 
   @async
   String getAndroidId();
+
+  @async
+  String getHydraDeviceId(String canonicalOrigin);
 
   @async
   Map<String?, Object?> getSubscriptionRequestDeviceInfo();
