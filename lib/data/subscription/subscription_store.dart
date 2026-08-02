@@ -2967,6 +2967,14 @@ class SubscriptionStore {
             ? Map<String, dynamic>.from(map['native_config'] as Map)
             : null,
         clearNativeConfig: map['native_config'] is! Map,
+        wdttCredentials: (map['wdtt_credentials'] as List? ?? const [])
+            .whereType<Map>()
+            .map(
+              (entry) => HydraBoxWdttCredential.fromMap(
+                Map<String, dynamic>.from(entry),
+              ),
+            )
+            .toList(growable: false),
         sourceMetadata: <String, dynamic>{
           ...Map<String, dynamic>.from(
             map['source_metadata'] as Map? ?? const {},

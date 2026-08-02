@@ -55,6 +55,13 @@ void main() {
     });
     expect(restored.wdttCredentials, hasLength(1));
     expect(restored.wdttCredentials.single.deviceGrant, grant);
+
+    final hydrated = SubscriptionStore.hydratePayloadJson(
+      Subscription.fromMetadataMap(subscription.toMetadataMap()),
+      jsonEncode(secure),
+    );
+    expect(hydrated.wdttCredentials, hasLength(1));
+    expect(hydrated.wdttCredentials.single.deviceGrant, grant);
   });
 
   tearDownAll(() async {
