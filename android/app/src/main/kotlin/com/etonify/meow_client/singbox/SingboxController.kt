@@ -113,6 +113,10 @@ object SingboxController {
         private set
 
     @Volatile
+    var lastRuntimeError: String = ""
+        private set
+
+    @Volatile
     var activeRuntimeGeneration: Long = 0
         private set
 
@@ -413,6 +417,11 @@ object SingboxController {
     fun setRunning(value: Boolean, mode: String = serviceMode, error: String? = null) {
         running = value
         serviceMode = if (value) mode else ""
+        if (value) {
+            lastRuntimeError = ""
+        } else if (!error.isNullOrBlank()) {
+            lastRuntimeError = error
+        }
         MeowDiagnostics.log(TAG, "setRunning value=$value mode=$serviceMode error=$error")
         if (!value) {
             uplink = 0
@@ -430,6 +439,10 @@ object SingboxController {
         } else {
             disconnectClient()
         }
+    }
+
+    fun clearRuntimeError() {
+        lastRuntimeError = ""
     }
 
     fun setUiForeground(value: Boolean, registration: Long = 0L) {

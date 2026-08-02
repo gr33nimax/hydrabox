@@ -1,6 +1,6 @@
 # HydraBox changelog
 
-## Unreleased
+## [0.3.0-beta.4]
 
 - Established `hydrabox` as the canonical repository and public product name.
 - Moved the stable product line to `main` and reduced the public branch surface.
@@ -13,6 +13,9 @@
   credential bridge; grants never enter native runtime JSON or profile exports.
 - Added the 9/18/36 WDTT worker contract, 15-minute leases refreshed after
   10 minutes, and hot worker-generation rotation without a VPN restart.
+- Added anonymous-first VK TURN acquisition with a native account/WebView
+  fallback. Account TURN secrets remain process-local and refresh before their
+  short lifetime expires; a notification requests login if the VK session ends.
 
 ## [0.3.0-beta.3]
 

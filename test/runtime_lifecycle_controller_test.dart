@@ -119,6 +119,33 @@ void main() {
     },
   );
 
+  test('native startup error is returned without waiting for timeout', () async {
+    final runtime = _FakeRuntime(
+      running: false,
+      confirmStartImmediately: false,
+      lastError: 'HydraBox VK WebView credentials are required',
+    );
+    final controller = RuntimeLifecycleController(
+      runtime: runtime,
+      startTimeout: const Duration(seconds: 2),
+    );
+    addTearDown(controller.dispose);
+
+    final result = await controller.startRuntimeWithBuild(
+      build: _build(),
+      useVpn: true,
+      promotePreparedConfig: (_) {},
+      cacheStartedBuild: (_) {},
+      logCall: (_, _) {},
+      trimMemory: (_) {},
+      onWatchdogTimeout: (_) {},
+    );
+
+    expect(result.success, isFalse);
+    expect(result.timedOut, isFalse);
+    expect(result.error, contains('VK WebView credentials'));
+  });
+
   test('start waits for the native runtime owner before succeeding', () async {
     final runtime = _FakeRuntime(
       running: false,
@@ -265,6 +292,7 @@ class _FakeRuntime implements RuntimeLifecycleRuntime {
     this.failApplyAndStopRuntime = false,
     this.ignoreStop = false,
     this.confirmStartImmediately = true,
+    this.lastError = '',
   }) : recordedServiceAlive = running,
        activeRuntimeOwner = running,
        runtimeGeneration = running ? 1 : 0;
@@ -276,6 +304,7 @@ class _FakeRuntime implements RuntimeLifecycleRuntime {
   bool failApplyAndStopRuntime;
   bool ignoreStop;
   bool confirmStartImmediately;
+  String lastError;
   bool recordedServiceAlive;
   bool activeRuntimeOwner;
   int runtimeGeneration;
@@ -368,6 +397,7 @@ class _FakeRuntime implements RuntimeLifecycleRuntime {
       'runtimeGeneration': runtimeGeneration,
       'recordedServiceAlive': recordedServiceAlive,
       'activeRuntimeOwner': activeRuntimeOwner,
+      'lastError': lastError,
     };
   }
 

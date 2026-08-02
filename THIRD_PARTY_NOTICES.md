@@ -59,6 +59,15 @@ published as a pinned core release asset, and its provenance is recorded under
 `android/app/libs`. The HydraCore name does not replace or obscure the
 copyright, license, or source history of etonify-core and sing-box.
 
+## WDTT VK WebView interoperability
+
+The anonymous-first/account-fallback behavior and VK `turn_server` WebView
+interoperability in `HydraWdttVkAuthManager.kt` are adapted for HydraBox from
+[`SpaceNeuroX/proxy-turn-vk-android`](https://github.com/SpaceNeuroX/proxy-turn-vk-android).
+That project is licensed under GPL-3.0; HydraBox's implementation is distributed
+under the compatible GPL-3.0-or-later license and has been modified to keep
+TURN credentials inside the native HydraCore bridge.
+
 ## Other dependencies
 
 Flutter, Android Gradle Plugin, Kotlin, Gradle plugins, and Dart/Android

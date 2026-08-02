@@ -41,7 +41,7 @@ class AppVersionInfo {
 
   String get displayVersion {
     final normalized = versionName.trim();
-    return normalized.isEmpty ? '0.3.0-beta.3' : normalized;
+    return normalized.isEmpty ? '0.3.0-beta.4' : normalized;
   }
 
   int get updateBuildNumber => normalizeSplitApkVersionCode(versionCode);
@@ -929,6 +929,21 @@ class SingboxRuntime {
       'credentials': credentials
           .map((credential) => credential.toMap())
           .toList(growable: false),
+    });
+  }
+
+  /// Captures short-lived VK TURN data in a native WebView and injects it
+  /// directly into HydraCore. Account credentials never cross into Dart.
+  Future<void> authenticateHydraWdttVkAccount({
+    required String credentialRef,
+    required String hash,
+  }) async {
+    if (!Platform.isAndroid) {
+      throw UnsupportedError('Hydra WDTT VK account auth is Android-only.');
+    }
+    await _methods.invokeMethod<void>('authenticateHydraWdttVkAccount', {
+      'credential_ref': credentialRef,
+      'hash': hash,
     });
   }
 

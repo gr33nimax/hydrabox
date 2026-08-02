@@ -40,7 +40,8 @@ release promise.
 - Versioned HydraBox Subscription v1/v2 with JWE A256GCM transport and lossless
   storage of the native runtime document.
 - Subscription-native WDTT endpoints with device-bound grants, 9/18/36 worker
-  policy, 15-minute leases, automatic renewal, and hot generation rotation.
+  policy, 15-minute leases, automatic renewal, hot generation rotation, and
+  native VK account fallback when anonymous relay access requires captcha.
 - Fail-closed capability and remote-safety validation before activation.
 - URL, QR, file, clipboard, and deep-link subscription import.
 - Local HTTP/SOCKS mixed proxy for manual clients.

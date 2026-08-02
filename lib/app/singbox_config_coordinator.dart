@@ -8,6 +8,7 @@ import 'package:meow_client/data/local/app_settings_store.dart';
 import 'package:meow_client/data/subscription/parsers/hydrabox_subscription_parser.dart';
 import 'package:meow_client/logging/app_log_store.dart';
 import 'package:meow_client/models/subscription.dart';
+import 'package:meow_client/singbox/hydra_wdtt_account_auth.dart';
 import 'package:meow_client/singbox/libbox_capabilities.dart';
 import 'package:meow_client/singbox/singbox_runtime.dart';
 
@@ -380,7 +381,7 @@ class SingboxConfigCoordinator {
             ? SingboxConfigCoordinatorPhase.stopping
             : SingboxConfigCoordinatorPhase.reconfiguring,
       );
-      final result = await _runtimeLifecycle.applyRuntimeBuild(
+      var result = await _runtimeLifecycle.applyRuntimeBuild(
         build: build,
         useVpn: useVpn,
         policy: policy,
@@ -392,6 +393,11 @@ class SingboxConfigCoordinator {
         logCall: _logCall,
         trimMemory: _trimRuntimeStartMemory,
         onWatchdogTimeout: _onRuntimeLifecycleTimeout,
+      );
+      result = await _retryRuntimeAfterHydraWdttAccountAuth(
+        result,
+        build: build,
+        useVpn: useVpn,
       );
       if (!_isMounted() || !_isCurrentApply(generation)) {
         return;
@@ -439,7 +445,7 @@ class SingboxConfigCoordinator {
     required bool useVpn,
   }) async {
     await _installActiveHydraWdttCredentials();
-    return _runtimeLifecycle.startRuntimeWithBuild(
+    final result = await _runtimeLifecycle.startRuntimeWithBuild(
       build: build,
       useVpn: useVpn,
       promotePreparedConfig: promotePreparedConfigBuild,
@@ -448,6 +454,62 @@ class SingboxConfigCoordinator {
       trimMemory: _trimRuntimeStartMemory,
       onWatchdogTimeout: _onRuntimeLifecycleTimeout,
     );
+    return _retryRuntimeAfterHydraWdttAccountAuth(
+      result,
+      build: build,
+      useVpn: useVpn,
+    );
+  }
+
+  Future<RuntimeLifecycleResult> _retryRuntimeAfterHydraWdttAccountAuth(
+    RuntimeLifecycleResult result, {
+    required SingboxConfigBuildResult build,
+    required bool useVpn,
+  }) async {
+    if (result.success || !isHydraWdttAccountCredentialError(result.error)) {
+      return result;
+    }
+    final challenge = findHydraWdttAccountChallenge(
+      _readSnapshot().activeSubscription,
+    );
+    if (challenge == null) return result;
+
+    try {
+      await SingboxRuntime.instance.authenticateHydraWdttVkAccount(
+        credentialRef: challenge.credentialRef,
+        hash: challenge.hash,
+      );
+      final currentConfigPath = build.hasPreparedConfig
+          ? await ensureSingboxConfigPath()
+          : null;
+      if (build.hasPreparedConfig && currentConfigPath == null) {
+        return RuntimeLifecycleResult.failure(
+          policy: result.policy,
+          error: 'Prepared config target path is unavailable for WDTT retry.',
+        );
+      }
+      final retryBuild = build.hasPreparedConfig
+          ? build.withConfigPath(currentConfigPath)
+          : build;
+      return _runtimeLifecycle.startRuntimeWithBuild(
+        build: retryBuild,
+        useVpn: useVpn,
+        promotePreparedConfig: promotePreparedConfigBuild,
+        cacheStartedBuild: _cacheStartedBuild,
+        logCall: _logCall,
+        trimMemory: _trimRuntimeStartMemory,
+        onWatchdogTimeout: _onRuntimeLifecycleTimeout,
+      );
+    } catch (error, stackTrace) {
+      AppLogStore.warning(
+        'wdtt',
+        'VK account fallback did not complete: $error\n$stackTrace',
+      );
+      return RuntimeLifecycleResult.failure(
+        policy: result.policy,
+        error: error.toString(),
+      );
+    }
   }
 
   Future<void> _installActiveHydraWdttCredentials() {

@@ -982,6 +982,7 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     private fun dispatchStartAfterPreconnectCleanup(useVpn: Boolean, result: MethodChannel.Result) {
+        SingboxController.clearRuntimeError()
         Log.i(TAG, "start requested useVpn=$useVpn running=${SingboxController.running} mode=${SingboxController.serviceMode}")
         SingboxController.log(
             "info",
@@ -1251,6 +1252,7 @@ class MainActivity : FlutterFragmentActivity() {
             "runtimeIntentPid" to runtimeIntent?.pid,
             "runtimeIntentUpdatedAtMillis" to runtimeIntent?.updatedAtMillis,
             "runtimeIntentState" to MeowApplication.describeRuntimeIntent(),
+            "lastError" to SingboxController.lastRuntimeError,
         )
     }
 
@@ -2014,16 +2016,23 @@ class MainActivity : FlutterFragmentActivity() {
                                 "Too many Hydra WDTT credentials"
                             }
                             Libbox.clearHydraWDTTCredentials()
+                            val credentialRefs = linkedSetOf<String>()
                             try {
                                 credentials.forEach { credential ->
                                     require(credential["kind"] == "wdtt_device_grant") {
                                         "Invalid Hydra WDTT credential kind"
                                     }
+                                    val credentialRef =
+                                        credential["credential_ref"] as? String ?: ""
                                     Libbox.setHydraWDTTCredential(
-                                        credential["credential_ref"] as? String ?: "",
+                                        credentialRef,
                                         credential["device_id"] as? String ?: "",
                                         credential["device_grant"] as? String ?: "",
                                     )
+                                    credentialRefs.add(credentialRef)
+                                }
+                                mainHandler.post {
+                                    HydraWdttVkAuthManager.retainCredentialRefs(credentialRefs)
                                 }
                             } catch (error: Throwable) {
                                 Libbox.clearHydraWDTTCredentials()
@@ -2039,6 +2048,26 @@ class MainActivity : FlutterFragmentActivity() {
                                     null,
                                 )
                             }
+                        }
+                    }
+                }
+
+                "authenticateHydraWdttVkAccount" -> {
+                    val credentialRef = call.argument<String>("credential_ref").orEmpty()
+                    val hash = call.argument<String>("hash").orEmpty()
+                    HydraWdttVkAuthManager.authenticate(
+                        this,
+                        credentialRef,
+                        hash,
+                    ) { authResult ->
+                        authResult.onSuccess {
+                            result.success(null)
+                        }.onFailure { error ->
+                            result.error(
+                                "wdtt_vk_account_auth_failed",
+                                error.message ?: error.toString(),
+                                null,
+                            )
                         }
                     }
                 }
@@ -2518,11 +2547,13 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     override fun onStop() {
+        HydraWdttVkAuthManager.detach(this)
         SingboxController.cancelPreconnectUrlTest("activity_stopped")
         super.onStop()
     }
 
     override fun onDestroy() {
+        HydraWdttVkAuthManager.detach(this)
         val registration = singboxEventSinkRegistration
         singboxEventSinkRegistration = 0L
         if (registration != 0L) {
@@ -2530,5 +2561,10 @@ class MainActivity : FlutterFragmentActivity() {
         }
         deepLinkEventSink = null
         super.onDestroy()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        HydraWdttVkAuthManager.attach(this)
     }
 }

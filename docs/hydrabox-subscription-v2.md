@@ -78,6 +78,20 @@ does not impose an artificial number of WDTT users. Capacity is bounded by the
 operator's CPU, memory, bandwidth, VK relay availability, and an optional
 explicit global worker quota.
 
+## VK TURN authentication
+
+`vk_auth: auto` always tries anonymous VK relay access first. If VK requires a
+captcha, HydraCore reports a stable account challenge and HydraBox opens a
+native VK WebView for the bound endpoint hash. Captured TURN username,
+credential, and addresses pass directly from Android to HydraCore; they never
+enter Dart, the subscription payload, config JSON, exports, logs, or backups.
+
+Account TURN credentials are deliberately process-local and short-lived.
+HydraBox refreshes them in a headless WebView before expiry while the VK session
+cookie remains valid. If silent refresh fails, a visible login is requested (or
+announced by a notification while the app is in the background). The durable
+device grant remains governed only by the encrypted Hydra subscription.
+
 ## Compatibility
 
 - v1 remains accepted for existing non-WDTT subscriptions;

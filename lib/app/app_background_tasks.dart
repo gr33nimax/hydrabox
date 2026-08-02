@@ -188,6 +188,21 @@ class SingboxConfigBuildResult {
   bool get hasReturnedConfig => plan.config.isNotEmpty;
   bool get hasPreparedConfig =>
       configPath != null && configPath!.trim().isNotEmpty;
+
+  SingboxConfigBuildResult withConfigPath(String? value) =>
+      SingboxConfigBuildResult(
+        plan: plan,
+        configJson: configJson,
+        configPath: value,
+        configLength: configLength,
+        configOutboundCount: configOutboundCount,
+        configInboundCount: configInboundCount,
+        configRouteRuleCount: configRouteRuleCount,
+        invalidOutbounds: invalidOutbounds,
+        invalidOutboundCount: invalidOutboundCount,
+        selectedProxyInvalid: selectedProxyInvalid,
+        startableOutboundCount: startableOutboundCount,
+      );
 }
 
 class StartupValidationInput {

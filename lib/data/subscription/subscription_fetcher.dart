@@ -424,7 +424,7 @@ class SubscriptionFetcher {
     } else if (declaredHydraMediaType == HydraBoxJweCodec.mediaType &&
         HydraBoxJweCodec.looksLike(rawContent)) {
       throw const FormatException(
-        'HydraBox subscription media type requires plaintext JSON',
+        'HydraBox subscription media type requires plaintext v1 JSON',
       );
     }
     final parseResult = await SubscriptionParser.parseInBackground(
@@ -436,7 +436,7 @@ class SubscriptionFetcher {
         (!parseResult.format.isHydraBox ||
             parseResult.sourceMetadata['encrypted'] == true)) {
       throw const FormatException(
-        'HydraBox subscription media type requires plaintext JSON',
+        'HydraBox subscription media type requires plaintext v1 JSON',
       );
     }
     if (declaredHydraMediaType == _joseJsonMediaType &&

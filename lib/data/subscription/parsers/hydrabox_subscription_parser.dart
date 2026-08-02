@@ -1413,12 +1413,16 @@ class HydraBoxSubscriptionParser {
           final key = entry.key.toString();
           final normalizedKey = key.toLowerCase();
           final child = entry.value;
+          final wdttSemanticPath =
+              normalizedKey == 'vk_anon_path' &&
+              field.startsWith('runtime.document.endpoints[');
           final reservedLocalSuffix =
-              normalizedKey.endsWith('_path') ||
-              normalizedKey.endsWith('_file') ||
-              normalizedKey.endsWith('_directory') ||
-              normalizedKey.endsWith('_socket') ||
-              normalizedKey.endsWith('_database');
+              !wdttSemanticPath &&
+              (normalizedKey.endsWith('_path') ||
+                  normalizedKey.endsWith('_file') ||
+                  normalizedKey.endsWith('_directory') ||
+                  normalizedKey.endsWith('_socket') ||
+                  normalizedKey.endsWith('_database'));
           if (presenceLocalCapabilityKeys.contains(normalizedKey) &&
               value.containsKey(entry.key) &&
               child != null) {
