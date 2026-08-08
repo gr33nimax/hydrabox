@@ -13,7 +13,6 @@ class SingboxConfigBuilder {
   static const List<String> _russiaDirectDomainSuffixes = ['ru', 'su', 'рф'];
   static const String _snowtunProtectPath =
       '@io.hydrabox.client.snowtun.protect';
-  static const int _urltestInterruptDelayThresholdMs = 300;
   static const int _maxHydraBoxWireGuardWorkers = 64;
   static const int _maxHydraBoxWireGuardBuffersPerPool = 4096;
   static const int _maxHydraBoxAmneziaJunkPacketCount = 128;
@@ -308,12 +307,6 @@ class SingboxConfigBuilder {
 
     final generatedConfig = <String, dynamic>{
       'log': {'level': logLevel},
-      if (_supportsLegacyUrlTestConfigExtensions)
-        'global': {
-          'urltest_concurrency_limit': _urltestConcurrency(
-            activeSubscription?.urlTestConfig.concurrency ?? urlTestConcurrency,
-          ),
-        },
       'dns': {
         'servers': [
           _buildDnsServer(
@@ -2137,24 +2130,8 @@ class SingboxConfigBuilder {
         activeSubscription?.urlTestConfig.intervalSeconds ??
             urlTestIntervalSeconds,
       ),
-      if (_supportsLegacyUrlTestConfigExtensions)
-        'timeout': _urltestTimeout(
-          activeSubscription?.urlTestConfig.timeoutSeconds ??
-              urlTestTimeoutSeconds,
-        ),
-      if (_supportsLegacyUrlTestConfigExtensions)
-        'concurrency': _urltestConcurrency(
-          activeSubscription?.urlTestConfig.concurrency ?? urlTestConcurrency,
-        ),
-      if (_supportsLegacyUrlTestConfigExtensions)
-        'unavailable_check_interval': _urltestUnavailableInterval(
-          activeSubscription?.urlTestConfig.unavailableCheckIntervalSeconds ??
-              urlTestUnavailableCheckIntervalSeconds,
-        ),
       'tolerance': _urltestTolerance(),
       'interrupt_exist_connections': false,
-      if (_supportsLegacyUrlTestConfigExtensions)
-        'interrupt_delay_threshold': _urltestInterruptDelayThresholdMs,
     };
   }
 
@@ -2169,8 +2146,6 @@ class SingboxConfigBuilder {
       'type': 'urltest',
       'tag': group.tag,
       'outbounds': memberTags,
-      if (_supportsLegacyUrlTestConfigExtensions)
-        ...?_urltestMethodEntry(group.urlTestConfig.method),
       'url': activeSubscription?.urlTestConfig.url ?? urlTestUrl,
       'interval': _urltestInterval(
         activeSubscription?.urlTestConfig.intervalSeconds ??
@@ -2180,73 +2155,21 @@ class SingboxConfigBuilder {
         activeSubscription?.urlTestConfig.intervalSeconds ??
             urlTestIntervalSeconds,
       ),
-      if (_supportsLegacyUrlTestConfigExtensions)
-        'timeout': _urltestTimeout(
-          activeSubscription?.urlTestConfig.timeoutSeconds ??
-              urlTestTimeoutSeconds,
-        ),
-      if (_supportsLegacyUrlTestConfigExtensions)
-        'concurrency': _urltestConcurrency(
-          activeSubscription?.urlTestConfig.concurrency ?? urlTestConcurrency,
-        ),
-      if (_supportsLegacyUrlTestConfigExtensions)
-        'unavailable_check_interval': _urltestUnavailableInterval(
-          activeSubscription?.urlTestConfig.unavailableCheckIntervalSeconds ??
-              urlTestUnavailableCheckIntervalSeconds,
-        ),
       'tolerance': _urltestTolerance(),
       'interrupt_exist_connections': false,
-      if (_supportsLegacyUrlTestConfigExtensions)
-        'interrupt_delay_threshold': _urltestInterruptDelayThresholdMs,
     };
   }
 
   bool _supportsCoreConfigExtension(bool advertised) =>
       !capabilities.hasVersionedContract || advertised;
 
-  // The old bundled core exposed URLTest tuning as custom JSON fields. The
-  // HydraCore exposes the same controls through URLTestWithOptions
-  // while intentionally retaining the upstream sing-box config schema.
-  bool get _supportsLegacyUrlTestConfigExtensions =>
-      !capabilities.hasVersionedContract;
-
   String _urltestInterval(int? seconds) {
     final safeSeconds = seconds == null || seconds <= 0 ? 180 : seconds;
     return '${safeSeconds}s';
   }
 
-  String _urltestTimeout(int? seconds) {
-    final safeSeconds = seconds == null || seconds <= 0 ? 15 : seconds;
-    return '${safeSeconds}s';
-  }
-
-  int _urltestConcurrency(int? value) {
-    return (value == null || value <= 0 ? 8 : value).clamp(1, 8);
-  }
-
-  String _urltestUnavailableInterval(int? seconds) {
-    final safeSeconds = (seconds == null || seconds <= 0 ? 120 : seconds).clamp(
-      120,
-      3600,
-    );
-    return '${safeSeconds}s';
-  }
-
   int _urltestTolerance() {
     return urlTestStrictTolerance ? 1 : 50;
-  }
-
-  String? _urltestMethod(String? value) {
-    final method = value?.trim();
-    if (method == null || method.isEmpty) {
-      return null;
-    }
-    return method;
-  }
-
-  Map<String, dynamic>? _urltestMethodEntry(String? value) {
-    final method = _urltestMethod(value);
-    return method == null ? null : {'method': method};
   }
 
   static String? defaultSnowtunProtectPath() {

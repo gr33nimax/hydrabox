@@ -137,9 +137,11 @@ class HydraSubscriptionParser {
       if (value is! Map) return false;
       final api = value['api_version']?.toString() ?? '';
       if (api == apiVersion) return true;
-      return value.containsKey('protected') &&
-          value.containsKey('ciphertext') &&
-          value.containsKey('tag');
+      if (value.containsKey('api_version') &&
+          value['kind'] == 'Subscription') {
+        return true;
+      }
+      return value.containsKey('protected');
     } on FormatException {
       return trimmed.contains(apiVersion);
     }

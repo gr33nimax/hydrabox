@@ -31,10 +31,9 @@ void main() {
     expect(workflow, contains('submodules: recursive'));
     expect(workflow, contains('scripts/verify_extended_core.py --source-only'));
     expect(workflow, contains('scripts/verify_client_boundaries.py'));
-    expect(
-      workflow,
-      contains('dart format --output=none --set-exit-if-changed'),
-    );
+    expect(workflow, contains('dart format lib test pigeons'));
+    expect(workflow, contains('build/remote-generated.patch'));
+    expect(workflow, contains('git diff --exit-code'));
     expect(workflow, contains('flutter analyze'));
     expect(workflow, contains('flutter test --reporter expanded'));
     expect(workflow, contains(':app:testDebugUnitTest'));

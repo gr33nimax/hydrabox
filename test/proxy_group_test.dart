@@ -346,7 +346,7 @@ void main() {
       markAllServersRussia: false,
     ).buildPlan();
 
-    expect(plan.config['global'], {'urltest_concurrency_limit': 8});
+    expect(plan.config, isNot(contains('global')));
     final outbounds = (plan.config['outbounds'] as List)
         .cast<Map<String, dynamic>>();
     final selector = outbounds.firstWhere((entry) => entry['tag'] == 'select');
@@ -358,12 +358,9 @@ void main() {
     expect(selector['outbounds'], ['lowest', 'group-auto', 'leaf-1', 'leaf-2']);
     expect(selector['default'], 'group-auto');
     expect(lowest['outbounds'], ['group-auto']);
-    expect(lowest['timeout'], '8s');
     expect(lowest['idle_timeout'], '77s');
-    expect(lowest['concurrency'], 8);
     expect(lowest['tolerance'], 1);
     expect(lowest['interrupt_exist_connections'], isFalse);
-    expect(lowest['interrupt_delay_threshold'], 300);
     expect(
       outbounds.map((entry) => entry['tag']).toSet().intersection({
         'lowest-open',
@@ -373,48 +370,23 @@ void main() {
       isEmpty,
     );
     expect(groupUrltest['outbounds'], ['leaf-1', 'leaf-2']);
-    expect(groupUrltest['method'], 'setback');
     expect(groupUrltest['url'], 'https://subscription.example/generate_204');
     expect(groupUrltest['interval'], '77s');
     expect(groupUrltest['idle_timeout'], '77s');
-    expect(groupUrltest['timeout'], '8s');
-    expect(groupUrltest['concurrency'], 8);
-    expect(groupUrltest['unavailable_check_interval'], '120s');
     expect(groupUrltest['tolerance'], 1);
     expect(groupUrltest['interrupt_exist_connections'], isFalse);
-    expect(groupUrltest['interrupt_delay_threshold'], 300);
-
-    final stableConfig = _defaultBuilder(
-      subscription,
-      capabilities: HydraCoreCapabilities.requiredV2,
-    ).build();
-    expect(stableConfig, isNot(contains('global')));
-    final stableOutbounds = (stableConfig['outbounds'] as List)
-        .cast<Map<String, dynamic>>();
-    expect(
-      stableOutbounds.any((entry) => entry['tag'] == mixedProxyTag),
-      isFalse,
-    );
-    final stableLowest = stableOutbounds.firstWhere(
-      (entry) => entry['tag'] == lowestProxyTag,
-    );
-    final stableGroup = stableOutbounds.firstWhere(
-      (entry) => entry['tag'] == 'group-auto',
-    );
     for (final legacyKey in const <String>[
       'timeout',
       'concurrency',
       'unavailable_check_interval',
       'interrupt_delay_threshold',
     ]) {
-      expect(stableLowest, isNot(contains(legacyKey)));
-      expect(stableGroup, isNot(contains(legacyKey)));
+      expect(lowest, isNot(contains(legacyKey)));
+      expect(groupUrltest, isNot(contains(legacyKey)));
     }
-    expect(stableGroup, isNot(contains('method')));
-    expect(stableLowest['url'], isNotEmpty);
-    expect(stableLowest['interval'], isNotEmpty);
-    expect(stableLowest['idle_timeout'], isNotEmpty);
-    expect(stableLowest['tolerance'], 1);
+    expect(groupUrltest, isNot(contains('method')));
+    expect(lowest['url'], isNotEmpty);
+    expect(lowest['interval'], isNotEmpty);
   });
 
   test('keeps group-only detour clone out of top-level selector', () {
@@ -571,10 +543,16 @@ void main() {
     expect(groupUrltest['url'], 'https://global.example/generate_204');
     expect(groupUrltest['interval'], '3600s');
     expect(groupUrltest['idle_timeout'], '3600s');
-    expect(groupUrltest['timeout'], '16s');
-    expect(groupUrltest['concurrency'], 8);
-    expect(groupUrltest['unavailable_check_interval'], '120s');
     expect(groupUrltest['tolerance'], 1);
+    for (final legacyKey in const <String>[
+      'method',
+      'timeout',
+      'concurrency',
+      'unavailable_check_interval',
+      'interrupt_delay_threshold',
+    ]) {
+      expect(groupUrltest, isNot(contains(legacyKey)));
+    }
   });
 
   test('does not build lowest proxies for a single outbound subscription', () {

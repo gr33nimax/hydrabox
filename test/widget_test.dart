@@ -1613,10 +1613,10 @@ void main() {
     expect(find.text('HydraBox'), findsOneWidget);
     expect(find.text('gr33nimax/hydracore'), findsOneWidget);
     expect(
-      find.textContaining('subscription-first Android client'),
+      find.textContaining('subscription-first client'),
       findsOneWidget,
     );
-    expect(find.textContaining('Etonify fork'), findsOneWidget);
+    expect(find.textContaining('Etonify'), findsNothing);
     expect(find.text('Credits & origins'), findsOneWidget);
     expect(find.text('Terms of Use'), findsOneWidget);
     expect(find.text('Privacy Policy'), findsOneWidget);
