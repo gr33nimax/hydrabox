@@ -222,7 +222,10 @@ class SubscriptionFetcher {
       if (!_isHydraIdentityHeader(entry.key)) entry.key: entry.value,
     'User-Agent': defaultUserAgent,
     'Accept': _joseJsonMediaType,
-    'X-HWID': hydraHwid,
+    // Keep the established HydraBox identity namespace. HYDRA ULTIMATE accepts
+    // this legacy header for v2, while moving the same hbx1_ value to X-HWID
+    // changes the server-side fingerprint and consumes another device slot.
+    'X-Hydra-HWID': hydraHwid,
   };
 
   static bool _isHydraIdentityHeader(String name) => const {

@@ -72,7 +72,7 @@ void main() {
   });
 
   group('request security', () {
-    test('Hydra JWE requests send the strict v2 identity headers', () {
+    test('Hydra JWE requests preserve the registered device identity', () {
       const deviceId = 'hbx1_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
       final headers = SubscriptionFetcher.hydraRequestHeadersForTest(const {
         'Authorization': 'Bearer secret',
@@ -86,7 +86,7 @@ void main() {
         'Authorization': 'Bearer secret',
         'User-Agent': SubscriptionFetcher.defaultUserAgent,
         'Accept': HydraSubscriptionUri.encryptedMediaType,
-        'X-HWID': deviceId,
+        'X-Hydra-HWID': deviceId,
       });
     });
 
