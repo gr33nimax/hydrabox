@@ -362,10 +362,13 @@ Set<String> _requiredStringSet(
     throw FormatException('Missing HydraCore string list: $key');
   }
   return Set<String>.unmodifiable(
-    item.cast<String>().map((entry) {
-      final trimmed = entry.trim();
-      return lowerCase ? trimmed.toLowerCase() : trimmed;
-    }).where((entry) => entry.isNotEmpty),
+    item
+        .cast<String>()
+        .map((entry) {
+          final trimmed = entry.trim();
+          return lowerCase ? trimmed.toLowerCase() : trimmed;
+        })
+        .where((entry) => entry.isNotEmpty),
   );
 }
 

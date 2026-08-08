@@ -33,8 +33,7 @@ class HydraParsedProfile {
     'entrypoint_tag': entrypointTag,
     'runtime_tag': runtimeTag,
     'enabled': enabled,
-    if (requiredFeatures.isNotEmpty)
-      'required_features': requiredFeatures,
+    if (requiredFeatures.isNotEmpty) 'required_features': requiredFeatures,
   };
 
   factory HydraParsedProfile.fromMap(Map<String, dynamic> map) {
@@ -348,10 +347,8 @@ class HydraSubscriptionParser {
       'sequence': identity['sequence'],
       'payload_sha256': sha256.convert(utf8.encode(content)).toString(),
       'issued_at': validity['issued_at'],
-      if (validity['not_before'] != null)
-        'not_before': validity['not_before'],
-      if (validity['expires_at'] != null)
-        'expires_at': validity['expires_at'],
+      if (validity['not_before'] != null) 'not_before': validity['not_before'],
+      if (validity['expires_at'] != null) 'expires_at': validity['expires_at'],
       'requirements': _cloneMap(requirements),
       if (update.isNotEmpty) 'update': _cloneMap(update),
       'permissions': permissionsByResource,
@@ -365,9 +362,7 @@ class HydraSubscriptionParser {
       resourceConfigs: resourceConfigs,
       defaultProfileId: defaultProfileId,
       sourceMetadata: metadata,
-      bodyMeta: {
-        if (displayName != null) 'profile-title': displayName,
-      },
+      bodyMeta: {if (displayName != null) 'profile-title': displayName},
     );
   }
 
@@ -465,7 +460,11 @@ class HydraSubscriptionParser {
     }
     final aParts = aPre.split('.');
     final bParts = bPre.split('.');
-    for (var index = 0; index < aParts.length || index < bParts.length; index++) {
+    for (
+      var index = 0;
+      index < aParts.length || index < bParts.length;
+      index++
+    ) {
       if (index >= aParts.length) return -1;
       if (index >= bParts.length) return 1;
       final av = aParts[index];

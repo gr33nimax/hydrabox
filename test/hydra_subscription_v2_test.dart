@@ -9,7 +9,10 @@ void main() {
     final parsed = SubscriptionParser.parse(jsonEncode(_document()));
 
     expect(parsed.format, SubscriptionFormat.hydraV2);
-    expect(parsed.sourceMetadata['api_version'], HydraSubscriptionParser.apiVersion);
+    expect(
+      parsed.sourceMetadata['api_version'],
+      HydraSubscriptionParser.apiVersion,
+    );
     expect(parsed.sourceMetadata['permissions_automatic'], isTrue);
     expect(parsed.sourceMetadata['permissions'], {
       'resource-main': ['network.outbound'],
@@ -49,10 +52,10 @@ void main() {
 
     expect(parsed.resourceConfigs, hasLength(2));
     expect(parsed.outbounds, hasLength(2));
-    expect(
-      parsed.outbounds.map((entry) => entry['_source_scope']).toSet(),
-      {'resource-main', 'resource-backup'},
-    );
+    expect(parsed.outbounds.map((entry) => entry['_source_scope']).toSet(), {
+      'resource-main',
+      'resource-backup',
+    });
   });
 
   test('missing, extra, duplicate, and unknown permissions fail closed', () {
@@ -63,8 +66,9 @@ void main() {
       const ['network.unknown'],
     ]) {
       final document = _document();
-      final resource = (document['resources'] as List<dynamic>).single
-          as Map<String, dynamic>;
+      final resource =
+          (document['resources'] as List<dynamic>).single
+              as Map<String, dynamic>;
       resource['requested_permissions'] = permissions;
 
       expect(
@@ -77,8 +81,8 @@ void main() {
 
   test('permissions are derived from all executable sections', () {
     final document = _document();
-    final resource = (document['resources'] as List<dynamic>).single
-        as Map<String, dynamic>;
+    final resource =
+        (document['resources'] as List<dynamic>).single as Map<String, dynamic>;
     final native = resource['document'] as Map<String, dynamic>;
     native['inbounds'] = [
       {'type': 'call', 'tag': 'calls', 'platform': 'vk'},
@@ -107,8 +111,9 @@ void main() {
 
   test('unsupported protocol and client feature fail closed', () {
     final unsupportedProtocol = _document();
-    final resource = (unsupportedProtocol['resources'] as List<dynamic>).single
-        as Map<String, dynamic>;
+    final resource =
+        (unsupportedProtocol['resources'] as List<dynamic>).single
+            as Map<String, dynamic>;
     final native = resource['document'] as Map<String, dynamic>;
     (native['outbounds'] as List<dynamic>).single['type'] = 'ssh';
     expect(
@@ -117,8 +122,8 @@ void main() {
     );
 
     final unsupportedFeature = _document();
-    final requirements = unsupportedFeature['requirements']
-        as Map<String, dynamic>;
+    final requirements =
+        unsupportedFeature['requirements'] as Map<String, dynamic>;
     (requirements['client'] as Map<String, dynamic>)['features'] = [
       'interactive-permission-dialog',
     ];
@@ -129,7 +134,8 @@ void main() {
   });
 
   test('legacy HydraBox discriminator is rejected', () {
-    final document = _document()..['api_version'] = 'hydrabox.io/subscription/v1';
+    final document = _document()
+      ..['api_version'] = 'hydrabox.io/subscription/v1';
     expect(
       () => SubscriptionParser.parse(jsonEncode(document)),
       throwsFormatException,

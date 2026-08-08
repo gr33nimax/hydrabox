@@ -59,7 +59,10 @@ void main() {
 
     final selected = subscription.activeNativeConfig!;
     expect(selected['outbounds'], hasLength(1));
-    expect((selected['outbounds'] as List<dynamic>).single['server'], 'b.example');
+    expect(
+      (selected['outbounds'] as List<dynamic>).single['server'],
+      'b.example',
+    );
     expect(selected.toString(), isNot(contains('a.example')));
   });
 

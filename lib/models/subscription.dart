@@ -544,6 +544,7 @@ class Subscription {
   final List<SubscriptionProfile> profiles;
   final List<SubscriptionProxyChain> proxyChains;
   final Map<String, dynamic>? nativeConfig;
+
   /// Independently validated Hydra Subscription v2 resource documents.
   ///
   /// Resources are never merged. Runtime assembly selects exactly one document
@@ -691,10 +692,8 @@ class Subscription {
           ? Map<String, dynamic>.from(map['native_config'] as Map)
           : null,
       resourceConfigs: (map['resource_configs'] as Map? ?? const {}).map(
-        (key, value) => MapEntry(
-          key.toString(),
-          Map<String, dynamic>.from(value as Map),
-        ),
+        (key, value) =>
+            MapEntry(key.toString(), Map<String, dynamic>.from(value as Map)),
       ),
       sourceMetadata: Map<String, dynamic>.from(
         map['source_metadata'] as Map? ?? metadata.sourceMetadata,

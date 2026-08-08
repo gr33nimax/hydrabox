@@ -271,9 +271,7 @@ class HydraBoxBackupService {
     }
     final decoded = jsonDecode(utf8.decode(bytes));
     if (decoded is! Map) {
-      throw const HydraBoxBackupException(
-        'Invalid HydraBox backup file.',
-      );
+      throw const HydraBoxBackupException('Invalid HydraBox backup file.');
     }
     final envelope = Map<String, dynamic>.from(decoded);
     final allowed = expectedMagic == settingsMagic

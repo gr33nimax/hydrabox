@@ -111,7 +111,9 @@ class SingboxRuntime {
 
   static final SingboxRuntime instance = SingboxRuntime._();
 
-  static const MethodChannel _methods = MethodChannel('io.hydrabox.client/singbox');
+  static const MethodChannel _methods = MethodChannel(
+    'io.hydrabox.client/singbox',
+  );
   static final pigeon.SingboxHostApi _hostApi = pigeon.SingboxHostApi();
   static const EventChannel _events = EventChannel(
     'io.hydrabox.client/singbox_events',
@@ -1004,13 +1006,9 @@ class SingboxRuntime {
     return _decodeHydraCoreJson(value, operation: 'config validation');
   }
 
-  Future<Map<String, dynamic>> validateHydraSubscription(
-    String content,
-  ) async {
+  Future<Map<String, dynamic>> validateHydraSubscription(String content) async {
     if (!Platform.isAndroid) {
-      throw UnsupportedError(
-        'Hydra subscription validation requires Android.',
-      );
+      throw UnsupportedError('Hydra subscription validation requires Android.');
     }
     final value = await _withMethodChannelFallback<String>(
       () => _hostApi.validateHydraSubscription(content),
@@ -1025,9 +1023,7 @@ class SingboxRuntime {
 
   Future<Map<String, dynamic>> inspectHydraSubscription(String content) async {
     if (!Platform.isAndroid) {
-      throw UnsupportedError(
-        'Hydra subscription inspection requires Android.',
-      );
+      throw UnsupportedError('Hydra subscription inspection requires Android.');
     }
     final value = await _withMethodChannelFallback<String>(
       () => _hostApi.inspectHydraSubscription(content),
@@ -1072,10 +1068,10 @@ class SingboxRuntime {
     final value = await _withMethodChannelFallback<String>(
       () => _hostApi.validateHydraSubscriptionJwe(envelope, keyBase64Url),
       () async =>
-          await _methods.invokeMethod<String>(
-            'validateHydraSubscriptionJwe',
-            {'envelope': envelope, 'keyBase64Url': keyBase64Url},
-          ) ??
+          await _methods.invokeMethod<String>('validateHydraSubscriptionJwe', {
+            'envelope': envelope,
+            'keyBase64Url': keyBase64Url,
+          }) ??
           '',
     );
     return _decodeHydraCoreJson(value, operation: 'JWE validation');
@@ -1091,10 +1087,10 @@ class SingboxRuntime {
     final value = await _withMethodChannelFallback<String>(
       () => _hostApi.inspectHydraSubscriptionJwe(envelope, keyBase64Url),
       () async =>
-          await _methods.invokeMethod<String>(
-            'inspectHydraSubscriptionJwe',
-            {'envelope': envelope, 'keyBase64Url': keyBase64Url},
-          ) ??
+          await _methods.invokeMethod<String>('inspectHydraSubscriptionJwe', {
+            'envelope': envelope,
+            'keyBase64Url': keyBase64Url,
+          }) ??
           '',
     );
     return _decodeHydraCoreJson(value, operation: 'JWE inspection');

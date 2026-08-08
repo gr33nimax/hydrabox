@@ -119,32 +119,35 @@ void main() {
     },
   );
 
-  test('native startup error is returned without waiting for timeout', () async {
-    final runtime = _FakeRuntime(
-      running: false,
-      confirmStartImmediately: false,
-      lastError: 'HydraBox VK WebView credentials are required',
-    );
-    final controller = RuntimeLifecycleController(
-      runtime: runtime,
-      startTimeout: const Duration(seconds: 2),
-    );
-    addTearDown(controller.dispose);
+  test(
+    'native startup error is returned without waiting for timeout',
+    () async {
+      final runtime = _FakeRuntime(
+        running: false,
+        confirmStartImmediately: false,
+        lastError: 'HydraBox VK WebView credentials are required',
+      );
+      final controller = RuntimeLifecycleController(
+        runtime: runtime,
+        startTimeout: const Duration(seconds: 2),
+      );
+      addTearDown(controller.dispose);
 
-    final result = await controller.startRuntimeWithBuild(
-      build: _build(),
-      useVpn: true,
-      promotePreparedConfig: (_) {},
-      cacheStartedBuild: (_) {},
-      logCall: (_, _) {},
-      trimMemory: (_) {},
-      onWatchdogTimeout: (_) {},
-    );
+      final result = await controller.startRuntimeWithBuild(
+        build: _build(),
+        useVpn: true,
+        promotePreparedConfig: (_) {},
+        cacheStartedBuild: (_) {},
+        logCall: (_, _) {},
+        trimMemory: (_) {},
+        onWatchdogTimeout: (_) {},
+      );
 
-    expect(result.success, isFalse);
-    expect(result.timedOut, isFalse);
-    expect(result.error, contains('VK WebView credentials'));
-  });
+      expect(result.success, isFalse);
+      expect(result.timedOut, isFalse);
+      expect(result.error, contains('VK WebView credentials'));
+    },
+  );
 
   test('start waits for the native runtime owner before succeeding', () async {
     final runtime = _FakeRuntime(

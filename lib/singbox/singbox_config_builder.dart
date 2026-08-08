@@ -969,8 +969,7 @@ class SingboxConfigBuilder {
       if (sourceSection != 'outbounds' && sourceSection != 'endpoints') {
         continue;
       }
-      final original =
-          outbound.config['_hydra_original_tag']?.toString() ?? '';
+      final original = outbound.config['_hydra_original_tag']?.toString() ?? '';
       final current = outbound.tag;
       final projectedConfigTag = outbound.config['tag']?.toString() ?? '';
       if (original.isEmpty ||
@@ -1102,7 +1101,6 @@ class SingboxConfigBuilder {
       );
       _validateHydraWireGuardResourceLimits(native);
       _validateHydraReferenceGraph(native);
-
     }
 
     validateTypedEntries(
@@ -1843,8 +1841,7 @@ class SingboxConfigBuilder {
     Outbound outbound,
     Map<String, String> tagRemapping,
   ) {
-    final corePassthrough =
-        outbound.config['_hydra_core_passthrough'] == true;
+    final corePassthrough = outbound.config['_hydra_core_passthrough'] == true;
     final config = corePassthrough
         ? _cloneJsonMap(outbound.config)
         : Map<String, dynamic>.from(outbound.config);

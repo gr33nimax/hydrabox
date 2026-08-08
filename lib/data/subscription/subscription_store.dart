@@ -604,10 +604,13 @@ class SubscriptionStore {
       if (!allowCreate && currentMetadata == null) {
         throw StateError('Subscription ${sub.id} not found');
       }
-      final currentIsHydraBox = HydraSubscriptionParser
-          .isSupportedSourceFormat(currentMetadata?.sourceMetadata['format']);
-      final proposedIsHydraBox = HydraSubscriptionParser
-          .isSupportedSourceFormat(sub.sourceMetadata['format']);
+      final currentIsHydraBox = HydraSubscriptionParser.isSupportedSourceFormat(
+        currentMetadata?.sourceMetadata['format'],
+      );
+      final proposedIsHydraBox =
+          HydraSubscriptionParser.isSupportedSourceFormat(
+            sub.sourceMetadata['format'],
+          );
       if (currentIsHydraBox || proposedIsHydraBox) {
         if (currentMetadata == null ||
             !currentIsHydraBox ||
@@ -1236,10 +1239,7 @@ class SubscriptionStore {
   }
 
   static Future<({String plaintext, ParseResult parseResult})>
-  _parseContentWithHydraCore(
-    String content, {
-    String? decryptionKey,
-  }) async {
+  _parseContentWithHydraCore(String content, {String? decryptionKey}) async {
     var plaintext = content;
     var encrypted = false;
     if (HydraSubscriptionParser.looksLikeJwe(content)) {
@@ -1333,10 +1333,14 @@ class SubscriptionStore {
         final current = _readMetadata(candidate.id);
         final subscription = _normalizeBackupLocalState(candidate, current);
         _validatePersistentSourcePolicy(subscription);
-        final currentIsHydraBox = HydraSubscriptionParser
-            .isSupportedSourceFormat(current?.sourceMetadata['format']);
-        final proposedIsHydraBox = HydraSubscriptionParser
-            .isSupportedSourceFormat(subscription.sourceMetadata['format']);
+        final currentIsHydraBox =
+            HydraSubscriptionParser.isSupportedSourceFormat(
+              current?.sourceMetadata['format'],
+            );
+        final proposedIsHydraBox =
+            HydraSubscriptionParser.isSupportedSourceFormat(
+              subscription.sourceMetadata['format'],
+            );
         if (currentIsHydraBox && !proposedIsHydraBox) {
           throw const FormatException(
             'A backup cannot replace a HydraBox record with legacy payload',
@@ -1792,12 +1796,10 @@ class SubscriptionStore {
         'Hydra hydra-key fragment must contain one valid key value',
       );
     }
-    final parseResult = (
-      await _parseContentWithHydraCore(
-        rawContent,
-        decryptionKey: decryptionKey,
-      )
-    ).parseResult;
+    final parseResult = (await _parseContentWithHydraCore(
+      rawContent,
+      decryptionKey: decryptionKey,
+    )).parseResult;
     _validateHydraBoxRefresh(existingBeforeParse, parseResult);
     if (parseResult.outbounds.isEmpty &&
         !_allowsEmptySelectableEntries(parseResult)) {
@@ -2203,9 +2205,7 @@ class SubscriptionStore {
   }
 
   static String? _hydraBoxTrustTupleKey(Map<String, dynamic> metadata) {
-    if (!HydraSubscriptionParser.isSupportedSourceFormat(
-      metadata['format'],
-    )) {
+    if (!HydraSubscriptionParser.isSupportedSourceFormat(metadata['format'])) {
       return null;
     }
     final issuer = metadata['issuer'];
@@ -2833,8 +2833,7 @@ class SubscriptionStore {
         'Hydra hydra-key is allowed only in the URI fragment',
       );
     }
-    if (!Platform.isAndroid &&
-        _subscriptionUrlHasHydraKey(subscription.url)) {
+    if (!Platform.isAndroid && _subscriptionUrlHasHydraKey(subscription.url)) {
       throw UnsupportedError(
         'Persistent hydra-key subscriptions require Android '
         'Keystore-backed storage',
@@ -3011,10 +3010,8 @@ class SubscriptionStore {
             : null,
         clearNativeConfig: map['native_config'] is! Map,
         resourceConfigs: (map['resource_configs'] as Map? ?? const {}).map(
-          (key, value) => MapEntry(
-            key.toString(),
-            Map<String, dynamic>.from(value as Map),
-          ),
+          (key, value) =>
+              MapEntry(key.toString(), Map<String, dynamic>.from(value as Map)),
         ),
         sourceMetadata: <String, dynamic>{
           ...Map<String, dynamic>.from(

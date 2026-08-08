@@ -81,7 +81,10 @@ void main() {
     expect(hydrated.profiles, hasLength(2));
     expect(hydrated.resourceConfigs, hasLength(2));
     expect(hydrated.activeNativeConfig.toString(), contains('b.example'));
-    expect(hydrated.activeNativeConfig.toString(), isNot(contains('a.example')));
+    expect(
+      hydrated.activeNativeConfig.toString(),
+      isNot(contains('a.example')),
+    );
     expect(hydrated.sourceMetadata['permissions_automatic'], isTrue);
   });
 

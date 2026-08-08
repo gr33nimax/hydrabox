@@ -18,7 +18,10 @@ void main() {
     );
 
     expect(result.status, CoreConfigMigrationStatus.readyForValidation);
-    expect(result.state.coreConfigSchemaVersion, currentCoreConfigSchemaVersion);
+    expect(
+      result.state.coreConfigSchemaVersion,
+      currentCoreConfigSchemaVersion,
+    );
   });
 
   test('migration preserves compatible settings', () {

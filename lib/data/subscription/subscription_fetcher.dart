@@ -389,7 +389,10 @@ class SubscriptionFetcher {
     if (claimsHydra) {
       final validation = await SingboxRuntime.instance
           .validateHydraSubscription(plaintext);
-      _requireValidHydraResult(validation, operation: 'subscription validation');
+      _requireValidHydraResult(
+        validation,
+        operation: 'subscription validation',
+      );
     } else if (declaredHydraMediaType ==
         HydraSubscriptionUri.plaintextMediaType) {
       throw const FormatException(
@@ -420,10 +423,7 @@ class SubscriptionFetcher {
     );
     if (parseResult.format.isHydra &&
         requestUri.scheme.toLowerCase() != 'https') {
-      throw HttpException(
-        'Hydra subscriptions require HTTPS',
-        uri: requestUri,
-      );
+      throw HttpException('Hydra subscriptions require HTTPS', uri: requestUri);
     }
     return FetchResult(
       rawContent: plaintext,
@@ -472,7 +472,9 @@ class SubscriptionFetcher {
   }) {
     if (result['valid'] == true) return;
     final diagnostics = result['diagnostics'];
-    if (diagnostics is List && diagnostics.isNotEmpty && diagnostics.first is Map) {
+    if (diagnostics is List &&
+        diagnostics.isNotEmpty &&
+        diagnostics.first is Map) {
       final diagnostic = Map<String, dynamic>.from(diagnostics.first as Map);
       final code = diagnostic['code']?.toString() ?? 'invalid';
       final path = diagnostic['path']?.toString() ?? r'$';

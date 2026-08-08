@@ -223,7 +223,9 @@ class DeepLinkImportRequest {
 class DeepLinkImportBridge {
   DeepLinkImportBridge._();
 
-  static const MethodChannel _methods = MethodChannel('io.hydrabox.client/deep_links');
+  static const MethodChannel _methods = MethodChannel(
+    'io.hydrabox.client/deep_links',
+  );
   static const EventChannel _events = EventChannel(
     'io.hydrabox.client/deep_link_events',
   );

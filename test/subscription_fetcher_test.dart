@@ -49,14 +49,17 @@ void main() {
       );
     });
 
-    test('key-bearing fetch is rejected before non-HTTPS network access', () async {
-      await expectLater(
-        SubscriptionFetcher.fetch(
-          'http://127.0.0.1/subscription#hydra-key=$key',
-        ),
-        throwsA(isA<HttpException>()),
-      );
-    });
+    test(
+      'key-bearing fetch is rejected before non-HTTPS network access',
+      () async {
+        await expectLater(
+          SubscriptionFetcher.fetch(
+            'http://127.0.0.1/subscription#hydra-key=$key',
+          ),
+          throwsA(isA<HttpException>()),
+        );
+      },
+    );
 
     test('key in query is rejected before network access', () async {
       await expectLater(
@@ -103,20 +106,24 @@ void main() {
       );
     });
 
-    test('cross-origin redirects keep only non-sensitive negotiation headers', () {
-      final redirected = SubscriptionFetcher.headersForCrossOriginRedirectForTest({
-        'User-Agent': 'HydraBox/test',
-        'Accept': 'application/vnd.hydra.subscription+json',
-        'Authorization': 'Bearer secret',
-        'Cookie': 'secret=1',
-        'X-HWID': 'device',
-      });
+    test(
+      'cross-origin redirects keep only non-sensitive negotiation headers',
+      () {
+        final redirected =
+            SubscriptionFetcher.headersForCrossOriginRedirectForTest({
+              'User-Agent': 'HydraBox/test',
+              'Accept': 'application/vnd.hydra.subscription+json',
+              'Authorization': 'Bearer secret',
+              'Cookie': 'secret=1',
+              'X-HWID': 'device',
+            });
 
-      expect(redirected, {
-        'User-Agent': 'HydraBox/test',
-        'Accept': 'application/vnd.hydra.subscription+json',
-      });
-    });
+        expect(redirected, {
+          'User-Agent': 'HydraBox/test',
+          'Accept': 'application/vnd.hydra.subscription+json',
+        });
+      },
+    );
 
     test('Unicode HTTPS hosts are normalized without leaking fragments', () {
       final uri = SubscriptionFetcher.parseRequestUriForTest(

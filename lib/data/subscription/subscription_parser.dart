@@ -116,10 +116,8 @@ class ParseResult {
           : null,
       defaultProfileId: map['defaultProfileId']?.toString(),
       resourceConfigs: (map['resourceConfigs'] as Map? ?? const {}).map(
-        (key, value) => MapEntry(
-          key.toString(),
-          Map<String, dynamic>.from(value as Map),
-        ),
+        (key, value) =>
+            MapEntry(key.toString(), Map<String, dynamic>.from(value as Map)),
       ),
       sourceMetadata: map['sourceMetadata'] is Map
           ? Map<String, dynamic>.from(map['sourceMetadata'] as Map)

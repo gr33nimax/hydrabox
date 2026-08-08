@@ -222,16 +222,10 @@ abstract class SingboxHostApi {
   String openHydraSubscriptionJwe(String envelope, String keyBase64Url);
 
   @async
-  String validateHydraSubscriptionJwe(
-    String envelope,
-    String keyBase64Url,
-  );
+  String validateHydraSubscriptionJwe(String envelope, String keyBase64Url);
 
   @async
-  String inspectHydraSubscriptionJwe(
-    String envelope,
-    String keyBase64Url,
-  );
+  String inspectHydraSubscriptionJwe(String envelope, String keyBase64Url);
 
   @async
   void checkConfig(String config);

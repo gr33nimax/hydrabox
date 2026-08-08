@@ -475,8 +475,8 @@ class SingboxConfigCoordinator {
     late final SingboxConfigBuildResult result;
     try {
       result = await buildSingboxConfigInBackground(input);
-      final requiresHydraBoxValidation = HydraSubscriptionParser
-          .isSupportedSourceFormat(
+      final requiresHydraBoxValidation =
+          HydraSubscriptionParser.isSupportedSourceFormat(
             input.activeSubscription?.sourceMetadata['format'],
           );
       if ((validateConfig || requiresHydraBoxValidation) &&

@@ -83,7 +83,8 @@ class HydraBoxClient extends StatefulWidget {
   State<HydraBoxClient> createState() => _HydraBoxClientState();
 }
 
-class _HydraBoxClientState extends State<HydraBoxClient> with WidgetsBindingObserver {
+class _HydraBoxClientState extends State<HydraBoxClient>
+    with WidgetsBindingObserver {
   static const _fallbackClientVersionLabel = '0.4.0-beta.1';
   static const _requiredLegalVersion = '0.3.0';
   static final RegExp _quickTileCountryCodePattern = RegExp(r'^[A-Z]{2}$');

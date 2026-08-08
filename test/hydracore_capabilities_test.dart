@@ -41,10 +41,7 @@ void main() {
   });
 
   test('legacy, malformed, or incomplete contracts fail closed', () {
-    expect(
-      () => HydraCoreCapabilities.parseStrict(''),
-      throwsFormatException,
-    );
+    expect(() => HydraCoreCapabilities.parseStrict(''), throwsFormatException);
     expect(
       () => HydraCoreCapabilities.parseStrict('{not-json'),
       throwsFormatException,

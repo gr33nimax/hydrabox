@@ -3,32 +3,35 @@ import 'package:hydrabox/app/deep_link_import.dart';
 
 void main() {
   group('DeepLinkImportRequest.fromPayload', () {
-    test('keeps ordinary subscription urls without assigning an import alias', () {
-      final request = DeepLinkImportRequest.fromPayload({
-        'url': 'https://example.com/subscription',
-        'name': 'Example',
-      });
-
-      expect(request, isNotNull);
-      expect(request!.url, 'https://example.com/subscription');
-      expect(request.name, 'Example');
-      expect(request.scheme, isNull);
-      expect(request.sourceType, DeepLinkImportSource.unknown);
-    });
-
-    test('accepts the HydraBox import scheme', () {
+    test(
+      'keeps ordinary subscription urls without assigning an import alias',
+      () {
         final request = DeepLinkImportRequest.fromPayload({
-          'url': 'https://example.com/hydrabox-subscription',
-          'name': 'HydraBox example',
-          'scheme': 'hydrabox',
+          'url': 'https://example.com/subscription',
+          'name': 'Example',
         });
 
         expect(request, isNotNull);
-        expect(request!.url, 'https://example.com/hydrabox-subscription');
-        expect(request.name, 'HydraBox example');
-        expect(request.scheme, 'hydrabox');
-        expect(request.sourceType, DeepLinkImportSource.hydraboxImport);
+        expect(request!.url, 'https://example.com/subscription');
+        expect(request.name, 'Example');
+        expect(request.scheme, isNull);
+        expect(request.sourceType, DeepLinkImportSource.unknown);
+      },
+    );
+
+    test('accepts the HydraBox import scheme', () {
+      final request = DeepLinkImportRequest.fromPayload({
+        'url': 'https://example.com/hydrabox-subscription',
+        'name': 'HydraBox example',
+        'scheme': 'hydrabox',
       });
+
+      expect(request, isNotNull);
+      expect(request!.url, 'https://example.com/hydrabox-subscription');
+      expect(request.name, 'HydraBox example');
+      expect(request.scheme, 'hydrabox');
+      expect(request.sourceType, DeepLinkImportSource.hydraboxImport);
+    });
 
     test('normalizes happ add links without explicit scheme', () {
       final request = DeepLinkImportRequest.fromPayload({

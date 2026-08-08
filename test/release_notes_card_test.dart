@@ -47,10 +47,7 @@ closeAll()
           .map((widget) => widget.text.toPlainText()),
       ...tester
           .widgetList<SelectableText>(find.byType(SelectableText))
-          .map(
-            (widget) =>
-                widget.data ?? widget.textSpan?.toPlainText() ?? '',
-          ),
+          .map((widget) => widget.data ?? widget.textSpan?.toPlainText() ?? ''),
     ].join('\n');
 
     expect(renderedText, contains('Исправления'));
@@ -76,15 +73,10 @@ closeAll()
     expect(
       openedUris,
       contains(
-        Uri.parse(
-          'https://github.com/yamixdev/etonify-core/tree/etonify-dev',
-        ),
+        Uri.parse('https://github.com/yamixdev/etonify-core/tree/etonify-dev'),
       ),
     );
-    expect(
-      openedUris,
-      contains(Uri.parse('https://example.com/docs')),
-    );
+    expect(openedUris, contains(Uri.parse('https://example.com/docs')));
   });
 }
 

@@ -6,8 +6,7 @@
 class HydraSubscriptionUri {
   HydraSubscriptionUri._();
 
-  static const plaintextMediaType =
-      'application/vnd.hydra.subscription+json';
+  static const plaintextMediaType = 'application/vnd.hydra.subscription+json';
   static const encryptedMediaType = 'application/jose+json';
   static const keyFragmentName = 'hydra-key';
 

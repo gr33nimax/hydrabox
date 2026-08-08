@@ -56,7 +56,8 @@ class _SettingsLogsPageState extends State<SettingsLogsPage> {
     try {
       exportUri = await SingboxRuntime.instance.exportLogs(
         content: output,
-        suggestedName: 'hydrabox-logs-${DateTime.now().millisecondsSinceEpoch}.txt',
+        suggestedName:
+            'hydrabox-logs-${DateTime.now().millisecondsSinceEpoch}.txt',
       );
     } catch (_) {
       exportUri = null;
