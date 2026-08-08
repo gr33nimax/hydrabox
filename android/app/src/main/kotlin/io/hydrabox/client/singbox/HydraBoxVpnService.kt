@@ -3,6 +3,7 @@ package io.hydrabox.client.singbox
 import android.annotation.SuppressLint
 import android.app.AlarmManager
 import android.app.PendingIntent
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Network
@@ -208,15 +209,15 @@ class HydraBoxVpnService : VpnService() {
         // the process together with the task. If the service stayed alive,
         // startInternal() wakes the existing runtime and re-applies its physical
         // upstream without rebuilding TUN.
-        val restartIntent = Intent(this, HydraBoxVpnService::class.java)
-            .setAction(HydraBoxService.ACTION_START)
-        val flags = PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_ONE_SHOT or
-            PendingIntent.FLAG_IMMUTABLE
+        val restartIntent = Intent(HydraBoxService.ACTION_START).setComponent(
+            ComponentName(this, HydraBoxVpnService::class.java),
+        )
         val pending = PendingIntent.getForegroundService(
             this,
             RESTART_REQUEST_CODE,
             restartIntent,
-            flags,
+            PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_ONE_SHOT or
+                PendingIntent.FLAG_IMMUTABLE,
         )
         val alarm = getSystemService(Context.ALARM_SERVICE) as AlarmManager
         alarm.setAndAllowWhileIdle(
@@ -227,14 +228,14 @@ class HydraBoxVpnService : VpnService() {
     }
 
     private fun cancelScheduledRestart(reason: String) {
-        val flags = PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
-        val restartIntent = Intent(this, HydraBoxVpnService::class.java)
-            .setAction(HydraBoxService.ACTION_START)
+        val restartIntent = Intent(HydraBoxService.ACTION_START).setComponent(
+            ComponentName(this, HydraBoxVpnService::class.java),
+        )
         val pending = PendingIntent.getForegroundService(
             this,
             RESTART_REQUEST_CODE,
             restartIntent,
-            flags,
+            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
         ) ?: return
         runCatching {
             val alarm = getSystemService(Context.ALARM_SERVICE) as AlarmManager
