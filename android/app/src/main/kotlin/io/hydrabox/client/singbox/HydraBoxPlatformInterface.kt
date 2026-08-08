@@ -166,7 +166,9 @@ abstract class HydraBoxBasePlatformInterface(
 
     override fun sendNotification(notification: Notification?) {
         if (notification == null) return
-        SingboxController.log("info", notification.title + ": " + notification.body)
+        val message = notification.title + ": " + notification.body
+        HydraBoxVkCaptchaSolver.maybeStart(context, message)
+        SingboxController.log("info", message)
     }
 
     override fun startDefaultInterfaceMonitor(listener: InterfaceUpdateListener?) {

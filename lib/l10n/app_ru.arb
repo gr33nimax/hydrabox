@@ -960,5 +960,6 @@
   "connectionStageRecovering": "Восстановление",
   "connectionStageSelectingProxy": "Выбор сервера",
   "vpnStartTimedOut": "VPN не запустился за 15 секунд. Запуск остановлен.",
-  "vpnStartFailed": "Не удалось запустить VPN."
+  "vpnStartFailed": "Не удалось запустить VPN.",
+  "vkCaptchaOpenFailed": "Не удалось открыть капчу VK. Ссылка скопирована в буфер обмена."
 }

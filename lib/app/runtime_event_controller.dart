@@ -26,11 +26,76 @@ class RuntimeGroupsEvent {
   final int runtimeGeneration;
 }
 
+class RuntimeUrlTestSessionsEvent {
+  const RuntimeUrlTestSessionsEvent({
+    required this.sessions,
+    required this.runtimeGeneration,
+    required this.sequence,
+    required this.reset,
+  });
+
+  final List<dynamic> sessions;
+  final int runtimeGeneration;
+  final int sequence;
+  final bool reset;
+
+  /// Converts the managed URL-test stream into the same group telemetry shape
+  /// consumed by the proxy runtime controller. Native managed sessions report
+  /// `observedAt` in Unix milliseconds, while group snapshots use seconds.
+  List<Map<String, dynamic>> toGroupUpdates() {
+    final groups = <Map<String, dynamic>>[];
+    for (final rawSession in sessions) {
+      if (rawSession is! Map) {
+        continue;
+      }
+      final session = Map<String, dynamic>.from(rawSession);
+      final rawResults = session['results'];
+      if (rawResults is! List || rawResults.isEmpty) {
+        continue;
+      }
+      final items = <Map<String, dynamic>>[];
+      for (final rawResult in rawResults) {
+        if (rawResult is! Map) {
+          continue;
+        }
+        final result = Map<String, dynamic>.from(rawResult);
+        final tag = result['outboundTag']?.toString().trim() ?? '';
+        if (tag.isEmpty) {
+          continue;
+        }
+        final observedAt = (result['observedAt'] as num?)?.toInt() ?? 0;
+        final errorMessage =
+            result['errorMessage']?.toString().trim() ?? '';
+        final errorCode = result['errorCode']?.toString().trim() ?? '';
+        items.add(<String, dynamic>{
+          'tag': tag,
+          'delay': (result['delayMillis'] as num?)?.toInt() ?? 0,
+          'time': observedAt >= 100000000000 ? observedAt ~/ 1000 : observedAt,
+          'status': result['status']?.toString() ?? '',
+          'error': errorMessage.isNotEmpty ? errorMessage : errorCode,
+          'errorCode': errorCode,
+        });
+      }
+      if (items.isNotEmpty) {
+        groups.add(<String, dynamic>{
+          'tag': session['groupTag']?.toString() ?? '',
+          'items': items,
+        });
+      }
+    }
+    return groups;
+  }
+}
+
 typedef RuntimeStateHandler = void Function(RuntimeStateEvent event);
 typedef RuntimeRawEventHandler = void Function(Map<String, dynamic> event);
 typedef RuntimeGroupsHandler = void Function(RuntimeGroupsEvent event);
+typedef RuntimeUrlTestSessionsHandler =
+    void Function(RuntimeUrlTestSessionsEvent event);
 typedef RuntimeLogFilter = bool Function(String level);
 typedef RuntimeLogIssueHandler = void Function(String reason, String message);
+typedef RuntimeCaptchaRequiredHandler = void Function(Uri uri);
+typedef RuntimeCaptchaSolvedHandler = void Function();
 
 class RuntimeEventController {
   RuntimeEventController({
@@ -40,6 +105,9 @@ class RuntimeEventController {
     required RuntimeRawEventHandler onNetwork,
     required RuntimeGroupsHandler onGroups,
     required RuntimeLogFilter shouldRecordLog,
+    RuntimeUrlTestSessionsHandler? onUrlTestSessions,
+    RuntimeCaptchaRequiredHandler? onCaptchaRequired,
+    RuntimeCaptchaSolvedHandler? onCaptchaSolved,
     RuntimeLogIssueHandler? onRuntimeLogIssue,
     DateTime Function()? now,
   }) : _events = events,
@@ -47,6 +115,9 @@ class RuntimeEventController {
        _onStatus = onStatus,
        _onNetwork = onNetwork,
        _onGroups = onGroups,
+       _onUrlTestSessions = onUrlTestSessions,
+       _onCaptchaRequired = onCaptchaRequired,
+       _onCaptchaSolved = onCaptchaSolved,
        _shouldRecordLog = shouldRecordLog,
        _onRuntimeLogIssue = onRuntimeLogIssue,
        _now = now ?? DateTime.now;
@@ -55,12 +126,19 @@ class RuntimeEventController {
     r'\bdial\s+(?:ccmni|wlan|rmnet|swlan|eth|usb|ap)\w*\s*\(\d+\).*?\b(?:network is unreachable|no route to host)\b',
     caseSensitive: false,
   );
+  static final RegExp _vkCaptchaUrlPattern = RegExp(
+    r'vk-auth:\s*solve the captcha to continue:\s*(http://(?:127\.0\.0\.1|localhost):\d+(?:/\S*)?)',
+    caseSensitive: false,
+  );
 
   final Stream<Map<String, dynamic>> _events;
   final RuntimeStateHandler _onState;
   final RuntimeRawEventHandler _onStatus;
   final RuntimeRawEventHandler _onNetwork;
   final RuntimeGroupsHandler _onGroups;
+  final RuntimeUrlTestSessionsHandler? _onUrlTestSessions;
+  final RuntimeCaptchaRequiredHandler? _onCaptchaRequired;
+  final RuntimeCaptchaSolvedHandler? _onCaptchaSolved;
   final RuntimeLogFilter _shouldRecordLog;
   final RuntimeLogIssueHandler? _onRuntimeLogIssue;
   final DateTime Function() _now;
@@ -104,6 +182,17 @@ class RuntimeEventController {
           ),
         );
         break;
+      case 'urlTestSessions':
+        _onUrlTestSessions?.call(
+          RuntimeUrlTestSessionsEvent(
+            sessions: (event['sessions'] as List?) ?? const [],
+            runtimeGeneration:
+                (event['runtimeGeneration'] as num?)?.toInt() ?? 0,
+            sequence: (event['sequence'] as num?)?.toInt() ?? 0,
+            reset: event['reset'] == true,
+          ),
+        );
+        break;
       case 'nativeLog':
         _recordNativeLog(event);
         break;
@@ -123,6 +212,8 @@ class RuntimeEventController {
     if (message.isEmpty) {
       return;
     }
+    _emitCaptchaRequiredIfNeeded(message);
+    _emitCaptchaSolvedIfNeeded(message);
     _emitRuntimeLogIssueIfNeeded(message);
     final normalizedLevel = _normalizeNativeLevel(level);
     final effectiveLevel = AppLogStore.inferLevel(message) ?? normalizedLevel;
@@ -150,6 +241,8 @@ class RuntimeEventController {
       if (message.isEmpty) {
         continue;
       }
+      _emitCaptchaRequiredIfNeeded(message);
+      _emitCaptchaSolvedIfNeeded(message);
       _emitRuntimeLogIssueIfNeeded(message);
       final fallbackLevel = _fallbackBatchLogLevel(level);
       final effectiveLevel = AppLogStore.inferLevel(message) ?? fallbackLevel;
@@ -174,6 +267,29 @@ class RuntimeEventController {
       return;
     }
     _onRuntimeLogIssue?.call(reason, message);
+  }
+
+  void _emitCaptchaRequiredIfNeeded(String message) {
+    final match = _vkCaptchaUrlPattern.firstMatch(message);
+    final rawUri = match?.group(1);
+    if (rawUri == null) {
+      return;
+    }
+    final uri = Uri.tryParse(rawUri);
+    if (uri == null ||
+        uri.scheme != 'http' ||
+        (uri.host != '127.0.0.1' && uri.host != 'localhost') ||
+        !uri.hasPort ||
+        uri.port <= 0) {
+      return;
+    }
+    _onCaptchaRequired?.call(uri);
+  }
+
+  void _emitCaptchaSolvedIfNeeded(String message) {
+    if (message.toLowerCase().contains('vk-auth: captcha solved')) {
+      _onCaptchaSolved?.call();
+    }
   }
 
   String? _runtimeLogIssueReason(String message) {

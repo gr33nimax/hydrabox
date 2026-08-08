@@ -2282,4 +2282,8 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get vpnStartFailed => 'Не удалось запустить VPN.';
+
+  @override
+  String get vkCaptchaOpenFailed =>
+      'Не удалось открыть капчу VK. Ссылка скопирована в буфер обмена.';
 }

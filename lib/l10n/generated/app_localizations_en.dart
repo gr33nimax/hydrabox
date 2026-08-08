@@ -2277,4 +2277,8 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get vpnStartFailed => 'Failed to start VPN.';
+
+  @override
+  String get vkCaptchaOpenFailed =>
+      'Could not open the VK captcha. The link was copied to the clipboard.';
 }

@@ -59,6 +59,13 @@ published as a pinned core release asset, and its provenance is recorded under
 `android/app/libs`. Historical mobile-integration lineage remains recorded in
 the source history and machine-readable provenance.
 
+## qWDTT VK captcha automation
+
+The Android VK Smart Captcha checkbox strategy is adapted from
+[`SpaceNeuroX/proxy-turn-vk-android`](https://github.com/SpaceNeuroX/proxy-turn-vk-android),
+licensed under GPL-3.0. HydraBox uses it only for the automatic checkbox stage;
+interactive slider challenges fall back to a visible browser.
+
 ## Other dependencies
 
 Flutter, Android Gradle Plugin, Kotlin, Gradle plugins, and Dart/Android

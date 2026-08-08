@@ -960,5 +960,6 @@
   "connectionStageRecovering": "Recovering",
   "connectionStageSelectingProxy": "Selecting server",
   "vpnStartTimedOut": "VPN did not start within 15 seconds. Startup was stopped.",
-  "vpnStartFailed": "Failed to start VPN."
+  "vpnStartFailed": "Failed to start VPN.",
+  "vkCaptchaOpenFailed": "Could not open the VK captcha. The link was copied to the clipboard."
 }

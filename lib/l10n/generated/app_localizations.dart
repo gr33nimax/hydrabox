@@ -4052,6 +4052,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Failed to start VPN.'**
   String get vpnStartFailed;
+
+  /// No description provided for @vkCaptchaOpenFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not open the VK captcha. The link was copied to the clipboard.'**
+  String get vkCaptchaOpenFailed;
 }
 
 class _AppLocalizationsDelegate

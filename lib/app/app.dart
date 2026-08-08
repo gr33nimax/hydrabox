@@ -73,6 +73,7 @@ import 'package:hydrabox/singbox/singbox_config_builder.dart';
 import 'package:hydrabox/singbox/singbox_runtime.dart';
 import 'package:hydrabox/theme/demo_app_theme.dart';
 import 'package:hydrabox/widgets/country_flag_badge.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class HydraBoxClient extends StatefulWidget {
   const HydraBoxClient({super.key, this.store});
@@ -139,6 +140,11 @@ class _HydraBoxClientState extends State<HydraBoxClient>
   bool _notificationPermissionPromptAttempted = false;
   bool _notificationPermissionRequestInFlight = false;
   String _lastVpnNotificationPresentationSignature = '';
+  Uri? _lastVkCaptchaUri;
+  DateTime? _lastVkCaptchaOpenedAt;
+  bool _vkCaptchaLaunchInFlight = false;
+  Uri? _pendingVkCaptchaUri;
+  Timer? _vkCaptchaFallbackTimer;
   final AppSettingsController _settings = AppSettingsController();
   int _locationLookupActiveRequests = 0;
   int _locationLookupGeneration = 0;
@@ -619,6 +625,86 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     if (!wasReady && _runtimeOperations.diagnosticsReady) {
       _onRuntimeDiagnosticsReady();
     }
+  }
+
+  Future<void> _openVkCaptcha(Uri uri) async {
+    _vkCaptchaFallbackTimer = null;
+    _pendingVkCaptchaUri = null;
+    if (!mounted || _vkCaptchaLaunchInFlight) {
+      return;
+    }
+    final now = DateTime.now();
+    final duplicate =
+        _lastVkCaptchaUri == uri &&
+        _lastVkCaptchaOpenedAt != null &&
+        now.difference(_lastVkCaptchaOpenedAt!) < const Duration(minutes: 5);
+    if (duplicate) {
+      return;
+    }
+    if (!_foregroundLifecycleActive) {
+      AppLogStore.warning(
+        'vk-auth',
+        'VK captcha is waiting while the app is in background',
+      );
+      return;
+    }
+
+    _vkCaptchaLaunchInFlight = true;
+    _lastVkCaptchaUri = uri;
+    _lastVkCaptchaOpenedAt = now;
+    try {
+      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (opened) {
+        AppLogStore.info('vk-auth', 'opened the VK captcha page');
+        return;
+      }
+      await Clipboard.setData(ClipboardData(text: uri.toString()));
+      final currentContext = _navigatorKey.currentContext;
+      if (currentContext != null) {
+        _showAppSnackBar(
+          AppLocalizations.of(currentContext).vkCaptchaOpenFailed,
+        );
+      }
+    } catch (error) {
+      AppLogStore.warning('vk-auth', 'failed to open VK captcha: $error');
+      await Clipboard.setData(ClipboardData(text: uri.toString()));
+      final currentContext = _navigatorKey.currentContext;
+      if (currentContext != null) {
+        _showAppSnackBar(
+          AppLocalizations.of(currentContext).vkCaptchaOpenFailed,
+        );
+      }
+    } finally {
+      _vkCaptchaLaunchInFlight = false;
+    }
+  }
+
+  void _handleVkCaptchaRequired(Uri uri) {
+    if (_pendingVkCaptchaUri == uri &&
+        _vkCaptchaFallbackTimer?.isActive == true) {
+      return;
+    }
+    _vkCaptchaFallbackTimer?.cancel();
+    _pendingVkCaptchaUri = uri;
+    if (!Platform.isAndroid) {
+      unawaited(_openVkCaptcha(uri));
+      return;
+    }
+    AppLogStore.info(
+      'vk-auth',
+      'automatic VK captcha attempt started; manual fallback in 12 seconds',
+    );
+    _vkCaptchaFallbackTimer = Timer(
+      const Duration(seconds: 12),
+      () => unawaited(_openVkCaptcha(uri)),
+    );
+  }
+
+  void _handleVkCaptchaSolved() {
+    _vkCaptchaFallbackTimer?.cancel();
+    _vkCaptchaFallbackTimer = null;
+    _pendingVkCaptchaUri = null;
+    AppLogStore.info('vk-auth', 'VK captcha completed automatically');
   }
 
   void _handleRuntimeLogIssue(String reason, String message) {
@@ -1765,6 +1851,9 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       onStatus: _handleTrafficStatusEvent,
       onNetwork: _handleRuntimeNetworkEvent,
       onGroups: _applyGroupUpdates,
+      onUrlTestSessions: _applyManagedUrlTestSessions,
+      onCaptchaRequired: _handleVkCaptchaRequired,
+      onCaptchaSolved: _handleVkCaptchaSolved,
       shouldRecordLog: _shouldRecordSingBoxLog,
       onRuntimeLogIssue: _handleRuntimeLogIssue,
     );
@@ -1803,6 +1892,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     _runtimeRecovery.dispose();
     _locationLookupTimer?.cancel();
     _resumeForegroundSyncTimer?.cancel();
+    _vkCaptchaFallbackTimer?.cancel();
     _groupUrlTestScheduler.dispose();
     _networkRecovery.dispose();
     _configCoordinator.dispose();
@@ -3352,7 +3442,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
           previousTag: selectedTagForStart,
           onTimeout: _handleRuntimeProxySelectionTimeout,
           confirmationTimeout:
-              _runtimeLifecycle.startTimeout +
+              _runtimeLifecycle.startTimeoutForBuild(build) +
               _runtimeCommands.selectionTimeout +
               const Duration(seconds: 2),
         );
@@ -5960,6 +6050,9 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       invalidOutboundCount: 0,
       selectedProxyInvalid: false,
       startableOutboundCount: mutation.startableProxyCount,
+      hasInteractiveVkCall: singboxConfigHasInteractiveVkCall(
+        mutation.config,
+      ),
     );
     AppLogStore.info(
       'sing-box',
@@ -6056,6 +6149,62 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       ),
     );
     _runtimeErrorDialogVisible = false;
+  }
+
+  void _applyManagedUrlTestSessions(RuntimeUrlTestSessionsEvent event) {
+    if (!mounted || !_connected || _runtimeTransitionInProgress) {
+      return;
+    }
+    final currentRuntimeGeneration =
+        _runtimeOperations.nativeRuntimeGeneration;
+    if (event.runtimeGeneration > 0 &&
+        currentRuntimeGeneration > 0 &&
+        event.runtimeGeneration != currentRuntimeGeneration) {
+      AppLogStore.debug(
+        'latency',
+        'discarded stale managed URLTest event nativeGeneration='
+            '${event.runtimeGeneration} currentGeneration='
+            '$currentRuntimeGeneration',
+      );
+      return;
+    }
+    final activeSubscription = _activeSubscription;
+    final rawGroups = event.toGroupUpdates();
+    if (activeSubscription == null || rawGroups.isEmpty) {
+      return;
+    }
+
+    final previousActiveOutboundTag = _currentResolvedActiveOutboundTag();
+    _ensureActiveLookupCaches();
+    final result = _proxyRuntime.applyGroupUpdates(
+      ProxyRuntimeGroupUpdateInput(
+        rawGroups: rawGroups,
+        activeSubscription: activeSubscription,
+        selectedProxyTag: _selectedProxyTag,
+        pendingRuntimeSelectTag: _proxySelection.pendingRuntimeSelectTag,
+        runtimeSelectionUpdatesAllowed: false,
+        currentResolvedActiveOutboundTag: previousActiveOutboundTag,
+        activeOutboundTags: _activeOutboundByTagLookup.keys.toSet(),
+        latencySessionRunning: _latencyCoordinator.isRunning,
+        shouldIgnoreLatencyResult:
+            _latencyCoordinator.shouldIgnoreGroupResult,
+        proxyCacheContainsTag: _proxyCacheContainsTag,
+        visibleGroupProxyCacheMissingChild:
+            _visibleGroupProxyCacheMissingChild,
+      ),
+    );
+    // Apply telemetry before acknowledging it to the coordinator: once an
+    // event is acknowledged, duplicate protection intentionally rejects the
+    // same timestamp.
+    _forwardLatencyGroupEvents(rawGroups);
+    if (!result.changed) {
+      return;
+    }
+    _publishProxyRuntimeVisualStates();
+    unawaited(_syncQuickSettingsTileLabel());
+    if (result.realOutboundRuntimeStateChanged) {
+      _scheduleBestOutboundLocationRefresh();
+    }
   }
 
   void _applyGroupUpdates(RuntimeGroupsEvent event) {

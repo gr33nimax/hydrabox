@@ -4,6 +4,26 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hydrabox/app/app_background_tasks.dart';
 
 void main() {
+  test('detects interactive VK call outbounds', () {
+    expect(
+      singboxConfigHasInteractiveVkCall({
+        'outbounds': [
+          {'type': 'call', 'platform': 'vk', 'tag': 'call-vk-out'},
+        ],
+      }),
+      isTrue,
+    );
+    expect(
+      singboxConfigHasInteractiveVkCall({
+        'outbounds': [
+          {'type': 'call', 'platform': 'telemost'},
+          {'type': 'vless'},
+        ],
+      }),
+      isFalse,
+    );
+  });
+
   test('fast retry prunes empty proxy groups after removing an outbound', () {
     final tempDir = Directory.systemTemp.createTempSync(
       'hydrabox-config-mutation-',

@@ -186,6 +186,32 @@ void main() {
     expect(runtime.statusCalls, greaterThanOrEqualTo(1));
   });
 
+  test('VK call build uses the interactive startup timeout', () async {
+    final runtime = _FakeRuntime(
+      running: false,
+      startDelay: const Duration(milliseconds: 30),
+    );
+    final controller = RuntimeLifecycleController(
+      runtime: runtime,
+      startTimeout: const Duration(milliseconds: 10),
+      interactiveStartTimeout: const Duration(milliseconds: 100),
+    );
+    addTearDown(controller.dispose);
+
+    final result = await controller.startRuntimeWithBuild(
+      build: _build(hasInteractiveVkCall: true),
+      useVpn: true,
+      promotePreparedConfig: (_) {},
+      cacheStartedBuild: (_) {},
+      logCall: (_, _) {},
+      trimMemory: (_) {},
+      onWatchdogTimeout: (_) {},
+    );
+
+    expect(result.success, isTrue);
+    expect(runtime.stopCalls, 0);
+  });
+
   test(
     'running without a native runtime owner is not a successful start',
     () async {
@@ -267,9 +293,9 @@ void main() {
   );
 }
 
-SingboxConfigBuildResult _build() {
-  return const SingboxConfigBuildResult(
-    plan: SingboxBuildPlan(
+SingboxConfigBuildResult _build({bool hasInteractiveVkCall = false}) {
+  return SingboxConfigBuildResult(
+    plan: const SingboxBuildPlan(
       config: <String, dynamic>{},
       proxyOutboundTagsByIndex: <int, String>{0: 'vless-1'},
       visibleProxyOutboundCount: 1,
@@ -284,6 +310,7 @@ SingboxConfigBuildResult _build() {
     invalidOutboundCount: 0,
     selectedProxyInvalid: false,
     startableOutboundCount: 1,
+    hasInteractiveVkCall: hasInteractiveVkCall,
   );
 }
 
@@ -296,6 +323,7 @@ class _FakeRuntime implements RuntimeLifecycleRuntime {
     this.ignoreStop = false,
     this.confirmStartImmediately = true,
     this.lastError = '',
+    this.startDelay = Duration.zero,
   }) : recordedServiceAlive = running,
        activeRuntimeOwner = running,
        runtimeGeneration = running ? 1 : 0;
@@ -308,6 +336,7 @@ class _FakeRuntime implements RuntimeLifecycleRuntime {
   bool ignoreStop;
   bool confirmStartImmediately;
   String lastError;
+  Duration startDelay;
   bool recordedServiceAlive;
   bool activeRuntimeOwner;
   int runtimeGeneration;
@@ -373,6 +402,9 @@ class _FakeRuntime implements RuntimeLifecycleRuntime {
     if (!startCompletes) {
       await Future<void>.delayed(const Duration(minutes: 1));
     }
+    if (startDelay > Duration.zero) {
+      await Future<void>.delayed(startDelay);
+    }
     mode = useVpn ? 'vpn' : 'proxy';
     if (confirmStartImmediately) {
       confirmStarted(useVpn: useVpn);
@@ -384,6 +416,9 @@ class _FakeRuntime implements RuntimeLifecycleRuntime {
     startPreparedCalls++;
     if (!startCompletes) {
       await Future<void>.delayed(const Duration(minutes: 1));
+    }
+    if (startDelay > Duration.zero) {
+      await Future<void>.delayed(startDelay);
     }
     mode = useVpn ? 'vpn' : 'proxy';
     if (confirmStartImmediately) {

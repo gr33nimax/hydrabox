@@ -171,6 +171,7 @@ class SingboxConfigBuildResult {
     required this.invalidOutboundCount,
     required this.selectedProxyInvalid,
     required this.startableOutboundCount,
+    this.hasInteractiveVkCall = false,
   });
 
   final SingboxBuildPlan plan;
@@ -184,6 +185,7 @@ class SingboxConfigBuildResult {
   final int invalidOutboundCount;
   final bool selectedProxyInvalid;
   final int startableOutboundCount;
+  final bool hasInteractiveVkCall;
 
   bool get hasReturnedConfig => plan.config.isNotEmpty;
   bool get hasPreparedConfig =>
@@ -202,6 +204,7 @@ class SingboxConfigBuildResult {
         invalidOutboundCount: invalidOutboundCount,
         selectedProxyInvalid: selectedProxyInvalid,
         startableOutboundCount: startableOutboundCount,
+        hasInteractiveVkCall: hasInteractiveVkCall,
       );
 }
 
@@ -213,6 +216,17 @@ class StartupValidationInput {
 
   final Subscription? subscription;
   final Set<String> excludedOutboundTags;
+}
+
+bool singboxConfigHasInteractiveVkCall(Map<String, dynamic> config) {
+  return ((config['outbounds'] as List?) ?? const []).any((rawOutbound) {
+    if (rawOutbound is! Map) {
+      return false;
+    }
+    final outbound = Map<String, dynamic>.from(rawOutbound);
+    return outbound['type']?.toString().toLowerCase() == 'call' &&
+        outbound['platform']?.toString().toLowerCase() == 'vk';
+  });
 }
 
 class InvalidStartupOutbound {
@@ -462,6 +476,7 @@ SingboxConfigBuildResult buildSingboxConfig(SingboxConfigBuildInput input) {
       : _writeConfigJsonAtomically(outputConfigPath, configJson);
   final configOutboundCount =
       ((config['outbounds'] as List?) ?? const []).length;
+  final hasInteractiveVkCall = singboxConfigHasInteractiveVkCall(config);
   final shouldReturnConfig = input.returnConfig || configOutboundCount < 100;
   final resultPlan = shouldReturnConfig
       ? plan
@@ -489,6 +504,7 @@ SingboxConfigBuildResult buildSingboxConfig(SingboxConfigBuildInput input) {
         input.selectedProxyTag.isNotEmpty &&
         invalidOutboundTags.contains(input.selectedProxyTag),
     startableOutboundCount: validation.startableCount,
+    hasInteractiveVkCall: hasInteractiveVkCall,
   );
 }
 
