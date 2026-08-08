@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/data/local/app_settings_store.dart';
+import 'package:hydrabox/data/local/app_settings_store.dart';
 
 void main() {
   test('defaults to standard performance mode and cold runtime values', () {
@@ -155,14 +155,14 @@ void main() {
         'Telegram',
         'com.example.app',
         'com.example.app',
-        'com.etonify.meow_client',
+        'io.hydrabox.client',
         'bad package',
         '',
         ...List.generate(140, (index) => 'com.example.app$index'),
       ]);
 
       expect(packages.first, 'com.example.app');
-      expect(packages, isNot(contains('com.etonify.meow_client')));
+      expect(packages, isNot(contains('io.hydrabox.client')));
       expect(packages.length, maxSplitRoutingPackageCount);
     },
   );

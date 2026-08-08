@@ -7,7 +7,7 @@ import 'dart:convert';
 /// extracts the relevant outbounds (filtering out meta types like
 /// `direct`, `block` and `dns`). Native `selector`/`urltest` groups are retained
 /// when their members come from providers. Top-level endpoints are represented
-/// as app entries with `_etonify_source_section: endpoints`; the runtime builder
+/// as app entries with `_hydra_source_section: endpoints`; the runtime builder
 /// restores them to `endpoints` instead of emitting invalid endpoint objects in
 /// `outbounds`.
 class SingboxConfigParser {
@@ -624,13 +624,13 @@ class SingboxConfigParser {
         outbound['_name'] = tag.isNotEmpty ? tag : '$type-${results.length}';
         // The 1.13 core only supports WireGuard as an endpoint. Preserve the
         // legacy options but route them to the endpoint section at runtime.
-        outbound['_etonify_source_section'] = type == 'wireguard'
+        outbound['_hydra_source_section'] = type == 'wireguard'
             ? 'endpoints'
             : 'outbounds';
-        outbound['_etonify_source_index'] = sourceIndex;
-        outbound['_etonify_source_index_section'] = 'outbounds';
+        outbound['_hydra_source_index'] = sourceIndex;
+        outbound['_hydra_source_index_section'] = 'outbounds';
         if (tag.isNotEmpty) {
-          outbound['_etonify_original_tag'] = tag;
+          outbound['_hydra_original_tag'] = tag;
         }
         if (detourHelperTags.contains(tag)) {
           outbound['_group_only'] = true;
@@ -655,11 +655,11 @@ class SingboxConfigParser {
         endpoint['_name'] = tag.isNotEmpty
             ? tag
             : '$type-endpoint-${results.length}';
-        endpoint['_etonify_source_section'] = 'endpoints';
-        endpoint['_etonify_source_index'] = sourceIndex;
-        endpoint['_etonify_source_index_section'] = 'endpoints';
+        endpoint['_hydra_source_section'] = 'endpoints';
+        endpoint['_hydra_source_index'] = sourceIndex;
+        endpoint['_hydra_source_index_section'] = 'endpoints';
         if (tag.isNotEmpty) {
-          endpoint['_etonify_original_tag'] = tag;
+          endpoint['_hydra_original_tag'] = tag;
         }
         if (detourHelperTags.contains(tag)) {
           endpoint['_group_only'] = true;

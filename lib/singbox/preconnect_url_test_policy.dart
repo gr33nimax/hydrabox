@@ -1,5 +1,5 @@
-import 'package:meow_client/core/lowest_proxy_groups.dart';
-import 'package:meow_client/models/subscription.dart';
+import 'package:hydrabox/core/lowest_proxy_groups.dart';
+import 'package:hydrabox/models/subscription.dart';
 
 /// Resolves the one concrete outbound that can be tested without starting the
 /// VPN. Synthetic and automatic groups are deliberately rejected.

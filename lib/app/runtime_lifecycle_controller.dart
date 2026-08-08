@@ -1,8 +1,8 @@
 import 'dart:async';
 
-import 'package:meow_client/app/app_background_tasks.dart';
-import 'package:meow_client/logging/app_log_store.dart';
-import 'package:meow_client/singbox/singbox_runtime.dart';
+import 'package:hydrabox/app/app_background_tasks.dart';
+import 'package:hydrabox/logging/app_log_store.dart';
+import 'package:hydrabox/singbox/singbox_runtime.dart';
 
 enum RuntimeApplyPolicy { logOnly, safeCoreRestart, fullServiceRestart }
 

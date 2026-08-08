@@ -1,9 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/app/proxy_selection_controller.dart';
-import 'package:meow_client/core/lowest_proxy_groups.dart';
-import 'package:meow_client/models/subscription.dart';
+import 'package:hydrabox/app/proxy_selection_controller.dart';
+import 'package:hydrabox/core/lowest_proxy_groups.dart';
+import 'package:hydrabox/models/subscription.dart';
 
 void main() {
   test('valid selection accepts proxy groups and proxy chains', () {

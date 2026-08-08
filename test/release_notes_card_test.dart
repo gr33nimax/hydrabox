@@ -2,8 +2,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/l10n/generated/app_localizations.dart';
-import 'package:meow_client/widgets/release_notes_card.dart';
+import 'package:hydrabox/l10n/generated/app_localizations.dart';
+import 'package:hydrabox/widgets/release_notes_card.dart';
 
 void main() {
   testWidgets('renders common GitHub markdown without exposing its markers', (

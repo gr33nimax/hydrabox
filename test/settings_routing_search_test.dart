@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/features/settings/settings_routing_page.dart';
+import 'package:hydrabox/features/settings/settings_routing_page.dart';
 
 void main() {
   group('split routing app search', () {

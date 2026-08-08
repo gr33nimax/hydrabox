@@ -2,27 +2,26 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/data/local/app_settings_store.dart';
-import 'package:meow_client/core/lowest_proxy_groups.dart';
-import 'package:meow_client/singbox/core_config_migration.dart';
-import 'package:meow_client/singbox/libbox_capabilities.dart';
+import 'package:hydrabox/data/local/app_settings_store.dart';
+import 'package:hydrabox/core/lowest_proxy_groups.dart';
+import 'package:hydrabox/singbox/core_config_migration.dart';
+import 'package:hydrabox/singbox/hydracore_capabilities.dart';
 
 void main() {
   final store = _TestSettingsStore();
 
-  test('0.2.1 settings stay untouched while the legacy core is bundled', () {
+  test('existing settings become a validation candidate for HydraCore v2', () {
     final original = _loadVersion021Fixture(store);
     final result = CoreConfigMigration.plan(
       state: original,
-      capabilities: LibboxCapabilities.bundledLegacy,
+      capabilities: HydraCoreCapabilities.requiredV2,
     );
 
-    expect(result.status, CoreConfigMigrationStatus.notRequired);
-    expect(result.state, same(original));
-    expect(result.state.coreConfigSchemaVersion, 0);
+    expect(result.status, CoreConfigMigrationStatus.readyForValidation);
+    expect(result.state.coreConfigSchemaVersion, currentCoreConfigSchemaVersion);
   });
 
-  test('0.2.1 settings become a validation candidate for the new core', () {
+  test('migration preserves compatible settings', () {
     final original = _loadVersion021Fixture(store);
     final result = CoreConfigMigration.plan(
       state: original,
@@ -50,7 +49,7 @@ void main() {
     expect(result.state.splitRoutingPackages, original.splitRoutingPackages);
   });
 
-  test('unsupported legacy TUN choice gets a deterministic candidate', () {
+  test('unsupported TUN choice gets a deterministic candidate', () {
     final original = _loadVersion021Fixture(store);
     final result = CoreConfigMigration.plan(
       state: original,
@@ -67,15 +66,15 @@ void main() {
     expect(result.changes, <String>['vpn_tun_implementation:mixed->gvisor']);
   });
 
-  for (final legacyTag in const <String>[
+  for (final oldTag in const <String>[
     mixedProxyTag,
     lowestOpenProxyTag,
     lowestFreeProxyTag,
   ]) {
-    test('legacy $legacyTag selection migrates to lowest', () {
+    test('$oldTag selection migrates to lowest', () {
       final original = _loadVersion021Fixture(
         store,
-      ).copyWith(selectedProxyTag: legacyTag);
+      ).copyWith(selectedProxyTag: oldTag);
       final result = CoreConfigMigration.plan(
         state: original,
         capabilities: _versionedCapabilities(
@@ -85,7 +84,7 @@ void main() {
 
       expect(result.status, CoreConfigMigrationStatus.readyForValidation);
       expect(result.state.selectedProxyTag, lowestProxyTag);
-      expect(result.changes, contains('selected_proxy_tag:$legacyTag->lowest'));
+      expect(result.changes, contains('selected_proxy_tag:$oldTag->lowest'));
     });
   }
 
@@ -109,26 +108,10 @@ AppSettingsState _loadVersion021Fixture(_TestSettingsStore store) {
   return store.mapState((jsonDecode(content) as Map<String, dynamic>));
 }
 
-LibboxCapabilities _versionedCapabilities({required Set<String> tunStacks}) {
-  return LibboxCapabilities(
-    apiVersion: 1,
-    coreVersion: '1.13.14-etonify',
-    supportsTargetedUrlTest: false,
-    supportsGroupUrlTestSessions: false,
-    supportsStructuredProbeErrors: false,
-    supportsOutboundExternalInfo: false,
-    supportsMixedRoutingOutbound: false,
-    supportsUrlTestTimeout: false,
-    supportsUrlTestConcurrency: false,
-    supportsUrlTestDeadline: false,
-    supportsUrlTestForce: false,
-    supportsUrlTestUnavailableCheckInterval: false,
-    supportsUrlTestMethod: false,
-    supportsUrlTestInterruptDelayThreshold: false,
-    urlTestCompletionModel: UrlTestCompletionModel.groupEvents,
-    supportsConfigCheck: true,
-    supportsCloseConnections: true,
-    supportsRealitySpiderX: false,
+HydraCoreCapabilities _versionedCapabilities({required Set<String> tunStacks}) {
+  return HydraCoreCapabilities(
+    apiVersion: 2,
+    coreVersion: 'v1.13.16-extended-hydracore.1',
     tunStacks: tunStacks,
   );
 }

@@ -48,25 +48,16 @@ is retained at `third_party/flutter_circle_flags/LICENSE`.
 
 ## HydraCore runtime lineage
 
-HydraCore is HydraBox's public name for the Android libbox runtime. Its
-compatibility submodule remains named `etonify-core` and is maintained at
+HydraCore is the Android libbox runtime used by HydraBox. Its `hydracore`
+submodule is maintained at
 [`gr33nimax/hydracore`, branch `main`](https://github.com/gr33nimax/hydracore/tree/main),
 based on
 [`shtorm-7/sing-box-extended`, branch `extended`](https://github.com/shtorm-7/sing-box-extended/tree/extended),
-and is licensed under GPL-3.0-or-later; see `etonify-core/LICENSE` and the
+and is licensed under GPL-3.0-or-later; see `hydracore/LICENSE` and the
 licenses of its dependencies. The Android AAR is built from that source,
 published as a pinned core release asset, and its provenance is recorded under
-`android/app/libs`. The HydraCore name does not replace or obscure the
-copyright, license, or source history of etonify-core and sing-box.
-
-## WDTT VK WebView interoperability
-
-The anonymous-first/account-fallback behavior and VK `turn_server` WebView
-interoperability in `HydraWdttVkAuthManager.kt` are adapted for HydraBox from
-[`SpaceNeuroX/proxy-turn-vk-android`](https://github.com/SpaceNeuroX/proxy-turn-vk-android).
-That project is licensed under GPL-3.0; HydraBox's implementation is distributed
-under the compatible GPL-3.0-or-later license and has been modified to keep
-TURN credentials inside the native HydraCore bridge.
+`android/app/libs`. Historical mobile-integration lineage remains recorded in
+the source history and machine-readable provenance.
 
 ## Other dependencies
 

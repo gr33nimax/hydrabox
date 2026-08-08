@@ -2,15 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:meow_client/app/app_background_tasks.dart';
-import 'package:meow_client/app/runtime_lifecycle_controller.dart';
-import 'package:meow_client/data/local/app_settings_store.dart';
-import 'package:meow_client/data/subscription/parsers/hydrabox_subscription_parser.dart';
-import 'package:meow_client/logging/app_log_store.dart';
-import 'package:meow_client/models/subscription.dart';
-import 'package:meow_client/singbox/hydra_wdtt_account_auth.dart';
-import 'package:meow_client/singbox/libbox_capabilities.dart';
-import 'package:meow_client/singbox/singbox_runtime.dart';
+import 'package:hydrabox/app/app_background_tasks.dart';
+import 'package:hydrabox/app/runtime_lifecycle_controller.dart';
+import 'package:hydrabox/data/local/app_settings_store.dart';
+import 'package:hydrabox/data/subscription/parsers/hydra_subscription_parser.dart';
+import 'package:hydrabox/logging/app_log_store.dart';
+import 'package:hydrabox/models/subscription.dart';
+import 'package:hydrabox/singbox/hydracore_capabilities.dart';
+import 'package:hydrabox/singbox/singbox_runtime.dart';
 
 enum SingboxConfigCoordinatorPhase {
   reconfiguring,
@@ -70,7 +69,7 @@ class SingboxConfigCoordinatorSnapshot {
     required this.interruptExistingConnections,
     required this.urlTestStrictTolerance,
     required this.markAllServersRussia,
-    this.capabilities = LibboxCapabilities.bundledLegacy,
+    this.capabilities = HydraCoreCapabilities.requiredV2,
     this.snowtunBinaryPath,
     this.snowtunProtectPath,
   });
@@ -124,7 +123,7 @@ class SingboxConfigCoordinatorSnapshot {
   final bool interruptExistingConnections;
   final bool urlTestStrictTolerance;
   final bool markAllServersRussia;
-  final LibboxCapabilities capabilities;
+  final HydraCoreCapabilities capabilities;
   final String? snowtunBinaryPath;
   final String? snowtunProtectPath;
 
@@ -372,16 +371,12 @@ class SingboxConfigCoordinator {
         );
         return;
       }
-      await _installActiveHydraWdttCredentials();
-      if (!_isMounted() || !_isCurrentApply(generation)) {
-        return;
-      }
       _setPhase(
         policy == RuntimeApplyPolicy.fullServiceRestart
             ? SingboxConfigCoordinatorPhase.stopping
             : SingboxConfigCoordinatorPhase.reconfiguring,
       );
-      var result = await _runtimeLifecycle.applyRuntimeBuild(
+      final result = await _runtimeLifecycle.applyRuntimeBuild(
         build: build,
         useVpn: useVpn,
         policy: policy,
@@ -393,11 +388,6 @@ class SingboxConfigCoordinator {
         logCall: _logCall,
         trimMemory: _trimRuntimeStartMemory,
         onWatchdogTimeout: _onRuntimeLifecycleTimeout,
-      );
-      result = await _retryRuntimeAfterHydraWdttAccountAuth(
-        result,
-        build: build,
-        useVpn: useVpn,
       );
       if (!_isMounted() || !_isCurrentApply(generation)) {
         return;
@@ -444,8 +434,7 @@ class SingboxConfigCoordinator {
     SingboxConfigBuildResult build, {
     required bool useVpn,
   }) async {
-    await _installActiveHydraWdttCredentials();
-    final result = await _runtimeLifecycle.startRuntimeWithBuild(
+    return _runtimeLifecycle.startRuntimeWithBuild(
       build: build,
       useVpn: useVpn,
       promotePreparedConfig: promotePreparedConfigBuild,
@@ -454,69 +443,6 @@ class SingboxConfigCoordinator {
       trimMemory: _trimRuntimeStartMemory,
       onWatchdogTimeout: _onRuntimeLifecycleTimeout,
     );
-    return _retryRuntimeAfterHydraWdttAccountAuth(
-      result,
-      build: build,
-      useVpn: useVpn,
-    );
-  }
-
-  Future<RuntimeLifecycleResult> _retryRuntimeAfterHydraWdttAccountAuth(
-    RuntimeLifecycleResult result, {
-    required SingboxConfigBuildResult build,
-    required bool useVpn,
-  }) async {
-    if (result.success || !isHydraWdttAccountCredentialError(result.error)) {
-      return result;
-    }
-    final challenge = findHydraWdttAccountChallenge(
-      _readSnapshot().activeSubscription,
-      error: result.error,
-    );
-    if (challenge == null) return result;
-
-    try {
-      await SingboxRuntime.instance.authenticateHydraWdttVkAccount(
-        credentialRef: challenge.credentialRef,
-        hash: challenge.hash,
-      );
-      final currentConfigPath = build.hasPreparedConfig
-          ? await ensureSingboxConfigPath()
-          : null;
-      if (build.hasPreparedConfig && currentConfigPath == null) {
-        return RuntimeLifecycleResult.failure(
-          policy: result.policy,
-          error: 'Prepared config target path is unavailable for WDTT retry.',
-        );
-      }
-      final retryBuild = build.hasPreparedConfig
-          ? build.withConfigPath(currentConfigPath)
-          : build;
-      return _runtimeLifecycle.startRuntimeWithBuild(
-        build: retryBuild,
-        useVpn: useVpn,
-        promotePreparedConfig: promotePreparedConfigBuild,
-        cacheStartedBuild: _cacheStartedBuild,
-        logCall: _logCall,
-        trimMemory: _trimRuntimeStartMemory,
-        onWatchdogTimeout: _onRuntimeLifecycleTimeout,
-      );
-    } catch (error, stackTrace) {
-      AppLogStore.warning(
-        'wdtt',
-        'VK account fallback did not complete: $error\n$stackTrace',
-      );
-      return RuntimeLifecycleResult.failure(
-        policy: result.policy,
-        error: error.toString(),
-      );
-    }
-  }
-
-  Future<void> _installActiveHydraWdttCredentials() {
-    final credentials =
-        _readSnapshot().activeSubscription?.wdttCredentials ?? const [];
-    return SingboxRuntime.instance.replaceHydraWdttCredentials(credentials);
   }
 
   Future<SingboxConfigBuildResult?> buildCurrentSingboxConfigInBackground({
@@ -549,15 +475,22 @@ class SingboxConfigCoordinator {
     late final SingboxConfigBuildResult result;
     try {
       result = await buildSingboxConfigInBackground(input);
-      final requiresHydraBoxValidation = HydraBoxSubscriptionParser
+      final requiresHydraBoxValidation = HydraSubscriptionParser
           .isSupportedSourceFormat(
             input.activeSubscription?.sourceMetadata['format'],
           );
       if ((validateConfig || requiresHydraBoxValidation) &&
           input.capabilities.supportsConfigCheck) {
-        await SingboxRuntime.instance.checkConfig(
-          await _configContentForValidation(result),
-        );
+        final content = await _configContentForValidation(result);
+        if (requiresHydraBoxValidation) {
+          final validation = await SingboxRuntime.instance.validateHydraConfig(
+            content,
+            profile: 'local',
+          );
+          _requireValidHydraConfig(validation);
+        } else {
+          await SingboxRuntime.instance.checkConfig(content);
+        }
       }
     } catch (_) {
       _deletePreparedConfigCandidate(stagedConfigPath);
@@ -572,6 +505,20 @@ class SingboxConfigCoordinator {
       return null;
     }
     return result;
+  }
+
+  static void _requireValidHydraConfig(Map<String, dynamic> result) {
+    if (result['valid'] == true) return;
+    final diagnostics = result['diagnostics'];
+    if (diagnostics is List &&
+        diagnostics.isNotEmpty &&
+        diagnostics.first is Map) {
+      final diagnostic = Map<String, dynamic>.from(diagnostics.first as Map);
+      final code = diagnostic['code']?.toString() ?? 'invalid';
+      final path = diagnostic['path']?.toString() ?? r'$';
+      throw StateError('HydraCore rejected runtime config: $code at $path');
+    }
+    throw StateError('HydraCore rejected runtime config');
   }
 
   Future<String> _configContentForValidation(

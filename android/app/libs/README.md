@@ -1,32 +1,18 @@
-# HydraCore libbox binary
+# HydraCore Android distribution
 
-HydraCore uses
-[`gr33nimax/hydracore`](https://github.com/gr33nimax/hydracore/tree/main),
-based directly on the `shtorm-7/sing-box-extended` `extended` line. The AAR
-contains the complete four-ABI Android build and every protocol/service tag
-recorded in `libbox.provenance.json`.
+HydraBox pins the supported HydraCore Android release through four independent
+authorities: the `hydracore` gitlink, release version, schema-v3 provenance,
+and the SHA-256 digest of `libbox.aar`.
 
-`HydraCore` is a public distribution name only. The compatibility submodule
-path and artifact name remain unchanged, while machine-readable provenance
-records both the HydraCore distribution identity and its Etonify lineage so
-that the original source and license chain is never obscured.
+The AAR itself is intentionally not committed. GitHub Actions downloads the
+published `libbox.aar`, verifies it against `libbox.provenance.json` and
+`libbox.sha256`, and only then builds or tests the client. Generated Java
+sources are retained for API-surface inspection.
 
-The pinned release exports `HydraCoreCapabilities()` directly and retains
-`EtonifyCapabilities()` as a deprecated compatibility alias. HydraBox does not
-invent a remote-execution policy for older binaries: encrypted remote
-documents remain fail-closed unless the installed AAR itself advertises the
-versioned HydraCore policy.
+The required runtime identity is `io.hydrabox.hydracore`, public API version
+2. HydraBox does not use deprecated capability aliases or fall back to older
+runtime and subscription contracts.
 
-The binary is intentionally generated rather than committed to this public
-fork. From the repository root, hydrate the pinned release asset before an
-Android build:
-
-```shell
-python -B scripts/fetch_libbox.py
-python -B scripts/verify_libbox.py
-```
-
-`libbox.sha256` pins the exact AAR. `libbox.provenance.json` additionally pins
-the release URL and size, source repository/branch/commit, published build
-toolchain, Android API, build tags, and the preserved Etonify version. Both the
-fetcher and Android `preBuild` reject a missing, stale or modified archive.
+Historical project lineage is preserved in `CREDITS.md`,
+`THIRD_PARTY_NOTICES.md`, and the release provenance. It is not an active
+application or runtime identity.

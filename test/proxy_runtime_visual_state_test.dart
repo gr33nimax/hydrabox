@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/models/proxy_runtime_visual_state.dart';
+import 'package:hydrabox/models/proxy_runtime_visual_state.dart';
 
 void main() {
   test(

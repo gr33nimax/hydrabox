@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/models/subscription.dart';
-import 'package:meow_client/singbox/preconnect_url_test_policy.dart';
+import 'package:hydrabox/models/subscription.dart';
+import 'package:hydrabox/singbox/preconnect_url_test_policy.dart';
 
 void main() {
   const direct = Outbound(

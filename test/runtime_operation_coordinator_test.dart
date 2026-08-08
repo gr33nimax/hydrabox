@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/app/runtime_operation_coordinator.dart';
+import 'package:hydrabox/app/runtime_operation_coordinator.dart';
 
 void main() {
   test('diagnostics wait for matching groups snapshot', () {

@@ -16,11 +16,11 @@ Profile.
 Real VPN connection is deliberately opt-in because the device must already
 contain a usable subscription and the test changes system-wide networking.
 Run it only on a seeded test device; the benchmark force-stops HydraBox on exit.
-The `etonifyBenchmarkConnectVpn` argument is retained as a compatibility ID:
+The `hydraboxBenchmarkConnectVpn` argument is retained as a compatibility ID:
 
 ```powershell
 .\gradlew.bat :benchmark:connectedBenchmarkReleaseAndroidTest `
-  -Pandroid.testInstrumentationRunnerArguments.etonifyBenchmarkConnectVpn=true
+  -Pandroid.testInstrumentationRunnerArguments.hydraboxBenchmarkConnectVpn=true
 ```
 
 The same flag can include the connection path in a manually generated Baseline

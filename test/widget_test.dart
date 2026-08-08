@@ -1,24 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/app/app.dart';
+import 'package:hydrabox/app/app.dart';
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
-import 'package:meow_client/core/lowest_proxy_groups.dart';
-import 'package:meow_client/data/local/app_settings_store.dart';
-import 'package:meow_client/features/home/home_page.dart';
-import 'package:meow_client/features/home/home_presentation.dart';
-import 'package:meow_client/features/home/traffic_dashboard_page.dart';
-import 'package:meow_client/features/proxies/proxies_page.dart';
-import 'package:meow_client/features/proxies/proxy_panel_shell.dart';
-import 'package:meow_client/features/settings/settings_about_page.dart';
-import 'package:meow_client/l10n/generated/app_localizations.dart';
-import 'package:meow_client/models/app_view_models.dart';
-import 'package:meow_client/models/proxy_runtime_visual_state.dart';
-import 'package:meow_client/widgets/country_flag_badge.dart';
+import 'package:hydrabox/core/lowest_proxy_groups.dart';
+import 'package:hydrabox/data/local/app_settings_store.dart';
+import 'package:hydrabox/features/home/home_page.dart';
+import 'package:hydrabox/features/home/home_presentation.dart';
+import 'package:hydrabox/features/home/traffic_dashboard_page.dart';
+import 'package:hydrabox/features/proxies/proxies_page.dart';
+import 'package:hydrabox/features/proxies/proxy_panel_shell.dart';
+import 'package:hydrabox/features/settings/settings_about_page.dart';
+import 'package:hydrabox/l10n/generated/app_localizations.dart';
+import 'package:hydrabox/models/app_view_models.dart';
+import 'package:hydrabox/models/proxy_runtime_visual_state.dart';
+import 'package:hydrabox/widgets/country_flag_badge.dart';
 
 void main() {
   testWidgets('renders cloned mobile shell', (tester) async {
     await tester.pumpWidget(
-      MeowClient(
+      HydraBoxClient(
         store: MemoryAppSettingsStore(
           const AppSettingsState(
             onboardingCompleted: true,
@@ -83,7 +83,7 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      MeowClient(
+      HydraBoxClient(
         store: MemoryAppSettingsStore(
           const AppSettingsState(
             onboardingCompleted: false,
@@ -142,7 +142,7 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      MeowClient(
+      HydraBoxClient(
         store: MemoryAppSettingsStore(
           const AppSettingsState(
             onboardingCompleted: true,

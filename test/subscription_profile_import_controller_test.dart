@@ -1,9 +1,9 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/app/subscription_profile_import_controller.dart';
-import 'package:meow_client/data/backup/etonify_backup_service.dart';
-import 'package:meow_client/models/subscription.dart';
+import 'package:hydrabox/app/subscription_profile_import_controller.dart';
+import 'package:hydrabox/data/backup/hydrabox_backup_service.dart';
+import 'package:hydrabox/models/subscription.dart';
 
 void main() {
   Subscription profile({
@@ -134,7 +134,7 @@ void main() {
   test(
     'decoded backup applies profiles without mixing their servers',
     () async {
-      const codec = EtonifyBackupService();
+      const codec = HydraBoxBackupService();
       final source = [
         profile(
           id: 'first',
@@ -164,7 +164,7 @@ void main() {
       final encoded = codec.buildProfileExport(
         subscriptions: source,
         clientVersion: '0.3.0',
-        encryption: EtonifyProfileEncryption.plain,
+        encryption: HydraBoxProfileEncryption.plain,
       );
       final decoded = codec.parseProfileExport(
         bytes: utf8.encode(encoded),

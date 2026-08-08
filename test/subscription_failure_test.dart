@@ -2,11 +2,11 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/data/subscription/happ_crypto_link.dart';
-import 'package:meow_client/data/subscription/subscription_failure.dart';
-import 'package:meow_client/features/subscriptions/subscription_error_message.dart';
-import 'package:meow_client/l10n/generated/app_localizations_en.dart';
-import 'package:meow_client/l10n/generated/app_localizations_ru.dart';
+import 'package:hydrabox/data/subscription/happ_crypto_link.dart';
+import 'package:hydrabox/data/subscription/subscription_failure.dart';
+import 'package:hydrabox/features/subscriptions/subscription_error_message.dart';
+import 'package:hydrabox/l10n/generated/app_localizations_en.dart';
+import 'package:hydrabox/l10n/generated/app_localizations_ru.dart';
 
 void main() {
   group('classifySubscriptionFailure', () {

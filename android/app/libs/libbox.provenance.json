@@ -1,24 +1,101 @@
 {
-  "android_api": 23,
-  "android_ndk": "28.0.13004108",
-  "android_ndk_requested": "r28",
-  "artifact": "libbox.aar",
-  "build_tags": "with_gvisor,with_quic,with_dhcp,with_wireguard,with_utls,with_acme,with_clash_api,with_manager,with_admin_panel,with_profiler,with_v2ray_api,with_masque,with_mtproxy,with_ccm,with_ocm,with_openvpn,with_trusttunnel,with_sudoku,with_snell,with_naive_outbound,badlinkname,tfogo_checklinkname0,with_tailscale,ts_omit_logtail,ts_omit_ssh,ts_omit_drive,ts_omit_taildrop,ts_omit_webclient,ts_omit_doctor,ts_omit_capture,ts_omit_kube,ts_omit_aws,ts_omit_synology,ts_omit_bird",
-  "core_version": "v1.13.14-extended-hydracore.6",
-  "distribution_id": "io.hydrabox.hydracore",
-  "distribution_name": "HydraCore",
-  "download_url": "https://github.com/gr33nimax/hydracore/releases/download/v1.13.14-extended-hydracore.6/libbox.aar",
-  "etonify_version": "v1.13.14-extended-etonify.1",
-  "go": "go version go1.26.4 linux/amd64",
-  "gomobile": "v0.1.12",
-  "java": "openjdk 17.0.19 2026-04-21",
-  "release_tag": "v1.13.14-extended-hydracore.6",
-  "schema_version": 2,
-  "sha256": "e4305622ca5dddb18ec78b9ed35152e1a1e4a16040390226942c461cb0dd324a",
-  "size_bytes": 134795914,
-  "source_branch": "main",
-  "source_commit": "a9162244664637196e98442daf84cba164a23ba2",
-  "source_repository": "https://github.com/gr33nimax/hydracore.git",
-  "sources_sha256": "a88328756419923f5cb1bc6b000e3c3f2bfe06ba558729206e90ca4e7b41e9e0",
-  "upstream_project": "etonify-core"
+  "schema_version": 3,
+  "distribution": {
+    "id": "io.hydrabox.hydracore",
+    "name": "HydraCore",
+    "version": "v1.13.16-extended-hydracore.1"
+  },
+  "source": {
+    "repository": "https://github.com/gr33nimax/hydracore",
+    "commit": "a360ba6de92e7ccb0ca5f9510c2c229bfa0dcf72",
+    "version": "v1.13.16-extended-hydracore.1"
+  },
+  "upstream": {
+    "project": "sing-box-extended",
+    "repository": "https://github.com/shtorm-7/sing-box-extended.git",
+    "branch": "extended",
+    "tag": "v1.13.16-extended-2.6.1",
+    "commit": "da4c532efb1f86a38a324909fc9b8867f811551c"
+  },
+  "toolchain": {
+    "go": "go version go1.26.4 linux/amd64",
+    "gomobile": "v0.1.12",
+    "java": "openjdk 17.0.19 2026-04-21",
+    "build_tags": [
+      "with_gvisor",
+      "with_quic",
+      "with_dhcp",
+      "with_wireguard",
+      "with_utls",
+      "with_acme",
+      "with_clash_api",
+      "with_manager",
+      "with_admin_panel",
+      "with_profiler",
+      "with_v2ray_api",
+      "with_masque",
+      "with_mtproxy",
+      "with_ccm",
+      "with_ocm",
+      "with_openvpn",
+      "with_trusttunnel",
+      "with_call",
+      "with_sudoku",
+      "with_snell",
+      "with_naive_outbound",
+      "badlinkname",
+      "tfogo_checklinkname0",
+      "with_tailscale",
+      "ts_omit_logtail",
+      "ts_omit_ssh",
+      "ts_omit_drive",
+      "ts_omit_taildrop",
+      "ts_omit_webclient",
+      "ts_omit_doctor",
+      "ts_omit_capture",
+      "ts_omit_kube",
+      "ts_omit_aws",
+      "ts_omit_synology",
+      "ts_omit_bird"
+    ]
+  },
+  "android": {
+    "ndk": "28.0.13004108",
+    "ndk_requested": "r28",
+    "api": 23
+  },
+  "artifacts": {
+    "libbox.aar": {
+      "sha256": "770161bdf932b6280777cbbef561e44c2fa34edb0bc175f8efbd54e80594d09e"
+    },
+    "libbox-sources.jar": {
+      "sha256": "e0bd7bdafdb9f90ab6a7a10e9311e7bcdea94970ab6a8d4da65f0742b9b8bf30"
+    },
+    "hydracore-source.tar.gz": {
+      "sha256": "bfb07de19ac0a95aee4026af299f456f41059444654207e83819c297efb540a8"
+    },
+    "HYDRA_SUBSCRIPTION_V2.md": {
+      "sha256": "0f7d11f55ab7b15f9ee4ee60bc29bb37b131cf277ab5722d51892ce9c801a91d"
+    },
+    "hydra-subscription-v2.schema.json": {
+      "sha256": "fb15c7f90efb66fe23911cb806fcb1350a211a1af00f6a0cd9fffc5749f53f04"
+    },
+    "hydra-subscription-jwe-v2.schema.json": {
+      "sha256": "0c3ee7ad01134043b4d597cb455fa16c41c75f3daf222343774a46dbd372e5b9"
+    }
+  },
+  "lineage": [
+    {
+      "project": "sing-box",
+      "role": "origin"
+    },
+    {
+      "project": "sing-box-extended",
+      "role": "active-upstream"
+    },
+    {
+      "project": "etonify-core",
+      "role": "historical-mobile-integration"
+    }
+  ]
 }

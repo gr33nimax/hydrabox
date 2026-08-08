@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:hive_ce/hive.dart';
-import 'package:meow_client/logging/app_log_store.dart';
+import 'package:hydrabox/logging/app_log_store.dart';
 
 class HiveStorageDiagnostics {
   HiveStorageDiagnostics._();

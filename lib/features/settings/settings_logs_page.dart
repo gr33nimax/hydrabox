@@ -1,11 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:meow_client/core/widgets/app_notice.dart';
-import 'package:meow_client/logging/app_log_store.dart';
-import 'package:meow_client/l10n/generated/app_localizations.dart';
-import 'package:meow_client/singbox/singbox_runtime.dart';
-import 'package:meow_client/widgets/progressive_blur_scaffold.dart';
+import 'package:hydrabox/core/widgets/app_notice.dart';
+import 'package:hydrabox/logging/app_log_store.dart';
+import 'package:hydrabox/l10n/generated/app_localizations.dart';
+import 'package:hydrabox/singbox/singbox_runtime.dart';
+import 'package:hydrabox/widgets/progressive_blur_scaffold.dart';
 
 class SettingsLogsPage extends StatefulWidget {
   const SettingsLogsPage({
@@ -56,7 +56,7 @@ class _SettingsLogsPageState extends State<SettingsLogsPage> {
     try {
       exportUri = await SingboxRuntime.instance.exportLogs(
         content: output,
-        suggestedName: 'meow-logs-${DateTime.now().millisecondsSinceEpoch}.txt',
+        suggestedName: 'hydrabox-logs-${DateTime.now().millisecondsSinceEpoch}.txt',
       );
     } catch (_) {
       exportUri = null;

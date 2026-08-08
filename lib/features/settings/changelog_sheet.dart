@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
-import 'package:meow_client/data/update/app_update_service.dart';
-import 'package:meow_client/l10n/generated/app_localizations.dart';
-import 'package:meow_client/widgets/release_notes_card.dart';
+import 'package:hydrabox/data/update/app_update_service.dart';
+import 'package:hydrabox/l10n/generated/app_localizations.dart';
+import 'package:hydrabox/widgets/release_notes_card.dart';
 
 class ChangelogSheet extends StatefulWidget {
   const ChangelogSheet({

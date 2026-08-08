@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/data/update/app_update_service.dart';
+import 'package:hydrabox/data/update/app_update_service.dart';
 
 void main() {
   group('AppUpdateService', () {
@@ -129,7 +129,7 @@ void main() {
         'version': 'v0.2.1+5',
         'buildNumber': 5,
         'minSdk': 24,
-        'packageName': 'com.etonify.meow_client',
+        'packageName': 'io.hydrabox.client',
         'assets': [
           {
             'name': 'hydrabox-v0.2.1-arm64-v8a.apk',
@@ -143,7 +143,7 @@ void main() {
       expect(manifest!.version, '0.2.1');
       expect(manifest.buildNumber, 5);
       expect(manifest.minimumAndroidSdk, 24);
-      expect(manifest.packageName, 'com.etonify.meow_client');
+      expect(manifest.packageName, 'io.hydrabox.client');
       expect(
         manifest.assets['hydrabox-v0.2.1-arm64-v8a.apk']?.sizeBytes,
         123456,
@@ -164,7 +164,7 @@ void main() {
       expect(
         AppUpdateManifest.fromJson({
           'version': '',
-          'packageName': 'com.etonify.meow_client',
+          'packageName': 'io.hydrabox.client',
           'assets': const [],
         }),
         isNull,

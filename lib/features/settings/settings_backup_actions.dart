@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:meow_client/core/widgets/app_notice.dart';
-import 'package:meow_client/data/backup/etonify_backup_service.dart';
-import 'package:meow_client/data/local/app_settings_store.dart';
-import 'package:meow_client/features/settings/settings_backup_export_actions.dart';
-import 'package:meow_client/features/settings/settings_backup_import_actions.dart';
-import 'package:meow_client/models/subscription.dart';
+import 'package:hydrabox/core/widgets/app_notice.dart';
+import 'package:hydrabox/data/backup/hydrabox_backup_service.dart';
+import 'package:hydrabox/data/local/app_settings_store.dart';
+import 'package:hydrabox/features/settings/settings_backup_export_actions.dart';
+import 'package:hydrabox/features/settings/settings_backup_import_actions.dart';
+import 'package:hydrabox/models/subscription.dart';
 
 enum SettingsBackupAction {
   importFile,
@@ -54,7 +54,7 @@ class SettingsBackupActions {
           await _exportActions.exportPlainProfile(context);
           return;
       }
-    } on EtonifyBackupException catch (error) {
+    } on HydraBoxBackupException catch (error) {
       if (!context.mounted) return;
       AppNotice.show(context, error.message);
     } catch (error) {

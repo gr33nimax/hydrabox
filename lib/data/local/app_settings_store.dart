@@ -3,8 +3,8 @@ import 'dart:math';
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:jni/jni.dart';
 import 'package:jni_flutter/jni_flutter.dart';
-import 'package:meow_client/data/local/hive_storage_diagnostics.dart';
-import 'package:meow_client/logging/app_log_store.dart';
+import 'package:hydrabox/data/local/hive_storage_diagnostics.dart';
+import 'package:hydrabox/logging/app_log_store.dart';
 
 import 'secure_hive_storage.dart';
 
@@ -116,7 +116,7 @@ List<String> normalizeSplitRoutingPackages(Iterable<String> values) {
   for (final package in values) {
     final value = package.trim();
     if (value.isEmpty ||
-        value == 'com.etonify.meow_client' ||
+        value == 'io.hydrabox.client' ||
         !isAndroidPackageName(value) ||
         !seen.add(value)) {
       continue;
@@ -388,7 +388,7 @@ class AppSettingsState {
 abstract class AppSettingsStore {
   static const boxName = 'app_state_secure_v1';
   static const legacyBoxName = 'app_state';
-  static const storageSchemaVersionKey = '__etonify_storage_schema_version__';
+  static const storageSchemaVersionKey = '__hydra_storage_schema_version__';
   static const storageSchemaVersion = 1;
   static const exportFormatVersion = 1;
   static const exportMinClientVersion = '0.2.0';
@@ -892,9 +892,9 @@ class HiveAppSettingsStore extends AppSettingsStore {
     if (_hiveInitialized) return;
     if (Platform.isAndroid) {
       final filesDir = _androidFilesDirPath();
-      Hive.init('$filesDir/meow_hive');
+      Hive.init('$filesDir/hydrabox_hive');
     } else {
-      await Hive.initFlutter('meow_hive');
+      await Hive.initFlutter('hydrabox_hive');
     }
     await SecureHiveStorage.init();
     _hiveInitialized = true;

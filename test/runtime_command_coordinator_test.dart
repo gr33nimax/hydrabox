@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/app/runtime_command_coordinator.dart';
+import 'package:hydrabox/app/runtime_command_coordinator.dart';
 
 void main() {
   test('selector is issued once when its RPC times out', () async {

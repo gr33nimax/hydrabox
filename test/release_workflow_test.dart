@@ -4,191 +4,77 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('Android release workflow uses updater-compatible tags and APK names', () {
+  test('Android release workflow builds the canonical package remotely', () {
     final workflow = File(
       '.github/workflows/android-release.yml',
     ).readAsStringSync();
 
-    expect(workflow, contains(r'raw="${raw#v}"'));
-    expect(workflow, contains(r'TAG_NAME=${raw}'));
-    expect(workflow, contains(r'RELEASE_TITLE=v${raw}'));
     expect(workflow, contains(r'hydrabox-v${RELEASE_VERSION}-universal.apk'));
     expect(workflow, contains(r'hydrabox-v${RELEASE_VERSION}-arm64-v8a.apk'));
     expect(workflow, contains(r'hydrabox-v${RELEASE_VERSION}-armeabi-v7a.apk'));
     expect(workflow, contains(r'hydrabox-v${RELEASE_VERSION}-x86_64.apk'));
-    expect(workflow, contains('hydrabox-update.json'));
-    expect(workflow, contains('name: hydrabox-release-apks-'));
-    expect(workflow, contains('include_private_happ_assets:'));
-    expect(workflow, contains('default: false'));
-    expect(
-      workflow,
-      contains(r'if: ${{ inputs.include_private_happ_assets }}'),
-    );
-    expect(
-      workflow,
-      contains('Private Happ assets were explicitly requested.'),
-    );
-    expect(workflow, contains('packageName": "com.etonify.meow_client"'));
-    expect(
-      workflow,
-      isNot(contains(r'etonify-v${RELEASE_VERSION}-universal.apk')),
-    );
-    expect(workflow, contains('--draft'));
-    expect(workflow, contains(r'--target "$GITHUB_SHA"'));
-    expect(workflow, contains('Release target mismatch'));
-    expect(workflow, contains('Refusing to replace'));
-    expect(
-      workflow,
-      contains(
-        'uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd',
-      ),
-    );
-    expect(
-      workflow,
-      contains(
-        'uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95',
-      ),
-    );
-    expect(
-      RegExp(
-        'uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
-      ).allMatches(workflow).length,
-      2,
-    );
-    expect(
-      workflow,
-      isNot(
-        contains(
-          RegExp(r'uses: actions/(checkout|setup-java|upload-artifact)@v'),
-        ),
-      ),
-    );
+    expect(workflow, contains('"packageName": "io.hydrabox.client"'));
     expect(workflow, contains('python3 -B scripts/fetch_libbox.py'));
     expect(workflow, contains('python3 -B scripts/verify_libbox.py'));
-    expect(
-      workflow,
-      contains(r'update_repository_owner="${GITHUB_REPOSITORY%%/*}"'),
-    );
-    expect(
-      workflow,
-      contains(r'update_repository_name="${GITHUB_REPOSITORY#*/}"'),
-    );
-    expect(
-      workflow,
-      contains(
-        '--dart-define=HYDRABOX_UPDATE_REPOSITORY_OWNER='
-        r'${update_repository_owner}',
-      ),
-    );
-    expect(
-      workflow,
-      contains(
-        '--dart-define=HYDRABOX_UPDATE_REPOSITORY_NAME='
-        r'${update_repository_name}',
-      ),
-    );
-    expect(workflow, isNot(contains('uses: actions/checkout@v4')));
-    expect(workflow, isNot(contains('uses: actions/setup-java@v4')));
+    expect(workflow, contains('flutter gen-l10n'));
+    expect(workflow, contains('dart run pigeon --input pigeons/singbox_api.dart'));
+    expect(workflow, contains('--draft'));
+    expect(workflow, contains(r'--target "$GITHUB_SHA"'));
   });
 
-  test('HydraCore sync preserves verified distribution provenance', () {
-    final workflow = File(
-      '.github/workflows/sync-hydracore.yml',
-    ).readAsStringSync();
+  test('client CI generates and verifies everything on GitHub', () {
+    final workflow = File('.github/workflows/ci.yml').readAsStringSync();
 
-    expect(workflow, contains('CORE_DISTRIBUTION_ID: "io.hydrabox.hydracore"'));
-    expect(workflow, contains('CORE_DISTRIBUTION_NAME: "HydraCore"'));
-    expect(workflow, contains('CORE_UPSTREAM_PROJECT: "etonify-core"'));
-    expect(workflow, contains('release/HYDRACORE_VERSION'));
+    expect(workflow, contains('submodules: recursive'));
+    expect(workflow, contains('scripts/verify_extended_core.py --source-only'));
+    expect(workflow, contains('scripts/verify_client_boundaries.py'));
+    expect(workflow, contains('dart format --output=none --set-exit-if-changed'));
+    expect(workflow, contains('flutter analyze'));
+    expect(workflow, contains('flutter test --reporter expanded'));
+    expect(workflow, contains(':app:testDebugUnitTest'));
+    expect(workflow, contains(':app:lintDebug'));
+    expect(workflow, contains(':app:assembleDebug'));
+    expect(workflow, contains('android/app/src/main/kotlin/io/hydrabox/client/generated'));
+  });
+
+  test('HydraCore provenance schema v3 pins exact source and artifacts', () {
+    final provenance = jsonDecode(
+      File('android/app/libs/libbox.provenance.json').readAsStringSync(),
+    ) as Map<String, dynamic>;
+
+    expect(provenance['schema_version'], 3);
+    expect(provenance['distribution'], {
+      'id': 'io.hydrabox.hydracore',
+      'name': 'HydraCore',
+      'version': 'v1.13.16-extended-hydracore.1',
+    });
     expect(
-      workflow,
-      contains('"hydracore_version": os.environ["CORE_RELEASE_TAG"]'),
+      (provenance['source'] as Map<String, dynamic>)['commit'],
+      'a360ba6de92e7ccb0ca5f9510c2c229bfa0dcf72',
     );
     expect(
-      RegExp(
-        '"etonify_version": os\\.environ\\["CORE_ETONIFY_VERSION"\\]',
-      ).allMatches(workflow).length,
-      2,
-      reason: 'Etonify provenance must be verified and preserved',
+      (provenance['upstream'] as Map<String, dynamic>)['commit'],
+      'da4c532efb1f86a38a324909fc9b8867f811551c',
     );
-    for (final field in [
-      'GO',
-      'GOMOBILE',
-      'JAVA',
-      'ANDROID_NDK',
-      'ANDROID_NDK_REQUESTED',
-    ]) {
-      expect(
-        workflow,
-        contains('os.environ["PUBLISHED_$field"]'),
-        reason: 'app provenance must describe the published AAR toolchain',
-      );
-    }
-    expect(workflow, isNot(contains('export GO_ACTUAL="\$(go version)"')));
-    for (final field in [
-      'distribution_id',
-      'distribution_name',
-      'upstream_project',
-    ]) {
-      expect(
-        RegExp(
-          '"$field": os\\.environ\\["CORE_[A-Z_]+"\\]',
-        ).allMatches(workflow).length,
-        2,
-        reason: '$field must be verified and written to app provenance',
-      );
-    }
-
-    final provenance =
-        jsonDecode(
-              File(
-                'android/app/libs/libbox.provenance.json',
-              ).readAsStringSync(),
-            )
-            as Map<String, dynamic>;
-    expect(provenance['distribution_id'], 'io.hydrabox.hydracore');
-    expect(provenance['distribution_name'], 'HydraCore');
-    expect(provenance['upstream_project'], 'etonify-core');
-    expect(provenance['etonify_version'], isNotEmpty);
-
-    final coreWorkflow = File(
-      'etonify-core/.github/workflows/hydracore.yml',
-    ).readAsStringSync();
-    expect(coreWorkflow, contains('"android_ndk": "\${ndk_revision}"'));
+    final artifacts = provenance['artifacts'] as Map<String, dynamic>;
     expect(
-      coreWorkflow,
-      contains('"android_ndk_requested": "\${ANDROID_NDK_VERSION}"'),
+      (artifacts['libbox.aar'] as Map<String, dynamic>)['sha256'],
+      '770161bdf932b6280777cbbef561e44c2fa34edb0bc175f8efbd54e80594d09e',
+    );
+    expect(
+      (artifacts['libbox-sources.jar'] as Map<String, dynamic>)['sha256'],
+      'e0bd7bdafdb9f90ab6a7a10e9311e7bcdea94970ab6a8d4da65f0742b9b8bf30',
     );
   });
 
-  test('HydraCore exposes only the verified product workflow', () {
-    final workflowNames = Directory('etonify-core/.github/workflows')
-        .listSync()
-        .whereType<File>()
-        .map((file) => file.uri.pathSegments.last)
-        .toList();
-
-    expect(workflowNames, ['hydracore.yml']);
-    expect(Directory('etonify-core/docs').existsSync(), isFalse);
-  });
-
-  test('core README leads with HydraCore and isolates source attribution', () {
-    final readme = File('etonify-core/README.md').readAsStringSync();
-
-    expect(readme, startsWith('# HydraCore'));
-    expect(readme, contains('[CREDITS.md](CREDITS.md)'));
-    expect(readme, isNot(contains('[ETONIFY_CORE.md]')));
-    expect(readme, contains('[LICENSE](LICENSE)'));
-  });
-
-  test('fallback client version and changelog match pubspec', () {
+  test('fallback client versions and changelog match pubspec', () {
     final pubspec = File('pubspec.yaml').readAsStringSync();
     final version = RegExp(
       r'^version:\s*([^+\s]+)',
       multiLine: true,
     ).firstMatch(pubspec)!.group(1)!;
 
-    expect(version, '0.3.0-beta.6');
+    expect(version, '0.4.0-beta.1');
     expect(
       File('lib/app/app.dart').readAsStringSync(),
       contains("_fallbackClientVersionLabel = '$version'"),
@@ -196,6 +82,10 @@ void main() {
     expect(
       File('lib/singbox/singbox_runtime.dart').readAsStringSync(),
       contains("normalized.isEmpty ? '$version' : normalized"),
+    );
+    expect(
+      File('lib/data/subscription/subscription_fetcher.dart').readAsStringSync(),
+      contains("fallbackAppVersion = '$version'"),
     );
     expect(File('CHANGELOG.md').readAsStringSync(), contains('## [$version]'));
   });

@@ -28,12 +28,10 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>com.etonify.meowClient.import</string>
+			<string>io.hydrabox.client.import</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>hydrabox</string>
-				<string>etonify</string>
-				<string>meowvpn</string>
 				<string>happ</string>
 			</array>
 		</dict>

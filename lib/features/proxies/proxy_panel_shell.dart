@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:meow_client/widgets/progressive_blur_scaffold.dart';
+import 'package:hydrabox/widgets/progressive_blur_scaffold.dart';
 
 const proxyPanelMinHeight = 108.0;
 const proxyPanelScreenCornerRadius = 32.0;

@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:meow_client/logging/app_log_store.dart';
+import 'package:hydrabox/logging/app_log_store.dart';
 
 enum ActiveProxyIpState { idle, checking, known, failed }
 

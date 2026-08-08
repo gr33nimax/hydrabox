@@ -1,16 +1,16 @@
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:meow_client/l10n/generated/app_localizations.dart';
-import 'package:meow_client/widgets/app_scroll_effects.dart';
-import 'package:meow_client/widgets/app_visual_effects.dart';
+import 'package:hydrabox/l10n/generated/app_localizations.dart';
+import 'package:hydrabox/widgets/app_scroll_effects.dart';
+import 'package:hydrabox/widgets/app_visual_effects.dart';
 
 typedef DynamicColorSchemesChanged =
     void Function(ColorScheme? light, ColorScheme? dark);
 
 /// Owns the framework-level application composition.
 ///
-/// Runtime state stays in [MeowClient], while this widget keeps theme,
+/// Runtime state stays in [HydraBoxClient], while this widget keeps theme,
 /// localization and system-bar setup out of the VPN state object.
 class AppRootShell extends StatelessWidget {
   const AppRootShell({

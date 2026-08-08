@@ -1,10 +1,10 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
-import 'package:meow_client/features/proxies/proxies_page.dart';
-import 'package:meow_client/features/proxies/proxy_panel_shell.dart';
-import 'package:meow_client/models/app_view_models.dart';
-import 'package:meow_client/models/proxy_runtime_visual_state.dart';
-import 'package:meow_client/models/subscription.dart';
+import 'package:hydrabox/features/proxies/proxies_page.dart';
+import 'package:hydrabox/features/proxies/proxy_panel_shell.dart';
+import 'package:hydrabox/models/app_view_models.dart';
+import 'package:hydrabox/models/proxy_runtime_visual_state.dart';
+import 'package:hydrabox/models/subscription.dart';
 
 @immutable
 class ProxiesPresentationData {

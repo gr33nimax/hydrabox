@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/data/routing/russia_route_data_service.dart';
+import 'package:hydrabox/data/routing/russia_route_data_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -101,7 +101,7 @@ void main() {
 }
 
 Future<T> _withIsolatedRouteStorage<T>(Future<T> Function() action) async {
-  final root = await Directory.systemTemp.createTemp('etonify-route-test-');
+  final root = await Directory.systemTemp.createTemp('hydrabox-route-test-');
   try {
     return await IOOverrides.runZoned(
       action,

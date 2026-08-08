@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/app/proxy_runtime_controller.dart';
-import 'package:meow_client/models/subscription.dart';
+import 'package:hydrabox/app/proxy_runtime_controller.dart';
+import 'package:hydrabox/models/subscription.dart';
 
 void main() {
   test('URLTest group delay updates runtime latency', () {

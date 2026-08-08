@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:gap/gap.dart';
-import 'package:meow_client/l10n/generated/app_localizations.dart';
+import 'package:hydrabox/l10n/generated/app_localizations.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 typedef ReleaseNotesLinkHandler = void Function(Uri uri);

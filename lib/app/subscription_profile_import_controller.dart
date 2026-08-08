@@ -1,8 +1,8 @@
 import 'dart:math';
 
-import 'package:meow_client/data/subscription/subscription_fetcher.dart';
-import 'package:meow_client/data/subscription/subscription_storage_id.dart';
-import 'package:meow_client/models/subscription.dart';
+import 'package:hydrabox/data/subscription/subscription_fetcher.dart';
+import 'package:hydrabox/data/subscription/subscription_storage_id.dart';
+import 'package:hydrabox/models/subscription.dart';
 
 typedef SubscriptionProfileLoader = Future<List<Subscription>> Function();
 typedef SubscriptionProfileSaver =

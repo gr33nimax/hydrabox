@@ -67,7 +67,7 @@
   "aboutSectionTitle": "About client",
   "aboutSectionSubtitle": "Client version, HydraCore, security, and service information.",
   "aboutHeroSubtitle": "An Android VPN client we are building to be fast, understandable, and reliable for everyday use.",
-  "aboutDevelopedBy": "HydraBox is the subscription-first Android client for the Hydra self-hosted VPN stack. It began as an Etonify fork and is now maintained independently.",
+  "aboutDevelopedBy": "HydraBox is the subscription-first client for the Hydra self-hosted VPN stack.",
   "aboutCreditsLabel": "Credits & origins",
   "aboutCoreSourceLabel": "core source code",
   "legalTermsTitle": "Terms of Use",

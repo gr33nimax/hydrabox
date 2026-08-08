@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/features/home/home_page.dart';
-import 'package:meow_client/features/home/home_presentation.dart';
-import 'package:meow_client/l10n/generated/app_localizations.dart';
-import 'package:meow_client/models/app_view_models.dart';
+import 'package:hydrabox/features/home/home_page.dart';
+import 'package:hydrabox/features/home/home_presentation.dart';
+import 'package:hydrabox/l10n/generated/app_localizations.dart';
+import 'package:hydrabox/models/app_view_models.dart';
 
 void main() {
   testWidgets('traffic notifier updates footer without rebuilding app state', (

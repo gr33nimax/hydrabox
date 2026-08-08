@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/app/subscription_profile_flow_controller.dart';
+import 'package:hydrabox/app/subscription_profile_flow_controller.dart';
 
 void main() {
   const controller = SubscriptionProfileFlowController();

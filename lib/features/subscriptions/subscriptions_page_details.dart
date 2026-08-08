@@ -269,7 +269,7 @@ class _SubscriptionDetailsPageState extends State<_SubscriptionDetailsPage> {
       if ((scheme != 'http' && scheme != 'https') || uri.host.isEmpty) {
         return (url: null, error: l10n.invalidUrl);
       }
-      if (HydraBoxJweCodec.hasKeyQueryParameter(uri)) {
+      if (HydraSubscriptionUri.hasKeyQueryParameter(uri)) {
         return (url: null, error: l10n.invalidUrl);
       }
       return (url: uri.toString(), error: null);
@@ -390,11 +390,11 @@ class _SubscriptionDetailsPageState extends State<_SubscriptionDetailsPage> {
 
   String _safeSubscriptionUrl(String value) {
     final uri = Uri.tryParse(value);
-    if (uri == null || !HydraBoxJweCodec.hasKeyFragment(uri)) {
+    if (uri == null || !HydraSubscriptionUri.hasKeyFragment(uri)) {
       return value;
     }
-    return '${HydraBoxJweCodec.uriWithoutSecretFragment(uri)}'
-        '#hbx-key=<redacted>';
+    return '${HydraSubscriptionUri.withoutSecretFragment(uri)}'
+        '#hydra-key=<redacted>';
   }
 
   @override
@@ -451,7 +451,7 @@ class _SubscriptionDetailsPageState extends State<_SubscriptionDetailsPage> {
     final migratedUrl = info?.newUrl;
     final movedIgnored = info?.ignoreSubscriptionMoved == true;
     final hydraMetadata = subscription.sourceMetadata;
-    final isHydraBox = HydraBoxSubscriptionParser.isSupportedSourceFormat(
+    final isHydraBox = HydraSubscriptionParser.isSupportedSourceFormat(
       hydraMetadata['format'],
     );
     final isRussian = Localizations.localeOf(context).languageCode == 'ru';

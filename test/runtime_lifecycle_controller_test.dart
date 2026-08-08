@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/app/app_background_tasks.dart';
-import 'package:meow_client/app/runtime_lifecycle_controller.dart';
-import 'package:meow_client/singbox/singbox_config_builder.dart';
-import 'package:meow_client/singbox/singbox_runtime.dart';
+import 'package:hydrabox/app/app_background_tasks.dart';
+import 'package:hydrabox/app/runtime_lifecycle_controller.dart';
+import 'package:hydrabox/singbox/singbox_config_builder.dart';
+import 'package:hydrabox/singbox/singbox_runtime.dart';
 
 void main() {
   test('safe core restart applies prepared config without full stop', () async {

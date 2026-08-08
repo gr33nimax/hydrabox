@@ -1,9 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/app/runtime_connection_controller.dart';
-import 'package:meow_client/app/runtime_lifecycle_controller.dart';
-import 'package:meow_client/app/runtime_session_coordinator.dart';
+import 'package:hydrabox/app/runtime_connection_controller.dart';
+import 'package:hydrabox/app/runtime_lifecycle_controller.dart';
+import 'package:hydrabox/app/runtime_session_coordinator.dart';
 
 void main() {
   test('concurrent stop requests share one native operation', () async {

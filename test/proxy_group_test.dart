@@ -2,14 +2,14 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/app/app_background_tasks.dart';
-import 'package:meow_client/core/lowest_proxy_groups.dart';
-import 'package:meow_client/data/local/app_settings_store.dart';
-import 'package:meow_client/data/subscription/subscription_parser.dart';
-import 'package:meow_client/data/subscription/subscription_store.dart';
-import 'package:meow_client/models/subscription.dart';
-import 'package:meow_client/singbox/singbox_config_builder.dart';
-import 'package:meow_client/singbox/libbox_capabilities.dart';
+import 'package:hydrabox/app/app_background_tasks.dart';
+import 'package:hydrabox/core/lowest_proxy_groups.dart';
+import 'package:hydrabox/data/local/app_settings_store.dart';
+import 'package:hydrabox/data/subscription/subscription_parser.dart';
+import 'package:hydrabox/data/subscription/subscription_store.dart';
+import 'package:hydrabox/models/subscription.dart';
+import 'package:hydrabox/singbox/singbox_config_builder.dart';
+import 'package:hydrabox/singbox/hydracore_capabilities.dart';
 
 void main() {
   test('parses Xray balancer as a proxy group', () {
@@ -386,15 +386,7 @@ void main() {
 
     final stableConfig = _defaultBuilder(
       subscription,
-      capabilities: LibboxCapabilities.parseOrLegacy(
-        '{"api_version":1,"core_version":"1.13.14-etonify",'
-        '"supports_url_test_timeout":true,'
-        '"supports_url_test_concurrency":true,'
-        '"supports_url_test_deadline":true,'
-        '"supports_url_test_force":true,'
-        '"supports_config_check":true,'
-        '"tun_stacks":["system","gvisor","mixed"]}',
-      ),
+      capabilities: HydraCoreCapabilities.requiredV2,
     ).build();
     expect(stableConfig, isNot(contains('global')));
     final stableOutbounds = (stableConfig['outbounds'] as List)
@@ -1383,7 +1375,7 @@ void main() {
       ],
     );
 
-    Map<String, dynamic> realityFor(LibboxCapabilities capabilities) {
+    Map<String, dynamic> realityFor(HydraCoreCapabilities capabilities) {
       final plan = _defaultBuilder(
         subscription,
         selectedProxyTag: 'leaf',
@@ -1395,15 +1387,17 @@ void main() {
       return Map<String, dynamic>.from((leaf['tls'] as Map)['reality'] as Map);
     }
 
-    final unsupported = LibboxCapabilities.parseOrLegacy('{"api_version":1}');
-    final supported = LibboxCapabilities.parseOrLegacy(
-      '{"api_version":1,"supports_reality_spider_x":true}',
+    const unsupported = HydraCoreCapabilities(
+      apiVersion: 2,
+      coreVersion: 'v1.13.16-extended-hydracore.1',
+      supportsRealitySpiderX: false,
     );
+    const supported = HydraCoreCapabilities.requiredV2;
 
     expect(realityFor(unsupported), isNot(contains('spider_x')));
     expect(realityFor(supported)['spider_x'], '/assets?ed=2560');
     expect(
-      realityFor(LibboxCapabilities.bundledLegacy)['spider_x'],
+      realityFor(HydraCoreCapabilities.requiredV2)['spider_x'],
       '/assets?ed=2560',
     );
   });
@@ -2374,7 +2368,7 @@ SingboxConfigBuilder _defaultBuilder(
   String dnsProxyResolver = 'https://dns.cloudflare.com/dns-query',
   bool dnsPreferIpv6 = false,
   String russiaDnsDirectResolver = defaultRussiaDnsDirectResolver,
-  LibboxCapabilities capabilities = LibboxCapabilities.bundledLegacy,
+  HydraCoreCapabilities capabilities = HydraCoreCapabilities.requiredV2,
 }) {
   return SingboxConfigBuilder(
     activeSubscription: subscription,

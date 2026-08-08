@@ -3,11 +3,11 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:meow_client/core/widgets/app_notice.dart';
-import 'package:meow_client/data/backup/etonify_backup_service.dart';
-import 'package:meow_client/data/local/app_settings_store.dart';
-import 'package:meow_client/l10n/generated/app_localizations.dart';
-import 'package:meow_client/models/subscription.dart';
+import 'package:hydrabox/core/widgets/app_notice.dart';
+import 'package:hydrabox/data/backup/hydrabox_backup_service.dart';
+import 'package:hydrabox/data/local/app_settings_store.dart';
+import 'package:hydrabox/l10n/generated/app_localizations.dart';
+import 'package:hydrabox/models/subscription.dart';
 
 class SettingsBackupImportActions {
   const SettingsBackupImportActions({
@@ -18,7 +18,7 @@ class SettingsBackupImportActions {
     required this.onImportSubscriptions,
   });
 
-  static const _service = EtonifyBackupService();
+  static const _service = HydraBoxBackupService();
 
   final AppSettingsStore store;
   final AppSettingsState settingsState;
@@ -34,30 +34,30 @@ class SettingsBackupImportActions {
     );
     if (picked == null || picked.files.isEmpty || !context.mounted) return;
     final file = picked.files.first;
-    if (file.size > EtonifyBackupService.maxImportBytes) {
-      throw const EtonifyBackupException('Backup file is too large.');
+    if (file.size > HydraBoxBackupService.maxImportBytes) {
+      throw const HydraBoxBackupException('Backup file is too large.');
     }
     final path = file.path;
     final bytes =
         file.bytes ?? (path == null ? null : await File(path).readAsBytes());
     if (!context.mounted) return;
     if (bytes == null) {
-      throw const EtonifyBackupException('Could not read selected file.');
+      throw const HydraBoxBackupException('Could not read selected file.');
     }
     final decodedHead = utf8.decode(
       bytes.take(256).toList(growable: false),
       allowMalformed: true,
     );
-    if (decodedHead.contains(EtonifyBackupService.settingsMagic)) {
+    if (decodedHead.contains(HydraBoxBackupService.settingsMagic)) {
       await _importSettings(context, bytes);
       return;
     }
-    if (decodedHead.contains(EtonifyBackupService.profileMagic)) {
+    if (decodedHead.contains(HydraBoxBackupService.profileMagic)) {
       await _importProfile(context, bytes);
       return;
     }
-    throw const EtonifyBackupException(
-      'This is not a compatible HydraBox or Etonify backup file.',
+    throw const HydraBoxBackupException(
+      'This is not a compatible HydraBox backup file.',
     );
   }
 
@@ -77,13 +77,13 @@ class SettingsBackupImportActions {
   }
 
   Future<void> _importProfile(BuildContext context, List<int> bytes) async {
-    EtonifyProfileImportResult parsed;
+    HydraBoxProfileImportResult parsed;
     try {
       parsed = await _service.parseProfileExportInBackground(
         bytes: bytes,
         currentClientVersion: clientVersion,
       );
-    } on EtonifyBackupException catch (error) {
+    } on HydraBoxBackupException catch (error) {
       if (!error.message.toLowerCase().contains('password')) {
         rethrow;
       }
@@ -97,7 +97,7 @@ class SettingsBackupImportActions {
       );
     }
     if (!context.mounted) return;
-    if (parsed.encryption == EtonifyProfileEncryption.plain) {
+    if (parsed.encryption == HydraBoxProfileEncryption.plain) {
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
@@ -134,7 +134,7 @@ class SettingsBackupImportActions {
 
   Future<bool> _confirmCompatibility(
     BuildContext context,
-    EtonifyImportWarning warning,
+    HydraBoxImportWarning warning,
   ) async {
     if (warning.compatibility == ExportCompatibilityStatus.compatible) {
       return true;

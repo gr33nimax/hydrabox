@@ -1,14 +1,14 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/data/subscription/parsers/clash_parser.dart';
-import 'package:meow_client/data/subscription/parsers/link_parser.dart';
-import 'package:meow_client/data/subscription/parsers/singbox_config_parser.dart';
-import 'package:meow_client/data/subscription/parsers/sip008_parser.dart';
-import 'package:meow_client/data/subscription/parsers/wireguard_config_parser.dart';
-import 'package:meow_client/data/subscription/parsers/xray_config_parser.dart';
-import 'package:meow_client/data/subscription/outbound_schema.dart';
-import 'package:meow_client/data/subscription/subscription_parser.dart';
+import 'package:hydrabox/data/subscription/parsers/clash_parser.dart';
+import 'package:hydrabox/data/subscription/parsers/link_parser.dart';
+import 'package:hydrabox/data/subscription/parsers/singbox_config_parser.dart';
+import 'package:hydrabox/data/subscription/parsers/sip008_parser.dart';
+import 'package:hydrabox/data/subscription/parsers/wireguard_config_parser.dart';
+import 'package:hydrabox/data/subscription/parsers/xray_config_parser.dart';
+import 'package:hydrabox/data/subscription/outbound_schema.dart';
+import 'package:hydrabox/data/subscription/subscription_parser.dart';
 
 void main() {
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1334,7 +1334,7 @@ void main() {
 
       final result = SubscriptionParser.parse(content);
       expect(result.outbounds, hasLength(1));
-      expect(result.outbounds.single['_etonify_core_passthrough'], isTrue);
+      expect(result.outbounds.single['_hydra_core_passthrough'], isTrue);
     });
   });
 

@@ -78,7 +78,6 @@ class ExtendedCoreProtocolCatalog {
     'vpn-server',
     'vpn-client',
     'wireguard',
-    'wdtt',
     'warp',
     'tailscale',
   };
@@ -139,7 +138,6 @@ class ExtendedCoreProtocolCatalog {
     'with_quic',
     'with_dhcp',
     'with_wireguard',
-    'with_wdtt',
     'with_masque',
     'with_mtproxy',
     'with_ccm',

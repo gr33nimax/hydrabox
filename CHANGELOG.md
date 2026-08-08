@@ -1,61 +1,36 @@
 # HydraBox changelog
 
-## [0.3.0-beta.6]
+## [0.4.0-beta.1]
 
-- Reinitialize the WDTT worker generation immediately after Android reports a
-  physical network-interface change instead of waiting for stale TURN/DTLS
-  sockets to time out.
-- Preserve the current lease, credential binding, and runtime identity during
-  handoff. Reconnection therefore stays on the VK/WDTT path and does not fetch
-  the HydraBox subscription again.
-
-## [0.3.0-beta.5]
-
-- Stabilized WDTT across Wi-Fi/mobile handoffs with a runtime-scoped worker
-  identity. Reconnecting a logical worker now replaces its stale DTLS channel
-  without consuming another quota slot.
-- Kept lease renewal and reconnection on the existing VK/WDTT control path, so
-  a mobile-network allowlist does not require ordinary Internet access or a
-  HydraBox subscription refresh.
-- Updated the pinned server runtime so access-state reloads preserve live lease
-  keys and worker accounting while revocation still terminates affected slots.
-
-## [0.3.0-beta.4]
-
-- Established `hydrabox` as the canonical repository and public product name.
-- Moved the stable product line to `main` and reduced the public branch surface.
-- Added the canonical three-headed green HydraBox logo across repository and
-  platform launcher assets.
-- Consolidated source lineage, licenses, and retained compatibility identifiers
-  in the credits and third-party notice set.
-- Added HydraBox Subscription v2 and subscription-native WDTT endpoints.
-- Added Keystore-backed device-grant persistence and a process-local HydraCore
-  credential bridge; grants never enter native runtime JSON or profile exports.
-- Added the 9/18/36 WDTT worker contract, 15-minute leases refreshed after
-  10 minutes, and hot worker-generation rotation without a VPN restart.
-- Added anonymous-first VK TURN acquisition with a native account/WebView
-  fallback. Account TURN secrets remain process-local and refresh before their
-  short lifetime expires; a notification requests login if the VK session ends.
+- Switched the Android runtime to HydraCore
+  `v1.13.16-extended-hydracore.1` and its versioned API v2 contract.
+- Replaced the client-specific subscription formats with Hydra Subscription v2.
+- Added independent multi-resource storage and deterministic single-resource
+  profile activation.
+- Made `requested_permissions` an automatic fail-closed compatibility check;
+  valid subscriptions are added without a user approval flow.
+- Delegated Subscription v2, native config, and JWE validation to HydraCore.
+- Adopted runtime snapshots, sequenced runtime events, and managed URL-test
+  sessions over one persistent command connection.
+- Removed obsolete transport and credential-bridge functionality.
+- Changed the canonical Android application ID to `io.hydrabox.client` and the
+  Dart package name to `hydrabox`.
+- Removed obsolete inherited product aliases while preserving attribution and
+  source-history credits.
 
 ## [0.3.0-beta.3]
 
-- Fixed the Android status polling unit mismatch that could drive idle CPU and
-  battery usage, and added native callback/notification performance counters.
-- Added a cancellable, selected-server pre-connect URLTest session with no TUN
-  or local inbounds.
-- Added origin-scoped Android Hydra device IDs and strict JWE subscription
+- Fixed the Android status polling unit mismatch that could increase idle CPU
+  and battery usage.
+- Added cancellable pre-connect latency diagnostics.
+- Added origin-scoped Android device IDs and strict encrypted subscription
   transport headers with cross-origin redirect stripping.
-- Replaced the proxy drawer with persistent Home, Servers, and More navigation,
-  refreshed the Material 3 visual system, and regenerated platform icons from
-  the canonical dotted green hydra.
+- Refreshed the navigation and Material 3 visual system.
 
 ## [0.3.0-beta.2]
 
-- Added HydraBox Subscription v1 with authenticated JWE transport, explicit
-  profiles, an opaque native runtime document, and fail-closed activation.
-- Integrated the provenance-bound HydraCore runtime and capability contract.
+- Integrated the provenance-bound HydraCore runtime.
 - Added lifecycle, routing, import, updater, diagnostics, and Android release
   hardening for the Hydra self-hosted stack.
 
-Earlier inherited release history remains available in Git and is intentionally
-not presented as the HydraBox product changelog.
+Earlier inherited release history remains available in Git.

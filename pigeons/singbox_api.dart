@@ -5,8 +5,8 @@ import 'package:pigeon/pigeon.dart';
     dartOut: 'lib/singbox/singbox_api.g.dart',
     dartOptions: DartOptions(),
     kotlinOut:
-        'android/app/src/main/kotlin/com/etonify/meow_client/generated/SingboxApi.g.kt',
-    kotlinOptions: KotlinOptions(package: 'com.etonify.meow_client.generated'),
+        'android/app/src/main/kotlin/io/hydrabox/client/generated/SingboxApi.g.kt',
+    kotlinOptions: KotlinOptions(package: 'io.hydrabox.client.generated'),
   ),
 )
 class RuntimeFlagsMessage {
@@ -151,6 +151,18 @@ abstract class SingboxHostApi {
   void urlTest(UrlTestRequestMessage request);
 
   @async
+  Map<String?, Object?> startManagedUrlTest(UrlTestRequestMessage request);
+
+  @async
+  Map<String?, Object?> getManagedUrlTestSession(String sessionId);
+
+  @async
+  Map<String?, Object?> cancelManagedUrlTest(String sessionId);
+
+  @async
+  Map<String?, Object?> getRuntimeSnapshot();
+
+  @async
   PreconnectUrlTestResultMessage preconnectUrlTest(
     PreconnectUrlTestRequestMessage request,
   );
@@ -193,6 +205,33 @@ abstract class SingboxHostApi {
 
   @async
   String getCoreCapabilities();
+
+  @async
+  String getHydraCoreBuildInfo();
+
+  @async
+  String validateHydraConfig(String content, String profile);
+
+  @async
+  String validateHydraSubscription(String content);
+
+  @async
+  String inspectHydraSubscription(String content);
+
+  @async
+  String openHydraSubscriptionJwe(String envelope, String keyBase64Url);
+
+  @async
+  String validateHydraSubscriptionJwe(
+    String envelope,
+    String keyBase64Url,
+  );
+
+  @async
+  String inspectHydraSubscriptionJwe(
+    String envelope,
+    String keyBase64Url,
+  );
 
   @async
   void checkConfig(String config);

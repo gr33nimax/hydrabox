@@ -39,11 +39,11 @@ import 'package:flutter/services.dart';
 ///  * https://developer.android.com/design/ui/mobile/guides/patterns/predictive-back#shared-element-transition,
 ///    which is the Android spec for this page transition, called the Shared
 ///    Element page transition.
-class EtonifyPredictiveBackPageTransitionsBuilder
+class HydraBoxPredictiveBackPageTransitionsBuilder
     extends PageTransitionsBuilder {
   /// Creates an instance of a [PageTransitionsBuilder] that matches Android U's
   /// predictive back transition.
-  const EtonifyPredictiveBackPageTransitionsBuilder();
+  const HydraBoxPredictiveBackPageTransitionsBuilder();
 
   @override
   Duration get transitionDuration => const Duration(
@@ -145,11 +145,11 @@ class EtonifyPredictiveBackPageTransitionsBuilder
 ///    transition that matches native iOS page transitions.
 ///  * https://developer.android.com/design/ui/mobile/guides/patterns/predictive-back#full-screen-surfaces,
 ///    which is the native Android docs for this page transition.
-class EtonifyPredictiveBackFullscreenPageTransitionsBuilder
+class HydraBoxPredictiveBackFullscreenPageTransitionsBuilder
     extends PageTransitionsBuilder {
   /// Creates an instance of a [PageTransitionsBuilder] that matches Android U's
   /// full screen predictive back transition.
-  const EtonifyPredictiveBackFullscreenPageTransitionsBuilder();
+  const HydraBoxPredictiveBackFullscreenPageTransitionsBuilder();
 
   @override
   Widget buildTransitions<T>(

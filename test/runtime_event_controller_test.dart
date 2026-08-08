@@ -1,8 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/app/runtime_event_controller.dart';
-import 'package:meow_client/logging/app_log_store.dart';
+import 'package:hydrabox/app/runtime_event_controller.dart';
+import 'package:hydrabox/logging/app_log_store.dart';
 
 void main() {
   tearDown(AppLogStore.clear);

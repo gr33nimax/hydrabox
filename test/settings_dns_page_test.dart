@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/data/local/app_settings_store.dart';
-import 'package:meow_client/features/settings/settings_dns_page.dart';
-import 'package:meow_client/l10n/generated/app_localizations.dart';
+import 'package:hydrabox/data/local/app_settings_store.dart';
+import 'package:hydrabox/features/settings/settings_dns_page.dart';
+import 'package:hydrabox/l10n/generated/app_localizations.dart';
 
 class _DnsSettingsHarness extends StatefulWidget {
   const _DnsSettingsHarness({super.key});

@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
-import 'package:meow_client/core/lowest_proxy_groups.dart';
-import 'package:meow_client/logging/app_log_store.dart';
-import 'package:meow_client/models/subscription.dart';
+import 'package:hydrabox/core/lowest_proxy_groups.dart';
+import 'package:hydrabox/logging/app_log_store.dart';
+import 'package:hydrabox/models/subscription.dart';
 
 typedef StaleLatencyResultFilter = bool Function(String tag, int timeSeconds);
 

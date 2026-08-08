@@ -24,21 +24,12 @@ sing-box-extended, and the mobile integration on which it was based. Exact
 runtime commit, release tag, digest, toolchain, build tags, and download URL are
 recorded in `android/app/libs/libbox.provenance.json`.
 
-## Compatibility identifiers
+## Current identities
 
-The following inherited identifiers remain where an in-place rename could
-break storage, native channels, backups, deep links, or signed upgrades:
-
-- Android/Linux application ID and Kotlin namespace `com.etonify.meow_client`;
-- Apple bundle identifiers and the Dart package name `meow_client`;
-- platform-channel names beginning with `meow_client/`;
-- legacy deep-link aliases, Hive locations, and backup magic;
-- the `etonify-core` submodule path and `libbox.aar` artifact name.
-
-These are compatibility interfaces, not public branding. Android package-name
-continuity alone does not allow an independently signed APK to replace an
-existing installation; the signing certificate or authorized signing lineage
-must also match.
+The application ID, Kotlin namespace, Apple bundle identifiers, Dart package,
+platform channels, storage names, and deep-link scheme now use HydraBox-owned
+identities. The runtime submodule is `hydracore`; `libbox.aar` remains the
+standard sing-box mobile binding artifact name.
 
 ## License
 

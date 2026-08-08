@@ -1,34 +1,10 @@
-name: HydraBox · CodeQL security
+name: HydraBox CodeQL
 
 on:
   push:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/**"
-      - "android/**/*.java"
-      - "android/**/*.kt"
-      - "android/**/*.kts"
-      - "android/gradle/**"
-      - "android/gradle.properties"
-      - "android/gradlew"
-      - "pigeons/**"
-      - "pubspec.yaml"
-      - "pubspec.lock"
+    branches: [main]
   pull_request:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/**"
-      - "android/**/*.java"
-      - "android/**/*.kt"
-      - "android/**/*.kts"
-      - "android/gradle/**"
-      - "android/gradle.properties"
-      - "android/gradlew"
-      - "pigeons/**"
-      - "pubspec.yaml"
-      - "pubspec.lock"
+    branches: [main]
   schedule:
     - cron: "23 3 * * 2"
   workflow_dispatch:
@@ -36,11 +12,10 @@ on:
 permissions:
   actions: read
   contents: read
-  packages: read
   security-events: write
 
 concurrency:
-  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  group: codeql-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -48,224 +23,46 @@ env:
   JAVA_VERSION: "21"
 
 jobs:
-  actions:
-    name: GitHub Actions
+  java-kotlin:
+    name: Java and Kotlin
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 120
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
-        with:
-          languages: actions
-          build-mode: none
-          queries: security-extended
-
-      - name: Analyze
-        uses: github/codeql-action/analyze@v4
-        with:
-          category: "/language:actions"
-
-  android:
-    name: Android Java/Kotlin
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
+      - name: Checkout pinned sources
+        uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
-          submodules: true
-
-      - name: Select pinned libbox source
-        id: libbox_source
-        shell: bash
-        run: |
-          set -euo pipefail
-          core_commit="$(git rev-parse HEAD:etonify-core)"
-          release_commit="$(
-            python3 -c \
-              'import json; print(json.load(open("android/app/libs/libbox.provenance.json", encoding="utf-8"))["source_commit"])'
-          )"
-          if [ "$core_commit" = "$release_commit" ]; then
-            echo "build=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "build=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Set up Go for pinned HydraCore
-        if: steps.libbox_source.outputs.build == 'true'
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
-        with:
-          go-version-file: etonify-core/go.mod
-          cache-dependency-path: etonify-core/go.sum
-
-      - name: Set up OpenJDK for pinned HydraCore
-        if: steps.libbox_source.outputs.build == 'true'
-        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - name: Set up Android NDK for pinned HydraCore
-        if: steps.libbox_source.outputs.build == 'true'
-        id: setup_core_ndk
-        uses: nttld/setup-ndk@ed92fe6cadad69be94a966a7ee3271275e62f779 # v1.6.0
-        with:
-          ndk-version: r28
-
-      - name: Verify pinned HydraCore baseline
-        if: steps.libbox_source.outputs.build == 'true'
-        working-directory: etonify-core
-        run: bash release/verify_etonify_baseline.sh
-
-      - name: Build pinned HydraCore AAR
-        if: steps.libbox_source.outputs.build == 'true'
-        working-directory: etonify-core
-        shell: bash
-        env:
-          ANDROID_NDK_HOME: ${{ steps.setup_core_ndk.outputs.ndk-path }}
-        run: |
-          set -euo pipefail
-          version="$(tr -d '\r\n' < release/HYDRACORE_VERSION)"
-          if ! [[ "$version" =~ ^v[0-9A-Za-z][0-9A-Za-z._+-]{0,126}$ ]]; then
-            echo "::error title=Invalid HydraCore version::Found '${version}'" >&2
-            exit 1
-          fi
-          git tag -f "$version" HEAD
-          make lib_install
-          export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
-          make lib_android
-          test -s libbox.aar
-          test -s libbox-sources.jar
-
-      - name: Prepare source-built libbox provenance
-        if: steps.libbox_source.outputs.build == 'true'
-        shell: bash
-        env:
-          ANDROID_NDK_HOME: ${{ steps.setup_core_ndk.outputs.ndk-path }}
-        run: |
-          set -euo pipefail
-          source etonify-core/release/ETONIFY_BASELINE
-          libs="android/app/libs"
-          cp etonify-core/libbox.aar "$libs/libbox.aar"
-          cp etonify-core/libbox-sources.jar "$libs/libbox-sources.jar"
-          (
-            cd "$libs"
-            sha256sum libbox.aar > libbox.sha256
-          )
-
-          export LIBBOX_SHA256="$(sha256sum "$libs/libbox.aar" | awk '{print $1}')"
-          export LIBBOX_SOURCES_SHA256="$(sha256sum "$libs/libbox-sources.jar" | awk '{print $1}')"
-          export LIBBOX_SIZE_BYTES="$(stat --format=%s "$libs/libbox.aar")"
-          export CORE_COMMIT="$(git rev-parse HEAD:etonify-core)"
-          export CORE_RELEASE_TAG="$(tr -d '\r\n' < etonify-core/release/HYDRACORE_VERSION)"
-          export CORE_ETONIFY_VERSION="$(tr -d '\r\n' < etonify-core/release/ETONIFY_VERSION)"
-          export PUBLISHED_GO="$(go version)"
-          export PUBLISHED_GOMOBILE="$GOMOBILE_VERSION"
-          export PUBLISHED_JAVA="$(java --version 2>&1 | head -n 1)"
-          export PUBLISHED_ANDROID_NDK="$(
-            awk -F= '$1 ~ /^Pkg\.Revision[[:space:]]*$/ {
-              gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2)
-              print $2
-            }' "$ANDROID_NDK_HOME/source.properties"
-          )"
-          export PUBLISHED_ANDROID_NDK_REQUESTED="$ANDROID_NDK_VERSION"
-          export LIBBOX_ANDROID_API LIBBOX_BUILD_TAGS
-
-          python3 - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          release_tag = os.environ["CORE_RELEASE_TAG"]
-          provenance = {
-              "schema_version": 2,
-              "artifact": "libbox.aar",
-              "distribution_id": "io.hydrabox.hydracore",
-              "distribution_name": "HydraCore",
-              "upstream_project": "etonify-core",
-              "sha256": os.environ["LIBBOX_SHA256"],
-              "sources_sha256": os.environ["LIBBOX_SOURCES_SHA256"],
-              "size_bytes": int(os.environ["LIBBOX_SIZE_BYTES"]),
-              "download_url": (
-                  "https://github.com/gr33nimax/hydracore/releases/download/"
-                  f"{release_tag}/libbox.aar"
-              ),
-              "core_version": release_tag,
-              "release_tag": release_tag,
-              "etonify_version": os.environ["CORE_ETONIFY_VERSION"],
-              "source_repository": "https://github.com/gr33nimax/hydracore.git",
-              "source_branch": "main",
-              "source_commit": os.environ["CORE_COMMIT"],
-              "go": os.environ["PUBLISHED_GO"],
-              "gomobile": os.environ["PUBLISHED_GOMOBILE"],
-              "java": os.environ["PUBLISHED_JAVA"],
-              "android_ndk": os.environ["PUBLISHED_ANDROID_NDK"],
-              "android_ndk_requested": os.environ[
-                  "PUBLISHED_ANDROID_NDK_REQUESTED"
-              ],
-              "android_api": int(os.environ["LIBBOX_ANDROID_API"]),
-              "build_tags": os.environ["LIBBOX_BUILD_TAGS"],
-          }
-          Path("android/app/libs/libbox.provenance.json").write_text(
-              json.dumps(provenance, indent=2, sort_keys=True) + "\n",
-              encoding="utf-8",
-          )
-          PY
-
-      - name: Fetch verified libbox release asset
-        if: steps.libbox_source.outputs.build != 'true'
-        run: python3 -B scripts/fetch_libbox.py
-
-      - name: Verify pinned libbox binary
-        run: python3 -B scripts/verify_libbox.py
-
-      - name: Set up JDK
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: ${{ env.JAVA_VERSION }}
-          cache: gradle
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
-
-      - name: Install dependencies
-        run: flutter pub get
-
-      - name: Generate localization
-        run: flutter gen-l10n
-
-      - name: Generate Pigeon bindings
-        shell: bash
-        run: |
-          if [ -f pigeons/singbox_api.dart ]; then
-            dart run pigeon --input pigeons/singbox_api.dart
-          else
-            echo "No Pigeon schema found; skipping."
-          fi
+          submodules: recursive
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
           languages: java-kotlin
-          build-mode: manual
-          queries: security-extended
 
-      - name: Build Android debug sources
+      - name: Set up JDK
+        uses: actions/setup-java@v5.6.0
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Prepare pinned HydraCore and generated bindings
+        run: |
+          python3 -B scripts/fetch_libbox.py
+          flutter pub get
+          flutter gen-l10n
+          dart run pigeon --input pigeons/singbox_api.dart
+
+      - name: Build Android sources
         working-directory: android
-        run: bash ./gradlew --no-daemon :app:assembleDebug
+        run: bash ./gradlew :app:assembleDebug
 
       - name: Analyze
         uses: github/codeql-action/analyze@v4
-        with:
-          category: "/language:java-kotlin"

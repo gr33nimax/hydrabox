@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Hydrate the pinned libbox.aar from its verified public core release."""
+"""Hydrate libbox.aar from the pinned, provenance-verified HydraCore release."""
 
 from __future__ import annotations
 
@@ -13,22 +13,20 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO, Callable, NoReturn
 
-from libbox_provenance import (
-    LibboxProvenance,
-    load_provenance,
-    validate_core_pins,
-)
+from libbox_provenance import LibboxProvenance, load_provenance, validate_core_pins
 
 
 ROOT = Path(__file__).resolve().parents[1]
 LIBS = ROOT / "android" / "app" / "libs"
 AAR = LIBS / "libbox.aar"
 PROVENANCE_FILE = LIBS / "libbox.provenance.json"
-CORE_VERSION_FILE = ROOT / "etonify-core" / "release" / "HYDRACORE_VERSION"
-ETONIFY_VERSION_FILE = ROOT / "etonify-core" / "release" / "ETONIFY_VERSION"
+CORE_PATH = ROOT / "hydracore"
+CORE_VERSION_FILE = CORE_PATH / "release" / "HYDRACORE_VERSION"
+UPSTREAM_BASELINE_FILE = CORE_PATH / "release" / "UPSTREAM_BASELINE"
 DOWNLOAD_CHUNK_SIZE = 1024 * 1024
 DOWNLOAD_TIMEOUT_SECONDS = 120
-USER_AGENT = "HydraBox-HydraCore-hydrator/1"
+MAX_DOWNLOAD_BYTES = 200 * 1024 * 1024
+USER_AGENT = "HydraBox-HydraCore-hydrator/2"
 
 
 def fail(message: str) -> NoReturn:
@@ -42,12 +40,14 @@ def sha256_and_size(path: Path) -> tuple[str, int]:
         for block in iter(lambda: stream.read(DOWNLOAD_CHUNK_SIZE), b""):
             digest.update(block)
             size += len(block)
+            if size > MAX_DOWNLOAD_BYTES:
+                fail("libbox archive exceeds the client safety limit")
     return digest.hexdigest(), size
 
 
 def pinned_core_commit() -> str:
     return subprocess.check_output(
-        ["git", "rev-parse", "HEAD:etonify-core"],
+        ["git", "rev-parse", "HEAD:hydracore"],
         cwd=ROOT,
         text=True,
         stderr=subprocess.STDOUT,
@@ -56,20 +56,21 @@ def pinned_core_commit() -> str:
 
 def pinned_release_tag() -> str:
     if not CORE_VERSION_FILE.is_file():
-        fail("etonify-core/release/HYDRACORE_VERSION is missing")
+        fail("hydracore/release/HYDRACORE_VERSION is missing")
     value = CORE_VERSION_FILE.read_text(encoding="utf-8").strip()
     if not value:
-        fail("etonify-core/release/HYDRACORE_VERSION is empty")
+        fail("hydracore/release/HYDRACORE_VERSION is empty")
     return value
 
 
-def pinned_etonify_version() -> str:
-    if not ETONIFY_VERSION_FILE.is_file():
-        fail("etonify-core/release/ETONIFY_VERSION is missing")
-    value = ETONIFY_VERSION_FILE.read_text(encoding="utf-8").strip()
-    if not value:
-        fail("etonify-core/release/ETONIFY_VERSION is empty")
-    return value
+def pinned_upstream_commit() -> str:
+    if not UPSTREAM_BASELINE_FILE.is_file():
+        fail("hydracore/release/UPSTREAM_BASELINE is missing")
+    for line in UPSTREAM_BASELINE_FILE.read_text(encoding="utf-8").splitlines():
+        key, separator, value = line.partition("=")
+        if separator and key.strip() == "UPSTREAM_COMMIT":
+            return value.strip()
+    fail("hydracore/release/UPSTREAM_BASELINE has no UPSTREAM_COMMIT")
 
 
 @dataclass(frozen=True)
@@ -86,17 +87,10 @@ Opener = Callable[..., BinaryIO]
 def _is_current(destination: Path, provenance: LibboxProvenance) -> bool:
     if not destination.exists():
         return False
-    if destination.is_symlink():
-        fail(f"refusing to inspect symlink destination: {destination}")
-    if not destination.is_file():
+    if destination.is_symlink() or not destination.is_file():
         fail(f"libbox destination is not a regular file: {destination}")
-    if destination.stat().st_size != provenance.size_bytes:
-        return False
-    actual_sha256, actual_size = sha256_and_size(destination)
-    return (
-        actual_size == provenance.size_bytes
-        and actual_sha256 == provenance.sha256
-    )
+    digest, _ = sha256_and_size(destination)
+    return digest == provenance.sha256
 
 
 def fetch_libbox(
@@ -105,42 +99,23 @@ def fetch_libbox(
     *,
     opener: Opener = urllib.request.urlopen,
 ) -> FetchResult:
-    """Download and atomically install the provenance-pinned AAR.
-
-    ``opener`` is dependency injection for network-free unit tests. Production
-    callers cannot override the validated URL through the CLI or environment.
-    """
-
     provenance = load_provenance(provenance_path)
     validate_core_pins(
         provenance,
         source_commit=pinned_core_commit(),
         release_tag=pinned_release_tag(),
-        etonify_version=pinned_etonify_version(),
+        upstream_commit=pinned_upstream_commit(),
     )
-    if destination.name != provenance.raw["artifact"]:
-        fail(
-            "libbox destination filename does not match provenance artifact: "
-            f"{destination.name}"
-        )
     if _is_current(destination, provenance):
-        return FetchResult(
-            destination=destination,
-            downloaded=False,
-            sha256=provenance.sha256,
-            size_bytes=provenance.size_bytes,
-        )
+        _, size = sha256_and_size(destination)
+        return FetchResult(destination, False, provenance.sha256, size)
 
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.is_symlink():
         fail(f"refusing to replace symlink destination: {destination}")
-
     request = urllib.request.Request(
         provenance.download_url,
-        headers={
-            "Accept": "application/octet-stream",
-            "User-Agent": USER_AGENT,
-        },
+        headers={"Accept": "application/octet-stream", "User-Agent": USER_AGENT},
         method="GET",
     )
     temporary_path: Path | None = None
@@ -155,50 +130,25 @@ def fetch_libbox(
             temporary_path = Path(temporary.name)
             digest = hashlib.sha256()
             received_size = 0
-
-            with opener(
-                request,
-                timeout=DOWNLOAD_TIMEOUT_SECONDS,
-            ) as response:
+            with opener(request, timeout=DOWNLOAD_TIMEOUT_SECONDS) as response:
                 status = getattr(response, "status", 200)
                 if status != 200:
                     fail(f"libbox download returned HTTP status {status}")
-                headers = getattr(response, "headers", {})
-                content_length = headers.get("Content-Length")
-                if content_length is not None:
-                    try:
-                        reported_size = int(content_length)
-                    except (TypeError, ValueError):
-                        fail(
-                            "libbox download returned an invalid "
-                            "Content-Length"
-                        )
-                    if reported_size != provenance.size_bytes:
-                        fail(
-                            "libbox download Content-Length mismatch: "
-                            f"expected {provenance.size_bytes}, "
-                            f"got {reported_size}"
-                        )
-
+                length = getattr(response, "headers", {}).get("Content-Length")
+                if length is not None and int(length) > MAX_DOWNLOAD_BYTES:
+                    fail("libbox Content-Length exceeds the client safety limit")
                 while True:
                     block = response.read(DOWNLOAD_CHUNK_SIZE)
                     if not block:
                         break
                     received_size += len(block)
-                    if received_size > provenance.size_bytes:
-                        fail(
-                            "libbox download exceeded the expected size: "
-                            f"{provenance.size_bytes} bytes"
-                        )
+                    if received_size > MAX_DOWNLOAD_BYTES:
+                        fail("libbox download exceeds the client safety limit")
                     digest.update(block)
                     temporary.write(block)
-
+            if received_size == 0:
+                fail("libbox download is empty")
             actual_sha256 = digest.hexdigest()
-            if received_size != provenance.size_bytes:
-                fail(
-                    "libbox download size mismatch: "
-                    f"expected {provenance.size_bytes}, got {received_size}"
-                )
             if actual_sha256 != provenance.sha256:
                 fail(
                     "libbox download SHA-256 mismatch: "
@@ -206,15 +156,9 @@ def fetch_libbox(
                 )
             temporary.flush()
             os.fsync(temporary.fileno())
-
         os.replace(temporary_path, destination)
         temporary_path = None
-        return FetchResult(
-            destination=destination,
-            downloaded=True,
-            sha256=provenance.sha256,
-            size_bytes=provenance.size_bytes,
-        )
+        return FetchResult(destination, True, provenance.sha256, received_size)
     finally:
         if temporary_path is not None:
             temporary_path.unlink(missing_ok=True)

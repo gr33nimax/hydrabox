@@ -8,83 +8,83 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:gap/gap.dart';
-import 'package:meow_client/app/active_proxy_ip_controller.dart';
-import 'package:meow_client/app/app_background_tasks.dart';
-import 'package:meow_client/app/app_bootstrap_controller.dart';
-import 'package:meow_client/app/app_root_shell.dart';
-import 'package:meow_client/app/app_settings_controller.dart';
-import 'package:meow_client/app/deep_link_import.dart';
-import 'package:meow_client/app/group_url_test_scheduler.dart';
-import 'package:meow_client/app/latency_coordinator.dart';
-import 'package:meow_client/app/network_recovery_controller.dart';
-import 'package:meow_client/app/proxy_runtime_controller.dart';
-import 'package:meow_client/app/proxy_selection_controller.dart';
-import 'package:meow_client/app/runtime_lifecycle_controller.dart';
-import 'package:meow_client/app/runtime_connection_controller.dart';
-import 'package:meow_client/app/runtime_command_coordinator.dart';
-import 'package:meow_client/app/runtime_event_controller.dart';
-import 'package:meow_client/app/runtime_intent_controller.dart';
-import 'package:meow_client/app/runtime_operation_coordinator.dart';
-import 'package:meow_client/app/runtime_recovery_controller.dart';
-import 'package:meow_client/app/runtime_recovery_policy.dart';
-import 'package:meow_client/app/runtime_session_coordinator.dart';
-import 'package:meow_client/app/singbox_config_coordinator.dart';
-import 'package:meow_client/app/subscription_coordinator.dart';
-import 'package:meow_client/app/subscription_runtime_controller.dart';
-import 'package:meow_client/app/traffic_status_reducer.dart';
-import 'package:meow_client/app/subscription_profile_import_controller.dart';
-import 'package:meow_client/app/subscription_profile_flow_controller.dart';
-import 'package:meow_client/core/lowest_proxy_groups.dart';
-import 'package:meow_client/core/widgets/app_notice.dart';
-import 'package:meow_client/data/adblock/ad_block_rule_set_service.dart';
-import 'package:meow_client/data/local/app_settings_store.dart';
-import 'package:meow_client/data/routing/russia_route_data_service.dart';
-import 'package:meow_client/data/subscription/happ_crypto_link.dart';
-import 'package:meow_client/data/subscription/subscription_store.dart';
-import 'package:meow_client/data/update/app_update_service.dart';
-import 'package:meow_client/features/home/home_presentation_builder.dart';
-import 'package:meow_client/features/home/traffic_dashboard_page.dart';
-import 'package:meow_client/features/legal/legal_consent_page.dart';
-import 'package:meow_client/features/proxies/proxies_presentation_builder.dart';
-import 'package:meow_client/features/proxies/proxy_panel_shell.dart';
-import 'package:meow_client/features/settings/changelog_sheet.dart';
-import 'package:meow_client/features/settings/settings_about_page.dart';
-import 'package:meow_client/features/settings/settings_backup_actions.dart';
-import 'package:meow_client/features/settings/settings_dns_page.dart';
-import 'package:meow_client/features/settings/settings_experimental_page.dart';
-import 'package:meow_client/features/settings/settings_general_page.dart';
-import 'package:meow_client/features/settings/settings_inbound_page.dart';
-import 'package:meow_client/features/settings/settings_logs_page.dart';
-import 'package:meow_client/features/settings/settings_page.dart';
-import 'package:meow_client/features/settings/settings_presentation_builder.dart';
-import 'package:meow_client/features/settings/settings_routing_page.dart';
-import 'package:meow_client/features/settings/settings_subscriptions_page.dart';
-import 'package:meow_client/features/settings/settings_update_page.dart';
-import 'package:meow_client/features/subscriptions/subscription_error_message.dart';
-import 'package:meow_client/features/subscriptions/subscriptions_page.dart';
-import 'package:meow_client/features/welcome/welcome_page.dart';
-import 'package:meow_client/l10n/generated/app_localizations.dart';
-import 'package:meow_client/logging/app_log_store.dart';
-import 'package:meow_client/models/app_view_models.dart';
-import 'package:meow_client/models/proxy_runtime_visual_state.dart';
-import 'package:meow_client/models/subscription.dart';
-import 'package:meow_client/singbox/core_config_migration.dart';
-import 'package:meow_client/singbox/singbox_config_builder.dart';
-import 'package:meow_client/singbox/singbox_runtime.dart';
-import 'package:meow_client/theme/demo_app_theme.dart';
-import 'package:meow_client/widgets/country_flag_badge.dart';
+import 'package:hydrabox/app/active_proxy_ip_controller.dart';
+import 'package:hydrabox/app/app_background_tasks.dart';
+import 'package:hydrabox/app/app_bootstrap_controller.dart';
+import 'package:hydrabox/app/app_root_shell.dart';
+import 'package:hydrabox/app/app_settings_controller.dart';
+import 'package:hydrabox/app/deep_link_import.dart';
+import 'package:hydrabox/app/group_url_test_scheduler.dart';
+import 'package:hydrabox/app/latency_coordinator.dart';
+import 'package:hydrabox/app/network_recovery_controller.dart';
+import 'package:hydrabox/app/proxy_runtime_controller.dart';
+import 'package:hydrabox/app/proxy_selection_controller.dart';
+import 'package:hydrabox/app/runtime_lifecycle_controller.dart';
+import 'package:hydrabox/app/runtime_connection_controller.dart';
+import 'package:hydrabox/app/runtime_command_coordinator.dart';
+import 'package:hydrabox/app/runtime_event_controller.dart';
+import 'package:hydrabox/app/runtime_intent_controller.dart';
+import 'package:hydrabox/app/runtime_operation_coordinator.dart';
+import 'package:hydrabox/app/runtime_recovery_controller.dart';
+import 'package:hydrabox/app/runtime_recovery_policy.dart';
+import 'package:hydrabox/app/runtime_session_coordinator.dart';
+import 'package:hydrabox/app/singbox_config_coordinator.dart';
+import 'package:hydrabox/app/subscription_coordinator.dart';
+import 'package:hydrabox/app/subscription_runtime_controller.dart';
+import 'package:hydrabox/app/traffic_status_reducer.dart';
+import 'package:hydrabox/app/subscription_profile_import_controller.dart';
+import 'package:hydrabox/app/subscription_profile_flow_controller.dart';
+import 'package:hydrabox/core/lowest_proxy_groups.dart';
+import 'package:hydrabox/core/widgets/app_notice.dart';
+import 'package:hydrabox/data/adblock/ad_block_rule_set_service.dart';
+import 'package:hydrabox/data/local/app_settings_store.dart';
+import 'package:hydrabox/data/routing/russia_route_data_service.dart';
+import 'package:hydrabox/data/subscription/happ_crypto_link.dart';
+import 'package:hydrabox/data/subscription/subscription_store.dart';
+import 'package:hydrabox/data/update/app_update_service.dart';
+import 'package:hydrabox/features/home/home_presentation_builder.dart';
+import 'package:hydrabox/features/home/traffic_dashboard_page.dart';
+import 'package:hydrabox/features/legal/legal_consent_page.dart';
+import 'package:hydrabox/features/proxies/proxies_presentation_builder.dart';
+import 'package:hydrabox/features/proxies/proxy_panel_shell.dart';
+import 'package:hydrabox/features/settings/changelog_sheet.dart';
+import 'package:hydrabox/features/settings/settings_about_page.dart';
+import 'package:hydrabox/features/settings/settings_backup_actions.dart';
+import 'package:hydrabox/features/settings/settings_dns_page.dart';
+import 'package:hydrabox/features/settings/settings_experimental_page.dart';
+import 'package:hydrabox/features/settings/settings_general_page.dart';
+import 'package:hydrabox/features/settings/settings_inbound_page.dart';
+import 'package:hydrabox/features/settings/settings_logs_page.dart';
+import 'package:hydrabox/features/settings/settings_page.dart';
+import 'package:hydrabox/features/settings/settings_presentation_builder.dart';
+import 'package:hydrabox/features/settings/settings_routing_page.dart';
+import 'package:hydrabox/features/settings/settings_subscriptions_page.dart';
+import 'package:hydrabox/features/settings/settings_update_page.dart';
+import 'package:hydrabox/features/subscriptions/subscription_error_message.dart';
+import 'package:hydrabox/features/subscriptions/subscriptions_page.dart';
+import 'package:hydrabox/features/welcome/welcome_page.dart';
+import 'package:hydrabox/l10n/generated/app_localizations.dart';
+import 'package:hydrabox/logging/app_log_store.dart';
+import 'package:hydrabox/models/app_view_models.dart';
+import 'package:hydrabox/models/proxy_runtime_visual_state.dart';
+import 'package:hydrabox/models/subscription.dart';
+import 'package:hydrabox/singbox/core_config_migration.dart';
+import 'package:hydrabox/singbox/singbox_config_builder.dart';
+import 'package:hydrabox/singbox/singbox_runtime.dart';
+import 'package:hydrabox/theme/demo_app_theme.dart';
+import 'package:hydrabox/widgets/country_flag_badge.dart';
 
-class MeowClient extends StatefulWidget {
-  const MeowClient({super.key, this.store});
+class HydraBoxClient extends StatefulWidget {
+  const HydraBoxClient({super.key, this.store});
 
   final AppSettingsStore? store;
 
   @override
-  State<MeowClient> createState() => _MeowClientState();
+  State<HydraBoxClient> createState() => _HydraBoxClientState();
 }
 
-class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
-  static const _fallbackClientVersionLabel = '0.3.0-beta.6';
+class _HydraBoxClientState extends State<HydraBoxClient> with WidgetsBindingObserver {
+  static const _fallbackClientVersionLabel = '0.4.0-beta.1';
   static const _requiredLegalVersion = '0.3.0';
   static final RegExp _quickTileCountryCodePattern = RegExp(r'^[A-Z]{2}$');
   static const _lowestProxyTag = lowestProxyTag;
@@ -6059,7 +6059,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
   void _applyGroupUpdates(RuntimeGroupsEvent event) {
     if (kDebugMode) {
       developer.Timeline.timeSync(
-        'MeowClient._applyGroupUpdates',
+        'HydraBoxClient._applyGroupUpdates',
         () => _applyGroupUpdatesImpl(event),
         arguments: <String, Object?>{'groups': event.groups.length},
       );
@@ -6242,7 +6242,7 @@ class _MeowClientState extends State<MeowClient> with WidgetsBindingObserver {
     }
     _lastGroupsDiagnosticsLogAt = now;
     debugPrint(
-      'Meow diagnostics: groupsEvents=$_groupsEventsSinceLastDiagnosticsLog '
+      'HydraBox diagnostics: groupsEvents=$_groupsEventsSinceLastDiagnosticsLog '
       'groups=$groupCount activeProxies=${_activeProxiesCache.length}',
     );
     _groupsEventsSinceLastDiagnosticsLog = 0;

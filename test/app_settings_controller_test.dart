@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/app/app_settings_controller.dart';
-import 'package:meow_client/data/local/app_settings_store.dart';
-import 'package:meow_client/features/settings/settings_dns_page.dart';
+import 'package:hydrabox/app/app_settings_controller.dart';
+import 'package:hydrabox/data/local/app_settings_store.dart';
+import 'package:hydrabox/features/settings/settings_dns_page.dart';
 
 void main() {
   test('performance preset updates URLTest and lookup defaults', () {

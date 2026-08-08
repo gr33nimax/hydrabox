@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/widgets/hydrabox_logo_badge.dart';
+import 'package:hydrabox/widgets/hydrabox_logo_badge.dart';
 
 void main() {
   testWidgets('HydraBox badge uses the repository-native painted mark', (

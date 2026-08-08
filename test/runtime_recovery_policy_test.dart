@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/app/runtime_recovery_policy.dart';
+import 'package:hydrabox/app/runtime_recovery_policy.dart';
 
 void main() {
   group('runtime interface recovery', () {

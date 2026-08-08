@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 
 enum DeepLinkImportSource {
   unknown,
-  etonifyImport,
+  hydraboxImport,
   happAdd,
   happCrypto,
   singBoxRemoteProfile,
@@ -76,7 +76,7 @@ class DeepLinkImportRequest {
       return null;
     }
     return switch (value.trim()) {
-      'etonifyImport' => DeepLinkImportSource.etonifyImport,
+      'hydraboxImport' => DeepLinkImportSource.hydraboxImport,
       'happAdd' => DeepLinkImportSource.happAdd,
       'happCrypto' => DeepLinkImportSource.happCrypto,
       'singBoxRemoteProfile' => DeepLinkImportSource.singBoxRemoteProfile,
@@ -110,10 +110,8 @@ class DeepLinkImportRequest {
     if (normalizedScheme == 'sing-box') {
       return DeepLinkImportSource.singBoxRemoteProfile;
     }
-    if (normalizedScheme == 'hydrabox' ||
-        normalizedScheme == 'etonify' ||
-        normalizedScheme == 'meowvpn') {
-      return DeepLinkImportSource.etonifyImport;
+    if (normalizedScheme == 'hydrabox') {
+      return DeepLinkImportSource.hydraboxImport;
     }
     return DeepLinkImportSource.unknown;
   }
@@ -225,9 +223,9 @@ class DeepLinkImportRequest {
 class DeepLinkImportBridge {
   DeepLinkImportBridge._();
 
-  static const MethodChannel _methods = MethodChannel('meow_client/deep_links');
+  static const MethodChannel _methods = MethodChannel('io.hydrabox.client/deep_links');
   static const EventChannel _events = EventChannel(
-    'meow_client/deep_link_events',
+    'io.hydrabox.client/deep_link_events',
   );
 
   static Stream<DeepLinkImportRequest> get stream async* {

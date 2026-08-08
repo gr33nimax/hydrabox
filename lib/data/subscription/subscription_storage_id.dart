@@ -1,5 +1,5 @@
 const subscriptionStorageSchemaVersionKey =
-    '__etonify_storage_schema_version__';
+    '__hydra_storage_schema_version__';
 const subscriptionPayloadGenerationSeparator = '::payload::';
 const maxSubscriptionStorageIdLength = 128;
 

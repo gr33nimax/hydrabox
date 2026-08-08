@@ -2,11 +2,11 @@ import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:gap/gap.dart';
-import 'package:meow_client/core/demo_utils.dart';
-import 'package:meow_client/l10n/generated/app_localizations.dart';
-import 'package:meow_client/models/app_view_models.dart';
-import 'package:meow_client/widgets/country_flag_badge.dart';
-import 'package:meow_client/widgets/ip_refresh_dots.dart';
+import 'package:hydrabox/core/demo_utils.dart';
+import 'package:hydrabox/l10n/generated/app_localizations.dart';
+import 'package:hydrabox/models/app_view_models.dart';
+import 'package:hydrabox/widgets/country_flag_badge.dart';
+import 'package:hydrabox/widgets/ip_refresh_dots.dart';
 
 class ActiveProxyDelayIndicator extends StatelessWidget {
   const ActiveProxyDelayIndicator({
