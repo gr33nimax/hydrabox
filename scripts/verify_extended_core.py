@@ -20,6 +20,7 @@ REQUIRED_SOURCE_MARKERS: dict[str, tuple[str, ...]] = {
     "experimental/libbox/hydracore_capabilities.go": (
         "const hydraCoreAPIVersion = 2",
         "func HydraCoreCapabilities() string",
+        'CoreID:      "io.hydrabox.hydracore"',
         'json:"runtime_events"',
         'json:"managed_url_test_sessions"',
         'json:"subscription_jwe"',
@@ -29,7 +30,7 @@ REQUIRED_SOURCE_MARKERS: dict[str, tuple[str, ...]] = {
     ),
     "experimental/libbox/hydracore_build_info.go": (
         "func HydraCoreBuildInfo() string",
-        'CoreID:      "io.hydrabox.hydracore"',
+        'info.Distribution.ID = "io.hydrabox.hydracore"',
     ),
     "experimental/libbox/hydracore_validation.go": (
         "func HydraCoreValidateConfig(content string, profile string) string",

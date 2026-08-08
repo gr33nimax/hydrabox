@@ -72,14 +72,24 @@ jobs:
       - name: Generate typed platform bindings
         run: dart run pigeon --input pigeons/singbox_api.dart
 
-      - name: Format Dart sources and capture the remote formatter patch
+      - name: Format Dart sources and capture remote-generated changes
         run: |
           mkdir -p build
           dart format lib test pigeons
-          git diff --binary -- lib test pigeons > build/remote-format.patch
+          git add -N \
+            lib/l10n/generated/app_localizations*.dart \
+            lib/singbox/singbox_api.g.dart \
+            android/app/src/main/kotlin/io/hydrabox/client/generated/SingboxApi.g.kt
+          git diff --binary -- \
+            lib test pigeons \
+            android/app/src/main/kotlin/io/hydrabox/client/generated/SingboxApi.g.kt \
+            > build/remote-generated.patch
 
-      - name: Check Dart formatting
-        run: git diff --exit-code -- lib test pigeons
+      - name: Check generated sources and Dart formatting
+        run: |
+          git diff --exit-code -- \
+            lib test pigeons \
+            android/app/src/main/kotlin/io/hydrabox/client/generated/SingboxApi.g.kt
 
       - name: Analyze Flutter sources
         run: flutter analyze
@@ -102,6 +112,6 @@ jobs:
             lib/l10n/generated/app_localizations*.dart
             lib/singbox/singbox_api.g.dart
             android/app/src/main/kotlin/io/hydrabox/client/generated/SingboxApi.g.kt
-            build/remote-format.patch
+            build/remote-generated.patch
             android/app/build/reports/**
             android/app/build/outputs/apk/debug/*.apk
