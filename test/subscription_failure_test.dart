@@ -151,18 +151,25 @@ void main() {
     });
 
     test('shows a safe HydraCore code and path', () {
+      final error = HydraSubscriptionValidationException(
+        operation: 'JWE validation',
+        code: 'native_config_invalid',
+        path: r'$.resources[1].document',
+      );
       final message = subscriptionErrorMessage(
-        HydraSubscriptionValidationException(
-          operation: 'JWE validation',
-          code: 'native_config_invalid',
-          path: r'$.resources[1].document',
-        ),
+        error,
         AppLocalizationsRu(),
       );
 
       expect(message, contains('HydraCore'));
       expect(message, contains('native_config_invalid'));
       expect(message, contains(r'$.resources[1].document'));
+      expect(subscriptionErrorForLog(error), contains('JWE validation'));
+      expect(subscriptionErrorForLog(error), contains('native_config_invalid'));
+      expect(
+        error.toString(),
+        contains(r'$.resources[1].document'),
+      );
     });
   });
 }

@@ -2044,7 +2044,8 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       }
       AppLogStore.warning(
         'subscription',
-        'Deep-link subscription import failed: ${error.runtimeType}',
+        'Deep-link subscription import failed: '
+            '${subscriptionErrorForLog(error)}',
       );
       _showAppSnackBar(_userFacingSubscriptionError(error, l10n));
     }

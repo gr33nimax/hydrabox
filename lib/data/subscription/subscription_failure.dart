@@ -62,6 +62,9 @@ class HydraSubscriptionValidationException extends FormatException {
 
   String get diagnostic => '$operation: $code at $path';
 
+  @override
+  String toString() => 'HydraSubscriptionValidationException: $diagnostic';
+
   static String _safeToken(String value, {required String fallback}) {
     final normalized = value.trim();
     return RegExp(r'^[A-Za-z0-9_. -]{1,80}$').hasMatch(normalized)

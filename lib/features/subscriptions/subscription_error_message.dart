@@ -1,6 +1,19 @@
 import 'package:hydrabox/data/subscription/subscription_failure.dart';
 import 'package:hydrabox/l10n/generated/app_localizations.dart';
 
+String subscriptionErrorForLog(Object error) {
+  if (error is HydraSubscriptionValidationException) {
+    return '${error.runtimeType}: ${error.diagnostic}';
+  }
+  if (error is SubscriptionHttpStatusException) {
+    return '${error.runtimeType}: HTTP ${error.statusCode}';
+  }
+  if (error is SubscriptionContentException) {
+    return '${error.runtimeType}: ${error.kind.name}';
+  }
+  return error.runtimeType.toString();
+}
+
 String subscriptionErrorMessage(Object error, AppLocalizations l10n) {
   final failure = classifySubscriptionFailure(error);
   return switch (failure.kind) {

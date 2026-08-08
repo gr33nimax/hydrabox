@@ -506,7 +506,7 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
     } catch (e) {
       AppLogStore.warning(
         'subscription',
-        'Subscription import failed: ${e.runtimeType}',
+        'Subscription import failed: ${subscriptionErrorForLog(e)}',
       );
       throw _LocalizedSubscriptionPageError(_userFacingSubscriptionError(e));
     }
