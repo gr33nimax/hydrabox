@@ -25,6 +25,17 @@ CORE_PATH = ROOT / "hydracore"
 VERSION_FILE = CORE_PATH / "release" / "HYDRACORE_VERSION"
 GITMODULES = ROOT / ".gitmodules"
 REQUIRED_ANDROID_ABIS = {"armeabi-v7a", "arm64-v8a", "x86", "x86_64"}
+LIBBOX_SOURCE = "io/nekohasekai/libbox/Libbox.java"
+REQUIRED_HYDRACORE_JAVA_METHODS = {
+    "hydraCoreCapabilities()",
+    "hydraCoreBuildInfo()",
+    "hydraCoreValidateConfig(String configContent, String profile)",
+    "hydraCoreValidateSubscription(String content)",
+    "hydraCoreInspectSubscription(String content)",
+    "hydraCoreOpenSubscriptionJWE(String envelope, String keyBase64URL)",
+    "hydraCoreValidateSubscriptionJWE(String envelope, String keyBase64URL)",
+    "hydraCoreInspectSubscriptionJWE(String envelope, String keyBase64URL)",
+}
 
 
 def fail(message: str) -> NoReturn:
@@ -101,6 +112,19 @@ def validate_archives() -> None:
                 fail(f"libbox-sources.jar has a corrupt member: {corrupt_member}")
             if not any(name.endswith(".java") for name in archive.namelist()):
                 fail("libbox-sources.jar does not contain generated Java sources")
+            if LIBBOX_SOURCE not in archive.namelist():
+                fail("libbox-sources.jar does not contain Libbox.java")
+            libbox_source = archive.read(LIBBOX_SOURCE).decode("utf-8")
+            missing_methods = sorted(
+                method
+                for method in REQUIRED_HYDRACORE_JAVA_METHODS
+                if method not in libbox_source
+            )
+            if missing_methods:
+                fail(
+                    "libbox Android API is missing HydraCore methods: "
+                    + ", ".join(missing_methods)
+                )
     except zipfile.BadZipFile as error:
         fail(f"invalid libbox archive: {error}")
 

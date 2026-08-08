@@ -89,6 +89,28 @@ void main() {
         SubscriptionFailureKind.credentialsRequireHttps,
       );
     });
+
+    test('keeps only safe HydraCore diagnostics', () {
+      final error = HydraSubscriptionValidationException(
+        operation: 'JWE validation',
+        code: 'native_config_invalid',
+        path: r'$.resources[2].document',
+      );
+      final failure = classifySubscriptionFailure(error);
+
+      expect(failure.kind, SubscriptionFailureKind.invalidContent);
+      expect(
+        failure.diagnostic,
+        r'JWE validation: native_config_invalid at $.resources[2].document',
+      );
+
+      final unsafe = HydraSubscriptionValidationException(
+        operation: 'validation\nsecret',
+        code: 'invalid\nsecret',
+        path: r'$.resources[0].document["password"]',
+      );
+      expect(unsafe.diagnostic, r'validation: invalid at $');
+    });
   });
 
   group('subscriptionErrorMessage', () {
@@ -126,6 +148,21 @@ void main() {
 
       expect(message, isNot(contains(secret)));
       expect(message, contains('Diagnostics'));
+    });
+
+    test('shows a safe HydraCore code and path', () {
+      final message = subscriptionErrorMessage(
+        HydraSubscriptionValidationException(
+          operation: 'JWE validation',
+          code: 'native_config_invalid',
+          path: r'$.resources[1].document',
+        ),
+        AppLocalizationsRu(),
+      );
+
+      expect(message, contains('HydraCore'));
+      expect(message, contains('native_config_invalid'));
+      expect(message, contains(r'$.resources[1].document'));
     });
   });
 }

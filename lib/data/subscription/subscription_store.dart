@@ -1294,9 +1294,17 @@ class SubscriptionStore {
       final diagnostic = Map<String, dynamic>.from(diagnostics.first as Map);
       final code = diagnostic['code']?.toString() ?? 'invalid';
       final path = diagnostic['path']?.toString() ?? r'$';
-      throw FormatException('HydraCore rejected subscription: $code at $path');
+      throw HydraSubscriptionValidationException(
+        operation: 'subscription validation',
+        code: code,
+        path: path,
+      );
     }
-    throw const FormatException('HydraCore rejected subscription');
+    throw HydraSubscriptionValidationException(
+      operation: 'subscription validation',
+      code: 'invalid',
+      path: r'$',
+    );
   }
 
   /// Imports one decoded backup record. HydraBox payload projections and trust

@@ -5,6 +5,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:hydrabox/logging/app_log_store.dart';
 import 'package:hydrabox/models/subscription.dart';
 import 'package:hydrabox/singbox/singbox_runtime.dart';
@@ -98,14 +99,25 @@ class SubscriptionFetcher {
       );
       _validateRequestSecurity(uri, headers);
       if (Platform.isAndroid) {
+        Map<String, dynamic>? native;
         try {
-          final native = await SingboxRuntime.instance
-              .fetchUrlOnUnderlyingNetwork(
-                uri: uri,
-                headers: headers,
-                maxBytes: _maxSubscriptionResponseBytes,
-                timeout: operationTimeout ?? const Duration(seconds: 20),
-              );
+          native = await SingboxRuntime.instance.fetchUrlOnUnderlyingNetwork(
+            uri: uri,
+            headers: headers,
+            maxBytes: _maxSubscriptionResponseBytes,
+            timeout: operationTimeout ?? const Duration(seconds: 20),
+          );
+        } catch (error) {
+          final reason = error is PlatformException
+              ? 'PlatformException(${error.code})'
+              : error.runtimeType.toString();
+          AppLogStore.warning(
+            'subscription',
+            'underlying-network HTTP unavailable, falling back to app route: '
+                reason,
+          );
+        }
+        if (native != null) {
           final statusCode =
               int.tryParse(native['statusCode']?.toString() ?? '') ?? 0;
           if (statusCode != HttpStatus.ok) {
@@ -125,16 +137,6 @@ class SubscriptionFetcher {
             rawContent: rawContent,
             decryptionKey: decryptionKey,
             headerValue: (name) => responseHeaders[name.toLowerCase()],
-          );
-        } on SubscriptionContentException {
-          rethrow;
-        } on HttpException {
-          rethrow;
-        } catch (error) {
-          AppLogStore.warning(
-            'subscription',
-            'underlying-network fetch unavailable, falling back to app route: '
-                '${error.runtimeType}',
           );
         }
       }
@@ -530,9 +532,17 @@ class SubscriptionFetcher {
       final diagnostic = Map<String, dynamic>.from(diagnostics.first as Map);
       final code = diagnostic['code']?.toString() ?? 'invalid';
       final path = diagnostic['path']?.toString() ?? r'$';
-      throw FormatException('HydraCore $operation failed: $code at $path');
+      throw HydraSubscriptionValidationException(
+        operation: operation,
+        code: code,
+        path: path,
+      );
     }
-    throw FormatException('HydraCore $operation failed');
+    throw HydraSubscriptionValidationException(
+      operation: operation,
+      code: 'invalid',
+      path: r'$',
+    );
   }
 
   static void _validateResponseContent(String rawContent) {
@@ -600,8 +610,18 @@ class SubscriptionFetcher {
   }
 
   static String _safeFetchErrorForLog(Object error) {
+    if (error is HydraSubscriptionValidationException) {
+      return 'HydraSubscriptionValidationException: ${error.diagnostic}';
+    }
     if (error is FormatException) {
-      return 'FormatException: subscription validation failed';
+      final message = error.message
+          .toString()
+          .replaceAll(RegExp(r'[\r\n\t]+'), ' ')
+          .trim();
+      final bounded = message.length > 240 ? message.substring(0, 240) : message;
+      return bounded.isEmpty
+          ? 'FormatException: subscription validation failed'
+          : 'FormatException: $bounded';
     }
     if (error is SubscriptionContentException) {
       return 'SubscriptionContentException: ${error.kind.name}';
