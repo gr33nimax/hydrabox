@@ -132,7 +132,7 @@ class SubscriptionFetcher {
             'subscription',
             'fetch complete path=underlying_network bytes=${utf8.encode(rawContent).length}',
           );
-          return _buildResult(
+          return await _buildResult(
             url: url,
             rawContent: rawContent,
             decryptionKey: decryptionKey,
@@ -160,7 +160,7 @@ class SubscriptionFetcher {
 
         // Read body
         final rawContent = await _readUtf8Body(response);
-        return _buildResult(
+        return await _buildResult(
           url: url,
           rawContent: rawContent,
           decryptionKey: decryptionKey,
