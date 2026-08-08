@@ -114,7 +114,7 @@ class SubscriptionFetcher {
           AppLogStore.warning(
             'subscription',
             'underlying-network HTTP unavailable, falling back to app route: '
-                reason,
+                '$reason',
           );
         }
         if (native != null) {
