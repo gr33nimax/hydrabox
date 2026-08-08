@@ -72,6 +72,42 @@ void main() {
   });
 
   group('request security', () {
+    test('Hydra JWE requests send the strict v2 identity headers', () {
+      const deviceId = 'hbx1_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+      final headers = SubscriptionFetcher.hydraRequestHeadersForTest(
+        const {
+          'Authorization': 'Bearer secret',
+          'User-Agent': 'override',
+          'Accept': 'text/plain',
+          'X-HWID': 'override',
+          'X-Hydra-HWID': 'legacy-override',
+        },
+        deviceId,
+      );
+
+      expect(headers, {
+        'Authorization': 'Bearer secret',
+        'User-Agent': SubscriptionFetcher.defaultUserAgent,
+        'Accept': HydraSubscriptionUri.encryptedMediaType,
+        'X-HWID': deviceId,
+      });
+    });
+
+    test('Hydra device identity is scoped to the canonical HTTPS origin', () {
+      expect(
+        SubscriptionFetcher.canonicalHttpsOriginForTest(
+          Uri.parse('https://Provider.Example:443/sub/id?format=hydrabox'),
+        ),
+        'https://provider.example',
+      );
+      expect(
+        SubscriptionFetcher.canonicalHttpsOriginForTest(
+          Uri.parse('https://provider.example:9443/sub/id'),
+        ),
+        'https://provider.example:9443',
+      );
+    });
+
     test('remote plaintext subscriptions require HTTPS', () {
       expect(
         () => SubscriptionFetcher.validateRequestSecurityForTest(

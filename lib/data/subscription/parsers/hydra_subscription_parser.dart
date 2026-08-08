@@ -107,7 +107,7 @@ class HydraSubscriptionParser {
     'subscription-jwe',
   };
 
-  static const _supportedOutboundTypes = {
+  static const supportedOutboundTypes = {
     'socks',
     'http',
     'vmess',
@@ -372,7 +372,7 @@ class HydraSubscriptionParser {
     if (_validateTypedSection(
       document['outbounds'],
       section: 'outbounds',
-      allowedTypes: _supportedOutboundTypes,
+      allowedTypes: supportedOutboundTypes,
     )) {
       result.add('network.outbound');
     }

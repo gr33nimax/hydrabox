@@ -1051,23 +1051,6 @@ class SingboxConfigBuilder {
         'outbounds',
         'endpoints',
       };
-      const v2OutboundTypes = {
-        'socks',
-        'http',
-        'vmess',
-        'trojan',
-        'naive',
-        'shadowtls',
-        'vless',
-        'mieru',
-        'anytls',
-        'trusttunnel',
-        'hysteria',
-        'hysteria2',
-        'tuic',
-        'sudoku',
-        'snell',
-      };
       const v2EndpointTypes = {'wireguard'};
       for (final rawKey in native.keys) {
         final key = rawKey.toString();
@@ -1085,7 +1068,7 @@ class SingboxConfigBuilder {
       validateTypedEntries(
         native['outbounds'],
         field: 'runtime.document.outbounds',
-        safeTypes: v2OutboundTypes,
+        safeTypes: HydraSubscriptionParser.supportedOutboundTypes,
       );
       validateTypedEntries(
         native['endpoints'],

@@ -58,6 +58,39 @@ void main() {
     });
   });
 
+  test('accepts the VK Calls outbound published by HYDRA ULTIMATE', () {
+    final document = _document();
+    final requirements = document['requirements'] as Map<String, dynamic>;
+    (requirements['core'] as Map<String, dynamic>)['features'] = ['call'];
+    final resource =
+        (document['resources'] as List<dynamic>).single
+            as Map<String, dynamic>;
+    resource['document'] = {
+      'outbounds': [
+        {
+          'type': 'call',
+          'tag': 'call-vk-out',
+          'platform': 'vk',
+          'read_buffer': 65536,
+          'join_link': 'https://calls.example/join/secret',
+        },
+      ],
+    };
+    final profile =
+        (document['profiles'] as List<dynamic>).single as Map<String, dynamic>;
+    profile['entrypoint'] = {
+      'section': 'outbounds',
+      'tag': 'call-vk-out',
+    };
+
+    final parsed = SubscriptionParser.parse(jsonEncode(document));
+
+    expect(parsed.format, SubscriptionFormat.hydraV2);
+    expect(parsed.outbounds.single['type'], 'call');
+    expect(parsed.outbounds.single['platform'], 'vk');
+    expect(parsed.nativeConfig?['outbounds'], hasLength(1));
+  });
+
   test('missing, extra, duplicate, and unknown permissions fail closed', () {
     for (final permissions in <List<String>>[
       const [],
