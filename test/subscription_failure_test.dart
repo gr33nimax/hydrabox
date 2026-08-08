@@ -156,20 +156,14 @@ void main() {
         code: 'native_config_invalid',
         path: r'$.resources[1].document',
       );
-      final message = subscriptionErrorMessage(
-        error,
-        AppLocalizationsRu(),
-      );
+      final message = subscriptionErrorMessage(error, AppLocalizationsRu());
 
       expect(message, contains('HydraCore'));
       expect(message, contains('native_config_invalid'));
       expect(message, contains(r'$.resources[1].document'));
       expect(subscriptionErrorForLog(error), contains('JWE validation'));
       expect(subscriptionErrorForLog(error), contains('native_config_invalid'));
-      expect(
-        error.toString(),
-        contains(r'$.resources[1].document'),
-      );
+      expect(error.toString(), contains(r'$.resources[1].document'));
     });
   });
 }
