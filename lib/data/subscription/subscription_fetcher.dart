@@ -618,7 +618,9 @@ class SubscriptionFetcher {
           .toString()
           .replaceAll(RegExp(r'[\r\n\t]+'), ' ')
           .trim();
-      final bounded = message.length > 240 ? message.substring(0, 240) : message;
+      final bounded = message.length > 240
+          ? message.substring(0, 240)
+          : message;
       return bounded.isEmpty
           ? 'FormatException: subscription validation failed'
           : 'FormatException: $bounded';
