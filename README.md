@@ -37,27 +37,31 @@ release promise.
 ## Features
 
 - Android VPN TUN mode powered by HydraCore.
-- Versioned HydraBox Subscription v1 with JWE A256GCM transport and lossless
-  storage of the native runtime document.
+- Hydra Subscription v2 with JWE A256GCM transport and independent,
+  lossless storage of each native resource document.
+- Automatic fail-closed `requested_permissions` validation with no user prompt
+  or pending grant state.
+- HydraCore API v2 runtime snapshots, sequenced events, and managed URL-test
+  sessions over one persistent command connection.
 - Fail-closed capability and remote-safety validation before activation.
 - URL, QR, file, clipboard, and deep-link subscription import.
 - Local HTTP/SOCKS mixed proxy for manual clients.
 - Split tunnelling, DNS/routing controls, server latency checks, updater, and
   redacted diagnostics.
-- Manual and legacy imports for migration and interoperability; the Hydra
-  product contract remains the encrypted subscription.
+- Manual link/config imports for interoperability; Hydra Subscription v2 is the
+  product contract.
 
 ## Quick start
 
 1. Deploy HYDRA Ultimate on a server you control.
-2. Copy its encrypted HydraBox subscription URL or QR code.
+2. Copy its encrypted Hydra subscription URL or QR code.
 3. Install HydraBox from [GitHub Releases](https://github.com/gr33nimax/hydrabox/releases).
 4. Import the subscription and connect.
 
 The decryption key is carried only in the URL fragment and is not sent to the
 subscription server. The exact schema, trust boundary, validation rules, and
 test vectors are documented in
-[HydraBox Subscription v1](docs/hydrabox-subscription-v1.md).
+[HydraCore Subscription v2 contract](https://github.com/gr33nimax/hydracore/blob/main/contract/subscription/HYDRA_SUBSCRIPTION_V2.md).
 
 ## Security model
 

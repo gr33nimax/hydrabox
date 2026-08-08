@@ -48,15 +48,6 @@ resources use the repository-native HydraBox mark; the inherited
 `assets/branding/hydrabox-logo.png`, and platform raster assets can be
 reproduced without redrawing the mark with `tool/generate_hydrabox_icons.py`.
 
-HydraBox retains several `etonify` and `meow_client` technical identifiers for
-storage, backup, platform-channel, legacy deep-link, and migration
-compatibility. They do not by themselves guarantee that an independently
-signed HydraBox APK can upgrade an Etonify installation: Android also requires
-an authorized matching signing certificate or signing lineage. They are not a
-claim that HydraBox is an official Etonify release or that brand permission has
-been granted.
-
-Public desktop products are named HydraBox (`hydrabox` executables and
-`HydraBox.app`). Retained Linux application and Apple bundle/URL-role
-identifiers are compatibility metadata, not public Etonify branding or
-evidence of endorsement.
+HydraBox uses its own application, package, storage, channel, deep-link, and
+desktop identities. Etonify and MeowTeam names are retained only for accurate
+source attribution and historical notices.

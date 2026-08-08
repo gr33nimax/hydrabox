@@ -3,15 +3,15 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
-import 'package:meow_client/data/subscription/subscription_store.dart';
-import 'package:meow_client/models/subscription.dart';
+import 'package:hydrabox/data/subscription/subscription_store.dart';
+import 'package:hydrabox/models/subscription.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test('subscription storage migrates and removes plaintext boxes', () async {
     final directory = await Directory.systemTemp.createTemp(
-      'etonify-hive-migration-',
+      'hydrabox-hive-migration-',
     );
     addTearDown(() async {
       await Hive.close();

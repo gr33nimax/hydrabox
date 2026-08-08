@@ -3,9 +3,9 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
-import 'package:meow_client/data/subscription/subscription_storage_id.dart';
-import 'package:meow_client/data/subscription/subscription_store.dart';
-import 'package:meow_client/models/subscription.dart';
+import 'package:hydrabox/data/subscription/subscription_storage_id.dart';
+import 'package:hydrabox/data/subscription/subscription_store.dart';
+import 'package:hydrabox/models/subscription.dart';
 
 void main() {
   const metadataBoxName = 'subscriptions_secure_v1';

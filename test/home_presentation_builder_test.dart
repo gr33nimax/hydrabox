@@ -1,8 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/features/home/home_presentation_builder.dart';
-import 'package:meow_client/models/app_view_models.dart';
-import 'package:meow_client/models/proxy_runtime_visual_state.dart';
+import 'package:hydrabox/features/home/home_presentation_builder.dart';
+import 'package:hydrabox/models/app_view_models.dart';
+import 'package:hydrabox/models/proxy_runtime_visual_state.dart';
 
 void main() {
   group('HomePresentationData', () {

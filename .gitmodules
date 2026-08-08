@@ -1,4 +1,4 @@
-[submodule "etonify-core"]
-	path = etonify-core
+[submodule "hydracore"]
+	path = hydracore
 	url = https://github.com/gr33nimax/hydracore.git
 	branch = main

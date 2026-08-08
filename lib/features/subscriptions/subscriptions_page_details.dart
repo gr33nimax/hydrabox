@@ -269,7 +269,7 @@ class _SubscriptionDetailsPageState extends State<_SubscriptionDetailsPage> {
       if ((scheme != 'http' && scheme != 'https') || uri.host.isEmpty) {
         return (url: null, error: l10n.invalidUrl);
       }
-      if (HydraBoxJweCodec.hasKeyQueryParameter(uri)) {
+      if (HydraSubscriptionUri.hasKeyQueryParameter(uri)) {
         return (url: null, error: l10n.invalidUrl);
       }
       return (url: uri.toString(), error: null);
@@ -388,6 +388,15 @@ class _SubscriptionDetailsPageState extends State<_SubscriptionDetailsPage> {
     return '${trimmed.substring(0, 32)}...';
   }
 
+  String _safeSubscriptionUrl(String value) {
+    final uri = Uri.tryParse(value);
+    if (uri == null || !HydraSubscriptionUri.hasKeyFragment(uri)) {
+      return value;
+    }
+    return '${HydraSubscriptionUri.withoutSecretFragment(uri)}'
+        '#hydra-key=<redacted>';
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -441,6 +450,11 @@ class _SubscriptionDetailsPageState extends State<_SubscriptionDetailsPage> {
     final happCryptoLink = info?.happCryptoLink;
     final migratedUrl = info?.newUrl;
     final movedIgnored = info?.ignoreSubscriptionMoved == true;
+    final hydraMetadata = subscription.sourceMetadata;
+    final isHydraBox = HydraSubscriptionParser.isSupportedSourceFormat(
+      hydraMetadata['format'],
+    );
+    final isRussian = Localizations.localeOf(context).languageCode == 'ru';
     final userVisibleOutbounds = subscription.outbounds
         .where((outbound) => outbound.config['_group_only'] != true)
         .toList(growable: false);
@@ -695,7 +709,9 @@ class _SubscriptionDetailsPageState extends State<_SubscriptionDetailsPage> {
                             FilledButton.tonal(
                               onPressed: () async {
                                 _haptic();
-                                await SensitiveClipboard.copy(subscription.url);
+                                await SensitiveClipboard.copy(
+                                  _safeSubscriptionUrl(subscription.url),
+                                );
                               },
                               style: FilledButton.styleFrom(
                                 padding: const EdgeInsets.symmetric(
@@ -729,7 +745,7 @@ class _SubscriptionDetailsPageState extends State<_SubscriptionDetailsPage> {
                             )
                           else
                             SelectableText(
-                              subscription.url,
+                              _safeSubscriptionUrl(subscription.url),
                               style: theme.textTheme.bodyMedium,
                             ),
                           if (happCryptoLink != null &&
@@ -802,6 +818,77 @@ class _SubscriptionDetailsPageState extends State<_SubscriptionDetailsPage> {
                         ],
                       ),
                     ),
+                    if (isHydraBox)
+                      _DetailsBlock(
+                        title: isRussian
+                            ? 'Защита HydraBox'
+                            : 'HydraBox security',
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                Chip(
+                                  avatar: const Icon(
+                                    Icons.lock_rounded,
+                                    size: 18,
+                                  ),
+                                  label: Text(
+                                    hydraMetadata['encrypted'] == true
+                                        ? 'JWE · A256GCM'
+                                        : hydraMetadata['format']?.toString() ??
+                                              'HydraBox',
+                                  ),
+                                ),
+                                if (hydraMetadata['device_binding'] == true)
+                                  Chip(
+                                    avatar: const Icon(
+                                      Icons.phonelink_lock_rounded,
+                                      size: 18,
+                                    ),
+                                    label: Text(
+                                      isRussian
+                                          ? 'Привязка устройства'
+                                          : 'Device binding',
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const Gap(10),
+                            for (final entry in <(String, Object?)>[
+                              ('Issuer', hydraMetadata['issuer']),
+                              (
+                                'Subscription ID',
+                                hydraMetadata['subscription_id'],
+                              ),
+                              ('Channel', hydraMetadata['channel']),
+                              ('Sequence', hydraMetadata['sequence']),
+                              ('kid', hydraMetadata['key_id']),
+                            ])
+                              if (entry.$2 != null &&
+                                  entry.$2.toString().trim().isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 6),
+                                  child: Text.rich(
+                                    TextSpan(
+                                      style: theme.textTheme.bodyMedium,
+                                      children: [
+                                        TextSpan(
+                                          text: '${entry.$1}: ',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                        TextSpan(text: entry.$2.toString()),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                          ],
+                        ),
+                      ),
                     if (movedIgnored &&
                         migratedUrl != null &&
                         migratedUrl.isNotEmpty &&

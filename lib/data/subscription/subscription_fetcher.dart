@@ -5,12 +5,13 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
-import 'package:meow_client/logging/app_log_store.dart';
-import 'package:meow_client/models/subscription.dart';
-import 'package:meow_client/singbox/singbox_runtime.dart';
+import 'package:hydrabox/logging/app_log_store.dart';
+import 'package:hydrabox/models/subscription.dart';
+import 'package:hydrabox/singbox/singbox_runtime.dart';
 
 import 'subscription_failure.dart';
-import 'hydrabox_subscription_crypto.dart';
+import 'hydra_subscription_uri.dart';
+import 'parsers/hydra_subscription_parser.dart';
 import 'subscription_parser.dart';
 
 /// Result returned by [SubscriptionFetcher.fetch].
@@ -41,13 +42,13 @@ class FetchResult {
 class SubscriptionFetcher {
   SubscriptionFetcher._();
 
-  static const fallbackAppVersion = '0.2.3';
+  static const fallbackAppVersion = '0.4.0-beta.1';
   static String _appVersion = fallbackAppVersion;
   static String get defaultUserAgent => 'HydraBox/$_appVersion';
   static const _maxSubscriptionResponseBytes = 16 * 1024 * 1024;
   static const _maxRedirects = 5;
   static const _redirectStatusCodes = <int>{301, 302, 303, 307, 308};
-  static const _joseJsonMediaType = 'application/jose+json';
+  static const _joseJsonMediaType = HydraSubscriptionUri.encryptedMediaType;
 
   static void configureAppVersion(String value) {
     final normalized = value.trim().replaceFirst(RegExp(r'^v'), '');
@@ -63,28 +64,28 @@ class SubscriptionFetcher {
     Duration? operationTimeout,
   }) async {
     final sourceUri = parseRequestUri(url);
-    if (HydraBoxJweCodec.hasKeyQueryParameter(sourceUri)) {
+    if (HydraSubscriptionUri.hasKeyQueryParameter(sourceUri)) {
       throw const FormatException(
-        'HydraBox hbx-key is allowed only in the URI fragment',
+        'Hydra hydra-key is allowed only in the URI fragment',
       );
     }
-    final hasHydraBoxKeyPolicy = HydraBoxJweCodec.hasKeyFragment(sourceUri);
-    final decryptionKey = HydraBoxJweCodec.keyFromUri(sourceUri);
-    if (hasHydraBoxKeyPolicy && decryptionKey == null) {
+    final hasHydraKeyPolicy = HydraSubscriptionUri.hasKeyFragment(sourceUri);
+    final decryptionKey = HydraSubscriptionUri.keyFromUri(sourceUri);
+    if (hasHydraKeyPolicy && decryptionKey == null) {
       throw const FormatException(
-        'HydraBox hbx-key fragment must contain one valid key value',
+        'Hydra hydra-key fragment must contain one valid 32-byte key',
       );
     }
-    final uri = HydraBoxJweCodec.uriWithoutSecretFragment(sourceUri);
+    final uri = HydraSubscriptionUri.withoutSecretFragment(sourceUri);
     if (decryptionKey != null && uri.scheme.toLowerCase() != 'https') {
       throw HttpException(
-        'HydraBox hbx-key subscriptions require HTTPS',
+        'Encrypted Hydra subscriptions require HTTPS',
         uri: uri,
       );
     }
     if (decryptionKey != null && !Platform.isAndroid) {
       throw UnsupportedError(
-        'Persistent hbx-key subscriptions currently require Android '
+        'Encrypted Hydra subscriptions currently require Android '
         'Keystore-backed storage',
       );
     }
@@ -92,6 +93,9 @@ class SubscriptionFetcher {
 
     try {
       final headers = await _requestHeaders(requestInfo);
+      if (decryptionKey != null) {
+        headers['Accept'] = _joseJsonMediaType;
+      }
       _validateRequestSecurity(uri, headers);
       if (Platform.isAndroid) {
         try {
@@ -248,9 +252,9 @@ class SubscriptionFetcher {
   }
 
   static void _validateRequestSecurity(Uri uri, Map<String, String> headers) {
-    if (HydraBoxJweCodec.hasKeyQueryParameter(uri)) {
+    if (HydraSubscriptionUri.hasKeyQueryParameter(uri)) {
       throw HttpException(
-        'HydraBox hbx-key is allowed only in the URI fragment',
+        'Hydra hydra-key is allowed only in the URI fragment',
         uri: uri,
       );
     }
@@ -351,63 +355,85 @@ class SubscriptionFetcher {
   }) async {
     _validateResponseContent(rawContent);
     final headerInfo = _parseHeaderValues(headerValue);
-    final declaredHydraMediaType = _declaredHydraBoxMediaType(
+    final declaredHydraMediaType = _declaredHydraMediaType(
       headerValue(HttpHeaders.contentTypeHeader),
     );
-    if (declaredHydraMediaType == _joseJsonMediaType) {
-      if (decryptionKey == null || decryptionKey.isEmpty) {
+    var plaintext = rawContent;
+    var encrypted = false;
+    if (decryptionKey != null) {
+      if (declaredHydraMediaType != null &&
+          declaredHydraMediaType != _joseJsonMediaType) {
         throw const FormatException(
-          'application/jose+json HydraBox subscriptions require an hbx-key',
+          'Encrypted Hydra response has an incompatible Content-Type',
         );
       }
-      if (!HydraBoxJweCodec.looksLike(rawContent)) {
-        throw const FormatException(
-          'application/jose+json HydraBox response is not JWE',
-        );
-      }
-    } else if (declaredHydraMediaType == HydraBoxJweCodec.mediaType &&
-        HydraBoxJweCodec.looksLike(rawContent)) {
+      final validation = await SingboxRuntime.instance
+          .validateHydraSubscriptionJwe(
+            envelope: rawContent,
+            keyBase64Url: decryptionKey,
+          );
+      _requireValidHydraResult(validation, operation: 'JWE validation');
+      plaintext = await SingboxRuntime.instance.openHydraSubscriptionJwe(
+        envelope: rawContent,
+        keyBase64Url: decryptionKey,
+      );
+      encrypted = true;
+    } else if (declaredHydraMediaType == _joseJsonMediaType ||
+        _looksLikeHydraJwe(rawContent)) {
       throw const FormatException(
-        'HydraBox subscription media type requires plaintext v1 JSON',
+        'Encrypted Hydra subscription requires a #hydra-key fragment',
       );
     }
-    final parseResult = await SubscriptionParser.parseInBackground(
-      rawContent,
-      decryptionKey: decryptionKey,
-    );
-    if (declaredHydraMediaType == HydraBoxJweCodec.mediaType &&
-        (parseResult.format != SubscriptionFormat.hydraboxV1 ||
-            parseResult.sourceMetadata['encrypted'] == true)) {
+
+    final claimsHydra = HydraSubscriptionParser.looksLike(plaintext);
+    if (claimsHydra) {
+      final validation = await SingboxRuntime.instance
+          .validateHydraSubscription(plaintext);
+      _requireValidHydraResult(
+        validation,
+        operation: 'subscription validation',
+      );
+    } else if (declaredHydraMediaType ==
+        HydraSubscriptionUri.plaintextMediaType) {
       throw const FormatException(
-        'HydraBox subscription media type requires plaintext v1 JSON',
+        'Hydra subscription media type requires Hydra Subscription v2',
       );
     }
-    if (declaredHydraMediaType == _joseJsonMediaType &&
-        (parseResult.format != SubscriptionFormat.hydraboxV1 ||
-            parseResult.sourceMetadata['encrypted'] != true)) {
-      throw const FormatException(
-        'application/jose+json HydraBox response must contain v1 JWE',
-      );
+
+    final parsed = await SubscriptionParser.parseInBackground(plaintext);
+    if ((claimsHydra || declaredHydraMediaType != null || encrypted) &&
+        !parsed.format.isHydra) {
+      throw const FormatException('Hydra response did not produce v2 data');
     }
-    final requestUri = HydraBoxJweCodec.uriWithoutSecretFragment(
+    final parseResult = encrypted
+        ? ParseResult(
+            format: parsed.format,
+            outbounds: parsed.outbounds,
+            groups: parsed.groups,
+            bodyMeta: parsed.bodyMeta,
+            profiles: parsed.profiles,
+            nativeConfig: parsed.nativeConfig,
+            resourceConfigs: parsed.resourceConfigs,
+            defaultProfileId: parsed.defaultProfileId,
+            sourceMetadata: {...parsed.sourceMetadata, 'encrypted': true},
+          )
+        : parsed;
+    final requestUri = HydraSubscriptionUri.withoutSecretFragment(
       parseRequestUri(url),
     );
-    if (parseResult.format == SubscriptionFormat.hydraboxV1 &&
+    if (parseResult.format.isHydra &&
         requestUri.scheme.toLowerCase() != 'https') {
-      throw HttpException(
-        'HydraBox subscriptions require HTTPS',
-        uri: requestUri,
-      );
+      throw HttpException('Hydra subscriptions require HTTPS', uri: requestUri);
     }
     return FetchResult(
-      rawContent: rawContent,
+      rawContent: plaintext,
       headerInfo: _mergeBodyMeta(headerInfo, parseResult.bodyMeta),
       parseResult: parseResult,
       url: url,
     );
   }
 
-  static String? _declaredHydraBoxMediaType(String? rawContentType) {
+  static String? _declaredHydraMediaType(String? rawContentType) {
     final value = rawContentType?.trim() ?? '';
     if (value.isEmpty) return null;
     final declared = value
@@ -415,16 +441,46 @@ class SubscriptionFetcher {
         .map((entry) => entry.split(';').first.trim().toLowerCase())
         .where(
           (entry) =>
-              entry == HydraBoxJweCodec.mediaType ||
+              entry == HydraSubscriptionUri.plaintextMediaType ||
               entry == _joseJsonMediaType,
         )
         .toSet();
     if (declared.length > 1) {
       throw const FormatException(
-        'Conflicting HydraBox subscription Content-Type values',
+        'Conflicting Hydra subscription Content-Type values',
       );
     }
     return declared.firstOrNull;
+  }
+
+  static bool _looksLikeHydraJwe(String content) {
+    try {
+      final value = jsonDecode(content);
+      return value is Map &&
+          value.containsKey('protected') &&
+          value.containsKey('iv') &&
+          value.containsKey('ciphertext') &&
+          value.containsKey('tag');
+    } on FormatException {
+      return false;
+    }
+  }
+
+  static void _requireValidHydraResult(
+    Map<String, dynamic> result, {
+    required String operation,
+  }) {
+    if (result['valid'] == true) return;
+    final diagnostics = result['diagnostics'];
+    if (diagnostics is List &&
+        diagnostics.isNotEmpty &&
+        diagnostics.first is Map) {
+      final diagnostic = Map<String, dynamic>.from(diagnostics.first as Map);
+      final code = diagnostic['code']?.toString() ?? 'invalid';
+      final path = diagnostic['path']?.toString() ?? r'$';
+      throw FormatException('HydraCore $operation failed: $code at $path');
+    }
+    throw FormatException('HydraCore $operation failed');
   }
 
   static void _validateResponseContent(String rawContent) {

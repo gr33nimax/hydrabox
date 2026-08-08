@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/data/adblock/ad_block_rule_set_service.dart';
+import 'package:hydrabox/data/adblock/ad_block_rule_set_service.dart';
 
 void main() {
   test('adblock byte progress is bounded', () {

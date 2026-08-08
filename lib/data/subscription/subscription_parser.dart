@@ -2,10 +2,9 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
-import 'hydrabox_subscription_crypto.dart';
 import 'outbound_schema.dart';
 import 'parsers/clash_parser.dart';
-import 'parsers/hydrabox_subscription_parser.dart';
+import 'parsers/hydra_subscription_parser.dart';
 import 'parsers/link_parser.dart';
 import 'parsers/singbox_config_parser.dart';
 import 'parsers/sip008_parser.dart';
@@ -14,7 +13,7 @@ import 'parsers/xray_config_parser.dart';
 
 /// The format that was detected during parsing.
 enum SubscriptionFormat {
-  hydraboxV1,
+  hydraV2,
   singboxConfig,
   xrayConfig,
   sip008,
@@ -23,6 +22,10 @@ enum SubscriptionFormat {
   rawLinks,
   wireguardConfig,
   unknown,
+}
+
+extension SubscriptionFormatHydra on SubscriptionFormat {
+  bool get isHydra => this == SubscriptionFormat.hydraV2;
 }
 
 /// Result of parsing subscription content.
@@ -35,6 +38,7 @@ class ParseResult {
     this.profiles = const [],
     this.nativeConfig,
     this.defaultProfileId,
+    this.resourceConfigs = const {},
     this.sourceMetadata = const {},
   });
 
@@ -51,14 +55,17 @@ class ParseResult {
   /// (e.g. `#profile-title`, `#subscription-userinfo`, etc.)
   final Map<String, String> bodyMeta;
 
-  /// Explicit UI profiles supplied by HydraBox Subscription v1.
-  final List<HydraBoxParsedProfile> profiles;
+  /// Explicit UI profiles supplied by Hydra Subscription v2.
+  final List<HydraParsedProfile> profiles;
 
   /// Opaque native sing-box document retained for runtime assembly.
   final Map<String, dynamic>? nativeConfig;
 
   /// Stable publisher profile identifier selected by default.
   final String? defaultProfileId;
+
+  /// Independently validated resources. They must never be cross-merged.
+  final Map<String, Map<String, dynamic>> resourceConfigs;
 
   /// Issuer, sequence, digest and transport-security state.
   final Map<String, dynamic> sourceMetadata;
@@ -72,6 +79,7 @@ class ParseResult {
       'profiles': profiles.map((profile) => profile.toMap()).toList(),
     if (nativeConfig != null) 'nativeConfig': nativeConfig,
     if (defaultProfileId != null) 'defaultProfileId': defaultProfileId,
+    if (resourceConfigs.isNotEmpty) 'resourceConfigs': resourceConfigs,
     if (sourceMetadata.isNotEmpty) 'sourceMetadata': sourceMetadata,
   };
 
@@ -97,7 +105,7 @@ class ParseResult {
       ),
       profiles: (map['profiles'] as List? ?? const [])
           .map(
-            (entry) => HydraBoxParsedProfile.fromMap(
+            (entry) => HydraParsedProfile.fromMap(
               Map<String, dynamic>.from(entry as Map),
             ),
           )
@@ -106,6 +114,10 @@ class ParseResult {
           ? Map<String, dynamic>.from(map['nativeConfig'] as Map)
           : null,
       defaultProfileId: map['defaultProfileId']?.toString(),
+      resourceConfigs: (map['resourceConfigs'] as Map? ?? const {}).map(
+        (key, value) =>
+            MapEntry(key.toString(), Map<String, dynamic>.from(value as Map)),
+      ),
       sourceMetadata: map['sourceMetadata'] is Map
           ? Map<String, dynamic>.from(map['sourceMetadata'] as Map)
           : const {},
@@ -189,13 +201,9 @@ class ParsedOutboundGroup {
 class SubscriptionParser {
   SubscriptionParser._();
 
-  static Future<ParseResult> parseInBackground(
-    String content, {
-    String? decryptionKey,
-  }) async {
+  static Future<ParseResult> parseInBackground(String content) async {
     final payload = await compute(_parseSubscriptionContent, {
       'content': content,
-      'decryption_key': ?decryptionKey,
     });
     return ParseResult.fromMap(Map<String, dynamic>.from(payload));
   }
@@ -203,7 +211,7 @@ class SubscriptionParser {
   /// Parses [content] by trying all known formats in priority order.
   ///
   /// Priority:
-  /// 1. HydraBox v1 envelope/JWE (fail closed)
+  /// 1. Hydra Subscription v2 plaintext opened/validated by HydraCore
   /// 2. Sing-box JSON config (has "outbounds" with "type")
   /// 3. Xray JSON config (has "outbounds" with "protocol")
   /// 4. SIP008 JSON (has "servers" array)
@@ -211,7 +219,7 @@ class SubscriptionParser {
   /// 6. WireGuard .conf (has [Interface] + [Peer])
   /// 7. Base64-decoded proxy links
   /// 8. Raw proxy links (one per line)
-  static ParseResult parse(String content, {String? decryptionKey}) {
+  static ParseResult parse(String content) {
     if (content.isEmpty) {
       return const ParseResult(
         format: SubscriptionFormat.unknown,
@@ -220,34 +228,20 @@ class SubscriptionParser {
     }
 
     // ── 1. Try JSON-based formats ──
-    if (decryptionKey != null) {
-      if (decryptionKey.isEmpty || decryptionKey != decryptionKey.trim()) {
-        throw const FormatException('The supplied hbx-key is invalid');
-      }
-      if (!HydraBoxJweCodec.looksLike(content)) {
-        throw const FormatException(
-          'An hbx-key was supplied but the subscription is not encrypted JWE',
-        );
-      }
-    }
-
-    // HydraBox is checked against the original wire string. Trimming first
-    // would let an oversized response hide bytes in surrounding JSON
-    // whitespace before the v1 outer-response limit runs.
-    if (HydraBoxSubscriptionParser.looksLike(content)) {
-      final parsed = HydraBoxSubscriptionParser.parse(
-        content,
-        decryptionKey: decryptionKey,
-      );
+    // Hydra is checked against the original wire string. JWE must have been
+    // authenticated and opened by HydraCore before this isolate is entered.
+    if (HydraSubscriptionParser.looksLike(content)) {
+      final parsed = HydraSubscriptionParser.parse(content);
       return ParseResult(
-        format: SubscriptionFormat.hydraboxV1,
+        format: SubscriptionFormat.hydraV2,
         outbounds: _normalizeOutbounds(
           parsed.outbounds,
           preserveUnknownFields: true,
         ),
         bodyMeta: parsed.bodyMeta,
         profiles: parsed.profiles,
-        nativeConfig: parsed.nativeConfig,
+        nativeConfig: parsed.defaultResourceConfig,
+        resourceConfigs: parsed.resourceConfigs,
         defaultProfileId: parsed.defaultProfileId,
         sourceMetadata: parsed.sourceMetadata,
       );
@@ -486,14 +480,14 @@ class SubscriptionParser {
           final type =
               normalized['type']?.toString().trim().toLowerCase() ?? '';
           final sourceSection =
-              normalized['_etonify_source_section']?.toString() ?? '';
+              normalized['_hydra_source_section']?.toString() ?? '';
           final endpointBacked = sourceSection == 'endpoints';
           final migrateWireGuardOutbound =
               type == 'wireguard' && sourceSection.isEmpty;
           if (migrateWireGuardOutbound) {
             // sing-box 1.13 removed the legacy WireGuard outbound. Its
             // options map directly to the runnable WireGuard endpoint.
-            normalized['_etonify_source_section'] = 'endpoints';
+            normalized['_hydra_source_section'] = 'endpoints';
           }
           return ParsedOutboundSchema.sanitize(
             normalized,
@@ -674,8 +668,5 @@ class SubscriptionParser {
 }
 
 Map<String, dynamic> _parseSubscriptionContent(Map<String, dynamic> input) {
-  return SubscriptionParser.parse(
-    input['content']?.toString() ?? '',
-    decryptionKey: input['decryption_key']?.toString(),
-  ).toMap();
+  return SubscriptionParser.parse(input['content']?.toString() ?? '').toMap();
 }

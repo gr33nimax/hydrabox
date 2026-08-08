@@ -1,10 +1,10 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:meow_client/features/home/home_page.dart';
-import 'package:meow_client/features/home/home_presentation.dart';
-import 'package:meow_client/features/proxies/proxy_panel_shell.dart';
-import 'package:meow_client/models/app_view_models.dart';
-import 'package:meow_client/models/proxy_runtime_visual_state.dart';
+import 'package:hydrabox/features/home/home_page.dart';
+import 'package:hydrabox/features/home/home_presentation.dart';
+import 'package:hydrabox/features/proxies/proxy_panel_shell.dart';
+import 'package:hydrabox/models/app_view_models.dart';
+import 'package:hydrabox/models/proxy_runtime_visual_state.dart';
 
 @immutable
 class HomePresentationData {
@@ -130,6 +130,15 @@ class HomePresentationBuilder {
       onProxyPanelDragUpdate: panelGestures.onDragUpdate,
       onProxyPanelDragEnd: panelGestures.onDragEnd,
       showActiveProxyFooter: false,
+    );
+  }
+
+  Widget buildStandalone({double bottomInset = 0}) {
+    return HomePage(
+      state: data.toViewState(),
+      actions: callbacks.toViewActions(),
+      bottomInset: bottomInset,
+      showActiveProxyFooter: true,
     );
   }
 }

@@ -3,8 +3,8 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:meow_client/app/app.dart';
-import 'package:meow_client/logging/app_log_store.dart';
+import 'package:hydrabox/app/app.dart';
+import 'package:hydrabox/logging/app_log_store.dart';
 
 void _recordFatalError(String source, Object error, StackTrace stackTrace) {
   final message = '$error\n$stackTrace';
@@ -36,7 +36,7 @@ Future<void> main() async {
           systemNavigationBarContrastEnforced: false,
         ),
       );
-      runApp(const MeowClient());
+      runApp(const HydraBoxClient());
     },
     (error, stackTrace) {
       _recordFatalError('zone', error, stackTrace);

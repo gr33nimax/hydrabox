@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/app/runtime_connection_controller.dart';
+import 'package:hydrabox/app/runtime_connection_controller.dart';
 
 void main() {
   test('every phase derives a consistent connection snapshot', () {

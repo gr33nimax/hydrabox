@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/app/group_url_test_scheduler.dart';
+import 'package:hydrabox/app/group_url_test_scheduler.dart';
 
 void main() {
   group('runtime startup URLTest gate', () {

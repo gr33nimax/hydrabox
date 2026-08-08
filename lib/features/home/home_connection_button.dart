@@ -2,9 +2,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
-import 'package:meow_client/l10n/generated/app_localizations.dart';
-import 'package:meow_client/theme/demo_app_theme.dart';
-import 'package:meow_client/widgets/hydrabox_logo_badge.dart';
+import 'package:hydrabox/l10n/generated/app_localizations.dart';
+import 'package:hydrabox/theme/demo_app_theme.dart';
+import 'package:hydrabox/widgets/hydrabox_logo_badge.dart';
 
 class ConnectionButton extends StatefulWidget {
   const ConnectionButton({

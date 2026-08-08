@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
-import 'package:meow_client/widgets/app_visual_effects.dart';
+import 'package:hydrabox/widgets/app_visual_effects.dart';
 
 class AppScrollEffects extends StatefulWidget {
   const AppScrollEffects({super.key, required this.child});

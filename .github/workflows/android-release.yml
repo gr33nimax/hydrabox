@@ -309,7 +309,7 @@ jobs:
               "version": version,
               "buildNumber": int(build_number),
               "minSdk": int(min_sdk),
-              "packageName": "com.etonify.meow_client",
+              "packageName": "io.hydrabox.client",
               "assets": assets,
           }
           Path("build/release-apks/hydrabox-update.json").write_text(

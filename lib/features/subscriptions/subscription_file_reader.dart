@@ -5,10 +5,10 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:meow_client/data/subscription/parsers/hydrabox_subscription_parser.dart';
+import 'package:hydrabox/data/subscription/parsers/hydra_subscription_parser.dart';
 
 const _defaultReadTimeout = Duration(seconds: 20);
-const _maxHydraBoxFileBytes = 16 * 1024 * 1024;
+const _maxHydraFileBytes = 16 * 1024 * 1024;
 const _maxSubscriptionFileBytes = 64 * 1024 * 1024;
 
 class SubscriptionFileReadException implements Exception {
@@ -24,12 +24,12 @@ Future<String> readSubscriptionFile(
   PlatformFile file, {
   Duration timeout = _defaultReadTimeout,
 }) async {
-  final declaredHydraBox = _isDeclaredHydraBoxFile(file.name);
-  final maxBytes = declaredHydraBox
-      ? _maxHydraBoxFileBytes
+  final declaredHydra = _isDeclaredHydraFile(file.name);
+  final maxBytes = declaredHydra
+      ? _maxHydraFileBytes
       : _maxSubscriptionFileBytes;
   if (file.size > maxBytes) {
-    throw SubscriptionFileReadException(_tooLargeReason(declaredHydraBox));
+    throw SubscriptionFileReadException(_tooLargeReason(declaredHydra));
   }
 
   final bytes = await _readFileBytes(file, maxBytes: maxBytes).timeout(timeout);
@@ -40,19 +40,19 @@ Future<String> readSubscriptionFile(
   final transferable = TransferableTypedData.fromList([bytes]);
   final content = await Isolate.run(
     () => _decodeTextFile(transferable.materialize().asUint8List()),
-    debugName: 'etonify-read-subscription-file',
+    debugName: 'hydrabox-read-subscription-file',
   ).timeout(timeout);
   if (content.isEmpty) {
     throw const SubscriptionFileReadException('decoded content is empty');
   }
-  // Undeclared files can still contain a HydraBox/JWE discriminator. Measure
+  // Undeclared files can still contain a Hydra/JWE discriminator. Measure
   // the original file bytes here because the text decoder intentionally trims
   // surrounding whitespace for legacy import compatibility.
-  if (!declaredHydraBox &&
-      bytes.length > _maxHydraBoxFileBytes &&
-      HydraBoxSubscriptionParser.looksLike(content)) {
+  if (!declaredHydra &&
+      bytes.length > _maxHydraFileBytes &&
+      HydraSubscriptionParser.looksLike(content)) {
     throw const SubscriptionFileReadException(
-      'HydraBox subscription file is larger than 16 MiB',
+      'Hydra subscription file is larger than 16 MiB',
     );
   }
   return content;
@@ -66,7 +66,7 @@ Future<Uint8List> _readFileBytes(
   if (inMemory != null) {
     if (inMemory.length > maxBytes) {
       throw SubscriptionFileReadException(
-        _tooLargeReason(maxBytes == _maxHydraBoxFileBytes),
+        _tooLargeReason(maxBytes == _maxHydraFileBytes),
       );
     }
     return inMemory;
@@ -94,7 +94,7 @@ Future<Uint8List> _collectBytes(
   await for (final chunk in stream) {
     if (builder.length + chunk.length > maxBytes) {
       throw SubscriptionFileReadException(
-        _tooLargeReason(maxBytes == _maxHydraBoxFileBytes),
+        _tooLargeReason(maxBytes == _maxHydraFileBytes),
       );
     }
     builder.add(chunk);
@@ -102,15 +102,15 @@ Future<Uint8List> _collectBytes(
   return builder.takeBytes();
 }
 
-bool _isDeclaredHydraBoxFile(String name) {
+bool _isDeclaredHydraFile(String name) {
   final normalized = name.trim().toLowerCase();
-  return normalized.endsWith('.hbx') ||
-      normalized.endsWith('.hbx.json') ||
-      normalized.endsWith('.hbx.jwe.json');
+  return normalized.endsWith('.hydra') ||
+      normalized.endsWith('.hydra.json') ||
+      normalized.endsWith('.hydra.jwe.json');
 }
 
-String _tooLargeReason(bool hydraBox) => hydraBox
-    ? 'HydraBox subscription file is larger than 16 MiB'
+String _tooLargeReason(bool hydra) => hydra
+    ? 'Hydra subscription file is larger than 16 MiB'
     : 'file is larger than 64 MiB';
 
 String _decodeTextFile(Uint8List bytes) {
@@ -139,12 +139,12 @@ String _decodeUtf8(Uint8List bytes) {
 
 String _decodeLegacyUtf16(Uint8List bytes, {required bool littleEndian}) {
   final content = _decodeUtf16(bytes, littleEndian: littleEndian).trim();
-  // HydraBox is a strict UTF-8 wire format. Transcoding its JSON before
+  // Hydra Subscription v2 is a strict UTF-8 wire format. Transcoding its JSON before
   // validation would erase the original byte representation and could make
   // different implementations authenticate or interpret different input.
-  if (HydraBoxSubscriptionParser.looksLike(content)) {
+  if (HydraSubscriptionParser.looksLike(content)) {
     throw const SubscriptionFileReadException(
-      'HydraBox subscription files must use UTF-8',
+      'Hydra subscription files must use UTF-8',
     );
   }
   return content;

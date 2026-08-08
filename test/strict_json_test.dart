@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/data/subscription/strict_json.dart';
+import 'package:hydrabox/data/subscription/strict_json.dart';
 
 void main() {
   group('decodeStrictJson nesting limit', () {

@@ -8,7 +8,7 @@
 PRODUCT_NAME = HydraBox
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.etonify.meowClient
+PRODUCT_BUNDLE_IDENTIFIER = io.hydrabox.client
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2026 MeowTeam and HydraBox contributors. GPL-3.0-or-later; see NOTICE.

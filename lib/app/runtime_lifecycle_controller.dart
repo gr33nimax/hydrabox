@@ -1,10 +1,19 @@
 import 'dart:async';
 
-import 'package:meow_client/app/app_background_tasks.dart';
-import 'package:meow_client/logging/app_log_store.dart';
-import 'package:meow_client/singbox/singbox_runtime.dart';
+import 'package:hydrabox/app/app_background_tasks.dart';
+import 'package:hydrabox/logging/app_log_store.dart';
+import 'package:hydrabox/singbox/singbox_runtime.dart';
 
 enum RuntimeApplyPolicy { logOnly, safeCoreRestart, fullServiceRestart }
+
+class _NativeRuntimeStartFailure implements Exception {
+  const _NativeRuntimeStartFailure(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
 
 class RuntimeLifecycleResult {
   const RuntimeLifecycleResult({
@@ -260,6 +269,10 @@ class RuntimeLifecycleController {
           : const Duration(seconds: 2);
       try {
         lastStatus = await _runtime.status().timeout(statusTimeout);
+        final nativeError = lastStatus['lastError']?.toString().trim() ?? '';
+        if (nativeError.isNotEmpty && lastStatus['running'] != true) {
+          throw _NativeRuntimeStartFailure(nativeError);
+        }
         if (_isStartedRuntimeStatus(lastStatus, useVpn: useVpn)) {
           AppLogStore.info(
             'runtime',
@@ -269,6 +282,7 @@ class RuntimeLifecycleController {
           return true;
         }
       } catch (error) {
+        if (error is _NativeRuntimeStartFailure) rethrow;
         AppLogStore.warning(
           'runtime',
           'failed to verify native start useVpn=$useVpn: $error',

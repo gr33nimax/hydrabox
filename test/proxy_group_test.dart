@@ -2,14 +2,14 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/app/app_background_tasks.dart';
-import 'package:meow_client/core/lowest_proxy_groups.dart';
-import 'package:meow_client/data/local/app_settings_store.dart';
-import 'package:meow_client/data/subscription/subscription_parser.dart';
-import 'package:meow_client/data/subscription/subscription_store.dart';
-import 'package:meow_client/models/subscription.dart';
-import 'package:meow_client/singbox/singbox_config_builder.dart';
-import 'package:meow_client/singbox/libbox_capabilities.dart';
+import 'package:hydrabox/app/app_background_tasks.dart';
+import 'package:hydrabox/core/lowest_proxy_groups.dart';
+import 'package:hydrabox/data/local/app_settings_store.dart';
+import 'package:hydrabox/data/subscription/subscription_parser.dart';
+import 'package:hydrabox/data/subscription/subscription_store.dart';
+import 'package:hydrabox/models/subscription.dart';
+import 'package:hydrabox/singbox/singbox_config_builder.dart';
+import 'package:hydrabox/singbox/hydracore_capabilities.dart';
 
 void main() {
   test('parses Xray balancer as a proxy group', () {
@@ -346,7 +346,7 @@ void main() {
       markAllServersRussia: false,
     ).buildPlan();
 
-    expect(plan.config['global'], {'urltest_concurrency_limit': 8});
+    expect(plan.config, isNot(contains('global')));
     final outbounds = (plan.config['outbounds'] as List)
         .cast<Map<String, dynamic>>();
     final selector = outbounds.firstWhere((entry) => entry['tag'] == 'select');
@@ -358,12 +358,9 @@ void main() {
     expect(selector['outbounds'], ['lowest', 'group-auto', 'leaf-1', 'leaf-2']);
     expect(selector['default'], 'group-auto');
     expect(lowest['outbounds'], ['group-auto']);
-    expect(lowest['timeout'], '8s');
     expect(lowest['idle_timeout'], '77s');
-    expect(lowest['concurrency'], 8);
     expect(lowest['tolerance'], 1);
     expect(lowest['interrupt_exist_connections'], isFalse);
-    expect(lowest['interrupt_delay_threshold'], 300);
     expect(
       outbounds.map((entry) => entry['tag']).toSet().intersection({
         'lowest-open',
@@ -373,56 +370,23 @@ void main() {
       isEmpty,
     );
     expect(groupUrltest['outbounds'], ['leaf-1', 'leaf-2']);
-    expect(groupUrltest['method'], 'setback');
     expect(groupUrltest['url'], 'https://subscription.example/generate_204');
     expect(groupUrltest['interval'], '77s');
     expect(groupUrltest['idle_timeout'], '77s');
-    expect(groupUrltest['timeout'], '8s');
-    expect(groupUrltest['concurrency'], 8);
-    expect(groupUrltest['unavailable_check_interval'], '120s');
     expect(groupUrltest['tolerance'], 1);
     expect(groupUrltest['interrupt_exist_connections'], isFalse);
-    expect(groupUrltest['interrupt_delay_threshold'], 300);
-
-    final stableConfig = _defaultBuilder(
-      subscription,
-      capabilities: LibboxCapabilities.parseOrLegacy(
-        '{"api_version":1,"core_version":"1.13.14-etonify",'
-        '"supports_url_test_timeout":true,'
-        '"supports_url_test_concurrency":true,'
-        '"supports_url_test_deadline":true,'
-        '"supports_url_test_force":true,'
-        '"supports_config_check":true,'
-        '"tun_stacks":["system","gvisor","mixed"]}',
-      ),
-    ).build();
-    expect(stableConfig, isNot(contains('global')));
-    final stableOutbounds = (stableConfig['outbounds'] as List)
-        .cast<Map<String, dynamic>>();
-    expect(
-      stableOutbounds.any((entry) => entry['tag'] == mixedProxyTag),
-      isFalse,
-    );
-    final stableLowest = stableOutbounds.firstWhere(
-      (entry) => entry['tag'] == lowestProxyTag,
-    );
-    final stableGroup = stableOutbounds.firstWhere(
-      (entry) => entry['tag'] == 'group-auto',
-    );
     for (final legacyKey in const <String>[
       'timeout',
       'concurrency',
       'unavailable_check_interval',
       'interrupt_delay_threshold',
     ]) {
-      expect(stableLowest, isNot(contains(legacyKey)));
-      expect(stableGroup, isNot(contains(legacyKey)));
+      expect(lowest, isNot(contains(legacyKey)));
+      expect(groupUrltest, isNot(contains(legacyKey)));
     }
-    expect(stableGroup, isNot(contains('method')));
-    expect(stableLowest['url'], isNotEmpty);
-    expect(stableLowest['interval'], isNotEmpty);
-    expect(stableLowest['idle_timeout'], isNotEmpty);
-    expect(stableLowest['tolerance'], 1);
+    expect(groupUrltest, isNot(contains('method')));
+    expect(lowest['url'], isNotEmpty);
+    expect(lowest['interval'], isNotEmpty);
   });
 
   test('keeps group-only detour clone out of top-level selector', () {
@@ -579,10 +543,16 @@ void main() {
     expect(groupUrltest['url'], 'https://global.example/generate_204');
     expect(groupUrltest['interval'], '3600s');
     expect(groupUrltest['idle_timeout'], '3600s');
-    expect(groupUrltest['timeout'], '16s');
-    expect(groupUrltest['concurrency'], 8);
-    expect(groupUrltest['unavailable_check_interval'], '120s');
     expect(groupUrltest['tolerance'], 1);
+    for (final legacyKey in const <String>[
+      'method',
+      'timeout',
+      'concurrency',
+      'unavailable_check_interval',
+      'interrupt_delay_threshold',
+    ]) {
+      expect(groupUrltest, isNot(contains(legacyKey)));
+    }
   });
 
   test('does not build lowest proxies for a single outbound subscription', () {
@@ -1383,7 +1353,7 @@ void main() {
       ],
     );
 
-    Map<String, dynamic> realityFor(LibboxCapabilities capabilities) {
+    Map<String, dynamic> realityFor(HydraCoreCapabilities capabilities) {
       final plan = _defaultBuilder(
         subscription,
         selectedProxyTag: 'leaf',
@@ -1395,15 +1365,17 @@ void main() {
       return Map<String, dynamic>.from((leaf['tls'] as Map)['reality'] as Map);
     }
 
-    final unsupported = LibboxCapabilities.parseOrLegacy('{"api_version":1}');
-    final supported = LibboxCapabilities.parseOrLegacy(
-      '{"api_version":1,"supports_reality_spider_x":true}',
+    const unsupported = HydraCoreCapabilities(
+      apiVersion: 2,
+      coreVersion: 'v1.13.16-extended-hydracore.1',
+      supportsRealitySpiderX: false,
     );
+    const supported = HydraCoreCapabilities.requiredV2;
 
     expect(realityFor(unsupported), isNot(contains('spider_x')));
     expect(realityFor(supported)['spider_x'], '/assets?ed=2560');
     expect(
-      realityFor(LibboxCapabilities.bundledLegacy)['spider_x'],
+      realityFor(HydraCoreCapabilities.requiredV2)['spider_x'],
       '/assets?ed=2560',
     );
   });
@@ -2039,6 +2011,27 @@ void main() {
     expect(tun['address'], contains('fdfe:dcba:9876::1/126'));
   });
 
+  test(
+    'DNS defaults to IPv4-only and IPv6 preference opts into dual stack',
+    () {
+      const subscription = Subscription(
+        id: 'dns-address-family',
+        name: 'DNS address family',
+        url: 'https://example.com/sub',
+        outbounds: [],
+      );
+
+      final safeDefault = _defaultBuilder(subscription).build();
+      expect((safeDefault['dns'] as Map)['strategy'], 'ipv4_only');
+
+      final ipv6Preferred = _defaultBuilder(
+        subscription,
+        dnsPreferIpv6: true,
+      ).build();
+      expect((ipv6Preferred['dns'] as Map)['strategy'], 'prefer_ipv6');
+    },
+  );
+
   test('VPN TUN and local proxy can run in the same service config', () {
     const subscription = Subscription(
       id: 'vpn-with-local-proxy',
@@ -2222,7 +2215,11 @@ void main() {
       'detour': 'select',
     });
     expect(remoteDns('tcp://1.1.1.1')['type'], 'tcp');
-    expect(remoteDns('tls://dns.google')['server_port'], 853);
+    expect(remoteDns('tls://dns.google'), containsPair('server_port', 853));
+    expect(
+      remoteDns('tls://dns.google'),
+      containsPair('domain_resolver', 'dns-local'),
+    );
     expect(remoteDns('https://dns.google/dns-query'), {
       'type': 'https',
       'tag': 'dns-remote',
@@ -2230,6 +2227,7 @@ void main() {
       'server_port': 443,
       'path': '/dns-query',
       'detour': 'select',
+      'domain_resolver': 'dns-local',
     });
 
     Map<String, dynamic> directDns(String directResolver) {
@@ -2346,8 +2344,9 @@ SingboxConfigBuilder _defaultBuilder(
   String? adBlockAllowRuleSetPath,
   String dnsDirectResolver = 'udp://1.1.1.1',
   String dnsProxyResolver = 'https://dns.cloudflare.com/dns-query',
+  bool dnsPreferIpv6 = false,
   String russiaDnsDirectResolver = defaultRussiaDnsDirectResolver,
-  LibboxCapabilities capabilities = LibboxCapabilities.bundledLegacy,
+  HydraCoreCapabilities capabilities = HydraCoreCapabilities.requiredV2,
 }) {
   return SingboxConfigBuilder(
     activeSubscription: subscription,
@@ -2363,7 +2362,7 @@ SingboxConfigBuilder _defaultBuilder(
     proxyPassword: proxyPassword,
     dnsDirectResolver: dnsDirectResolver,
     dnsProxyResolver: dnsProxyResolver,
-    dnsPreferIpv6: false,
+    dnsPreferIpv6: dnsPreferIpv6,
     russiaDnsDirectResolver: russiaDnsDirectResolver,
     urlTestUrl: urlTestUrl,
     urlTestIntervalSeconds: urlTestIntervalSeconds,

@@ -1,28 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/app/app.dart';
+import 'package:hydrabox/app/app.dart';
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
-import 'package:meow_client/core/lowest_proxy_groups.dart';
-import 'package:meow_client/data/local/app_settings_store.dart';
-import 'package:meow_client/features/home/home_page.dart';
-import 'package:meow_client/features/home/home_presentation.dart';
-import 'package:meow_client/features/home/traffic_dashboard_page.dart';
-import 'package:meow_client/features/proxies/proxies_page.dart';
-import 'package:meow_client/features/proxies/proxy_panel_shell.dart';
-import 'package:meow_client/features/settings/settings_about_page.dart';
-import 'package:meow_client/l10n/generated/app_localizations.dart';
-import 'package:meow_client/models/app_view_models.dart';
-import 'package:meow_client/models/proxy_runtime_visual_state.dart';
-import 'package:meow_client/widgets/country_flag_badge.dart';
+import 'package:hydrabox/core/lowest_proxy_groups.dart';
+import 'package:hydrabox/data/local/app_settings_store.dart';
+import 'package:hydrabox/features/home/home_page.dart';
+import 'package:hydrabox/features/home/home_presentation.dart';
+import 'package:hydrabox/features/home/traffic_dashboard_page.dart';
+import 'package:hydrabox/features/proxies/proxies_page.dart';
+import 'package:hydrabox/features/proxies/proxy_panel_shell.dart';
+import 'package:hydrabox/features/settings/settings_about_page.dart';
+import 'package:hydrabox/l10n/generated/app_localizations.dart';
+import 'package:hydrabox/models/app_view_models.dart';
+import 'package:hydrabox/models/proxy_runtime_visual_state.dart';
+import 'package:hydrabox/widgets/country_flag_badge.dart';
 
 void main() {
   testWidgets('renders cloned mobile shell', (tester) async {
     await tester.pumpWidget(
-      MeowClient(
+      HydraBoxClient(
         store: MemoryAppSettingsStore(
           const AppSettingsState(
             onboardingCompleted: true,
-            acceptedLegalVersion: '0.2.1',
+            acceptedLegalVersion: '0.3.0',
             acceptedLegalAtMillis: 1,
             activeProfileId: '',
             selectedProxyTag: '',
@@ -73,14 +73,17 @@ void main() {
     expect(find.text('HydraBox'), findsOneWidget);
     expect(find.text('MeowVPN'), findsNothing);
     expect(find.text('No subscriptions yet'), findsOneWidget);
-    expect(find.byIcon(Icons.settings_rounded), findsOneWidget);
+    expect(find.byKey(const ValueKey('main-navigation-shell')), findsOneWidget);
+    expect(find.text('Home'), findsOneWidget);
+    expect(find.text('Servers'), findsOneWidget);
+    expect(find.text('More'), findsOneWidget);
   });
 
   testWidgets('welcome uses HydraBox before onboarding is completed', (
     tester,
   ) async {
     await tester.pumpWidget(
-      MeowClient(
+      HydraBoxClient(
         store: MemoryAppSettingsStore(
           const AppSettingsState(
             onboardingCompleted: false,
@@ -135,13 +138,15 @@ void main() {
     expect(find.byIcon(Icons.settings_rounded), findsNothing);
   });
 
-  testWidgets('opens settings page from home header', (tester) async {
+  testWidgets('opens settings from the More navigation destination', (
+    tester,
+  ) async {
     await tester.pumpWidget(
-      MeowClient(
+      HydraBoxClient(
         store: MemoryAppSettingsStore(
           const AppSettingsState(
             onboardingCompleted: true,
-            acceptedLegalVersion: '0.2.1',
+            acceptedLegalVersion: '0.3.0',
             acceptedLegalAtMillis: 1,
             activeProfileId: '',
             selectedProxyTag: '',
@@ -189,7 +194,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byIcon(Icons.settings_rounded));
+    await tester.tap(find.text('More'));
     await tester.pumpAndSettle();
 
     expect(find.text('Settings'), findsOneWidget);
@@ -370,10 +375,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(panelProgress, greaterThan(.95));
-    expect(find.text('Proxies'), findsOneWidget);
+    expect(find.text('Servers'), findsOneWidget);
     expect(find.text('Paris'), findsOneWidget);
 
-    await tester.drag(find.text('Proxies'), const Offset(0, 80));
+    await tester.drag(find.text('Servers'), const Offset(0, 80));
     await tester.pumpAndSettle();
 
     expect(panelProgress, closeTo(0, .01));
@@ -600,15 +605,15 @@ void main() {
     await pumpAt(.20);
     expect(find.text('Active Poland'), findsOneWidget);
     expect(opacityFor('Active Poland'), greaterThan(0));
-    expect(opacityFor('Proxies'), 0);
+    expect(opacityFor('Servers'), 0);
 
     await pumpAt(.42);
     expect(opacityFor('Active Poland'), 0);
-    expect(opacityFor('Proxies'), 0);
+    expect(opacityFor('Servers'), 0);
 
     await pumpAt(.70);
     expect(opacityFor('Active Poland'), 0);
-    expect(opacityFor('Proxies'), greaterThan(0));
+    expect(opacityFor('Servers'), greaterThan(0));
   });
 
   testWidgets('closed proxy panel does not build proxy rows', (tester) async {
@@ -1016,6 +1021,29 @@ void main() {
     expect(find.text('No subscriptions yet'), findsNothing);
   });
 
+  testWidgets('does not expose server ping while disconnected', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        supportedLocales: AppLocalizations.supportedLocales,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        home: ProxiesPage(
+          proxies: <AppProxySummary>[_proxy('proxy-1', 'Amsterdam')],
+          selectedTag: 'proxy-1',
+          connected: false,
+          progressiveBlurEnabled: false,
+          onSelected: (_) {},
+          onUrlTest: () async {},
+        ),
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey('preconnect-urltest-action')),
+      findsNothing,
+    );
+    expect(find.byIcon(Icons.network_ping_rounded), findsNothing);
+  });
+
   testWidgets('active proxy delay indicator keeps visual ping tap target', (
     tester,
   ) async {
@@ -1128,6 +1156,52 @@ void main() {
 
     expect(find.text('42 ms', findRichText: true), findsNothing);
     expect(find.text('73 ms', findRichText: true), findsOneWidget);
+  });
+
+  testWidgets('compact home keeps the full HydraBox brand before version', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        supportedLocales: AppLocalizations.supportedLocales,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        home: HomePage(
+          state: const HomeViewState(
+            connected: false,
+            connecting: false,
+            resolvingProxy: false,
+            connectionStatusLabel: '',
+            activeProfile: null,
+            activeProxy: null,
+            hideServerIp: false,
+            hapticEnabled: false,
+            speedBytesPerSecond: 0,
+            trafficBytes: 0,
+            brandName: 'HydraBox',
+            versionLabel: '0.3.0-beta.3',
+          ),
+          actions: HomeViewActions(
+            toggleConnection: () {},
+            refreshLatency: () {},
+            openSubscriptions: () {},
+            addSubscription: () {},
+            openSettings: () {},
+            openChangelog: () {},
+          ),
+          bottomInset: 0,
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('home-brand-name')), findsOneWidget);
+    expect(find.text('HydraBox'), findsOneWidget);
+    expect(find.byKey(const ValueKey('home-version-badge')), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('active proxy footer hides IP and traffic when disconnected', (
@@ -1538,11 +1612,8 @@ void main() {
     expect(find.text('0.1.1'), findsOneWidget);
     expect(find.text('HydraBox'), findsOneWidget);
     expect(find.text('gr33nimax/hydracore'), findsOneWidget);
-    expect(
-      find.textContaining('subscription-first Android client'),
-      findsOneWidget,
-    );
-    expect(find.textContaining('Etonify fork'), findsOneWidget);
+    expect(find.textContaining('subscription-first client'), findsOneWidget);
+    expect(find.textContaining('Etonify'), findsNothing);
     expect(find.text('Credits & origins'), findsOneWidget);
     expect(find.text('Terms of Use'), findsOneWidget);
     expect(find.text('Privacy Policy'), findsOneWidget);

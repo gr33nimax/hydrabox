@@ -2,13 +2,13 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 
-import 'package:meow_client/core/lowest_proxy_groups.dart';
-import 'package:meow_client/data/local/app_settings_store.dart';
-import 'package:meow_client/data/subscription/outbound_schema.dart';
-import 'package:meow_client/models/app_view_models.dart';
-import 'package:meow_client/models/subscription.dart';
-import 'package:meow_client/singbox/singbox_config_builder.dart';
-import 'package:meow_client/singbox/libbox_capabilities.dart';
+import 'package:hydrabox/core/lowest_proxy_groups.dart';
+import 'package:hydrabox/data/local/app_settings_store.dart';
+import 'package:hydrabox/data/subscription/outbound_schema.dart';
+import 'package:hydrabox/models/app_view_models.dart';
+import 'package:hydrabox/models/subscription.dart';
+import 'package:hydrabox/singbox/singbox_config_builder.dart';
+import 'package:hydrabox/singbox/hydracore_capabilities.dart';
 
 class ProxyCacheBuildInput {
   const ProxyCacheBuildInput({
@@ -100,7 +100,7 @@ class SingboxConfigBuildInput {
     required this.interruptExistingConnections,
     required this.urlTestStrictTolerance,
     required this.markAllServersRussia,
-    this.capabilities = LibboxCapabilities.bundledLegacy,
+    this.capabilities = HydraCoreCapabilities.requiredV2,
     required this.snowtunBinaryPath,
     required this.snowtunProtectPath,
     this.outputConfigPath,
@@ -151,7 +151,7 @@ class SingboxConfigBuildInput {
   final bool interruptExistingConnections;
   final bool urlTestStrictTolerance;
   final bool markAllServersRussia;
-  final LibboxCapabilities capabilities;
+  final HydraCoreCapabilities capabilities;
   final String? snowtunBinaryPath;
   final String? snowtunProtectPath;
   final String? outputConfigPath;
@@ -188,6 +188,21 @@ class SingboxConfigBuildResult {
   bool get hasReturnedConfig => plan.config.isNotEmpty;
   bool get hasPreparedConfig =>
       configPath != null && configPath!.trim().isNotEmpty;
+
+  SingboxConfigBuildResult withConfigPath(String? value) =>
+      SingboxConfigBuildResult(
+        plan: plan,
+        configJson: configJson,
+        configPath: value,
+        configLength: configLength,
+        configOutboundCount: configOutboundCount,
+        configInboundCount: configInboundCount,
+        configRouteRuleCount: configRouteRuleCount,
+        invalidOutbounds: invalidOutbounds,
+        invalidOutboundCount: invalidOutboundCount,
+        selectedProxyInvalid: selectedProxyInvalid,
+        startableOutboundCount: startableOutboundCount,
+      );
 }
 
 class StartupValidationInput {
@@ -227,7 +242,7 @@ Future<ProxyCacheBuildResult> buildProxyCacheInBackground(
 ) {
   return Isolate.run(
     () => buildProxyCache(input),
-    debugName: 'meow-proxy-cache',
+    debugName: 'hydrabox-proxy-cache',
   );
 }
 
@@ -370,7 +385,7 @@ Future<SingboxConfigBuildResult> buildSingboxConfigInBackground(
 ) {
   return Isolate.run(
     () => buildSingboxConfig(input),
-    debugName: 'meow-singbox-config',
+    debugName: 'hydrabox-singbox-config',
   );
 }
 
@@ -505,7 +520,7 @@ Future<StartupValidationResult> validateStartupOutboundsInBackground(
 ) {
   return Isolate.run(
     () => validateStartupOutbounds(input),
-    debugName: 'meow-startup-validation',
+    debugName: 'hydrabox-startup-validation',
   );
 }
 
@@ -552,7 +567,7 @@ Future<ConfigMutationResult> mutateSingboxConfigInBackground(
 ) {
   return Isolate.run(
     () => mutateSingboxConfig(input),
-    debugName: 'meow-singbox-config-mutation',
+    debugName: 'hydrabox-singbox-config-mutation',
   );
 }
 

@@ -3,11 +3,11 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:meow_client/core/widgets/app_notice.dart';
-import 'package:meow_client/data/backup/etonify_backup_service.dart';
-import 'package:meow_client/data/local/app_settings_store.dart';
-import 'package:meow_client/l10n/generated/app_localizations.dart';
-import 'package:meow_client/models/subscription.dart';
+import 'package:hydrabox/core/widgets/app_notice.dart';
+import 'package:hydrabox/data/backup/hydrabox_backup_service.dart';
+import 'package:hydrabox/data/local/app_settings_store.dart';
+import 'package:hydrabox/l10n/generated/app_localizations.dart';
+import 'package:hydrabox/models/subscription.dart';
 
 class SettingsBackupExportActions {
   const SettingsBackupExportActions({
@@ -17,7 +17,7 @@ class SettingsBackupExportActions {
     required this.loadSubscriptions,
   });
 
-  static const _service = EtonifyBackupService();
+  static const _service = HydraBoxBackupService();
 
   final AppSettingsStore store;
   final AppSettingsState settingsState;
@@ -33,7 +33,7 @@ class SettingsBackupExportActions {
     );
     final path = await FilePicker.saveFile(
       dialogTitle: l10n.backupExportSettings,
-      fileName: 'hydrabox.etonify-settings.json',
+      fileName: 'hydrabox.hydrabox-settings.json',
       type: FileType.custom,
       allowedExtensions: const ['json'],
       bytes: Uint8List.fromList(utf8.encode(content)),
@@ -49,14 +49,14 @@ class SettingsBackupExportActions {
     final content = await _service.buildProfileExportInBackground(
       subscriptions: await loadSubscriptions(),
       clientVersion: clientVersion,
-      encryption: EtonifyProfileEncryption.encrypted,
+      encryption: HydraBoxProfileEncryption.encrypted,
       password: password,
     );
     final path = await FilePicker.saveFile(
       dialogTitle: l10n.backupExportProfileEncrypted,
-      fileName: 'hydrabox-profile.etonify-profile',
+      fileName: 'hydrabox-profile.hydrabox-profile',
       type: FileType.custom,
-      allowedExtensions: const ['etonify-profile'],
+      allowedExtensions: const ['hydrabox-profile'],
       bytes: Uint8List.fromList(utf8.encode(content)),
     );
     if (path == null || !context.mounted) return;
@@ -90,13 +90,13 @@ class SettingsBackupExportActions {
     final content = await _service.buildProfileExportInBackground(
       subscriptions: await loadSubscriptions(),
       clientVersion: clientVersion,
-      encryption: EtonifyProfileEncryption.plain,
+      encryption: HydraBoxProfileEncryption.plain,
     );
     final path = await FilePicker.saveFile(
       dialogTitle: l10n.backupExportProfilePlain,
-      fileName: 'hydrabox-profile-plain.etonify-profile',
+      fileName: 'hydrabox-profile-plain.hydrabox-profile',
       type: FileType.custom,
-      allowedExtensions: const ['etonify-profile'],
+      allowedExtensions: const ['hydrabox-profile'],
       bytes: Uint8List.fromList(utf8.encode(content)),
     );
     if (path == null || !context.mounted) return;

@@ -1,9 +1,9 @@
 import 'dart:math';
 
-import 'package:meow_client/app/subscription_runtime_controller.dart';
-import 'package:meow_client/data/subscription/subscription_store.dart';
-import 'package:meow_client/logging/app_log_store.dart';
-import 'package:meow_client/models/subscription.dart';
+import 'package:hydrabox/app/subscription_runtime_controller.dart';
+import 'package:hydrabox/data/subscription/subscription_store.dart';
+import 'package:hydrabox/logging/app_log_store.dart';
+import 'package:hydrabox/models/subscription.dart';
 
 typedef SubscriptionMetadataLoader = Future<List<Subscription>> Function();
 typedef SubscriptionLoader = Future<Subscription?> Function(String id);

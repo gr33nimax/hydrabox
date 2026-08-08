@@ -1,9 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/app/subscription_coordinator.dart';
-import 'package:meow_client/app/subscription_runtime_controller.dart';
-import 'package:meow_client/models/subscription.dart';
+import 'package:hydrabox/app/subscription_coordinator.dart';
+import 'package:hydrabox/app/subscription_runtime_controller.dart';
+import 'package:hydrabox/models/subscription.dart';
 
 void main() {
   test(

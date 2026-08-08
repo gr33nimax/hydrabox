@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:gap/gap.dart';
-import 'package:meow_client/data/local/app_settings_store.dart';
-import 'package:meow_client/data/subscription/happ_crypto_link.dart';
-import 'package:meow_client/features/settings/settings_ui.dart';
-import 'package:meow_client/l10n/generated/app_localizations.dart';
-import 'package:meow_client/logging/app_log_store.dart';
-import 'package:meow_client/models/subscription.dart';
-import 'package:meow_client/singbox/singbox_runtime.dart';
-import 'package:meow_client/widgets/progressive_blur_scaffold.dart';
+import 'package:hydrabox/data/local/app_settings_store.dart';
+import 'package:hydrabox/data/subscription/happ_crypto_link.dart';
+import 'package:hydrabox/features/settings/settings_ui.dart';
+import 'package:hydrabox/l10n/generated/app_localizations.dart';
+import 'package:hydrabox/logging/app_log_store.dart';
+import 'package:hydrabox/models/subscription.dart';
+import 'package:hydrabox/singbox/singbox_runtime.dart';
+import 'package:hydrabox/widgets/progressive_blur_scaffold.dart';
 
 class SettingsSubscriptionsPage extends StatefulWidget {
   const SettingsSubscriptionsPage({

@@ -2,13 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:meow_client/app/app_background_tasks.dart';
-import 'package:meow_client/app/runtime_lifecycle_controller.dart';
-import 'package:meow_client/data/local/app_settings_store.dart';
-import 'package:meow_client/logging/app_log_store.dart';
-import 'package:meow_client/models/subscription.dart';
-import 'package:meow_client/singbox/libbox_capabilities.dart';
-import 'package:meow_client/singbox/singbox_runtime.dart';
+import 'package:hydrabox/app/app_background_tasks.dart';
+import 'package:hydrabox/app/runtime_lifecycle_controller.dart';
+import 'package:hydrabox/data/local/app_settings_store.dart';
+import 'package:hydrabox/data/subscription/parsers/hydra_subscription_parser.dart';
+import 'package:hydrabox/logging/app_log_store.dart';
+import 'package:hydrabox/models/subscription.dart';
+import 'package:hydrabox/singbox/hydracore_capabilities.dart';
+import 'package:hydrabox/singbox/singbox_runtime.dart';
 
 enum SingboxConfigCoordinatorPhase {
   reconfiguring,
@@ -68,7 +69,7 @@ class SingboxConfigCoordinatorSnapshot {
     required this.interruptExistingConnections,
     required this.urlTestStrictTolerance,
     required this.markAllServersRussia,
-    this.capabilities = LibboxCapabilities.bundledLegacy,
+    this.capabilities = HydraCoreCapabilities.requiredV2,
     this.snowtunBinaryPath,
     this.snowtunProtectPath,
   });
@@ -122,7 +123,7 @@ class SingboxConfigCoordinatorSnapshot {
   final bool interruptExistingConnections;
   final bool urlTestStrictTolerance;
   final bool markAllServersRussia;
-  final LibboxCapabilities capabilities;
+  final HydraCoreCapabilities capabilities;
   final String? snowtunBinaryPath;
   final String? snowtunProtectPath;
 
@@ -432,7 +433,7 @@ class SingboxConfigCoordinator {
   Future<RuntimeLifecycleResult> startRuntimeWithBuild(
     SingboxConfigBuildResult build, {
     required bool useVpn,
-  }) {
+  }) async {
     return _runtimeLifecycle.startRuntimeWithBuild(
       build: build,
       useVpn: useVpn,
@@ -475,13 +476,21 @@ class SingboxConfigCoordinator {
     try {
       result = await buildSingboxConfigInBackground(input);
       final requiresHydraBoxValidation =
-          input.activeSubscription?.sourceMetadata['format'] ==
-          'hydrabox.io/subscription/v1';
+          HydraSubscriptionParser.isSupportedSourceFormat(
+            input.activeSubscription?.sourceMetadata['format'],
+          );
       if ((validateConfig || requiresHydraBoxValidation) &&
           input.capabilities.supportsConfigCheck) {
-        await SingboxRuntime.instance.checkConfig(
-          await _configContentForValidation(result),
-        );
+        final content = await _configContentForValidation(result);
+        if (requiresHydraBoxValidation) {
+          final validation = await SingboxRuntime.instance.validateHydraConfig(
+            content,
+            profile: 'local',
+          );
+          _requireValidHydraConfig(validation);
+        } else {
+          await SingboxRuntime.instance.checkConfig(content);
+        }
       }
     } catch (_) {
       _deletePreparedConfigCandidate(stagedConfigPath);
@@ -496,6 +505,20 @@ class SingboxConfigCoordinator {
       return null;
     }
     return result;
+  }
+
+  static void _requireValidHydraConfig(Map<String, dynamic> result) {
+    if (result['valid'] == true) return;
+    final diagnostics = result['diagnostics'];
+    if (diagnostics is List &&
+        diagnostics.isNotEmpty &&
+        diagnostics.first is Map) {
+      final diagnostic = Map<String, dynamic>.from(diagnostics.first as Map);
+      final code = diagnostic['code']?.toString() ?? 'invalid';
+      final path = diagnostic['path']?.toString() ?? r'$';
+      throw StateError('HydraCore rejected runtime config: $code at $path');
+    }
+    throw StateError('HydraCore rejected runtime config');
   }
 
   Future<String> _configContentForValidation(

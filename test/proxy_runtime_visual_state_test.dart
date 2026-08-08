@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/models/proxy_runtime_visual_state.dart';
+import 'package:hydrabox/models/proxy_runtime_visual_state.dart';
 
 void main() {
   test(
@@ -48,10 +48,9 @@ void main() {
     });
     final revisionBefore = store.revision.value;
 
-    store.updateTags(
-      const {'active': ProxyRuntimeVisualState()},
-      notifyRevision: false,
-    );
+    store.updateTags(const {
+      'active': ProxyRuntimeVisualState(),
+    }, notifyRevision: false);
 
     expect(active.value?.latency, isNull);
     expect(store.valueFor('other')?.latency, 80);

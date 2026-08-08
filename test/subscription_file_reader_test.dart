@@ -3,7 +3,7 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/features/subscriptions/subscription_file_reader.dart';
+import 'package:hydrabox/features/subscriptions/subscription_file_reader.dart';
 
 void main() {
   test('reads a picked txt file from its stream', () async {
@@ -71,24 +71,24 @@ void main() {
     expect(await readSubscriptionFile(file), content);
   });
 
-  test('rejects a UTF-16 HydraBox v1 plaintext document', () async {
+  test('rejects a UTF-16 Hydra Subscription v2 plaintext document', () async {
     const content =
-        '{"api_version":"hydrabox.io/subscription/v1",'
-        '"kind":"SubscriptionData"}';
+        '{"api_version":"hydra.io/subscription/v2",'
+        '"kind":"Subscription"}';
     final bytes = _utf16Bytes(content, littleEndian: true);
     final file = PlatformFile(
-      name: 'subscription.hbx',
+      name: 'subscription.hydra',
       size: bytes.length,
       bytes: bytes,
     );
 
     await expectLater(
       readSubscriptionFile(file),
-      throwsA(_isHydraBoxUtf8OnlyError),
+      throwsA(_isHydraUtf8OnlyError),
     );
   });
 
-  test('rejects a UTF-16 flattened HydraBox JWE document', () async {
+  test('rejects a UTF-16 flattened Hydra JWE document', () async {
     const content =
         '{"protected":"header","iv":"nonce",'
         '"ciphertext":"payload","tag":"auth"}';
@@ -101,24 +101,24 @@ void main() {
 
     await expectLater(
       readSubscriptionFile(file),
-      throwsA(_isHydraBoxUtf8OnlyError),
+      throwsA(_isHydraUtf8OnlyError),
     );
   });
 
-  test('applies the 16 MiB HydraBox file limit to original bytes', () async {
-    const maxHydraBoxBytes = 16 * 1024 * 1024;
+  test('applies the 16 MiB Hydra file limit to original bytes', () async {
+    const maxHydraBytes = 16 * 1024 * 1024;
     const partialJwe = '{"protected":"header"}';
-    final boundaryBytes = _rightAlignedAscii(maxHydraBoxBytes, partialJwe);
+    final boundaryBytes = _rightAlignedAscii(maxHydraBytes, partialJwe);
     final boundaryFile = PlatformFile(
-      name: 'subscription.hbx.jwe.json',
+      name: 'subscription.hydra.jwe.json',
       size: boundaryBytes.length,
       bytes: boundaryBytes,
     );
     expect(await readSubscriptionFile(boundaryFile), partialJwe);
 
-    final oversizedBytes = _rightAlignedAscii(maxHydraBoxBytes + 1, partialJwe);
+    final oversizedBytes = _rightAlignedAscii(maxHydraBytes + 1, partialJwe);
     final underreportedFile = PlatformFile(
-      name: 'subscription.hbx.json',
+      name: 'subscription.hydra.json',
       size: 1,
       bytes: oversizedBytes,
     );
@@ -128,7 +128,7 @@ void main() {
         isA<SubscriptionFileReadException>().having(
           (error) => error.reason,
           'reason',
-          'HydraBox subscription file is larger than 16 MiB',
+          'Hydra subscription file is larger than 16 MiB',
         ),
       ),
     );
@@ -144,13 +144,13 @@ void main() {
         isA<SubscriptionFileReadException>().having(
           (error) => error.reason,
           'reason',
-          'HydraBox subscription file is larger than 16 MiB',
+          'Hydra subscription file is larger than 16 MiB',
         ),
       ),
     );
   });
 
-  test('keeps legacy files above the HydraBox limit compatible', () async {
+  test('keeps generic files above the Hydra limit compatible', () async {
     const legacy = 'vless://uuid@server.example:443?security=tls#Legacy';
     final bytes = _rightAlignedAscii(16 * 1024 * 1024 + 1, legacy);
     final file = PlatformFile(
@@ -172,11 +172,11 @@ void main() {
   });
 }
 
-final Matcher _isHydraBoxUtf8OnlyError = isA<SubscriptionFileReadException>()
+final Matcher _isHydraUtf8OnlyError = isA<SubscriptionFileReadException>()
     .having(
       (error) => error.reason,
       'reason',
-      'HydraBox subscription files must use UTF-8',
+      'Hydra subscription files must use UTF-8',
     );
 
 Uint8List _utf16Bytes(String value, {required bool littleEndian}) {

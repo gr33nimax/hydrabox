@@ -1,5 +1,5 @@
-import 'package:meow_client/data/subscription/subscription_failure.dart';
-import 'package:meow_client/l10n/generated/app_localizations.dart';
+import 'package:hydrabox/data/subscription/subscription_failure.dart';
+import 'package:hydrabox/l10n/generated/app_localizations.dart';
 
 String subscriptionErrorMessage(Object error, AppLocalizations l10n) {
   final failure = classifySubscriptionFailure(error);

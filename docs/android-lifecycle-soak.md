@@ -81,13 +81,13 @@ Capture a baseline after the VPN has been stable for two minutes, then sample
 every five minutes:
 
 ```powershell
-$package = "com.etonify.meow_client"
+$package = "io.hydrabox.client"
 1..13 | ForEach-Object {
   Get-Date
   adb shell dumpsys meminfo $package |
     Select-String "TOTAL PSS|TOTAL RSS|TOTAL SWAP PSS"
   adb shell dumpsys activity services $package |
-    Select-String "MeowVpnService|MeowProxyService|foreground"
+    Select-String "HydraBoxVpnService|HydraBoxProxyService|foreground"
   Start-Sleep -Seconds 300
 }
 ```
@@ -96,13 +96,13 @@ For a debuggable build, also record file descriptors before and after the
 connect/disconnect loop:
 
 ```powershell
-adb shell "run-as com.etonify.meow_client sh -c 'ls /proc/`$(pidof com.etonify.meow_client)/fd | wc -l'"
+adb shell "run-as io.hydrabox.client sh -c 'ls /proc/`$(pidof io.hydrabox.client)/fd | wc -l'"
 ```
 
 Keep a separate log capture running during the scenario:
 
 ```powershell
-$pid = (adb shell pidof com.etonify.meow_client).Trim()
+$pid = (adb shell pidof io.hydrabox.client).Trim()
 adb logcat --pid=$pid -v threadtime
 ```
 

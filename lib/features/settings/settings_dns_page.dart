@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:gap/gap.dart';
-import 'package:meow_client/data/local/app_settings_store.dart';
-import 'package:meow_client/features/settings/settings_ui.dart';
-import 'package:meow_client/l10n/generated/app_localizations.dart';
-import 'package:meow_client/widgets/progressive_blur_scaffold.dart';
+import 'package:hydrabox/data/local/app_settings_store.dart';
+import 'package:hydrabox/features/settings/settings_ui.dart';
+import 'package:hydrabox/l10n/generated/app_localizations.dart';
+import 'package:hydrabox/widgets/progressive_blur_scaffold.dart';
 
 final _kDnsSingleLineFormatter = FilteringTextInputFormatter.deny(
   RegExp(r'[\r\n]'),

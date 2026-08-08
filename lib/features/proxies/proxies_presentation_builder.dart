@@ -1,10 +1,10 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
-import 'package:meow_client/features/proxies/proxies_page.dart';
-import 'package:meow_client/features/proxies/proxy_panel_shell.dart';
-import 'package:meow_client/models/app_view_models.dart';
-import 'package:meow_client/models/proxy_runtime_visual_state.dart';
-import 'package:meow_client/models/subscription.dart';
+import 'package:hydrabox/features/proxies/proxies_page.dart';
+import 'package:hydrabox/features/proxies/proxy_panel_shell.dart';
+import 'package:hydrabox/models/app_view_models.dart';
+import 'package:hydrabox/models/proxy_runtime_visual_state.dart';
+import 'package:hydrabox/models/subscription.dart';
 
 @immutable
 class ProxiesPresentationData {
@@ -137,6 +137,37 @@ class ProxiesPresentationBuilder {
       expandedHeaderExtent: 1,
       sheetCornerRadius: proxyPanelScreenCornerRadius,
       onHeaderTap: panelGestures.onHeaderTap,
+    );
+  }
+
+  Widget buildStandalone() {
+    return ProxiesPage(
+      proxies: data.proxies,
+      groupChildrenByTag: data.groupChildrenByTag,
+      selectedTag: data.selectedTag,
+      activeProxy: data.activeProxy,
+      activeProxyHideIp: data.hideActiveProxyIp,
+      connected: data.connected,
+      hapticEnabled: data.hapticEnabled,
+      speedBytesPerSecond: data.speedBytesPerSecond,
+      trafficBytes: data.trafficBytes,
+      trafficListenable: data.trafficListenable,
+      initialSort: data.initialSort,
+      onSortChanged: callbacks.changeSort,
+      progressiveBlurEnabled: data.progressiveBlurEnabled,
+      onSelected: callbacks.selectProxy,
+      onUrlTest: callbacks.runUrlTest,
+      onActiveProxyIpRefresh: callbacks.refreshActiveProxyIp,
+      outboundForTag: callbacks.outboundForTag,
+      loadProxyChainTargetSources: callbacks.loadProxyChainTargetSources,
+      loadProxyChainTargetsForSource: callbacks.loadProxyChainTargetsForSource,
+      onAddProxyChain: callbacks.addProxyChain,
+      onChangeProxyChainDetour: callbacks.changeProxyChainDetour,
+      onRenameProxyChain: callbacks.renameProxyChain,
+      onRemoveProxyChain: callbacks.removeProxyChain,
+      isProxyChainTag: callbacks.isProxyChainTag,
+      onActiveProxyHideIpChanged: callbacks.changeHideActiveProxyIp,
+      runtimeStates: data.runtimeStates,
     );
   }
 }

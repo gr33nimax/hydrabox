@@ -3,10 +3,10 @@ from __future__ import annotations
 import hashlib
 import io
 import json
-import subprocess
 import sys
 import tempfile
 import unittest
+from copy import deepcopy
 from pathlib import Path
 from urllib.request import Request
 
@@ -15,7 +15,7 @@ SCRIPTS = Path(__file__).resolve().parents[1]
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-from fetch_libbox import fetch_libbox  # noqa: E402
+from fetch_libbox import MAX_DOWNLOAD_BYTES, fetch_libbox  # noqa: E402
 from libbox_provenance import (  # noqa: E402
     expected_download_url,
     parse_provenance,
@@ -23,34 +23,19 @@ from libbox_provenance import (  # noqa: E402
 
 
 ROOT = SCRIPTS.parent
-RELEASE_TAG = (
-    ROOT / "etonify-core" / "release" / "HYDRACORE_VERSION"
-).read_text(encoding="utf-8").strip()
-ETONIFY_VERSION = (
-    ROOT / "etonify-core" / "release" / "ETONIFY_VERSION"
-).read_text(encoding="utf-8").strip()
-SOURCE_COMMIT = subprocess.check_output(
-    ["git", "rev-parse", "HEAD:etonify-core"],
-    cwd=ROOT,
-    text=True,
-).strip()
+PINNED_PROVENANCE = json.loads(
+    (ROOT / "android" / "app" / "libs" / "libbox.provenance.json").read_text(
+        encoding="utf-8"
+    )
+)
 
 
 def provenance_for(payload: bytes) -> dict[str, object]:
-    return {
-        "schema_version": 2,
-        "artifact": "libbox.aar",
-        "distribution_id": "io.hydrabox.hydracore",
-        "distribution_name": "HydraCore",
-        "upstream_project": "etonify-core",
-        "sha256": hashlib.sha256(payload).hexdigest(),
-        "size_bytes": len(payload),
-        "source_commit": SOURCE_COMMIT,
-        "core_version": RELEASE_TAG,
-        "release_tag": RELEASE_TAG,
-        "etonify_version": ETONIFY_VERSION,
-        "download_url": expected_download_url(RELEASE_TAG),
-    }
+    provenance = deepcopy(PINNED_PROVENANCE)
+    provenance["artifacts"]["libbox.aar"]["sha256"] = hashlib.sha256(
+        payload
+    ).hexdigest()
+    return provenance
 
 
 class FakeResponse(io.BytesIO):
@@ -63,7 +48,7 @@ class FakeResponse(io.BytesIO):
     ) -> None:
         super().__init__(payload)
         self.status = status
-        self.headers = {}
+        self.headers: dict[str, str] = {}
         if content_length is not None:
             self.headers["Content-Length"] = str(content_length)
 
@@ -80,54 +65,57 @@ class RecordingOpener:
         payload: bytes,
         *,
         content_length: int | None = None,
+        status: int = 200,
     ) -> None:
         self.payload = payload
         self.content_length = content_length
+        self.status = status
         self.requests: list[Request] = []
-        self.timeouts: list[int] = []
 
-    def __call__(
-        self,
-        request: Request,
-        *,
-        timeout: int,
-    ) -> FakeResponse:
+    def __call__(self, request: Request, *, timeout: int) -> FakeResponse:
         self.requests.append(request)
-        self.timeouts.append(timeout)
         return FakeResponse(
             self.payload,
             content_length=self.content_length,
+            status=self.status,
         )
 
 
 class FetchLibboxTest(unittest.TestCase):
-    def write_provenance(
-        self,
-        directory: Path,
-        provenance: dict[str, object],
-    ) -> Path:
+    @staticmethod
+    def write_provenance(directory: Path, value: dict[str, object]) -> Path:
         path = directory / "libbox.provenance.json"
-        path.write_text(
-            json.dumps(provenance),
-            encoding="utf-8",
-        )
+        path.write_text(json.dumps(value), encoding="utf-8")
         return path
 
-    def temporary_files(self, directory: Path) -> list[Path]:
-        return list(directory.glob(".libbox.aar.*.tmp"))
+    def test_schema_v3_pins_distribution_source_upstream_and_artifacts(self) -> None:
+        parsed = parse_provenance(PINNED_PROVENANCE)
 
-    def test_downloads_validated_asset_without_authorization_header(self) -> None:
-        payload = (b"verified-libbox" * 100_000) + b"!"
-        with tempfile.TemporaryDirectory() as temp:
-            directory = Path(temp)
-            destination = directory / "libbox.aar"
-            destination.write_bytes(b"old artifact")
-            provenance = provenance_for(payload)
-            provenance_path = self.write_provenance(directory, provenance)
-            opener = RecordingOpener(
-                payload,
-                content_length=len(payload),
+        self.assertEqual(parsed.distribution_id, "io.hydrabox.hydracore")
+        self.assertEqual(parsed.distribution_name, "HydraCore")
+        self.assertEqual(parsed.release_tag, "v1.13.16-extended-hydracore.1")
+        self.assertEqual(
+            parsed.source_commit,
+            "a360ba6de92e7ccb0ca5f9510c2c229bfa0dcf72",
+        )
+        self.assertEqual(
+            parsed.upstream_commit,
+            "da4c532efb1f86a38a324909fc9b8867f811551c",
+        )
+        self.assertEqual(
+            parsed.sha256,
+            "770161bdf932b6280777cbbef561e44c2fa34edb0bc175f8efbd54e80594d09e",
+        )
+
+    def test_downloads_only_the_pinned_release_asset(self) -> None:
+        payload = b"verified-hydracore-aar" * 2048
+        opener = RecordingOpener(payload, content_length=len(payload))
+        with tempfile.TemporaryDirectory() as raw_directory:
+            directory = Path(raw_directory)
+            provenance_path = self.write_provenance(
+                directory, provenance_for(payload)
             )
+            destination = directory / "libbox.aar"
 
             result = fetch_libbox(
                 provenance_path,
@@ -137,226 +125,89 @@ class FetchLibboxTest(unittest.TestCase):
 
             self.assertTrue(result.downloaded)
             self.assertEqual(destination.read_bytes(), payload)
-            self.assertEqual(result.sha256, provenance["sha256"])
-            self.assertEqual(result.size_bytes, len(payload))
             self.assertEqual(len(opener.requests), 1)
             request = opener.requests[0]
             self.assertEqual(
                 request.full_url,
-                expected_download_url(RELEASE_TAG),
+                expected_download_url(PINNED_PROVENANCE["distribution"]["version"]),
             )
             self.assertIsNone(request.get_header("Authorization"))
-            self.assertEqual(self.temporary_files(directory), [])
 
-    def test_matching_destination_is_idempotent_and_skips_network(self) -> None:
+    def test_matching_destination_skips_network(self) -> None:
         payload = b"already-present"
-        with tempfile.TemporaryDirectory() as temp:
-            directory = Path(temp)
+        opener = RecordingOpener(b"must-not-download")
+        with tempfile.TemporaryDirectory() as raw_directory:
+            directory = Path(raw_directory)
+            provenance_path = self.write_provenance(
+                directory, provenance_for(payload)
+            )
             destination = directory / "libbox.aar"
             destination.write_bytes(payload)
-            provenance_path = self.write_provenance(
-                directory,
-                provenance_for(payload),
-            )
-
-            def forbidden_opener(*args: object, **kwargs: object) -> None:
-                self.fail("network must not be used for a verified destination")
 
             result = fetch_libbox(
                 provenance_path,
                 destination,
-                opener=forbidden_opener,
+                opener=opener,
             )
 
             self.assertFalse(result.downloaded)
-            self.assertEqual(destination.read_bytes(), payload)
-            self.assertEqual(self.temporary_files(directory), [])
-
-    def test_rejects_non_pinned_url_before_opening_network(self) -> None:
-        payload = b"payload"
-        with tempfile.TemporaryDirectory() as temp:
-            directory = Path(temp)
-            destination = directory / "libbox.aar"
-            destination.write_bytes(b"keep me")
-            provenance = provenance_for(payload)
-            provenance["download_url"] = (
-                "https://example.invalid/releases/download/"
-                f"{RELEASE_TAG}/libbox.aar"
-            )
-            provenance_path = self.write_provenance(directory, provenance)
-            opener = RecordingOpener(payload)
-
-            with self.assertRaisesRegex(
-                RuntimeError,
-                "must exactly match the pinned release asset",
-            ):
-                fetch_libbox(
-                    provenance_path,
-                    destination,
-                    opener=opener,
-                )
-
             self.assertEqual(opener.requests, [])
-            self.assertEqual(destination.read_bytes(), b"keep me")
-            self.assertEqual(self.temporary_files(directory), [])
 
-    def test_checksum_failure_preserves_destination_and_cleans_temp(self) -> None:
+    def test_checksum_failure_preserves_existing_destination(self) -> None:
         expected = b"expected"
-        downloaded = b"tampered"
-        with tempfile.TemporaryDirectory() as temp:
-            directory = Path(temp)
+        opener = RecordingOpener(b"tampered")
+        with tempfile.TemporaryDirectory() as raw_directory:
+            directory = Path(raw_directory)
+            provenance_path = self.write_provenance(
+                directory, provenance_for(expected)
+            )
             destination = directory / "libbox.aar"
-            destination.write_bytes(b"keep me")
-            provenance = provenance_for(expected)
-            provenance["size_bytes"] = len(downloaded)
-            provenance_path = self.write_provenance(directory, provenance)
+            destination.write_bytes(b"old")
 
             with self.assertRaisesRegex(RuntimeError, "SHA-256 mismatch"):
                 fetch_libbox(
                     provenance_path,
                     destination,
-                    opener=RecordingOpener(downloaded),
+                    opener=opener,
                 )
 
-            self.assertEqual(destination.read_bytes(), b"keep me")
-            self.assertEqual(self.temporary_files(directory), [])
+            self.assertEqual(destination.read_bytes(), b"old")
+            self.assertEqual(list(directory.glob(".libbox.aar.*.tmp")), [])
 
-    def test_content_length_failure_preserves_destination(self) -> None:
+    def test_oversized_content_length_fails_before_download(self) -> None:
         payload = b"expected"
-        with tempfile.TemporaryDirectory() as temp:
-            directory = Path(temp)
-            destination = directory / "libbox.aar"
-            destination.write_bytes(b"keep me")
+        opener = RecordingOpener(
+            payload,
+            content_length=MAX_DOWNLOAD_BYTES + 1,
+        )
+        with tempfile.TemporaryDirectory() as raw_directory:
+            directory = Path(raw_directory)
             provenance_path = self.write_provenance(
-                directory,
-                provenance_for(payload),
+                directory, provenance_for(payload)
             )
 
-            with self.assertRaisesRegex(
-                RuntimeError,
-                "Content-Length mismatch",
-            ):
+            with self.assertRaisesRegex(RuntimeError, "Content-Length"):
                 fetch_libbox(
                     provenance_path,
-                    destination,
-                    opener=RecordingOpener(
-                        payload,
-                        content_length=len(payload) + 1,
-                    ),
-                )
-
-            self.assertEqual(destination.read_bytes(), b"keep me")
-            self.assertEqual(self.temporary_files(directory), [])
-
-    def test_requires_full_source_commit_and_safe_release_tag(self) -> None:
-        provenance = provenance_for(b"payload")
-        provenance["source_commit"] = "060ece46"
-        with self.assertRaisesRegex(RuntimeError, "full Git commit"):
-            parse_provenance(provenance)
-
-        provenance = provenance_for(b"payload")
-        provenance["release_tag"] = "../other-release"
-        with self.assertRaisesRegex(RuntimeError, "safe GitHub release tag"):
-            parse_provenance(provenance)
-
-    def test_requires_exact_hydracore_distribution_identity(self) -> None:
-        invalid_values = {
-            "distribution_id": "io.example.other-core",
-            "distribution_name": "OtherCore",
-            "upstream_project": "unknown-core",
-        }
-        for field, value in invalid_values.items():
-            with self.subTest(field=field):
-                provenance = provenance_for(b"payload")
-                provenance[field] = value
-                with self.assertRaisesRegex(RuntimeError, field):
-                    parse_provenance(provenance)
-
-    def test_requires_safe_etonify_provenance_version(self) -> None:
-        provenance = provenance_for(b"payload")
-        provenance.pop("etonify_version")
-        with self.assertRaisesRegex(RuntimeError, "missing etonify_version"):
-            parse_provenance(provenance)
-
-        provenance = provenance_for(b"payload")
-        provenance["etonify_version"] = "../other-version"
-        with self.assertRaisesRegex(RuntimeError, "safe version tag"):
-            parse_provenance(provenance)
-
-    def test_rejects_unpinned_source_commit_before_network(self) -> None:
-        payload = b"payload"
-        with tempfile.TemporaryDirectory() as temp:
-            directory = Path(temp)
-            destination = directory / "libbox.aar"
-            provenance = provenance_for(payload)
-            provenance["source_commit"] = "f" * 40
-            provenance_path = self.write_provenance(directory, provenance)
-            opener = RecordingOpener(payload)
-
-            with self.assertRaisesRegex(
-                RuntimeError,
-                "source_commit does not match the pinned core",
-            ):
-                fetch_libbox(
-                    provenance_path,
-                    destination,
+                    directory / "libbox.aar",
                     opener=opener,
                 )
 
-            self.assertEqual(opener.requests, [])
-            self.assertFalse(destination.exists())
-            self.assertEqual(self.temporary_files(directory), [])
-
-    def test_rejects_unpinned_release_version_before_network(self) -> None:
-        payload = b"payload"
-        with tempfile.TemporaryDirectory() as temp:
-            directory = Path(temp)
-            destination = directory / "libbox.aar"
-            provenance = provenance_for(payload)
-            provenance["release_tag"] = "v9.9.9-other"
-            provenance["download_url"] = expected_download_url(
-                "v9.9.9-other"
-            )
-            provenance_path = self.write_provenance(directory, provenance)
-            opener = RecordingOpener(payload)
-
-            with self.assertRaisesRegex(
-                RuntimeError,
-                "release_tag does not match the pinned core version",
-            ):
-                fetch_libbox(
-                    provenance_path,
-                    destination,
-                    opener=opener,
-                )
-
-            self.assertEqual(opener.requests, [])
-            self.assertFalse(destination.exists())
-            self.assertEqual(self.temporary_files(directory), [])
-
-    def test_rejects_unpinned_etonify_version_before_network(self) -> None:
-        payload = b"payload"
-        with tempfile.TemporaryDirectory() as temp:
-            directory = Path(temp)
-            destination = directory / "libbox.aar"
-            provenance = provenance_for(payload)
-            provenance["etonify_version"] = "v9.9.9-other"
-            provenance_path = self.write_provenance(directory, provenance)
-            opener = RecordingOpener(payload)
-
-            with self.assertRaisesRegex(
-                RuntimeError,
-                "etonify_version does not match",
-            ):
-                fetch_libbox(
-                    provenance_path,
-                    destination,
-                    opener=opener,
-                )
-
-            self.assertEqual(opener.requests, [])
-            self.assertFalse(destination.exists())
-            self.assertEqual(self.temporary_files(directory), [])
+    def test_malformed_or_legacy_provenance_fails_closed(self) -> None:
+        for mutate in (
+            lambda value: value.update(schema_version=2),
+            lambda value: value["distribution"].update(id="other.core"),
+            lambda value: value["source"].update(commit="short"),
+            lambda value: value["upstream"].update(project="other"),
+            lambda value: value["artifacts"]["libbox.aar"].update(
+                sha256="invalid"
+            ),
+        ):
+            value = deepcopy(PINNED_PROVENANCE)
+            mutate(value)
+            with self.subTest(value=value):
+                with self.assertRaises(RuntimeError):
+                    parse_provenance(value)
 
 
 if __name__ == "__main__":

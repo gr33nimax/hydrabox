@@ -1,19 +1,18 @@
 import 'dart:io';
 import 'dart:math';
 
-import 'package:meow_client/core/lowest_proxy_groups.dart';
-import 'package:meow_client/data/local/app_settings_store.dart';
-import 'package:meow_client/data/subscription/hydrabox_subscription_time.dart';
-import 'package:meow_client/data/subscription/parsers/hydrabox_subscription_parser.dart';
-import 'package:meow_client/data/subscription/parsers/singbox_config_parser.dart';
-import 'package:meow_client/models/subscription.dart';
-import 'package:meow_client/singbox/libbox_capabilities.dart';
+import 'package:hydrabox/core/lowest_proxy_groups.dart';
+import 'package:hydrabox/data/local/app_settings_store.dart';
+import 'package:hydrabox/data/subscription/hydra_subscription_time.dart';
+import 'package:hydrabox/data/subscription/parsers/hydra_subscription_parser.dart';
+import 'package:hydrabox/data/subscription/parsers/singbox_config_parser.dart';
+import 'package:hydrabox/models/subscription.dart';
+import 'package:hydrabox/singbox/hydracore_capabilities.dart';
 
 class SingboxConfigBuilder {
   static const List<String> _russiaDirectDomainSuffixes = ['ru', 'su', 'рф'];
   static const String _snowtunProtectPath =
-      '@com.etonify.meow_client.snowtun.protect';
-  static const int _urltestInterruptDelayThresholdMs = 300;
+      '@io.hydrabox.client.snowtun.protect';
   static const int _maxHydraBoxWireGuardWorkers = 64;
   static const int _maxHydraBoxWireGuardBuffersPerPool = 4096;
   static const int _maxHydraBoxAmneziaJunkPacketCount = 128;
@@ -114,7 +113,7 @@ class SingboxConfigBuilder {
     required this.interruptExistingConnections,
     required this.urlTestStrictTolerance,
     required this.markAllServersRussia,
-    this.capabilities = LibboxCapabilities.bundledLegacy,
+    this.capabilities = HydraCoreCapabilities.requiredV2,
     this.snowtunBinaryPath,
     this.snowtunProtectPath,
   });
@@ -163,7 +162,7 @@ class SingboxConfigBuilder {
   final bool interruptExistingConnections;
   final bool urlTestStrictTolerance;
   final bool markAllServersRussia;
-  final LibboxCapabilities capabilities;
+  final HydraCoreCapabilities capabilities;
   final String? snowtunBinaryPath;
   final String? snowtunProtectPath;
 
@@ -177,9 +176,9 @@ class SingboxConfigBuilder {
             !isValidProxyPassword(proxyPassword))) {
       throw StateError('Local proxy requires valid access credentials');
     }
-    final strictHydraBox =
-        activeSubscription?.sourceMetadata['format'] ==
-        'hydrabox.io/subscription/v1';
+    final strictHydraBox = HydraSubscriptionParser.isSupportedSourceFormat(
+      activeSubscription?.sourceMetadata['format'],
+    );
     if (strictHydraBox) {
       if (activeSubscription?.sourceMetadata['trust_blocked'] == true) {
         throw StateError(
@@ -188,7 +187,7 @@ class SingboxConfigBuilder {
         );
       }
       try {
-        HydraBoxSubscriptionTimePolicy.validate(
+        HydraSubscriptionTimePolicy.validate(
           activeSubscription!.sourceMetadata,
         );
       } on FormatException catch (error) {
@@ -308,12 +307,6 @@ class SingboxConfigBuilder {
 
     final generatedConfig = <String, dynamic>{
       'log': {'level': logLevel},
-      if (_supportsLegacyUrlTestConfigExtensions)
-        'global': {
-          'urltest_concurrency_limit': _urltestConcurrency(
-            activeSubscription?.urlTestConfig.concurrency ?? urlTestConcurrency,
-          ),
-        },
       'dns': {
         'servers': [
           _buildDnsServer(
@@ -389,7 +382,13 @@ class SingboxConfigBuilder {
         'final': dnsFinal,
         'independent_cache': true,
         'cache_capacity': 4096,
-        if (dnsPreferIpv6) 'strategy': 'prefer_ipv6',
+        // Android applications issue AAAA queries independently. Leaving the
+        // strategy unset (or merely preferring IPv4) still returns IPv6
+        // answers, so a browser can select an unreachable IPv6 destination
+        // through a proxy whose exit has no working IPv6 route. Default to a
+        // fail-safe IPv4-only answer set; the existing preference switch opts
+        // back into dual-stack operation with IPv6 first.
+        'strategy': dnsPreferIpv6 ? 'prefer_ipv6' : 'ipv4_only',
       },
       'inbounds': [
         if (vpnInboundEnabled)
@@ -619,9 +618,9 @@ class SingboxConfigBuilder {
       return generated;
     }
 
-    final strictHydraBox =
-        activeSubscription?.sourceMetadata['format'] ==
-        'hydrabox.io/subscription/v1';
+    final strictHydraBox = HydraSubscriptionParser.isSupportedSourceFormat(
+      activeSubscription?.sourceMetadata['format'],
+    );
     final merged = _cloneJsonMap(raw);
     if (strictHydraBox) {
       merged.remove('services');
@@ -779,6 +778,7 @@ class SingboxConfigBuilder {
       return result;
     }
 
+    final rawInbounds = strictRawEntries(raw['inbounds'], 'inbounds');
     final rawOutbounds = strictRawEntries(raw['outbounds'], 'outbounds');
     final rawEndpoints = strictRawEntries(raw['endpoints'], 'endpoints');
     final rawOutboundTagValues = rawOutbounds
@@ -791,6 +791,7 @@ class SingboxConfigBuilder {
     final rawEndpointTags = rawEndpointTagValues.toSet();
     final rawTags = <String>{};
     for (final tag in <String>[
+      ...rawInbounds.map((entry) => entry['tag']?.toString() ?? ''),
       ...rawOutboundTagValues,
       ...rawEndpointTagValues,
     ]) {
@@ -849,8 +850,13 @@ class SingboxConfigBuilder {
       generated['outbounds'],
       managedOutboundTags,
     );
+    final appInbounds = appOwnedEntries(
+      generated['inbounds'],
+      const <String>{},
+    );
     final assembledTags = <String>{...rawTags};
     for (final entry in <Map<String, dynamic>>[
+      ...appInbounds,
       ...appEndpoints,
       ...appOutbounds,
     ]) {
@@ -864,7 +870,10 @@ class SingboxConfigBuilder {
       ...rawEndpoints.map(_cloneJsonMap),
       ...appEndpoints.map(_cloneJsonMap),
     ];
-    merged['inbounds'] = _asObjectList(generated['inbounds']);
+    merged['inbounds'] = <Map<String, dynamic>>[
+      ...rawInbounds.map(_cloneJsonMap),
+      ...appInbounds.map(_cloneJsonMap),
+    ];
     merged['outbounds'] = <Map<String, dynamic>>[
       ...rawOutbounds.map(_cloneJsonMap),
       ...appOutbounds.map(_cloneJsonMap),
@@ -873,11 +882,11 @@ class SingboxConfigBuilder {
   }
 
   Map<String, dynamic>? _readRawSingboxConfig() {
-    final strictHydraBox =
-        activeSubscription?.sourceMetadata['format'] ==
-        'hydrabox.io/subscription/v1';
+    final strictHydraBox = HydraSubscriptionParser.isSupportedSourceFormat(
+      activeSubscription?.sourceMetadata['format'],
+    );
     try {
-      final embedded = activeSubscription?.nativeConfig;
+      final embedded = activeSubscription?.activeNativeConfig;
       if (strictHydraBox && embedded == null) {
         throw StateError(
           'HydraBox native runtime payload is not hydrated; refusing a '
@@ -922,15 +931,14 @@ class SingboxConfigBuilder {
 
   Map<String, String> _coreTagRemapping() {
     final candidates = <String, Set<String>>{};
-    for (final outbound
-        in activeSubscription?.outbounds ?? const <Outbound>[]) {
+    for (final outbound in _activeResourceOutbounds()) {
       final sourceSection =
-          outbound.config['_etonify_source_section']?.toString() ?? '';
+          outbound.config['_hydra_source_section']?.toString() ?? '';
       if (sourceSection != 'outbounds' && sourceSection != 'endpoints') {
         continue;
       }
       final original =
-          outbound.config['_etonify_original_tag']?.toString().trim() ?? '';
+          outbound.config['_hydra_original_tag']?.toString().trim() ?? '';
       final current = outbound.tag.trim();
       if (original.isEmpty || current.isEmpty) {
         continue;
@@ -946,17 +954,15 @@ class SingboxConfigBuilder {
 
   void _validateHydraBoxProjectionTagIdentity() {
     final seen = <String>{};
-    for (final outbound
-        in activeSubscription?.outbounds ?? const <Outbound>[]) {
+    for (final outbound in _activeResourceOutbounds()) {
       final sourceSection =
-          outbound.config['_etonify_source_index_section']?.toString() ??
-          outbound.config['_etonify_source_section']?.toString() ??
+          outbound.config['_hydra_source_index_section']?.toString() ??
+          outbound.config['_hydra_source_section']?.toString() ??
           '';
       if (sourceSection != 'outbounds' && sourceSection != 'endpoints') {
         continue;
       }
-      final original =
-          outbound.config['_etonify_original_tag']?.toString() ?? '';
+      final original = outbound.config['_hydra_original_tag']?.toString() ?? '';
       final current = outbound.tag;
       final projectedConfigTag = outbound.config['tag']?.toString() ?? '';
       if (original.isEmpty ||
@@ -973,7 +979,7 @@ class SingboxConfigBuilder {
   }
 
   void _validateHydraBoxRemoteSafetyManifest() {
-    final native = activeSubscription?.nativeConfig;
+    final native = activeSubscription?.activeNativeConfig;
     if (native == null) {
       throw StateError(
         'HydraBox native runtime payload is not hydrated for remote-policy '
@@ -981,7 +987,7 @@ class SingboxConfigBuilder {
       );
     }
     if (!capabilities.hasVersionedContract ||
-        capabilities.coreId != LibboxCapabilities.hydraCoreId ||
+        capabilities.coreId != HydraCoreCapabilities.hydraCoreId ||
         !capabilities.supportsConfigCheck) {
       throw StateError(
         'HydraBox activation requires a versioned HydraCore capability '
@@ -991,15 +997,6 @@ class SingboxConfigBuilder {
     if (!capabilities.hasRemoteSafetyManifest) {
       throw StateError(
         'The installed HydraCore does not publish a remote-safety manifest',
-      );
-    }
-
-    try {
-      HydraBoxSubscriptionParser.validateRemoteRuntimeDocumentSafety(native);
-    } on FormatException catch (error) {
-      throw StateError(
-        'HydraBox remote runtime policy rejected the native document: '
-        '${error.message}',
       );
     }
 
@@ -1041,9 +1038,20 @@ class SingboxConfigBuilder {
       }
     }
 
-    if (capabilities.remotePolicyVersion == 1) {
-      const v1TopLevelFields = {r'$schema', 'outbounds', 'endpoints'};
-      const v1OutboundTypes = {
+    if (capabilities.remotePolicyVersion != 2) {
+      throw StateError(
+        'Hydra Subscription v2 requires HydraCore remote policy v2',
+      );
+    }
+
+    if (capabilities.remotePolicyVersion == 2) {
+      const v2TopLevelFields = {
+        r'$schema',
+        'inbounds',
+        'outbounds',
+        'endpoints',
+      };
+      const v2OutboundTypes = {
         'socks',
         'http',
         'vmess',
@@ -1060,98 +1068,39 @@ class SingboxConfigBuilder {
         'sudoku',
         'snell',
       };
-      const v1EndpointTypes = {'wireguard'};
+      const v2EndpointTypes = {'wireguard'};
       for (final rawKey in native.keys) {
         final key = rawKey.toString();
-        if (!v1TopLevelFields.contains(key)) {
+        if (!v2TopLevelFields.contains(key)) {
           throw StateError(
-            'runtime.document.$key is not part of HydraBox remote policy v1',
+            'runtime.document.$key is not part of Hydra remote policy v2',
           );
         }
       }
       validateTypedEntries(
+        native['inbounds'],
+        field: 'runtime.document.inbounds',
+        safeTypes: const {'call'},
+      );
+      validateTypedEntries(
         native['outbounds'],
         field: 'runtime.document.outbounds',
-        safeTypes: v1OutboundTypes,
+        safeTypes: v2OutboundTypes,
       );
       validateTypedEntries(
         native['endpoints'],
         field: 'runtime.document.endpoints',
-        safeTypes: v1EndpointTypes,
+        safeTypes: v2EndpointTypes,
       );
-      _validateHydraBoxV1WireGuardResourceLimits(native);
-      _validateHydraBoxV1ReferenceGraph(native);
-      void rejectV1ExecutableTypes(
-        dynamic value, {
-        required String field,
-        required Set<String> forbiddenTypes,
-      }) {
-        if (value == null) return;
-        if (value is! List) {
-          throw StateError('$field must be an array');
-        }
-        for (var index = 0; index < value.length; index++) {
-          final entry = value[index];
-          if (entry is! Map) {
-            throw StateError('$field[$index] must be an object');
-          }
-          final type = entry['type']?.toString().trim().toLowerCase() ?? '';
-          if (forbiddenTypes.contains(type)) {
-            throw StateError(
-              '$field[$index] type "$type" requires recursive HydraCore '
-              'remote-policy enforcement newer than v1',
-            );
-          }
-        }
-      }
-
-      rejectV1ExecutableTypes(
-        native['outbounds'],
-        field: 'runtime.document.outbounds',
-        forbiddenTypes: const {
-          'tor',
-          'parser',
-          'bond',
-          'failover',
-          'bandwidth-limiter',
-          'connection-limiter',
-          'traffic-limiter',
-          'rate-limiter',
-        },
-      );
-      rejectV1ExecutableTypes(
-        native['endpoints'],
-        field: 'runtime.document.endpoints',
-        forbiddenTypes: const {'tailscale', 'vpn-client', 'vpn-server'},
-      );
-      final providers = native['providers'];
-      if (providers is List && providers.isNotEmpty) {
-        throw StateError(
-          'runtime.document.providers requires recursive HydraCore '
-          'remote-policy enforcement newer than v1',
-        );
-      }
-      final route = native['route'];
-      if (route is Map) {
-        final ruleSets = route['rule_set'];
-        if (ruleSets is List && ruleSets.isNotEmpty) {
-          throw StateError(
-            'runtime.document.route.rule_set requires recursive HydraCore '
-            'remote-policy enforcement newer than v1',
-          );
-        }
-        for (final databaseKey in const {'geoip', 'geosite'}) {
-          final database = route[databaseKey];
-          if (database is Map && database.isNotEmpty) {
-            throw StateError(
-              'runtime.document.route.$databaseKey remote data is not '
-              'classified safe by HydraCore remote policy v1',
-            );
-          }
-        }
-      }
+      _validateHydraWireGuardResourceLimits(native);
+      _validateHydraReferenceGraph(native);
     }
 
+    validateTypedEntries(
+      native['inbounds'],
+      field: 'runtime.document.inbounds',
+      safeTypes: capabilities.remoteSafeInboundTypes,
+    );
     validateTypedEntries(
       native['outbounds'],
       field: 'runtime.document.outbounds',
@@ -1187,7 +1136,7 @@ class SingboxConfigBuilder {
     }
   }
 
-  static void _validateHydraBoxV1WireGuardResourceLimits(
+  static void _validateHydraWireGuardResourceLimits(
     Map<String, dynamic> native,
   ) {
     final endpoints = native['endpoints'];
@@ -1273,7 +1222,7 @@ class SingboxConfigBuilder {
     }
   }
 
-  static void _validateHydraBoxV1ReferenceGraph(Map<String, dynamic> native) {
+  static void _validateHydraReferenceGraph(Map<String, dynamic> native) {
     final entriesByTag = <String, Map<String, dynamic>>{};
     for (final section in const {'outbounds', 'endpoints'}) {
       final entries = native[section];
@@ -1319,7 +1268,7 @@ class SingboxConfigBuilder {
           final child = rawEntry.value;
           if (folded == 'domain_resolver' && child != null) {
             throw StateError(
-              '$field.$key is not available in remote policy v1 because DNS '
+              '$field.$key is not available in this remote policy because DNS '
               'ownership remains local to HydraBox',
             );
           }
@@ -1370,7 +1319,7 @@ class SingboxConfigBuilder {
     for (final tag in entriesByTag.keys) {
       if (visit(tag)) {
         throw StateError(
-          'HydraBox remote policy v1 rejects cyclic outbound/endpoint detours',
+          'HydraBox remote policy rejects cyclic outbound/endpoint detours',
         );
       }
     }
@@ -1470,16 +1419,15 @@ class SingboxConfigBuilder {
 
   Set<int> _managedRawSourceIndexes(String section) {
     final indexes = <int>{};
-    for (final outbound
-        in activeSubscription?.outbounds ?? const <Outbound>[]) {
+    for (final outbound in _activeResourceOutbounds()) {
       final sourceIndexSection =
-          outbound.config['_etonify_source_index_section']?.toString() ??
-          outbound.config['_etonify_source_section']?.toString() ??
+          outbound.config['_hydra_source_index_section']?.toString() ??
+          outbound.config['_hydra_source_section']?.toString() ??
           '';
       if (sourceIndexSection != section) {
         continue;
       }
-      final value = outbound.config['_etonify_source_index'];
+      final value = outbound.config['_hydra_source_index'];
       final index = value is int
           ? value
           : int.tryParse(value?.toString() ?? '');
@@ -1492,17 +1440,16 @@ class SingboxConfigBuilder {
 
   Set<String> _managedRawSourceTags(String section) {
     final tags = <String>{};
-    for (final outbound
-        in activeSubscription?.outbounds ?? const <Outbound>[]) {
+    for (final outbound in _activeResourceOutbounds()) {
       final sourceIndexSection =
-          outbound.config['_etonify_source_index_section']?.toString() ??
-          outbound.config['_etonify_source_section']?.toString() ??
+          outbound.config['_hydra_source_index_section']?.toString() ??
+          outbound.config['_hydra_source_section']?.toString() ??
           '';
       if (sourceIndexSection != section) {
         continue;
       }
       final original =
-          outbound.config['_etonify_original_tag']?.toString().trim() ?? '';
+          outbound.config['_hydra_original_tag']?.toString().trim() ?? '';
       final current = outbound.tag.trim();
       if (original.isNotEmpty) {
         tags.add(original);
@@ -1730,11 +1677,37 @@ class SingboxConfigBuilder {
     if (subscription == null) {
       return const [];
     }
-    return subscription.outbounds
+    return _activeResourceOutbounds()
         .where((outbound) => !outbound.info.deleted)
         .where((outbound) => !excludedOutboundTags.contains(outbound.tag))
         .where(_isUsableOutbound)
         .toList(growable: false);
+  }
+
+  Iterable<Outbound> _activeResourceOutbounds() {
+    final subscription = activeSubscription;
+    if (subscription == null) return const <Outbound>[];
+    if (subscription.resourceConfigs.isEmpty) return subscription.outbounds;
+    String activeResourceId = '';
+    for (final profile in subscription.profiles) {
+      if (profile.enabled && profile.id == subscription.selectedProfileId) {
+        activeResourceId = profile.resourceId;
+        break;
+      }
+    }
+    if (activeResourceId.isEmpty) {
+      for (final profile in subscription.profiles) {
+        if (profile.enabled) {
+          activeResourceId = profile.resourceId;
+          break;
+        }
+      }
+    }
+    if (activeResourceId.isEmpty) return const <Outbound>[];
+    return subscription.outbounds.where((outbound) {
+      final scope = outbound.config['_source_scope']?.toString() ?? '';
+      return scope == activeResourceId;
+    });
   }
 
   List<SubscriptionGroup> _visibleGroups(Set<String> visibleOutboundTags) {
@@ -1771,7 +1744,7 @@ class SingboxConfigBuilder {
     if (_isEndpointBacked(outbound)) {
       return true;
     }
-    if (outbound.config['_etonify_core_passthrough'] == true) {
+    if (outbound.config['_hydra_core_passthrough'] == true) {
       return true;
     }
     if (_hasValidServer(outbound.config)) {
@@ -1801,7 +1774,7 @@ class SingboxConfigBuilder {
   }
 
   bool _isEndpointBacked(Outbound outbound) {
-    return outbound.config['_etonify_source_section'] == 'endpoints';
+    return outbound.config['_hydra_source_section'] == 'endpoints';
   }
 
   /// Check if the outbound has a valid server address (valid IP or FQDN).
@@ -1861,8 +1834,7 @@ class SingboxConfigBuilder {
     Outbound outbound,
     Map<String, String> tagRemapping,
   ) {
-    final corePassthrough =
-        outbound.config['_etonify_core_passthrough'] == true;
+    final corePassthrough = outbound.config['_hydra_core_passthrough'] == true;
     final config = corePassthrough
         ? _cloneJsonMap(outbound.config)
         : Map<String, dynamic>.from(outbound.config);
@@ -1966,7 +1938,7 @@ class SingboxConfigBuilder {
     if (tag.isEmpty || detourTag.isEmpty || target.type == 'direct') {
       return null;
     }
-    final corePassthrough = target.config['_etonify_core_passthrough'] == true;
+    final corePassthrough = target.config['_hydra_core_passthrough'] == true;
     final config = corePassthrough
         ? _cloneJsonMap(target.config)
         : Map<String, dynamic>.from(target.config);
@@ -2010,11 +1982,12 @@ class SingboxConfigBuilder {
 
   static void _removeAppOutboundMetadata(Map<String, dynamic> config) {
     config.remove('_group_only');
-    config.remove('_etonify_core_passthrough');
-    config.remove('_etonify_source_section');
-    config.remove('_etonify_source_index');
-    config.remove('_etonify_source_index_section');
-    config.remove('_etonify_original_tag');
+    config.remove('_hydra_core_passthrough');
+    config.remove('_hydra_source_section');
+    config.remove('_hydra_source_index');
+    config.remove('_hydra_source_index_section');
+    config.remove('_hydra_original_tag');
+    config.remove('_source_scope');
     config.removeWhere((key, _) => key.startsWith('_hydrabox_'));
   }
 
@@ -2157,24 +2130,8 @@ class SingboxConfigBuilder {
         activeSubscription?.urlTestConfig.intervalSeconds ??
             urlTestIntervalSeconds,
       ),
-      if (_supportsLegacyUrlTestConfigExtensions)
-        'timeout': _urltestTimeout(
-          activeSubscription?.urlTestConfig.timeoutSeconds ??
-              urlTestTimeoutSeconds,
-        ),
-      if (_supportsLegacyUrlTestConfigExtensions)
-        'concurrency': _urltestConcurrency(
-          activeSubscription?.urlTestConfig.concurrency ?? urlTestConcurrency,
-        ),
-      if (_supportsLegacyUrlTestConfigExtensions)
-        'unavailable_check_interval': _urltestUnavailableInterval(
-          activeSubscription?.urlTestConfig.unavailableCheckIntervalSeconds ??
-              urlTestUnavailableCheckIntervalSeconds,
-        ),
       'tolerance': _urltestTolerance(),
       'interrupt_exist_connections': false,
-      if (_supportsLegacyUrlTestConfigExtensions)
-        'interrupt_delay_threshold': _urltestInterruptDelayThresholdMs,
     };
   }
 
@@ -2189,8 +2146,6 @@ class SingboxConfigBuilder {
       'type': 'urltest',
       'tag': group.tag,
       'outbounds': memberTags,
-      if (_supportsLegacyUrlTestConfigExtensions)
-        ...?_urltestMethodEntry(group.urlTestConfig.method),
       'url': activeSubscription?.urlTestConfig.url ?? urlTestUrl,
       'interval': _urltestInterval(
         activeSubscription?.urlTestConfig.intervalSeconds ??
@@ -2200,73 +2155,21 @@ class SingboxConfigBuilder {
         activeSubscription?.urlTestConfig.intervalSeconds ??
             urlTestIntervalSeconds,
       ),
-      if (_supportsLegacyUrlTestConfigExtensions)
-        'timeout': _urltestTimeout(
-          activeSubscription?.urlTestConfig.timeoutSeconds ??
-              urlTestTimeoutSeconds,
-        ),
-      if (_supportsLegacyUrlTestConfigExtensions)
-        'concurrency': _urltestConcurrency(
-          activeSubscription?.urlTestConfig.concurrency ?? urlTestConcurrency,
-        ),
-      if (_supportsLegacyUrlTestConfigExtensions)
-        'unavailable_check_interval': _urltestUnavailableInterval(
-          activeSubscription?.urlTestConfig.unavailableCheckIntervalSeconds ??
-              urlTestUnavailableCheckIntervalSeconds,
-        ),
       'tolerance': _urltestTolerance(),
       'interrupt_exist_connections': false,
-      if (_supportsLegacyUrlTestConfigExtensions)
-        'interrupt_delay_threshold': _urltestInterruptDelayThresholdMs,
     };
   }
 
   bool _supportsCoreConfigExtension(bool advertised) =>
       !capabilities.hasVersionedContract || advertised;
 
-  // The old bundled core exposed URLTest tuning as custom JSON fields. The
-  // HydraCore exposes the same controls through URLTestWithOptions
-  // while intentionally retaining the upstream sing-box config schema.
-  bool get _supportsLegacyUrlTestConfigExtensions =>
-      !capabilities.hasVersionedContract;
-
   String _urltestInterval(int? seconds) {
     final safeSeconds = seconds == null || seconds <= 0 ? 180 : seconds;
     return '${safeSeconds}s';
   }
 
-  String _urltestTimeout(int? seconds) {
-    final safeSeconds = seconds == null || seconds <= 0 ? 15 : seconds;
-    return '${safeSeconds}s';
-  }
-
-  int _urltestConcurrency(int? value) {
-    return (value == null || value <= 0 ? 8 : value).clamp(1, 8);
-  }
-
-  String _urltestUnavailableInterval(int? seconds) {
-    final safeSeconds = (seconds == null || seconds <= 0 ? 120 : seconds).clamp(
-      120,
-      3600,
-    );
-    return '${safeSeconds}s';
-  }
-
   int _urltestTolerance() {
     return urlTestStrictTolerance ? 1 : 50;
-  }
-
-  String? _urltestMethod(String? value) {
-    final method = value?.trim();
-    if (method == null || method.isEmpty) {
-      return null;
-    }
-    return method;
-  }
-
-  Map<String, dynamic>? _urltestMethodEntry(String? value) {
-    final method = _urltestMethod(value);
-    return method == null ? null : {'method': method};
   }
 
   static String? defaultSnowtunProtectPath() {
@@ -2342,15 +2245,17 @@ class SingboxConfigBuilder {
 
   Map<String, String> _dnsDialFields({required String server, String? detour}) {
     final normalizedDetour = _normalizeDnsDetour(detour);
+    final fields = <String, String>{};
     if (normalizedDetour != null) {
-      return {'detour': normalizedDetour};
+      fields['detour'] = normalizedDetour;
     }
     if (InternetAddress.tryParse(server) == null) {
-      // A direct encrypted DNS server cannot resolve its own hostname. Use
-      // Android's current-network resolver solely for this bootstrap lookup.
-      return const {'domain_resolver': 'dns-local'};
+      // A DNS server cannot resolve its own hostname through the final DNS
+      // route. Use Android's current-network resolver solely for bootstrap,
+      // while preserving the requested proxy detour for the DNS connection.
+      fields['domain_resolver'] = 'dns-local';
     }
-    return const {};
+    return fields;
   }
 
   String? _normalizeDnsDetour(String? detour) {

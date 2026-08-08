@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/app/active_proxy_ip_controller.dart';
+import 'package:hydrabox/app/active_proxy_ip_controller.dart';
 
 void main() {
   test('literal endpoint IP is published before runtime diagnostics', () {

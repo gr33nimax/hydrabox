@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/logging/app_log_store.dart';
+import 'package:hydrabox/logging/app_log_store.dart';
 
 void main() {
   group('AppLogStore', () {

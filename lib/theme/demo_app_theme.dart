@@ -1,7 +1,7 @@
 import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/material.dart';
-import 'package:meow_client/theme/predictive_back_page_transitions.dart';
+import 'package:hydrabox/theme/predictive_back_page_transitions.dart';
 import 'package:flutter/services.dart';
 
 // ---------------------------------------------------------------------------
@@ -15,13 +15,13 @@ class ConnectionButtonTheme extends ThemeExtension<ConnectionButtonTheme> {
   final Color? connectedColor;
 
   static const light = ConnectionButtonTheme(
-    idleColor: Color(0xFF2D5BFF),
-    connectedColor: Color(0xFF0F9D58),
+    idleColor: Color(0xFF176B3A),
+    connectedColor: Color(0xFF176B3A),
   );
 
   static const dark = ConnectionButtonTheme(
-    idleColor: Color(0xFF6B8AFF),
-    connectedColor: Color(0xFF34D399),
+    idleColor: Color(0xFF63DB8D),
+    connectedColor: Color(0xFF63DB8D),
   );
 
   @override
@@ -121,7 +121,7 @@ ThemeData buildDemoTheme(
   ColorScheme? dynamicDarkScheme,
 }) {
   final isDark = brightness == Brightness.dark;
-  final effectiveSeed = seedColor ?? const Color(0xFF6750A4);
+  final effectiveSeed = seedColor ?? const Color(0xFF176B3A);
   final dynamicScheme = isDark ? dynamicDarkScheme : dynamicLightScheme;
   final generatedScheme = ColorScheme.fromSeed(
     seedColor: effectiveSeed,
@@ -136,21 +136,13 @@ ThemeData buildDemoTheme(
           surfaceContainer: const Color(0xFF232528),
           surfaceContainerHigh: const Color(0xFF2C2E31),
           surfaceContainerHighest: const Color(0xFF363839),
-          secondaryContainer: dynamicScheme == null
-              ? const Color(0xFF2E3548)
-              : baseScheme.secondaryContainer,
-          onSecondaryContainer: dynamicScheme == null
-              ? Colors.white
-              : baseScheme.onSecondaryContainer,
+          secondaryContainer: baseScheme.secondaryContainer,
+          onSecondaryContainer: baseScheme.onSecondaryContainer,
           outlineVariant: const Color(0xFF464849),
         )
       : baseScheme.copyWith(
-          secondaryContainer: dynamicScheme == null
-              ? const Color(0xFFDEE3F0)
-              : baseScheme.secondaryContainer,
-          onSecondaryContainer: dynamicScheme == null
-              ? const Color(0xFF1A2744)
-              : baseScheme.onSecondaryContainer,
+          secondaryContainer: baseScheme.secondaryContainer,
+          onSecondaryContainer: baseScheme.onSecondaryContainer,
         );
 
   const surfaces = AppSurfaceTheme.standard;
@@ -194,11 +186,11 @@ ThemeData buildDemoTheme(
     textTheme: textTheme,
     pageTransitionsTheme: const PageTransitionsTheme(
       builders: {
-        TargetPlatform.android: EtonifyPredictiveBackPageTransitionsBuilder(),
-        TargetPlatform.iOS: _EtonifySlidePageTransitionsBuilder(),
-        TargetPlatform.macOS: _EtonifySlidePageTransitionsBuilder(),
-        TargetPlatform.linux: _EtonifySlidePageTransitionsBuilder(),
-        TargetPlatform.windows: _EtonifySlidePageTransitionsBuilder(),
+        TargetPlatform.android: HydraBoxPredictiveBackPageTransitionsBuilder(),
+        TargetPlatform.iOS: _HydraBoxSlidePageTransitionsBuilder(),
+        TargetPlatform.macOS: _HydraBoxSlidePageTransitionsBuilder(),
+        TargetPlatform.linux: _HydraBoxSlidePageTransitionsBuilder(),
+        TargetPlatform.windows: _HydraBoxSlidePageTransitionsBuilder(),
       },
     ),
     splashFactory: InkRipple.splashFactory,
@@ -336,7 +328,7 @@ ThemeData buildAmoledTheme({
     surfaceContainer: const Color(0xFF0D0D0D),
     surfaceContainerHigh: const Color(0xFF111111),
     surfaceContainerHighest: const Color(0xFF161616),
-    secondaryContainer: const Color(0xFF0F0F1E),
+    secondaryContainer: const Color(0xFF0B2517),
     outlineVariant: const Color(0xFF252525),
   );
   return base.copyWith(
@@ -357,8 +349,8 @@ ThemeData buildAmoledTheme({
   );
 }
 
-class _EtonifySlidePageTransitionsBuilder extends PageTransitionsBuilder {
-  const _EtonifySlidePageTransitionsBuilder();
+class _HydraBoxSlidePageTransitionsBuilder extends PageTransitionsBuilder {
+  const _HydraBoxSlidePageTransitionsBuilder();
 
   @override
   Widget buildTransitions<T>(

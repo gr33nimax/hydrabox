@@ -3,14 +3,14 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
-import 'package:meow_client/features/home/home_active_proxy.dart';
-import 'package:meow_client/features/home/home_connection_button.dart';
-import 'package:meow_client/features/home/home_presentation.dart';
-import 'package:meow_client/features/home/home_subscription_card.dart';
-import 'package:meow_client/l10n/generated/app_localizations.dart';
-import 'package:meow_client/models/app_view_models.dart';
-import 'package:meow_client/models/proxy_runtime_visual_state.dart';
-import 'package:meow_client/widgets/hydrabox_logo_badge.dart';
+import 'package:hydrabox/features/home/home_active_proxy.dart';
+import 'package:hydrabox/features/home/home_connection_button.dart';
+import 'package:hydrabox/features/home/home_presentation.dart';
+import 'package:hydrabox/features/home/home_subscription_card.dart';
+import 'package:hydrabox/l10n/generated/app_localizations.dart';
+import 'package:hydrabox/models/app_view_models.dart';
+import 'package:hydrabox/models/proxy_runtime_visual_state.dart';
+import 'package:hydrabox/widgets/hydrabox_logo_badge.dart';
 
 export 'home_active_proxy.dart';
 export 'home_connection_button.dart';
@@ -338,42 +338,66 @@ class _HomeBrandTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        HydraBoxMark(size: 24, color: titleColor, accentColor: titleColor),
-        const Gap(9),
-        Flexible(
-          child: Text(brandName, maxLines: 1, overflow: TextOverflow.ellipsis),
-        ),
-        const Gap(8),
-        InkWell(
-          borderRadius: BorderRadius.circular(999),
-          onTap: onOpenChangelog,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceContainerHigh.withValues(
-                alpha: .72,
-              ),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(
-                color: theme.colorScheme.outlineVariant.withValues(alpha: .45),
-              ),
-            ),
-            child: Text(
-              versionLabel,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.labelMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // The version badge is secondary. On compact Android screens the
+        // AppBar actions can leave too little room for both it and the product
+        // name, so drop the badge before shrinking or truncating HydraBox.
+        final showVersion = constraints.maxWidth >= 220;
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            HydraBoxMark(size: 24, color: titleColor, accentColor: titleColor),
+            const Gap(9),
+            Flexible(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  brandName,
+                  key: const ValueKey('home-brand-name'),
+                  maxLines: 1,
+                ),
               ),
             ),
-          ),
-        ),
-      ],
+            if (showVersion) ...[
+              const Gap(8),
+              InkWell(
+                key: const ValueKey('home-version-badge'),
+                borderRadius: BorderRadius.circular(999),
+                onTap: onOpenChangelog,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 9,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerHigh.withValues(
+                      alpha: .72,
+                    ),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: theme.colorScheme.outlineVariant.withValues(
+                        alpha: .45,
+                      ),
+                    ),
+                  ),
+                  child: Text(
+                    versionLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 }

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/data/local/app_settings_store.dart';
-import 'package:meow_client/features/settings/settings_inbound_page.dart';
-import 'package:meow_client/l10n/generated/app_localizations.dart';
+import 'package:hydrabox/data/local/app_settings_store.dart';
+import 'package:hydrabox/features/settings/settings_inbound_page.dart';
+import 'package:hydrabox/l10n/generated/app_localizations.dart';
 
 void main() {
   testWidgets('header status follows the selected connection mode', (

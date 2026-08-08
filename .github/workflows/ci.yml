@@ -1,9 +1,11 @@
-name: HydraBox · Client checks
+name: HydraBox client checks
 
 on:
   push:
     branches:
       - main
+      - "agent/**"
+      - "codex/**"
     tags-ignore:
       - "**"
   pull_request:
@@ -13,7 +15,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: client-checks-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -21,25 +23,17 @@ env:
   JAVA_VERSION: "21"
 
 jobs:
-  flutter-checks:
-    name: Flutter checks
+  verify:
+    name: Remote verification
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 120
 
     steps:
-      - name: Checkout
+      - name: Checkout pinned sources
         uses: actions/checkout@v7.0.1
         with:
-          submodules: true
-
-      - name: Test libbox release hydrator
-        run: python3 -B -m unittest discover -s scripts/tests -p "test_*.py" -v
-
-      - name: Fetch verified libbox release asset
-        run: python3 -B scripts/fetch_libbox.py
-
-      - name: Verify pinned libbox binary
-        run: python3 -B scripts/verify_libbox.py
+          fetch-depth: 0
+          submodules: recursive
 
       - name: Set up JDK
         uses: actions/setup-java@v5.6.0
@@ -48,39 +42,76 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
 
       - name: Set up Flutter
-        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
 
-      - name: Show tool versions
-        run: |
-          java -version
-          flutter --version
-          dart --version
+      - name: Verify Python release tooling
+        run: python3 -B -m unittest discover -s scripts/tests -p "test_*.py" -v
 
-      - name: Install dependencies
+      - name: Verify pinned HydraCore source contract
+        run: python3 -B scripts/verify_extended_core.py --source-only
+
+      - name: Fetch pinned HydraCore Android artifact
+        run: python3 -B scripts/fetch_libbox.py
+
+      - name: Verify HydraCore artifacts and provenance
+        run: python3 -B scripts/verify_libbox.py
+
+      - name: Verify removed legacy boundaries
+        run: python3 -B scripts/verify_client_boundaries.py
+
+      - name: Install Flutter dependencies
         run: flutter pub get
 
       - name: Generate localization
         run: flutter gen-l10n
 
-      - name: Generate Pigeon bindings
-        shell: bash
-        run: |
-          if [ -f pigeons/singbox_api.dart ]; then
-            dart run pigeon --input pigeons/singbox_api.dart
-          else
-            echo "No Pigeon schema found; skipping."
-          fi
+      - name: Generate typed platform bindings
+        run: dart run pigeon --input pigeons/singbox_api.dart
 
-      - name: Analyze
+      - name: Format Dart sources and capture remote-generated changes
+        run: |
+          mkdir -p build
+          dart format lib test pigeons
+          git add -N \
+            lib/l10n/generated/app_localizations*.dart \
+            lib/singbox/singbox_api.g.dart \
+            android/app/src/main/kotlin/io/hydrabox/client/generated/SingboxApi.g.kt
+          git diff --binary -- \
+            lib test pigeons \
+            android/app/src/main/kotlin/io/hydrabox/client/generated/SingboxApi.g.kt \
+            > build/remote-generated.patch
+
+      - name: Check generated sources and Dart formatting
+        run: |
+          git diff --exit-code -- \
+            lib test pigeons \
+            android/app/src/main/kotlin/io/hydrabox/client/generated/SingboxApi.g.kt
+
+      - name: Analyze Flutter sources
         run: flutter analyze
 
-      - name: Test
-        run: flutter test
+      - name: Run Flutter tests
+        run: flutter test --reporter expanded
 
-      - name: Android unit tests, lint and debug assemble
+      - name: Run Android unit tests, lint, and debug assembly
         working-directory: android
         run: bash ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+
+      - name: Upload remote-generated bindings and reports
+        if: always()
+        uses: actions/upload-artifact@v7.0.0
+        with:
+          name: hydrabox-remote-verification-${{ github.run_attempt }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            lib/l10n/generated/app_localizations*.dart
+            lib/singbox/singbox_api.g.dart
+            android/app/src/main/kotlin/io/hydrabox/client/generated/SingboxApi.g.kt
+            build/remote-generated.patch
+            android/app/build/reports/**
+            android/app/build/outputs/apk/debug/*.apk

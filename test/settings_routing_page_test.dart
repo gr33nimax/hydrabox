@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/data/adblock/ad_block_rule_set_service.dart';
-import 'package:meow_client/data/local/app_settings_store.dart';
-import 'package:meow_client/data/routing/russia_route_data_service.dart';
-import 'package:meow_client/features/settings/settings_routing_page.dart';
-import 'package:meow_client/l10n/generated/app_localizations.dart';
+import 'package:hydrabox/data/adblock/ad_block_rule_set_service.dart';
+import 'package:hydrabox/data/local/app_settings_store.dart';
+import 'package:hydrabox/data/routing/russia_route_data_service.dart';
+import 'package:hydrabox/features/settings/settings_routing_page.dart';
+import 'package:hydrabox/l10n/generated/app_localizations.dart';
 
 void main() {
   testWidgets('smart routing always offers an explicit update check', (
