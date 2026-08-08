@@ -21,8 +21,8 @@ import kotlin.random.Random
  * Slider and kaleidoscope challenges deliberately fall through to the visible
  * browser fallback in Flutter.
  *
- * The click strategy is adapted from qWDTT's GPL-3.0 CaptchaWebViewManager:
- * https://github.com/SpaceNeuroX/proxy-turn-vk-android
+ * The click-strategy attribution and GPL-3.0 source link are recorded in the
+ * repository's THIRD_PARTY_NOTICES.md.
  */
 object HydraBoxVkCaptchaSolver {
     private const val TAG = "HydraBoxVkCaptcha"
