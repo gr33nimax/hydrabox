@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:hydrabox/models/subscription.dart';
 
 import 'outbound_schema.dart';
 import 'parsers/clash_parser.dart';

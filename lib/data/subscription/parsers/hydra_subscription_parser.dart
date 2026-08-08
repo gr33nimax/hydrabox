@@ -362,7 +362,7 @@ class HydraSubscriptionParser {
       resourceConfigs: resourceConfigs,
       defaultProfileId: defaultProfileId,
       sourceMetadata: metadata,
-      bodyMeta: {if (displayName != null) 'profile-title': displayName},
+      bodyMeta: {'profile-title': ?displayName},
     );
   }
 
