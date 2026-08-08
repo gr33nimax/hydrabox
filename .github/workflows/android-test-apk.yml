@@ -53,7 +53,9 @@ jobs:
           flutter gen-l10n
           dart run pigeon --input pigeons/singbox_api.dart
 
-      - name: Build release-mode APKs
+      - name: Build debug-signed release-mode APKs
+        env:
+          HYDRABOX_ALLOW_DEBUG_RELEASE_SIGNING: "true"
         run: flutter build apk --release --split-per-abi
 
       - name: Upload APKs and generated bindings
