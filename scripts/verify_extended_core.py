@@ -33,7 +33,7 @@ REQUIRED_SOURCE_MARKERS: dict[str, tuple[str, ...]] = {
         'info.Distribution.ID = "io.hydrabox.hydracore"',
     ),
     "experimental/libbox/hydracore_validation.go": (
-        "func HydraCoreValidateConfig(content string, profile string) string",
+        "func HydraCoreValidateConfig(configContent string, profile string) string",
         'case "local":',
         'case "remote_v2":',
     ),
