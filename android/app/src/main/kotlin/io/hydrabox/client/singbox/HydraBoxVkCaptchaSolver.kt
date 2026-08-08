@@ -56,27 +56,29 @@ object HydraBoxVkCaptchaSolver {
         val viewportHeight = Random.nextInt(376, 389)
         val webView = runCatching {
             WebView(context).apply {
-                settings.allowContentAccess = false
-                settings.allowFileAccess = false
-                settings.allowFileAccessFromFileURLs = false
-                settings.allowUniversalAccessFromFileURLs = false
-                settings.javaScriptCanOpenWindowsAutomatically = false
-                settings.setSupportMultipleWindows(false)
-                settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                val captchaSettings = settings
+                captchaSettings.setAllowContentAccess(false)
+                captchaSettings.setAllowFileAccess(false)
+                captchaSettings.setAllowFileAccessFromFileURLs(false)
+                captchaSettings.setAllowUniversalAccessFromFileURLs(false)
+                captchaSettings.setJavaScriptCanOpenWindowsAutomatically(false)
+                captchaSettings.setSupportMultipleWindows(false)
+                captchaSettings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW)
 
                 // Smart Captcha requires JavaScript. The only top-level document
                 // allowed below is HydraCore's validated loopback challenge URL.
                 // codeql[java/android/websettings-javascript-enabled]
-                settings.javaScriptEnabled = true
-                settings.domStorageEnabled = true
-                settings.databaseEnabled = true
-                settings.cacheMode = WebSettings.LOAD_NO_CACHE
-                settings.loadWithOverviewMode = true
-                settings.useWideViewPort = true
-                settings.userAgentString =
+                captchaSettings.setJavaScriptEnabled(true)
+                captchaSettings.setDomStorageEnabled(true)
+                captchaSettings.setDatabaseEnabled(true)
+                captchaSettings.setCacheMode(WebSettings.LOAD_NO_CACHE)
+                captchaSettings.setLoadWithOverviewMode(true)
+                captchaSettings.setUseWideViewPort(true)
+                captchaSettings.setUserAgentString(
                     "Mozilla/5.0 (Linux; Android 15; Mobile) " +
-                    "AppleWebKit/537.36 (KHTML, like Gecko) " +
-                    "Chrome/146.0.0.0 Mobile Safari/537.36"
+                        "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                        "Chrome/146.0.0.0 Mobile Safari/537.36",
+                )
                 webChromeClient = WebChromeClient()
                 webViewClient = object : WebViewClient() {
                     override fun shouldOverrideUrlLoading(
