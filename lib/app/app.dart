@@ -659,6 +659,9 @@ class _HydraBoxClientState extends State<HydraBoxClient>
         return;
       }
       await Clipboard.setData(ClipboardData(text: uri.toString()));
+      if (!mounted) {
+        return;
+      }
       final currentContext = _navigatorKey.currentContext;
       if (currentContext != null) {
         _showAppSnackBar(
@@ -668,6 +671,9 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     } catch (error) {
       AppLogStore.warning('vk-auth', 'failed to open VK captcha: $error');
       await Clipboard.setData(ClipboardData(text: uri.toString()));
+      if (!mounted) {
+        return;
+      }
       final currentContext = _navigatorKey.currentContext;
       if (currentContext != null) {
         _showAppSnackBar(
