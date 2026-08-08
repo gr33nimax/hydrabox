@@ -663,7 +663,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
         return;
       }
       final currentContext = _navigatorKey.currentContext;
-      if (currentContext != null) {
+      if (currentContext != null && currentContext.mounted) {
         _showAppSnackBar(
           AppLocalizations.of(currentContext).vkCaptchaOpenFailed,
         );
@@ -675,7 +675,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
         return;
       }
       final currentContext = _navigatorKey.currentContext;
-      if (currentContext != null) {
+      if (currentContext != null && currentContext.mounted) {
         _showAppSnackBar(
           AppLocalizations.of(currentContext).vkCaptchaOpenFailed,
         );
