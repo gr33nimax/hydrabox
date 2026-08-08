@@ -74,16 +74,13 @@ void main() {
   group('request security', () {
     test('Hydra JWE requests send the strict v2 identity headers', () {
       const deviceId = 'hbx1_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
-      final headers = SubscriptionFetcher.hydraRequestHeadersForTest(
-        const {
-          'Authorization': 'Bearer secret',
-          'User-Agent': 'override',
-          'Accept': 'text/plain',
-          'X-HWID': 'override',
-          'X-Hydra-HWID': 'legacy-override',
-        },
-        deviceId,
-      );
+      final headers = SubscriptionFetcher.hydraRequestHeadersForTest(const {
+        'Authorization': 'Bearer secret',
+        'User-Agent': 'override',
+        'Accept': 'text/plain',
+        'X-HWID': 'override',
+        'X-Hydra-HWID': 'legacy-override',
+      }, deviceId);
 
       expect(headers, {
         'Authorization': 'Bearer secret',

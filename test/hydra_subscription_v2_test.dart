@@ -63,8 +63,7 @@ void main() {
     final requirements = document['requirements'] as Map<String, dynamic>;
     (requirements['core'] as Map<String, dynamic>)['features'] = ['call'];
     final resource =
-        (document['resources'] as List<dynamic>).single
-            as Map<String, dynamic>;
+        (document['resources'] as List<dynamic>).single as Map<String, dynamic>;
     resource['document'] = {
       'outbounds': [
         {
@@ -78,10 +77,7 @@ void main() {
     };
     final profile =
         (document['profiles'] as List<dynamic>).single as Map<String, dynamic>;
-    profile['entrypoint'] = {
-      'section': 'outbounds',
-      'tag': 'call-vk-out',
-    };
+    profile['entrypoint'] = {'section': 'outbounds', 'tag': 'call-vk-out'};
 
     final parsed = SubscriptionParser.parse(jsonEncode(document));
 
