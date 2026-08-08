@@ -794,16 +794,16 @@ object SingboxController {
                             val snapshot = events.snapshot
                             if (snapshot != null) {
                                 handler.writeStatus(snapshot.status)
-                                handler.writeGroups(snapshot.groups)
-                                emitUrlTestSessions(events.sequence, true, snapshot.urlTestSessions)
+                                handler.writeGroups(snapshot.groups())
+                                emitUrlTestSessions(events.sequence, true, snapshot.urlTestSessions())
                             }
-                            val iterator = events.events
+                            val iterator = events.events()
                             while (iterator.hasNext()) {
                                 val event = iterator.next()
                                 event.status?.let(handler::writeStatus)
-                                val groups = event.groups
+                                val groups = event.groups()
                                 if (groups.hasNext()) handler.writeGroups(groups)
-                                val sessions = event.urlTestSessions
+                                val sessions = event.urlTestSessions()
                                 if (sessions.hasNext()) {
                                     emitUrlTestSessions(events.sequence, events.reset, sessions)
                                 }
@@ -888,7 +888,7 @@ object SingboxController {
 
     private fun urlTestSessionMap(session: URLTestSession): Map<String, Any?> {
         val results = mutableListOf<Map<String, Any?>>()
-        val iterator = session.results
+        val iterator = session.results()
         while (iterator.hasNext()) {
             val item = iterator.next()
             results += mapOf(
@@ -1137,7 +1137,7 @@ object SingboxController {
                     val status = snapshot.status
                     val service = snapshot.service
                     val groups = mutableListOf<Map<String, Any?>>()
-                    val groupIterator = snapshot.groups
+                    val groupIterator = snapshot.groups()
                     while (groupIterator.hasNext()) {
                         val group = groupIterator.next()
                         val items = mutableListOf<Map<String, Any?>>()
@@ -1164,7 +1164,7 @@ object SingboxController {
                         )
                     }
                     val sessions = mutableListOf<Map<String, Any?>>()
-                    val sessionIterator = snapshot.urlTestSessions
+                    val sessionIterator = snapshot.urlTestSessions()
                     while (sessionIterator.hasNext()) {
                         sessions += urlTestSessionMap(sessionIterator.next())
                     }

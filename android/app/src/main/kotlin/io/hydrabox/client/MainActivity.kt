@@ -2121,7 +2121,7 @@ class MainActivity : FlutterFragmentActivity() {
                     "hydraCoreInspectSubscriptionJWE",
                     call.argument<String>("envelope").orEmpty(),
                     call.argument<String>("keyBase64Url").orEmpty(),
-                }
+                )
 
                 "checkConfig" -> {
                     val config = call.argument<String>("config").orEmpty()
