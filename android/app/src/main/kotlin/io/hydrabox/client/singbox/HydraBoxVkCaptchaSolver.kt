@@ -10,6 +10,7 @@ import android.view.InputDevice
 import android.view.MotionEvent
 import android.view.View
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -55,6 +56,17 @@ object HydraBoxVkCaptchaSolver {
         val viewportHeight = Random.nextInt(376, 389)
         val webView = runCatching {
             WebView(context).apply {
+                settings.allowContentAccess = false
+                settings.allowFileAccess = false
+                settings.allowFileAccessFromFileURLs = false
+                settings.allowUniversalAccessFromFileURLs = false
+                settings.javaScriptCanOpenWindowsAutomatically = false
+                settings.setSupportMultipleWindows(false)
+                settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+
+                // Smart Captcha requires JavaScript. The only top-level document
+                // allowed below is HydraCore's validated loopback challenge URL.
+                // codeql[java/android/websettings-javascript-enabled]
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
                 settings.databaseEnabled = true
@@ -67,6 +79,16 @@ object HydraBoxVkCaptchaSolver {
                     "Chrome/146.0.0.0 Mobile Safari/537.36"
                 webChromeClient = WebChromeClient()
                 webViewClient = object : WebViewClient() {
+                    override fun shouldOverrideUrlLoading(
+                        view: WebView,
+                        request: WebResourceRequest,
+                    ): Boolean = request.isForMainFrame &&
+                        !HydraBoxVkCaptchaUrlPolicy.isSafeLoopbackUrl(request.url.toString())
+
+                    @Suppress("DEPRECATION")
+                    override fun shouldOverrideUrlLoading(view: WebView, loadedUrl: String): Boolean =
+                        !HydraBoxVkCaptchaUrlPolicy.isSafeLoopbackUrl(loadedUrl)
+
                     override fun onPageFinished(view: WebView, loadedUrl: String?) {
                         super.onPageFinished(view, loadedUrl)
                         mainHandler.postDelayed(
