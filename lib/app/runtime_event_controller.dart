@@ -64,8 +64,7 @@ class RuntimeUrlTestSessionsEvent {
           continue;
         }
         final observedAt = (result['observedAt'] as num?)?.toInt() ?? 0;
-        final errorMessage =
-            result['errorMessage']?.toString().trim() ?? '';
+        final errorMessage = result['errorMessage']?.toString().trim() ?? '';
         final errorCode = result['errorCode']?.toString().trim() ?? '';
         items.add(<String, dynamic>{
           'tag': tag,

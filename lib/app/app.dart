@@ -6050,9 +6050,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       invalidOutboundCount: 0,
       selectedProxyInvalid: false,
       startableOutboundCount: mutation.startableProxyCount,
-      hasInteractiveVkCall: singboxConfigHasInteractiveVkCall(
-        mutation.config,
-      ),
+      hasInteractiveVkCall: singboxConfigHasInteractiveVkCall(mutation.config),
     );
     AppLogStore.info(
       'sing-box',
@@ -6155,8 +6153,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     if (!mounted || !_connected || _runtimeTransitionInProgress) {
       return;
     }
-    final currentRuntimeGeneration =
-        _runtimeOperations.nativeRuntimeGeneration;
+    final currentRuntimeGeneration = _runtimeOperations.nativeRuntimeGeneration;
     if (event.runtimeGeneration > 0 &&
         currentRuntimeGeneration > 0 &&
         event.runtimeGeneration != currentRuntimeGeneration) {
@@ -6186,11 +6183,9 @@ class _HydraBoxClientState extends State<HydraBoxClient>
         currentResolvedActiveOutboundTag: previousActiveOutboundTag,
         activeOutboundTags: _activeOutboundByTagLookup.keys.toSet(),
         latencySessionRunning: _latencyCoordinator.isRunning,
-        shouldIgnoreLatencyResult:
-            _latencyCoordinator.shouldIgnoreGroupResult,
+        shouldIgnoreLatencyResult: _latencyCoordinator.shouldIgnoreGroupResult,
         proxyCacheContainsTag: _proxyCacheContainsTag,
-        visibleGroupProxyCacheMissingChild:
-            _visibleGroupProxyCacheMissingChild,
+        visibleGroupProxyCacheMissingChild: _visibleGroupProxyCacheMissingChild,
       ),
     );
     // Apply telemetry before acknowledging it to the coordinator: once an

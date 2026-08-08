@@ -610,12 +610,7 @@ class RuntimeLifecycleController {
       timeout + const Duration(milliseconds: 250),
       () {
         unawaited(
-          _handleStartWatchdogTimeout(
-            generation,
-            useVpn,
-            timeout,
-            onTimeout,
-          ),
+          _handleStartWatchdogTimeout(generation, useVpn, timeout, onTimeout),
         );
       },
     );
