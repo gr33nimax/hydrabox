@@ -59,17 +59,12 @@ class HydraResourceLatencyPlan {
     if (subscription.resourceConfigs.isEmpty) {
       return false;
     }
-    final next = _enabledProfileForRuntimeTag(
-      subscription,
-      nextRuntimeTag,
-    );
+    final next = _enabledProfileForRuntimeTag(subscription, nextRuntimeTag);
     if (next == null) {
       return false;
     }
-    final current = _enabledProfileForId(
-          subscription,
-          subscription.selectedProfileId,
-        ) ??
+    final current =
+        _enabledProfileForId(subscription, subscription.selectedProfileId) ??
         _enabledProfileForRuntimeTag(subscription, previousRuntimeTag) ??
         _firstEnabledProfileWithResource(subscription);
     if (current == null) {
@@ -87,8 +82,7 @@ class HydraResourceLatencyPlan {
     required Map<String, int> runtimeLatencies,
   }) {
     final requested = requestedRuntimeTag.trim();
-    if (subscription.resourceConfigs.isEmpty ||
-        !isLowestProxyTag(requested)) {
+    if (subscription.resourceConfigs.isEmpty || !isLowestProxyTag(requested)) {
       return requested;
     }
     final candidates = targets(subscription);

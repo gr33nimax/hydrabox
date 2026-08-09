@@ -85,10 +85,7 @@ void main() {
       HydraResourceLatencyPlan.concreteSelectionTag(
         subscription: subscription,
         requestedRuntimeTag: 'lowest',
-        runtimeLatencies: const <String, int>{
-          'amnezia': 320,
-          'hysteria2': 140,
-        },
+        runtimeLatencies: const <String, int>{'amnezia': 320, 'hysteria2': 140},
       ),
       'hysteria2',
     );

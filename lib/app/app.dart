@@ -5233,8 +5233,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
             targetOutboundTag: target.runtimeTag,
             url: _urlTestUrl,
             timeoutMillis: LatencyCoordinator.perOutboundTimeoutMillis,
-            deadlineMillis:
-                LatencyCoordinator.perOutboundTimeoutMillis + 5000,
+            deadlineMillis: LatencyCoordinator.perOutboundTimeoutMillis + 5000,
           );
         } catch (error) {
           final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
@@ -5324,14 +5323,12 @@ class _HydraBoxClientState extends State<HydraBoxClient>
         selectedProxyTag: _selectedProxyTag,
         pendingRuntimeSelectTag: _proxySelection.pendingRuntimeSelectTag,
         runtimeSelectionUpdatesAllowed: false,
-        currentResolvedActiveOutboundTag:
-            _currentResolvedActiveOutboundTag(),
+        currentResolvedActiveOutboundTag: _currentResolvedActiveOutboundTag(),
         activeOutboundTags: _activeOutboundByTagLookup.keys.toSet(),
         latencySessionRunning: true,
         shouldIgnoreLatencyResult: (_, _) => false,
         proxyCacheContainsTag: _proxyCacheContainsTag,
-        visibleGroupProxyCacheMissingChild:
-            _visibleGroupProxyCacheMissingChild,
+        visibleGroupProxyCacheMissingChild: _visibleGroupProxyCacheMissingChild,
       ),
     );
     if (!applied.changed) {
@@ -5345,8 +5342,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
   }
 
   void _cancelStandaloneUrlTest({required String reason}) {
-    if (!_standaloneUrlTestInFlight &&
-        _standaloneUrlTestPendingTags.isEmpty) {
+    if (!_standaloneUrlTestInFlight && _standaloneUrlTestPendingTags.isEmpty) {
       return;
     }
     _standaloneUrlTestGeneration++;
