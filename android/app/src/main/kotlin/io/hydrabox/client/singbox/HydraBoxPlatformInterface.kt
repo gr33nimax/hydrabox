@@ -507,6 +507,33 @@ class HydraBoxVpnPlatformInterface(
 class HydraBoxProxyPlatformInterface(
     context: Context,
 ) : HydraBoxBasePlatformInterface(context) {
+    override fun autoDetectInterfaceControl(fd: Int) {
+        val protected = runCatching {
+            HydraBoxVpnService.protectFileDescriptor(fd)
+        }.getOrElse { error ->
+            HydraBoxDiagnostics.log(
+                "HydraBoxStandalonePlatform",
+                "protect fd=$fd failed",
+                error,
+            )
+            throw error
+        }
+        if (protected == false) {
+            val error = IllegalStateException("VpnService.protect returned false for fd=$fd")
+            HydraBoxDiagnostics.log(
+                "HydraBoxStandalonePlatform",
+                "protect fd=$fd returned false",
+                error,
+            )
+            throw error
+        }
+    }
+
+    override fun bindInterfaceControl(fd: Int, interfaceName: String) {
+        autoDetectInterfaceControl(fd)
+        super.bindInterfaceControl(fd, interfaceName)
+    }
+
     override fun openTun(options: TunOptions): Int {
         error("TUN is not available in proxy mode")
     }

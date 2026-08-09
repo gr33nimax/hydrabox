@@ -507,6 +507,33 @@ class SingboxConfigCoordinator {
     return result;
   }
 
+  /// Builds one isolated Hydra Subscription v2 resource for a standalone
+  /// URLTest without changing the active subscription or runtime selection.
+  Future<SingboxConfigBuildResult?> buildUrlTestConfigForTarget(
+    String targetOutboundTag,
+  ) async {
+    final normalizedTarget = targetOutboundTag.trim();
+    if (normalizedTarget.isEmpty ||
+        !await _ensureActiveSubscriptionHydrated() ||
+        !_isMounted()) {
+      return null;
+    }
+    final snapshot = _readSnapshot();
+    final activeSubscription = snapshot.activeSubscription;
+    if (activeSubscription == null) {
+      return null;
+    }
+    final selectedSubscription = activeSubscription.copyWith(
+      selectedProxyTag: normalizedTarget,
+    );
+    final input = _currentSingboxConfigBuildInput(
+      returnConfig: true,
+      activeSubscription: selectedSubscription,
+      selectedProxyTag: normalizedTarget,
+    );
+    return buildSingboxConfigInBackground(input);
+  }
+
   static void _requireValidHydraConfig(Map<String, dynamic> result) {
     if (result['valid'] == true) return;
     final diagnostics = result['diagnostics'];
@@ -667,11 +694,13 @@ class SingboxConfigCoordinator {
   SingboxConfigBuildInput _currentSingboxConfigBuildInput({
     String? outputConfigPath,
     required bool returnConfig,
+    Subscription? activeSubscription,
+    String? selectedProxyTag,
   }) {
     final snapshot = _readSnapshot();
     return SingboxConfigBuildInput(
-      activeSubscription: snapshot.activeSubscription,
-      selectedProxyTag: snapshot.selectedProxyTag,
+      activeSubscription: activeSubscription ?? snapshot.activeSubscription,
+      selectedProxyTag: selectedProxyTag ?? snapshot.selectedProxyTag,
       excludedOutboundTags: Set<String>.from(snapshot.excludedOutboundTags),
       vpnInboundEnabled: snapshot.vpnInboundEnabled,
       vpnMtu: snapshot.vpnMtu,

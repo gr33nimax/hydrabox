@@ -1215,7 +1215,6 @@ object SingboxController {
         )
         preconnectExecutor.execute {
             val result = runCatching {
-                check(!running) { "pre-connect URL test is unavailable while connected" }
                 check(config.isNotBlank()) { "pre-connect URL test config is empty" }
                 check(groupTag.isNotBlank() && targetOutboundTag.isNotBlank()) {
                     "pre-connect URL test requires a selected concrete server"

@@ -27,6 +27,15 @@ class HydraBoxVpnService : VpnService() {
             return currentService?.protect(socket) == true
         }
 
+        /**
+         * Protects a libbox-owned descriptor when the VPN service is alive.
+         * A null result means there is no active VPN and no protection is
+         * necessary; false is an actual VpnService.protect failure.
+         */
+        fun protectFileDescriptor(fd: Int): Boolean? {
+            return currentService?.protect(fd)
+        }
+
         fun setUnderlyingNetwork(network: Network?, reason: String): Boolean {
             val service = currentService
             if (service == null) {

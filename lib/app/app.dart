@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:collection';
+import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:io';
 import 'dart:math';
@@ -15,6 +16,7 @@ import 'package:hydrabox/app/app_root_shell.dart';
 import 'package:hydrabox/app/app_settings_controller.dart';
 import 'package:hydrabox/app/deep_link_import.dart';
 import 'package:hydrabox/app/group_url_test_scheduler.dart';
+import 'package:hydrabox/app/hydra_resource_latency_plan.dart';
 import 'package:hydrabox/app/latency_coordinator.dart';
 import 'package:hydrabox/app/network_recovery_controller.dart';
 import 'package:hydrabox/app/proxy_runtime_controller.dart';
@@ -204,6 +206,9 @@ class _HydraBoxClientState extends State<HydraBoxClient>
   late final RuntimeEventController _runtimeEvents;
   final ProxyRuntimeController _proxyRuntime = ProxyRuntimeController();
   late final LatencyCoordinator _latencyCoordinator;
+  bool _standaloneUrlTestInFlight = false;
+  int _standaloneUrlTestGeneration = 0;
+  final Set<String> _standaloneUrlTestPendingTags = <String>{};
   CoreConfigMigrationResult? _pendingCoreConfigMigration;
   final GroupUrlTestScheduler _groupUrlTestScheduler = GroupUrlTestScheduler();
   final RuntimeStartupUrlTestGate _runtimeStartupUrlTestGate =
@@ -333,7 +338,12 @@ class _HydraBoxClientState extends State<HydraBoxClient>
   bool get _experimentalUrlTestStrictTolerance =>
       _settings.experimentalUrlTestStrictTolerance;
 
-  bool get _urlTestInFlight => _latencyCoordinator.isRunning;
+  bool get _urlTestInFlight =>
+      _latencyCoordinator.isRunning || _standaloneUrlTestInFlight;
+
+  bool _isLatencyChecking(String tag) =>
+      _latencyCoordinator.isChecking(tag) ||
+      _standaloneUrlTestPendingTags.contains(tag.trim());
 
   int? get _lowestLatency => _proxyRuntime.lowestLatency;
   set _lowestLatency(int? value) => _proxyRuntime.lowestLatency = value;
@@ -804,6 +814,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     _networkRecovery.recordRestart(DateTime.now());
     _groupUrlTestScheduler.cancel();
     _latencyCoordinator.cancel();
+    _cancelStandaloneUrlTest(reason: 'network_recovery');
     _runtimeStartupUrlTestGate.markRecoveryRestart(
       currentGeneration: _runtimeOperations.nativeRuntimeGeneration,
     );
@@ -1236,7 +1247,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
               targetSummary.latency == null &&
               latencyUnavailable),
       latencyFresh: runtimeLatency != null || targetSummary.latencyFresh,
-      latencyChecking: _latencyCoordinator.isChecking(tag),
+      latencyChecking: _isLatencyChecking(tag),
       latencyUnavailable: latencyUnavailable,
       latencyError: latencyError,
       clearLatencyError: latencyError == null,
@@ -1266,7 +1277,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
           ? null
           : runtimeLatency ?? outbound.info.latestPing,
       latencyFresh: runtimeLatency != null,
-      latencyChecking: _latencyCoordinator.isChecking(outbound.tag),
+      latencyChecking: _isLatencyChecking(outbound.tag),
       latencyUnavailable: latencyUnavailable,
       latencyError: latencyInvalidated ? null : _latencyErrors[outbound.tag],
       protocolLabel: protocolLabel,
@@ -1470,7 +1481,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
   }
 
   AppProxySummary _withDirectRuntimeProxyState(AppProxySummary proxy) {
-    final latencyChecking = _latencyCoordinator.isChecking(proxy.tag);
+    final latencyChecking = _isLatencyChecking(proxy.tag);
     final latencyInvalidated = _proxyRuntime.isLatencyInvalidated(proxy.tag);
     final runtimeLatency = latencyInvalidated
         ? null
@@ -1894,6 +1905,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _subscriptionAutoRefreshTimer?.cancel();
+    _cancelStandaloneUrlTest(reason: 'dispose');
     _latencyCoordinator.dispose();
     _runtimeRecovery.dispose();
     _locationLookupTimer?.cancel();
@@ -3009,6 +3021,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     _pendingTrafficStatusEvent = null;
     _groupUrlTestScheduler.cancel();
     _latencyCoordinator.cancel();
+    _cancelStandaloneUrlTest(reason: 'background');
     _networkRecovery.cancelDecision();
     if (_invalidOutboundRetryScheduled && _runtimeDesiredByUser) {
       _runtimeIntent.deferRetryUntilResume();
@@ -3323,6 +3336,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
 
     final startAfterStop = _runtimeIntent.completeSuccessfulStop();
     _latencyCoordinator.cancel();
+    _cancelStandaloneUrlTest(reason: 'runtime_stop');
     _groupUrlTestScheduler.cancel();
     setState(() {
       _setConnectionPhase(AppConnectionPhase.idle);
@@ -3486,9 +3500,17 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     _configCoordinator.cancelPendingWork(reason: reason);
   }
 
-  void _selectProxy(String tag) {
+  void _selectProxy(String requestedTag) {
     final activeSubscription = _activeSubscription;
-    if (activeSubscription == null || _selectedProxyTag == tag) {
+    if (activeSubscription == null) {
+      return;
+    }
+    final tag = HydraResourceLatencyPlan.concreteSelectionTag(
+      subscription: activeSubscription,
+      requestedRuntimeTag: requestedTag,
+      runtimeLatencies: _runtimeLatencies,
+    );
+    if (_selectedProxyTag == tag) {
       return;
     }
 
@@ -3502,18 +3524,28 @@ class _HydraBoxClientState extends State<HydraBoxClient>
           '${previousProxy == null ? '' : ' (${previousProxy.displayName})'} '
           'to=$tag'
           '${requestedProxy == null ? '' : ' (${requestedProxy.displayName})'} '
+          '${requestedTag == tag ? '' : 'requested=$requestedTag '} '
           'subscription=${activeSubscription.id} '
           'connected=$_connected',
     );
     _haptic();
     final updatedSubscription = _withSelectedOutbound(activeSubscription, tag);
+    final requiresRuntimeReload =
+        HydraResourceLatencyPlan.requiresRuntimeReload(
+          subscription: activeSubscription,
+          previousRuntimeTag: previousTag,
+          nextRuntimeTag: tag,
+        );
     _runtimeOperations.beginSelection(tag);
     _resetActiveProxyIpState(rebuild: false);
-    final selectInRuntime = _proxySelection.runtimeSelectionUpdatesAllowed(
-      connected: _connected,
-      connectionStable: _connectionPhase == AppConnectionPhase.connected,
-      transitionInProgress: _runtimeTransitionInProgress,
-    );
+    final selectInRuntime =
+        !requiresRuntimeReload &&
+        _proxySelection.runtimeSelectionUpdatesAllowed(
+          connected: _connected,
+          connectionStable: _connectionPhase == AppConnectionPhase.connected,
+          transitionInProgress: _runtimeTransitionInProgress,
+        );
+    final reloadRunningRuntime = requiresRuntimeReload && _connected;
     final selectionGeneration = selectInRuntime
         ? _beginRuntimeProxySelectionGuard(tag, previousTag)
         : _beginLocalProxySelection();
@@ -3541,16 +3573,24 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     );
     unawaited(_syncQuickSettingsTileLabel());
     _saveStateSoon();
-    unawaited(
-      _proxySelection.enqueuePersistence(
+    final persistence = _proxySelection.enqueuePersistence(
+      generation: selectionGeneration,
+      action: () => _persistSelectedProxySelection(
+        updatedSubscription,
         generation: selectionGeneration,
-        action: () => _persistSelectedProxySelection(
-          updatedSubscription,
-          generation: selectionGeneration,
-          prepareConfigSnapshot: !selectInRuntime,
-        ),
+        prepareConfigSnapshot: !selectInRuntime && !reloadRunningRuntime,
       ),
     );
+    unawaited(persistence);
+    if (reloadRunningRuntime) {
+      unawaited(
+        _reloadRuntimeForHydraResourceSelection(
+          tag: tag,
+          generation: selectionGeneration,
+          persistence: persistence,
+        ),
+      );
+    }
     if (selectInRuntime) {
       unawaited(() async {
         try {
@@ -3595,6 +3635,32 @@ class _HydraBoxClientState extends State<HydraBoxClient>
         }
       }());
     }
+  }
+
+  Future<void> _reloadRuntimeForHydraResourceSelection({
+    required String tag,
+    required int generation,
+    required Future<void> persistence,
+  }) async {
+    await persistence;
+    if (!mounted ||
+        !_connected ||
+        !_proxySelection.isCurrentGeneration(generation) ||
+        _selectedProxyTag != tag) {
+      return;
+    }
+    AppLogStore.info(
+      'proxy',
+      'cross-resource selection requires runtime config reload tag=$tag',
+    );
+    _groupUrlTestScheduler.cancel();
+    _latencyCoordinator.cancel();
+    _cancelStandaloneUrlTest(reason: 'resource_selection');
+    await _configCoordinator.emitCurrentConfigLogAsync(
+      'hydra resource selection ($tag)',
+      restartRuntime: true,
+      applyWhenNativeRunning: true,
+    );
   }
 
   Future<void> _persistSelectedProxySelection(
@@ -3736,9 +3802,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
           'latency',
           'automatic group URLTest start reason=$reason startup=$startup',
         );
-        return startup
-            ? _latencyCoordinator.runStartup(reason: reason)
-            : _latencyCoordinator.runFull(reason: reason);
+        return _runFullLatencyTest(reason: reason, startup: startup);
       },
     );
   }
@@ -4205,6 +4269,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     final previousSelectedTag = _selectedProxyTag;
     if (shouldResetRuntimeState) {
       _latencyCoordinator.cancel();
+      _cancelStandaloneUrlTest(reason: 'subscriptions_reload');
     }
 
     setState(() {
@@ -4303,6 +4368,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
           !preserveRuntimeState && !activeChanged && _connected;
       if (shouldResetRuntimeState) {
         _latencyCoordinator.cancel();
+        _cancelStandaloneUrlTest(reason: 'subscription_hydration');
       }
       setState(() {
         _subscriptions = resolved.subscriptions;
@@ -5089,7 +5155,204 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     if (haptic) {
       _haptic();
     }
-    await _latencyCoordinator.runFull(reason: 'manual');
+    await _runFullLatencyTest(reason: 'manual');
+  }
+
+  Future<bool> _runFullLatencyTest({
+    required String reason,
+    bool startup = false,
+  }) {
+    final activeSubscription = _activeSubscription;
+    if (activeSubscription != null &&
+        HydraResourceLatencyPlan.targets(
+          activeSubscription,
+          excludedRuntimeTags: _excludedRuntimeOutboundTags,
+        ).isNotEmpty) {
+      return _runStandaloneHydraResourceUrlTests(reason: reason);
+    }
+    return startup
+        ? _latencyCoordinator.runStartup(reason: reason)
+        : _latencyCoordinator.runFull(reason: reason);
+  }
+
+  Future<bool> _runStandaloneHydraResourceUrlTests({
+    required String reason,
+  }) async {
+    final subscription = _activeSubscription;
+    if (subscription == null ||
+        !_connected ||
+        !_foregroundLifecycleActive ||
+        _runtimeTransitionInProgress ||
+        _standaloneUrlTestInFlight) {
+      return false;
+    }
+    final targets = HydraResourceLatencyPlan.targets(
+      subscription,
+      excludedRuntimeTags: _excludedRuntimeOutboundTags,
+    );
+    if (targets.isEmpty) {
+      return false;
+    }
+
+    final generation = ++_standaloneUrlTestGeneration;
+    final subscriptionId = subscription.id;
+    _standaloneUrlTestInFlight = true;
+    _standaloneUrlTestPendingTags
+      ..clear()
+      ..addAll(targets.map((target) => target.runtimeTag));
+    if (mounted) {
+      setState(_applyRuntimeStateToDerivedCaches);
+    }
+    AppLogStore.info(
+      'latency',
+      'standalone Hydra resource URLTest start reason=$reason '
+          'resources=${targets.length}',
+    );
+
+    var terminalResults = 0;
+    try {
+      for (final target in targets) {
+        if (!_standaloneUrlTestIsCurrent(generation, subscriptionId)) {
+          break;
+        }
+        PreconnectUrlTestResult result;
+        try {
+          final build = await _configCoordinator.buildUrlTestConfigForTarget(
+            target.runtimeTag,
+          );
+          if (build == null ||
+              !_standaloneUrlTestIsCurrent(generation, subscriptionId)) {
+            break;
+          }
+          final config = build.configJson.isNotEmpty
+              ? build.configJson
+              : jsonEncode(build.plan.config);
+          result = await SingboxRuntime.instance.preconnectUrlTest(
+            config: config,
+            groupTag: 'select',
+            targetOutboundTag: target.runtimeTag,
+            url: _urlTestUrl,
+            timeoutMillis: LatencyCoordinator.perOutboundTimeoutMillis,
+            deadlineMillis: LatencyCoordinator.perOutboundTimeoutMillis + 5000,
+          );
+        } catch (error) {
+          final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+          result = PreconnectUrlTestResult(
+            tag: target.runtimeTag,
+            delayMillis: 0,
+            timeSeconds: now,
+            status: ProxyRuntimeController.urlTestStatusUnavailable,
+            error: error.toString(),
+            errorCode: 'standalone_urltest_failed',
+          );
+          AppLogStore.warning(
+            'latency',
+            'standalone Hydra resource URLTest failed '
+                'target=${target.runtimeTag} error=$error',
+          );
+        }
+        if (!_standaloneUrlTestIsCurrent(generation, subscriptionId)) {
+          break;
+        }
+        terminalResults++;
+        _applyStandaloneLatencyResult(target.runtimeTag, result);
+        _standaloneUrlTestPendingTags.remove(target.runtimeTag);
+        if (mounted) {
+          setState(_applyRuntimeStateToDerivedCaches);
+        }
+      }
+    } finally {
+      if (generation == _standaloneUrlTestGeneration) {
+        _standaloneUrlTestInFlight = false;
+        _standaloneUrlTestPendingTags.clear();
+        if (mounted) {
+          setState(_applyRuntimeStateToDerivedCaches);
+        }
+        AppLogStore.info(
+          'latency',
+          'standalone Hydra resource URLTest settled reason=$reason '
+              'results=$terminalResults expected=${targets.length}',
+        );
+      }
+    }
+    return terminalResults > 0;
+  }
+
+  bool _standaloneUrlTestIsCurrent(int generation, String subscriptionId) {
+    return mounted &&
+        generation == _standaloneUrlTestGeneration &&
+        _standaloneUrlTestInFlight &&
+        _connected &&
+        !_runtimeTransitionInProgress &&
+        _activeSubscription?.id == subscriptionId;
+  }
+
+  void _applyStandaloneLatencyResult(
+    String targetRuntimeTag,
+    PreconnectUrlTestResult result,
+  ) {
+    final activeSubscription = _activeSubscription;
+    if (activeSubscription == null) {
+      return;
+    }
+    final tag = targetRuntimeTag.trim();
+    final time = result.timeSeconds > 0
+        ? result.timeSeconds
+        : DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final error = result.error.trim().isNotEmpty
+        ? result.error.trim()
+        : result.errorCode.trim();
+    _ensureActiveLookupCaches();
+    final update = <String, dynamic>{
+      'tag': 'standalone-urltest',
+      'items': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'tag': tag,
+          'delay': result.delayMillis,
+          'time': time,
+          'status': result.status,
+          'error': error,
+          'errorCode': result.errorCode,
+        },
+      ],
+    };
+    final applied = _proxyRuntime.applyGroupUpdates(
+      ProxyRuntimeGroupUpdateInput(
+        rawGroups: <dynamic>[update],
+        activeSubscription: activeSubscription,
+        selectedProxyTag: _selectedProxyTag,
+        pendingRuntimeSelectTag: _proxySelection.pendingRuntimeSelectTag,
+        runtimeSelectionUpdatesAllowed: false,
+        currentResolvedActiveOutboundTag: _currentResolvedActiveOutboundTag(),
+        activeOutboundTags: _activeOutboundByTagLookup.keys.toSet(),
+        latencySessionRunning: true,
+        shouldIgnoreLatencyResult: (_, _) => false,
+        proxyCacheContainsTag: _proxyCacheContainsTag,
+        visibleGroupProxyCacheMissingChild: _visibleGroupProxyCacheMissingChild,
+      ),
+    );
+    if (!applied.changed) {
+      return;
+    }
+    _publishProxyRuntimeVisualStatesForTags(<String>{tag});
+    unawaited(_syncQuickSettingsTileLabel());
+    if (applied.realOutboundRuntimeStateChanged) {
+      _scheduleBestOutboundLocationRefresh();
+    }
+  }
+
+  void _cancelStandaloneUrlTest({required String reason}) {
+    if (!_standaloneUrlTestInFlight && _standaloneUrlTestPendingTags.isEmpty) {
+      return;
+    }
+    _standaloneUrlTestGeneration++;
+    _standaloneUrlTestInFlight = false;
+    _standaloneUrlTestPendingTags.clear();
+    AppLogStore.info(
+      'latency',
+      'standalone Hydra resource URLTest cancelled reason=$reason',
+    );
+    unawaited(SingboxRuntime.instance.cancelPreconnectUrlTest());
   }
 
   Future<void> _runActiveProxyUrlTest({bool haptic = true}) async {
@@ -5200,6 +5463,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     if (phase == SingboxConfigCoordinatorPhase.reconfiguring ||
         phase == SingboxConfigCoordinatorPhase.stopping) {
       _latencyCoordinator.cancel();
+      _cancelStandaloneUrlTest(reason: 'runtime_reconfigure');
       _activeProxyIpController.cancelPending();
       _groupUrlTestScheduler.cancel();
     }
@@ -5488,6 +5752,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     });
     if (shouldCancelLatency) {
       _latencyCoordinator.cancel();
+      _cancelStandaloneUrlTest(reason: 'runtime_disconnected');
     }
     _publishTrafficDashboardSnapshot();
     if (shouldSyncQuickSettingsTile) {
@@ -5585,6 +5850,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     );
     _runtimeCommands.invalidate();
     _latencyCoordinator.cancel();
+    _cancelStandaloneUrlTest(reason: 'network_changed');
     _activeProxyIpController.cancelPending();
     _groupUrlTestScheduler.cancel();
     if (!usable) {
