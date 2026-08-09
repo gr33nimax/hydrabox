@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:meow_client/core/lowest_proxy_groups.dart';
-import 'package:meow_client/models/subscription.dart';
+import 'package:hydrabox/core/lowest_proxy_groups.dart';
+import 'package:hydrabox/models/subscription.dart';
 
 class ProxySelectionTimeout {
   const ProxySelectionTimeout({

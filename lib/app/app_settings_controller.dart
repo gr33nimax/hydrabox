@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:meow_client/data/local/app_settings_store.dart';
+import 'package:hydrabox/data/local/app_settings_store.dart';
 
 const int appSettingsDefaultUrlTestTimeoutSeconds = 15;
 const int appSettingsDefaultLocationLookupTimeoutSeconds = 3;
@@ -911,7 +911,7 @@ class AppSettingsController {
   }
 
   static String normalizeAccentColorHex(String value) => switch (value) {
-    'dynamic-2' || 'dynamic-3' => 'default',
+    'dynamic-2' || 'dynamic-3' => 'dynamic',
     _ => value,
   };
 

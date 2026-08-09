@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/app/runtime_intent_controller.dart';
+import 'package:hydrabox/app/runtime_intent_controller.dart';
 
 void main() {
   test('manual start generations reject stale asynchronous work', () {

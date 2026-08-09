@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:meow_client/app/app_background_tasks.dart';
-import 'package:meow_client/singbox/runtime_start_error.dart';
+import 'package:hydrabox/app/app_background_tasks.dart';
+import 'package:hydrabox/singbox/runtime_start_error.dart';
 
 class InvalidOutboundRecovery {
   const InvalidOutboundRecovery({required this.tag, required this.reason});

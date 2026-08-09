@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/core/widgets/app_notice.dart';
+import 'package:hydrabox/core/widgets/app_notice.dart';
 
 void main() {
   testWidgets('notice is visible above a modal bottom sheet', (tester) async {

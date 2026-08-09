@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:asn1lib/asn1lib.dart';
-import 'package:meow_client/data/subscription/happ_crypt5_local.dart';
-import 'package:meow_client/models/subscription.dart';
+import 'package:hydrabox/data/subscription/happ_crypt5_local.dart';
+import 'package:hydrabox/models/subscription.dart';
 import 'package:pointycastle/export.dart';
 
 const happLatestUserAgent = 'Happ/3.16.1';
@@ -36,7 +36,7 @@ class HappCryptoLinkDecoder {
 
   // Legacy Android/native Happ path, intentionally disabled. Crypt5/5.1 is
   // decrypted locally from extracted selector/key tables in happ_crypt5_local.dart.
-  // static const _crypt5Methods = MethodChannel('meow_client/happ_crypto');
+  // static const _crypt5Methods = MethodChannel('io.hydrabox.client/happ_crypto');
 
   static const _cryptPrefix = 'happ://crypt/';
   static const _crypt2Prefix = 'happ://crypt2/';

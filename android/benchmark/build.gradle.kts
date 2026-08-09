@@ -7,7 +7,7 @@ plugins {
 }
 
 android {
-    namespace = "com.etonify.meow_client.benchmark"
+    namespace = "io.hydrabox.client.benchmark"
     compileSdk = 36
 
     defaultConfig {

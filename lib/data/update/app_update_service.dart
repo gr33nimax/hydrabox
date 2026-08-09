@@ -6,10 +6,10 @@ import 'dart:math';
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter/foundation.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
-import 'package:meow_client/data/local/app_settings_store.dart';
-import 'package:meow_client/data/local/hive_storage_diagnostics.dart';
-import 'package:meow_client/logging/app_log_store.dart';
-import 'package:meow_client/singbox/singbox_runtime.dart';
+import 'package:hydrabox/data/local/app_settings_store.dart';
+import 'package:hydrabox/data/local/hive_storage_diagnostics.dart';
+import 'package:hydrabox/logging/app_log_store.dart';
+import 'package:hydrabox/singbox/singbox_runtime.dart';
 import 'package:path_provider/path_provider.dart';
 
 enum AppUpdateStatus {

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/features/settings/settings_page.dart';
-import 'package:meow_client/l10n/generated/app_localizations.dart';
+import 'package:hydrabox/features/settings/settings_page.dart';
+import 'package:hydrabox/l10n/generated/app_localizations.dart';
 
 Widget _settingsApp({
   VoidCallback? onImportBackup,

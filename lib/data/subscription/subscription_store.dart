@@ -6,17 +6,17 @@ import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 import 'package:hive_ce/hive.dart';
-import 'package:meow_client/core/lowest_proxy_groups.dart';
-import 'package:meow_client/data/local/hive_storage_diagnostics.dart';
-import 'package:meow_client/data/local/secure_hive_storage.dart';
-import 'package:meow_client/logging/app_log_store.dart';
-import 'package:meow_client/models/subscription.dart';
+import 'package:hydrabox/core/lowest_proxy_groups.dart';
+import 'package:hydrabox/data/local/hive_storage_diagnostics.dart';
+import 'package:hydrabox/data/local/secure_hive_storage.dart';
+import 'package:hydrabox/logging/app_log_store.dart';
+import 'package:hydrabox/models/subscription.dart';
+import 'package:hydrabox/singbox/singbox_runtime.dart';
 
 import 'location_aliases.dart';
-import 'hydrabox_subscription_crypto.dart';
-import 'hydrabox_subscription_time.dart';
+import 'hydra_subscription_uri.dart';
 import 'outbound_schema.dart';
-import 'parsers/hydrabox_subscription_parser.dart';
+import 'parsers/hydra_subscription_parser.dart';
 import 'subscription_failure.dart';
 import 'subscription_fetcher.dart';
 import 'subscription_parser.dart';
@@ -49,7 +49,7 @@ class SubscriptionStore {
   static const _legacySummaryBoxName = 'subscription_summaries';
   static const _storageSchemaVersionKey = subscriptionStorageSchemaVersionKey;
   static const _storageSchemaVersion = 2;
-  static const _localFileImportScheme = 'meow-file';
+  static const _localFileImportScheme = 'hydrabox-file';
   static const _payloadGenerationSeparator =
       subscriptionPayloadGenerationSeparator;
   static Box? _metaBox;
@@ -214,14 +214,14 @@ class SubscriptionStore {
             try {
               final map = jsonDecode(value) as Map<String, dynamic>;
               final url = map['url']?.toString() ?? '';
-              if (_subscriptionUrlHasHydraBoxKeyQuery(url)) {
+              if (_subscriptionUrlHasHydraKeyQuery(url)) {
                 throw UnsupportedError(
-                  'Stored HydraBox hbx-key must not appear in a URL query',
+                  'Stored Hydra hydra-key must not appear in a URL query',
                 );
               }
-              if (!Platform.isAndroid && _subscriptionUrlHasHydraBoxKey(url)) {
+              if (!Platform.isAndroid && _subscriptionUrlHasHydraKey(url)) {
                 throw UnsupportedError(
-                  'Persistent hbx-key subscriptions require Android '
+                  'Persistent hydra-key subscriptions require Android '
                   'Keystore-backed storage',
                 );
               }
@@ -449,7 +449,7 @@ class SubscriptionStore {
             return raw == null ? metadata : _withPayloadFromRaw(metadata, raw);
           })
           .toList(growable: false);
-    }, debugName: 'meow-subscriptions-full');
+    }, debugName: 'hydrabox-subscriptions-full');
   }
 
   /// Returns metadata-only subscriptions without loading raw content/outbounds.
@@ -466,7 +466,7 @@ class SubscriptionStore {
     }
     return Isolate.run(
       () => _decodeMetadataSnapshot(snapshot),
-      debugName: 'meow-subscription-metadata',
+      debugName: 'hydrabox-subscription-metadata',
     );
   }
 
@@ -545,7 +545,7 @@ class SubscriptionStore {
       } catch (_) {
         return null;
       }
-    }, debugName: 'meow-subscription-single');
+    }, debugName: 'hydrabox-subscription-single');
   }
 
   /// Hydrates raw content/outbounds for a metadata-only subscription.
@@ -593,7 +593,7 @@ class SubscriptionStore {
     final metadataMap = metadata.toMetadataMap();
     return Isolate.run(
       () => hydratePayloadJson(Subscription.fromMetadataMap(metadataMap), raw),
-      debugName: 'meow-subscription-payload',
+      debugName: 'hydrabox-subscription-payload',
     );
   }
 
@@ -604,11 +604,13 @@ class SubscriptionStore {
       if (!allowCreate && currentMetadata == null) {
         throw StateError('Subscription ${sub.id} not found');
       }
-      final currentIsHydraBox =
-          currentMetadata?.sourceMetadata['format'] ==
-          'hydrabox.io/subscription/v1';
+      final currentIsHydraBox = HydraSubscriptionParser.isSupportedSourceFormat(
+        currentMetadata?.sourceMetadata['format'],
+      );
       final proposedIsHydraBox =
-          sub.sourceMetadata['format'] == 'hydrabox.io/subscription/v1';
+          HydraSubscriptionParser.isSupportedSourceFormat(
+            sub.sourceMetadata['format'],
+          );
       if (currentIsHydraBox || proposedIsHydraBox) {
         if (currentMetadata == null ||
             !currentIsHydraBox ||
@@ -653,6 +655,7 @@ class SubscriptionStore {
             profiles: current.profiles,
             nativeConfig: current.nativeConfig,
             clearNativeConfig: current.nativeConfig == null,
+            resourceConfigs: current.resourceConfigs,
             sourceMetadata: current.sourceMetadata,
           ),
         );
@@ -679,11 +682,12 @@ class SubscriptionStore {
   static Future<void> _saveUnlocked(Subscription sub) async {
     _validatePersistentSourcePolicy(sub);
     final payload = await Isolate.run(
-      () => _encodeStoredPayload(jsonEncode(sub.toPayloadMap())),
-      debugName: 'meow-encode-subscription-payload',
+      () => _encodeStoredPayload(jsonEncode(sub.toSecurePayloadMap())),
+      debugName: 'hydrabox-encode-subscription-payload',
     );
-    final isHydraBox =
-        sub.sourceMetadata['format'] == 'hydrabox.io/subscription/v1';
+    final isHydraBox = HydraSubscriptionParser.isSupportedSourceFormat(
+      sub.sourceMetadata['format'],
+    );
     if (!isHydraBox) {
       final current = _readMetadata(sub.id);
       if (current != null) {
@@ -717,6 +721,30 @@ class SubscriptionStore {
       sub.id,
       () => _saveMetadataUnlocked(sub),
     );
+  }
+
+  /// Persists only the active outbound/profile selection against the latest
+  /// metadata revision. Payload refreshes may commit a new immutable payload
+  /// generation while the UI is switching configuration; that must not turn
+  /// a harmless selection write into a startup failure or roll trusted
+  /// HydraBox state back to the stale UI snapshot.
+  static Future<void> saveSelectedProxyMetadata(Subscription sub) async {
+    await _withSubscriptionMutationLock(sub.id, () async {
+      final current = _readMetadata(sub.id);
+      if (current == null) {
+        throw StateError(
+          'Subscription ${sub.id} not found; selection writes cannot create '
+          'subscriptions',
+        );
+      }
+      final rebased = current.copyWith(
+        selectedProxyTag: sub.selectedProxyTag.trim(),
+        selectedProfileId: sub.selectedProfileId.trim(),
+      );
+      _validatePersistentSourcePolicy(rebased);
+      await _metaStore.put(sub.id, jsonEncode(rebased.toMetadataMap()));
+      await _metaStore.flush();
+    });
   }
 
   static Future<void> _saveMetadataUnlocked(Subscription sub) async {
@@ -893,7 +921,7 @@ class SubscriptionStore {
     }
     final updatedRaw = await Isolate.run(
       () => _rewriteOutboundRuntimeInfoPayload(raw, updates),
-      debugName: 'meow-save-outbound-runtime-info',
+      debugName: 'hydrabox-save-outbound-runtime-info',
     );
     if (updatedRaw == null || updatedRaw == raw) {
       return false;
@@ -1000,8 +1028,7 @@ class SubscriptionStore {
         'subscription import',
       );
       _throwIfImportCancelled(isCancelled);
-      parsedHydraBox =
-          result.parseResult.format == SubscriptionFormat.hydraboxV1;
+      parsedHydraBox = result.parseResult.format.isHydra;
       _validateHydraBoxSource(result.parseResult);
 
       final payload = await _withDeadline(
@@ -1051,6 +1078,7 @@ class SubscriptionStore {
         groups: payload.groups,
         profiles: payload.profiles,
         nativeConfig: result.parseResult.nativeConfig,
+        resourceConfigs: result.parseResult.resourceConfigs,
         sourceMetadata: result.parseResult.sourceMetadata,
         urlTestConfig: const UrlTestConfig(),
         info: result.headerInfo.copyWith(
@@ -1091,7 +1119,7 @@ class SubscriptionStore {
       if (error is FormatException ||
           error is UnsupportedError ||
           parsedHydraBox ||
-          _subscriptionUrlHasHydraBoxKey(url)) {
+          _subscriptionUrlHasHydraKey(url)) {
         // A key-bearing source is an explicit encryption policy. Do not turn
         // authentication, transport, format, or trust failures from an
         // authenticated/recognized HydraBox source into a saved legacy
@@ -1141,26 +1169,13 @@ class SubscriptionStore {
   }) async {
     final deadline = _operationDeadline(operationTimeout);
     _throwIfImportCancelled(isCancelled);
-    final parseResult = await _withDeadline(
-      SubscriptionParser.parseInBackground(
-        content,
-        decryptionKey: decryptionKey,
-      ),
+    final parsedContent = await _withDeadline(
+      _parseContentWithHydraCore(content, decryptionKey: decryptionKey),
       deadline,
       'subscription file import',
     );
+    final parseResult = parsedContent.parseResult;
     _throwIfImportCancelled(isCancelled);
-    if (parseResult.format == SubscriptionFormat.hydraboxV1 &&
-        parseResult.sourceMetadata['encrypted'] == true) {
-      // A local file has no durable secret-bearing source URI. Until HydraBox
-      // has a Keystore-backed per-file key record and a restore-time key
-      // prompt, saving this result would create a subscription that succeeds
-      // once but cannot be authenticated again by reparse or backup restore.
-      throw UnsupportedError(
-        'Persistent encrypted HydraBox file import is not available yet; '
-        'use a key-bearing HTTPS subscription URL',
-      );
-    }
     _validateHydraBoxSource(parseResult);
     final payload = await _withDeadline(
       _buildSubscriptionPayloadAsync(
@@ -1204,11 +1219,12 @@ class SubscriptionStore {
       sortOrder: _nextSortOrder(),
       lastUpdated: DateTime.now().millisecondsSinceEpoch,
       disableAutoUpdate: true,
-      rawContent: content,
+      rawContent: parsedContent.plaintext,
       outbounds: outbounds,
       groups: payload.groups,
       profiles: payload.profiles,
       nativeConfig: parseResult.nativeConfig,
+      resourceConfigs: parseResult.resourceConfigs,
       sourceMetadata: parseResult.sourceMetadata,
       urlTestConfig: const UrlTestConfig(),
     );
@@ -1220,6 +1236,75 @@ class SubscriptionStore {
       throw const SubscriptionImportCancelledException();
     }
     return SubscriptionImportResult(subscription: get(sub.id) ?? sub);
+  }
+
+  static Future<({String plaintext, ParseResult parseResult})>
+  _parseContentWithHydraCore(String content, {String? decryptionKey}) async {
+    var plaintext = content;
+    var encrypted = false;
+    if (HydraSubscriptionParser.looksLikeJwe(content)) {
+      if (decryptionKey == null || decryptionKey.isEmpty) {
+        throw const FormatException(
+          'Encrypted Hydra subscription requires a hydra-key',
+        );
+      }
+      final validation = await SingboxRuntime.instance
+          .validateHydraSubscriptionJwe(
+            envelope: content,
+            keyBase64Url: decryptionKey,
+          );
+      _requireValidHydraResult(validation);
+      plaintext = await SingboxRuntime.instance.openHydraSubscriptionJwe(
+        envelope: content,
+        keyBase64Url: decryptionKey,
+      );
+      encrypted = true;
+    } else if (HydraSubscriptionParser.looksLike(content)) {
+      final validation = await SingboxRuntime.instance
+          .validateHydraSubscription(content);
+      _requireValidHydraResult(validation);
+    }
+    final parsed = await SubscriptionParser.parseInBackground(plaintext);
+    if (decryptionKey != null && parsed.format.isHydra) {
+      encrypted = true;
+    }
+    if (!encrypted) return (plaintext: plaintext, parseResult: parsed);
+    return (
+      plaintext: plaintext,
+      parseResult: ParseResult(
+        format: parsed.format,
+        outbounds: parsed.outbounds,
+        groups: parsed.groups,
+        bodyMeta: parsed.bodyMeta,
+        profiles: parsed.profiles,
+        nativeConfig: parsed.nativeConfig,
+        resourceConfigs: parsed.resourceConfigs,
+        defaultProfileId: parsed.defaultProfileId,
+        sourceMetadata: {...parsed.sourceMetadata, 'encrypted': true},
+      ),
+    );
+  }
+
+  static void _requireValidHydraResult(Map<String, dynamic> result) {
+    if (result['valid'] == true) return;
+    final diagnostics = result['diagnostics'];
+    if (diagnostics is List &&
+        diagnostics.isNotEmpty &&
+        diagnostics.first is Map) {
+      final diagnostic = Map<String, dynamic>.from(diagnostics.first as Map);
+      final code = diagnostic['code']?.toString() ?? 'invalid';
+      final path = diagnostic['path']?.toString() ?? r'$';
+      throw HydraSubscriptionValidationException(
+        operation: 'subscription validation',
+        code: code,
+        path: path,
+      );
+    }
+    throw HydraSubscriptionValidationException(
+      operation: 'subscription validation',
+      code: 'invalid',
+      path: r'$',
+    );
   }
 
   /// Imports one decoded backup record. HydraBox payload projections and trust
@@ -1257,10 +1342,13 @@ class SubscriptionStore {
         final subscription = _normalizeBackupLocalState(candidate, current);
         _validatePersistentSourcePolicy(subscription);
         final currentIsHydraBox =
-            current?.sourceMetadata['format'] == 'hydrabox.io/subscription/v1';
+            HydraSubscriptionParser.isSupportedSourceFormat(
+              current?.sourceMetadata['format'],
+            );
         final proposedIsHydraBox =
-            subscription.sourceMetadata['format'] ==
-            'hydrabox.io/subscription/v1';
+            HydraSubscriptionParser.isSupportedSourceFormat(
+              subscription.sourceMetadata['format'],
+            );
         if (currentIsHydraBox && !proposedIsHydraBox) {
           throw const FormatException(
             'A backup cannot replace a HydraBox record with legacy payload',
@@ -1361,67 +1449,69 @@ class SubscriptionStore {
     Subscription subscription,
   ) async {
     validateSubscriptionStorageId(subscription.id);
-    final claimsHydraBox =
-        subscription.sourceMetadata['format'] == 'hydrabox.io/subscription/v1';
+    final claimsHydra = HydraSubscriptionParser.isSupportedSourceFormat(
+      subscription.sourceMetadata['format'],
+    );
     final rawContent = subscription.rawContent;
     Uri? sourceUri;
-    var hasHydraBoxKeyPolicy = false;
+    var hasHydraKeyPolicy = false;
     if (subscription.url.trim().isNotEmpty) {
       try {
         sourceUri = SubscriptionFetcher.parseRequestUri(subscription.url);
-        if (HydraBoxJweCodec.hasKeyQueryParameter(sourceUri)) {
+        if (HydraSubscriptionUri.hasKeyQueryParameter(sourceUri)) {
           throw const FormatException(
-            'HydraBox hbx-key is allowed only in the URI fragment',
+            'Hydra hydra-key is allowed only in the URI fragment',
           );
         }
-        hasHydraBoxKeyPolicy = HydraBoxJweCodec.hasKeyFragment(sourceUri);
+        hasHydraKeyPolicy = HydraSubscriptionUri.hasKeyFragment(sourceUri);
       } on FormatException {
         rethrow;
       } catch (_) {
         sourceUri = null;
       }
     }
-    final requiresStrictHydraBoxImport =
-        claimsHydraBox ||
-        HydraBoxSubscriptionParser.looksLike(rawContent) ||
-        hasHydraBoxKeyPolicy;
-    if (!requiresStrictHydraBoxImport) {
+    final requiresStrictHydraImport =
+        claimsHydra ||
+        HydraSubscriptionParser.looksLike(rawContent) ||
+        hasHydraKeyPolicy;
+    if (!requiresStrictHydraImport) {
       return subscription.copyWith(payloadStorageKey: '');
     }
     if (rawContent.trim().isEmpty) {
       throw const FormatException(
-        'HydraBox backup record is missing its original wire payload',
+        'Hydra backup record is missing its original wire payload',
       );
     }
     String? decryptionKey;
     if (sourceUri != null) {
       try {
-        final hasKeyPolicy = HydraBoxJweCodec.hasKeyFragment(sourceUri);
-        decryptionKey = HydraBoxJweCodec.keyFromUri(sourceUri);
+        final hasKeyPolicy = HydraSubscriptionUri.hasKeyFragment(sourceUri);
+        decryptionKey = HydraSubscriptionUri.keyFromUri(sourceUri);
         if (hasKeyPolicy && decryptionKey == null) {
           throw const FormatException(
-            'HydraBox hbx-key fragment must contain one valid key value',
+            'Hydra hydra-key fragment must contain one valid key value',
           );
         }
       } on FormatException {
         rethrow;
       } catch (_) {
-        // Encrypted HydraBox content fails closed in the strict parser below.
+        // Encrypted Hydra content fails closed in the strict parser below.
       }
     }
 
-    final parseResult = await SubscriptionParser.parseInBackground(
+    final parsedContent = await _parseContentWithHydraCore(
       rawContent,
       decryptionKey: decryptionKey,
     );
-    if (parseResult.format != SubscriptionFormat.hydraboxV1) {
+    final parseResult = parsedContent.parseResult;
+    if (!parseResult.format.isHydra) {
       throw const FormatException(
-        'HydraBox backup metadata does not match its wire payload',
+        'Hydra backup metadata does not match its wire payload',
       );
     }
     _validateHydraBoxSource(parseResult);
     final parsedNativeConfig = parseResult.nativeConfig;
-    if (claimsHydraBox) {
+    if (claimsHydra) {
       for (final key in const {
         'format',
         'issuer',
@@ -1441,9 +1531,13 @@ class SubscriptionStore {
       }
       if (subscription.nativeConfig == null ||
           parsedNativeConfig == null ||
-          !_jsonValuesEqual(subscription.nativeConfig, parsedNativeConfig)) {
+          !_jsonValuesEqual(subscription.nativeConfig, parsedNativeConfig) ||
+          !_jsonValuesEqual(
+            subscription.resourceConfigs,
+            parseResult.resourceConfigs,
+          )) {
         throw const FormatException(
-          'HydraBox backup native config does not match the wire payload',
+          'Hydra backup resources do not match the wire payload',
         );
       }
     }
@@ -1474,11 +1568,12 @@ class SubscriptionStore {
             groups: payload.groups,
           ),
       selectedProfileId: selectedProfile?.id ?? '',
-      rawContent: rawContent,
+      rawContent: parsedContent.plaintext,
       outbounds: rebuiltOutbounds,
       groups: payload.groups,
       profiles: payload.profiles,
       nativeConfig: parsedNativeConfig,
+      resourceConfigs: parseResult.resourceConfigs,
       sourceMetadata: parseResult.sourceMetadata,
       payloadStorageKey: '',
     );
@@ -1660,6 +1755,7 @@ class SubscriptionStore {
         profiles: payload.profiles,
         nativeConfig: result.parseResult.nativeConfig,
         clearNativeConfig: result.parseResult.nativeConfig == null,
+        resourceConfigs: result.parseResult.resourceConfigs,
         sourceMetadata: result.parseResult.sourceMetadata,
         autoRefreshMinutes: result.headerInfo.updateIntervalHours != null
             ? result.headerInfo.updateIntervalHours! * 60
@@ -1701,17 +1797,17 @@ class SubscriptionStore {
     final sourceUri = SubscriptionFetcher.parseRequestUri(
       existingBeforeParse.url,
     );
-    final hasHydraBoxKeyPolicy = HydraBoxJweCodec.hasKeyFragment(sourceUri);
-    final decryptionKey = HydraBoxJweCodec.keyFromUri(sourceUri);
-    if (hasHydraBoxKeyPolicy && decryptionKey == null) {
+    final hasHydraKeyPolicy = HydraSubscriptionUri.hasKeyFragment(sourceUri);
+    final decryptionKey = HydraSubscriptionUri.keyFromUri(sourceUri);
+    if (hasHydraKeyPolicy && decryptionKey == null) {
       throw const FormatException(
-        'HydraBox hbx-key fragment must contain one valid key value',
+        'Hydra hydra-key fragment must contain one valid key value',
       );
     }
-    final parseResult = await SubscriptionParser.parseInBackground(
+    final parseResult = (await _parseContentWithHydraCore(
       rawContent,
       decryptionKey: decryptionKey,
-    );
+    )).parseResult;
     _validateHydraBoxRefresh(existingBeforeParse, parseResult);
     if (parseResult.outbounds.isEmpty &&
         !_allowsEmptySelectableEntries(parseResult)) {
@@ -1775,6 +1871,7 @@ class SubscriptionStore {
         profiles: payload.profiles,
         nativeConfig: parseResult.nativeConfig,
         clearNativeConfig: parseResult.nativeConfig == null,
+        resourceConfigs: parseResult.resourceConfigs,
         sourceMetadata: parseResult.sourceMetadata,
       );
       await _saveUnlocked(updated);
@@ -1878,14 +1975,16 @@ class SubscriptionStore {
     // provider- or DNS-only. Its raw payload is still consumed by the runtime
     // builder even though there is no app-selectable outbound to materialize.
     return parseResult.format == SubscriptionFormat.singboxConfig ||
-        parseResult.format == SubscriptionFormat.hydraboxV1;
+        parseResult.format.isHydra;
   }
 
   static void _validateHydraBoxSource(ParseResult parseResult) {
-    if (parseResult.format != SubscriptionFormat.hydraboxV1) {
-      return;
+    if (!parseResult.format.isHydra) return;
+    if (parseResult.sourceMetadata['permissions_automatic'] != true) {
+      throw const FormatException(
+        'Hydra subscription permissions were not validated automatically',
+      );
     }
-    HydraBoxSubscriptionTimePolicy.validate(parseResult.sourceMetadata);
   }
 
   static void _validateHydraBoxRefresh(
@@ -1893,8 +1992,10 @@ class SubscriptionStore {
     ParseResult incoming,
   ) {
     _validateHydraBoxSource(incoming);
-    if (existing.sourceMetadata['format'] == 'hydrabox.io/subscription/v1' &&
-        incoming.format != SubscriptionFormat.hydraboxV1) {
+    if (HydraSubscriptionParser.isSupportedSourceFormat(
+          existing.sourceMetadata['format'],
+        ) &&
+        !incoming.format.isHydra) {
       throw const FormatException(
         'Refusing to replace a HydraBox subscription with a legacy format',
       );
@@ -1909,10 +2010,12 @@ class SubscriptionStore {
     Map<String, dynamic> oldMetadata,
     Map<String, dynamic> next,
   ) {
-    if (oldMetadata['format'] != 'hydrabox.io/subscription/v1') {
+    if (!HydraSubscriptionParser.isSupportedSourceFormat(
+      oldMetadata['format'],
+    )) {
       return;
     }
-    if (next['format'] != 'hydrabox.io/subscription/v1') {
+    if (!HydraSubscriptionParser.isSupportedSourceFormat(next['format'])) {
       throw const FormatException(
         'Refusing to replace a HydraBox subscription with a legacy format',
       );
@@ -2110,7 +2213,9 @@ class SubscriptionStore {
   }
 
   static String? _hydraBoxTrustTupleKey(Map<String, dynamic> metadata) {
-    if (metadata['format'] != 'hydrabox.io/subscription/v1') return null;
+    if (!HydraSubscriptionParser.isSupportedSourceFormat(metadata['format'])) {
+      return null;
+    }
     final issuer = metadata['issuer'];
     final subscriptionId = metadata['subscription_id'];
     final channel = metadata['channel'];
@@ -2201,26 +2306,28 @@ class SubscriptionStore {
     ParseResult parseResult,
     List<Outbound> outbounds,
   ) {
-    if (parseResult.format != SubscriptionFormat.hydraboxV1) {
+    if (!parseResult.format.isHydra) {
       return;
     }
     final seen = <String>{};
     for (final outbound in outbounds) {
       final sourceSection =
-          outbound.config['_etonify_source_index_section']?.toString() ??
-          outbound.config['_etonify_source_section']?.toString() ??
+          outbound.config['_hydra_source_index_section']?.toString() ??
+          outbound.config['_hydra_source_section']?.toString() ??
           '';
       if (sourceSection != 'outbounds' && sourceSection != 'endpoints') {
         continue;
       }
       final originalTag =
-          outbound.config['_etonify_original_tag']?.toString() ?? '';
+          outbound.config['_hydra_original_tag']?.toString() ?? '';
+      final sourceScope = outbound.config['_source_scope']?.toString() ?? '';
       final projectedConfigTag = outbound.config['tag']?.toString() ?? '';
       if (originalTag.isEmpty ||
           originalTag != originalTag.trim() ||
           outbound.tag != originalTag ||
           projectedConfigTag != originalTag ||
-          !seen.add('$sourceSection\u0000$originalTag')) {
+          sourceScope.isEmpty ||
+          !seen.add('$sourceScope\u0000$sourceSection\u0000$originalTag')) {
         throw FormatException(
           'HydraBox native runtime tag identity changed during import; '
           'opaque native references cannot be rewritten safely',
@@ -2230,7 +2337,7 @@ class SubscriptionStore {
   }
 
   static List<SubscriptionProfile> _resolveHydraBoxProfiles(
-    List<HydraBoxParsedProfile> parsedProfiles,
+    List<HydraParsedProfile> parsedProfiles,
     List<Outbound> outbounds,
   ) {
     if (parsedProfiles.isEmpty) {
@@ -2241,12 +2348,15 @@ class SubscriptionStore {
       final matches = outbounds
           .where((outbound) {
             final sourceSection =
-                outbound.config['_etonify_source_index_section']?.toString() ??
-                outbound.config['_etonify_source_section']?.toString() ??
+                outbound.config['_hydra_source_index_section']?.toString() ??
+                outbound.config['_hydra_source_section']?.toString() ??
                 '';
             final sourceTag =
-                outbound.config['_etonify_original_tag']?.toString() ?? '';
-            return sourceSection == profile.entrypointSection &&
+                outbound.config['_hydra_original_tag']?.toString() ?? '';
+            final sourceScope =
+                outbound.config['_source_scope']?.toString() ?? '';
+            return sourceScope == profile.resourceId &&
+                sourceSection == profile.entrypointSection &&
                 sourceTag == profile.entrypointTag;
           })
           .toList(growable: false);
@@ -2259,13 +2369,16 @@ class SubscriptionStore {
       resolved.add(
         SubscriptionProfile(
           id: profile.id,
+          resourceId: profile.resourceId,
           name: profile.name,
           entrypointSection: profile.entrypointSection,
           entrypointTag: profile.entrypointTag,
           runtimeTag: matches.single.tag,
           enabled: profile.enabled,
-          country: profile.country,
-          metadata: profile.metadata,
+          metadata: {
+            if (profile.requiredFeatures.isNotEmpty)
+              'required_features': profile.requiredFeatures,
+          },
         ),
       );
     }
@@ -2316,6 +2429,7 @@ class SubscriptionStore {
     final groups = <SubscriptionGroup>[];
     final warnings = <String>[];
     final usedTags = <String>{};
+    final usedScopedCoreTags = <String>{};
     final sourceScopeToTagToTags = <String, Map<String, List<String>>>{};
 
     for (var i = 0; i < buildConfigs.length; i++) {
@@ -2324,15 +2438,14 @@ class SubscriptionStore {
       // Extract and remove the _name meta field
       final rawName = (config.remove('_name') ?? 'Proxy ${i + 1}') as String;
       final sourceTag = config.remove('_source_tag')?.toString().trim() ?? '';
-      final sourceScope =
-          config.remove('_source_scope')?.toString().trim() ?? '';
+      final sourceScope = config['_source_scope']?.toString().trim() ?? '';
       final detourSourceTag =
           config.remove('_detour_source_tag')?.toString().trim() ?? '';
       config.remove('_source_profile_name');
       final coreSourceSection =
-          config['_etonify_source_section']?.toString().trim() ?? '';
+          config['_hydra_source_section']?.toString().trim() ?? '';
       final originalCoreTag =
-          config['_etonify_original_tag']?.toString().trim() ?? '';
+          config['_hydra_original_tag']?.toString().trim() ?? '';
       final countryOverride = _normalizeCountryCode(
         config.remove('_country_override')?.toString(),
       );
@@ -2352,7 +2465,9 @@ class SubscriptionStore {
           coreSourceSection == 'outbounds' || coreSourceSection == 'endpoints';
       if (isCoreConfigEntry &&
           originalCoreTag.isNotEmpty &&
-          !usedTags.contains(originalCoreTag) &&
+          usedScopedCoreTags.add(
+            '$sourceScope\u0000$coreSourceSection\u0000$originalCoreTag',
+          ) &&
           !isReservedProxyTag(originalCoreTag)) {
         // Cross-references in full sing-box configs are tag-based. Keep the
         // exact native tag whenever it does not collide with app-owned tags.
@@ -2679,7 +2794,7 @@ class SubscriptionStore {
   static String _safeSubscriptionUrlForLog(String value) {
     try {
       final uri = SubscriptionFetcher.parseRequestUri(value);
-      final redacted = HydraBoxJweCodec.uriWithoutSecretFragment(uri);
+      final redacted = HydraSubscriptionUri.withoutSecretFragment(uri);
       final scheme = redacted.scheme.toLowerCase();
       if (scheme.isEmpty || redacted.host.isEmpty) {
         return '<subscription-source>';
@@ -2700,9 +2815,9 @@ class SubscriptionStore {
     }
   }
 
-  static bool _subscriptionUrlHasHydraBoxKey(String value) {
+  static bool _subscriptionUrlHasHydraKey(String value) {
     try {
-      return HydraBoxJweCodec.hasKeyFragment(
+      return HydraSubscriptionUri.hasKeyFragment(
         SubscriptionFetcher.parseRequestUri(value),
       );
     } catch (_) {
@@ -2710,9 +2825,9 @@ class SubscriptionStore {
     }
   }
 
-  static bool _subscriptionUrlHasHydraBoxKeyQuery(String value) {
+  static bool _subscriptionUrlHasHydraKeyQuery(String value) {
     try {
-      return HydraBoxJweCodec.hasKeyQueryParameter(
+      return HydraSubscriptionUri.hasKeyQueryParameter(
         SubscriptionFetcher.parseRequestUri(value),
       );
     } catch (_) {
@@ -2721,15 +2836,14 @@ class SubscriptionStore {
   }
 
   static void _validatePersistentSourcePolicy(Subscription subscription) {
-    if (_subscriptionUrlHasHydraBoxKeyQuery(subscription.url)) {
+    if (_subscriptionUrlHasHydraKeyQuery(subscription.url)) {
       throw const FormatException(
-        'HydraBox hbx-key is allowed only in the URI fragment',
+        'Hydra hydra-key is allowed only in the URI fragment',
       );
     }
-    if (!Platform.isAndroid &&
-        _subscriptionUrlHasHydraBoxKey(subscription.url)) {
+    if (!Platform.isAndroid && _subscriptionUrlHasHydraKey(subscription.url)) {
       throw UnsupportedError(
-        'Persistent hbx-key subscriptions require Android '
+        'Persistent hydra-key subscriptions require Android '
         'Keystore-backed storage',
       );
     }
@@ -2743,14 +2857,14 @@ class SubscriptionStore {
       try {
         final map = jsonDecode(raw) as Map<String, dynamic>;
         final url = map['url']?.toString() ?? '';
-        if (_subscriptionUrlHasHydraBoxKeyQuery(url)) {
+        if (_subscriptionUrlHasHydraKeyQuery(url)) {
           throw UnsupportedError(
-            'Stored HydraBox hbx-key must not appear in a URL query',
+            'Stored Hydra hydra-key must not appear in a URL query',
           );
         }
-        if (!Platform.isAndroid && _subscriptionUrlHasHydraBoxKey(url)) {
+        if (!Platform.isAndroid && _subscriptionUrlHasHydraKey(url)) {
           throw UnsupportedError(
-            'Refusing plaintext persistence of an hbx-key subscription on '
+            'Refusing plaintext persistence of a hydra-key subscription on '
             'this platform',
           );
         }
@@ -2903,6 +3017,10 @@ class SubscriptionStore {
             ? Map<String, dynamic>.from(map['native_config'] as Map)
             : null,
         clearNativeConfig: map['native_config'] is! Map,
+        resourceConfigs: (map['resource_configs'] as Map? ?? const {}).map(
+          (key, value) =>
+              MapEntry(key.toString(), Map<String, dynamic>.from(value as Map)),
+        ),
         sourceMetadata: <String, dynamic>{
           ...Map<String, dynamic>.from(
             map['source_metadata'] as Map? ?? const {},

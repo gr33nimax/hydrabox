@@ -1,10 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:meow_client/singbox/libbox_capabilities.dart';
-import 'package:meow_client/singbox/singbox_api.g.dart' as pigeon;
+import 'package:hydrabox/singbox/hydracore_capabilities.dart';
+import 'package:hydrabox/singbox/singbox_api.g.dart' as pigeon;
 
 @visibleForTesting
 List<Map<String, dynamic>> normalizePigeonMapListForTest(Object? value) {
@@ -40,7 +41,7 @@ class AppVersionInfo {
 
   String get displayVersion {
     final normalized = versionName.trim();
-    return normalized.isEmpty ? '0.3.0-beta.2' : normalized;
+    return normalized.isEmpty ? '0.4.0-beta.1' : normalized;
   }
 
   int get updateBuildNumber => normalizeSplitApkVersionCode(versionCode);
@@ -85,15 +86,37 @@ class NetworkInterfaceSnapshot {
       available && interfaceName.trim().isNotEmpty && interfaceIndex >= 0;
 }
 
+class PreconnectUrlTestResult {
+  const PreconnectUrlTestResult({
+    required this.tag,
+    required this.delayMillis,
+    required this.timeSeconds,
+    required this.status,
+    required this.error,
+    required this.errorCode,
+  });
+
+  final String tag;
+  final int delayMillis;
+  final int timeSeconds;
+  final String status;
+  final String error;
+  final String errorCode;
+
+  bool get available => status == 'available' && delayMillis > 0;
+}
+
 class SingboxRuntime {
   SingboxRuntime._();
 
   static final SingboxRuntime instance = SingboxRuntime._();
 
-  static const MethodChannel _methods = MethodChannel('meow_client/singbox');
+  static const MethodChannel _methods = MethodChannel(
+    'io.hydrabox.client/singbox',
+  );
   static final pigeon.SingboxHostApi _hostApi = pigeon.SingboxHostApi();
   static const EventChannel _events = EventChannel(
-    'meow_client/singbox_events',
+    'io.hydrabox.client/singbox_events',
   );
 
   Stream<Map<String, dynamic>> get events => _events
@@ -444,36 +467,182 @@ class SingboxRuntime {
     int concurrency = 0,
     int deadlineMillis = 10000,
     bool force = true,
-  }) {
+  }) async {
+    await startManagedUrlTest(
+      groupTag: groupTag,
+      targetOutboundTag: targetOutboundTag,
+      priorityOutboundTag: priorityOutboundTag,
+      excludeOutboundTag: excludeOutboundTag,
+      url: url,
+      timeoutMillis: timeoutMillis,
+      concurrency: concurrency,
+      deadlineMillis: deadlineMillis,
+      force: force,
+    );
+  }
+
+  Future<Map<String, dynamic>> startManagedUrlTest({
+    required String groupTag,
+    String targetOutboundTag = '',
+    String priorityOutboundTag = '',
+    String excludeOutboundTag = '',
+    String url = '',
+    int timeoutMillis = 3000,
+    int concurrency = 0,
+    int deadlineMillis = 10000,
+    bool force = true,
+  }) async {
+    final request = pigeon.UrlTestRequestMessage(
+      groupTag: groupTag,
+      targetOutboundTag: targetOutboundTag,
+      priorityOutboundTag: priorityOutboundTag,
+      excludeOutboundTag: excludeOutboundTag,
+      url: url,
+      timeoutMillis: timeoutMillis,
+      concurrency: concurrency,
+      deadlineMillis: deadlineMillis,
+      force: force,
+    );
+    return _withMethodChannelFallback<Map<String, dynamic>>(
+      () async => _normalizeMap(await _hostApi.startManagedUrlTest(request)),
+      () async =>
+          await _methods.invokeMapMethod<String, dynamic>(
+            'startManagedUrlTest',
+            <String, Object?>{
+              'groupTag': groupTag,
+              'targetOutboundTag': targetOutboundTag,
+              'priorityOutboundTag': priorityOutboundTag,
+              'excludeOutboundTag': excludeOutboundTag,
+              'url': url,
+              'timeoutMillis': timeoutMillis,
+              'concurrency': concurrency,
+              'deadlineMillis': deadlineMillis,
+              'force': force,
+            },
+          ) ??
+          const {},
+    );
+  }
+
+  Future<Map<String, dynamic>> getManagedUrlTestSession(
+    String sessionId,
+  ) async {
+    final normalizedId = sessionId.trim();
+    if (normalizedId.isEmpty) {
+      throw ArgumentError.value(sessionId, 'sessionId', 'Session ID is empty');
+    }
+    return _withMethodChannelFallback<Map<String, dynamic>>(
+      () async =>
+          _normalizeMap(await _hostApi.getManagedUrlTestSession(normalizedId)),
+      () async =>
+          await _methods.invokeMapMethod<String, dynamic>(
+            'getManagedUrlTestSession',
+            <String, Object?>{'sessionId': normalizedId},
+          ) ??
+          const {},
+    );
+  }
+
+  Future<Map<String, dynamic>> cancelManagedUrlTest(String sessionId) async {
+    final normalizedId = sessionId.trim();
+    if (normalizedId.isEmpty) {
+      throw ArgumentError.value(sessionId, 'sessionId', 'Session ID is empty');
+    }
+    return _withMethodChannelFallback<Map<String, dynamic>>(
+      () async =>
+          _normalizeMap(await _hostApi.cancelManagedUrlTest(normalizedId)),
+      () async =>
+          await _methods.invokeMapMethod<String, dynamic>(
+            'cancelManagedUrlTest',
+            <String, Object?>{'sessionId': normalizedId},
+          ) ??
+          const {},
+    );
+  }
+
+  Future<Map<String, dynamic>> getRuntimeSnapshot() async {
+    return _withMethodChannelFallback<Map<String, dynamic>>(
+      () async => _normalizeMap(await _hostApi.getRuntimeSnapshot()),
+      () async =>
+          await _methods.invokeMapMethod<String, dynamic>(
+            'getRuntimeSnapshot',
+          ) ??
+          const {},
+    );
+  }
+
+  Future<PreconnectUrlTestResult> preconnectUrlTest({
+    required String config,
+    required String groupTag,
+    required String targetOutboundTag,
+    String url = '',
+    int timeoutMillis = 5000,
+    int deadlineMillis = 10000,
+  }) async {
+    if (!Platform.isAndroid) {
+      throw UnsupportedError('Pre-connect URLTest is Android-only.');
+    }
+    final normalizedGroup = groupTag.trim();
+    final normalizedTarget = targetOutboundTag.trim();
+    if (config.trim().isEmpty ||
+        normalizedGroup.isEmpty ||
+        normalizedTarget.isEmpty) {
+      throw ArgumentError(
+        'Config, group tag and a concrete selected outbound are required.',
+      );
+    }
     return _withMethodChannelFallback(
       () async {
-        await _hostApi.urlTest(
-          pigeon.UrlTestRequestMessage(
-            groupTag: groupTag,
-            targetOutboundTag: targetOutboundTag,
-            priorityOutboundTag: priorityOutboundTag,
-            excludeOutboundTag: excludeOutboundTag,
-            url: url,
+        final value = await _hostApi.preconnectUrlTest(
+          pigeon.PreconnectUrlTestRequestMessage(
+            config: config,
+            groupTag: normalizedGroup,
+            targetOutboundTag: normalizedTarget,
+            url: url.trim(),
             timeoutMillis: timeoutMillis,
-            concurrency: concurrency,
             deadlineMillis: deadlineMillis,
-            force: force,
           ),
+        );
+        return PreconnectUrlTestResult(
+          tag: value.tag,
+          delayMillis: value.delayMillis,
+          timeSeconds: value.timeSeconds,
+          status: value.status,
+          error: value.error,
+          errorCode: value.errorCode,
         );
       },
       () async {
-        await _methods.invokeMethod<void>('urlTest', {
-          'groupTag': groupTag,
-          'targetOutboundTag': targetOutboundTag,
-          'priorityOutboundTag': priorityOutboundTag,
-          'excludeOutboundTag': excludeOutboundTag,
-          'url': url,
-          'timeoutMillis': timeoutMillis,
-          'concurrency': concurrency,
-          'deadlineMillis': deadlineMillis,
-          'force': force,
-        });
+        final value =
+            await _methods.invokeMapMethod<String, dynamic>(
+              'preconnectUrlTest',
+              <String, Object?>{
+                'config': config,
+                'groupTag': normalizedGroup,
+                'targetOutboundTag': normalizedTarget,
+                'url': url.trim(),
+                'timeoutMillis': timeoutMillis,
+                'deadlineMillis': deadlineMillis,
+              },
+            ) ??
+            const <String, dynamic>{};
+        return PreconnectUrlTestResult(
+          tag: value['tag']?.toString() ?? normalizedTarget,
+          delayMillis: (value['delayMillis'] as num?)?.toInt() ?? 0,
+          timeSeconds: (value['timeSeconds'] as num?)?.toInt() ?? 0,
+          status: value['status']?.toString() ?? 'unavailable',
+          error: value['error']?.toString() ?? '',
+          errorCode: value['errorCode']?.toString() ?? '',
+        );
       },
+    );
+  }
+
+  Future<void> cancelPreconnectUrlTest() {
+    if (!Platform.isAndroid) return Future<void>.value();
+    return _withMethodChannelFallback(
+      () => _hostApi.cancelPreconnectUrlTest(),
+      () => _methods.invokeMethod<void>('cancelPreconnectUrlTest'),
     );
   }
 
@@ -693,6 +862,23 @@ class SingboxRuntime {
     return value ?? '';
   }
 
+  Future<String> getHydraDeviceId(String canonicalOrigin) async {
+    if (!Platform.isAndroid) {
+      throw UnsupportedError('Hydra device identity is Android-only.');
+    }
+    final value = await _withMethodChannelFallback<String?>(
+      () => _hostApi.getHydraDeviceId(canonicalOrigin),
+      () => _methods.invokeMethod<String>('getHydraDeviceId', <String, Object?>{
+        'canonicalOrigin': canonicalOrigin,
+      }),
+    );
+    final normalized = value?.trim() ?? '';
+    if (!RegExp(r'^hbx1_[A-Za-z0-9_-]{43}$').hasMatch(normalized)) {
+      throw StateError('Android returned an invalid Hydra device identity.');
+    }
+    return normalized;
+  }
+
   Future<Map<String, dynamic>> getSubscriptionRequestDeviceInfo() async {
     final value = await _withMethodChannelFallback<Map<String, dynamic>>(
       () async =>
@@ -729,7 +915,7 @@ class SingboxRuntime {
     if (!Platform.isAndroid) {
       return const AppVersionInfo(
         packageName: '',
-        versionName: '0.2.3',
+        versionName: '',
         versionCode: 0,
       );
     }
@@ -750,7 +936,7 @@ class SingboxRuntime {
     } on MissingPluginException {
       return const AppVersionInfo(
         packageName: '',
-        versionName: '0.2.3',
+        versionName: '',
         versionCode: 0,
       );
     }
@@ -772,22 +958,154 @@ class SingboxRuntime {
     }
   }
 
-  Future<LibboxCapabilities> getCoreCapabilities() async {
+  Future<HydraCoreCapabilities> getCoreCapabilities() async {
     if (!Platform.isAndroid) {
-      return LibboxCapabilities.bundledLegacy;
+      return HydraCoreCapabilities.requiredV2;
     }
     try {
       final value = await _withMethodChannelFallback<String?>(
         () => _hostApi.getCoreCapabilities(),
         () => _methods.invokeMethod<String>('getCoreCapabilities'),
       ).timeout(const Duration(seconds: 2));
-      return LibboxCapabilities.parseOrLegacy(value);
+      return HydraCoreCapabilities.parseStrict(value);
     } on TimeoutException {
-      return LibboxCapabilities.bundledLegacy;
+      throw StateError('HydraCore capability handshake timed out.');
     } on MissingPluginException {
-      return LibboxCapabilities.bundledLegacy;
-    } on PlatformException {
-      return LibboxCapabilities.bundledLegacy;
+      throw UnsupportedError('HydraCore platform bridge is unavailable.');
+    } on PlatformException catch (error) {
+      throw StateError('HydraCore capability handshake failed: ${error.code}');
+    }
+  }
+
+  Future<Map<String, dynamic>> getHydraCoreBuildInfo() async {
+    if (!Platform.isAndroid) return const {};
+    final value = await _withMethodChannelFallback<String>(
+      () => _hostApi.getHydraCoreBuildInfo(),
+      () async =>
+          await _methods.invokeMethod<String>('getHydraCoreBuildInfo') ?? '',
+    );
+    return _decodeHydraCoreJson(value, operation: 'build info');
+  }
+
+  Future<Map<String, dynamic>> validateHydraConfig(
+    String content, {
+    String profile = 'remote_v2',
+  }) async {
+    if (!Platform.isAndroid) {
+      throw UnsupportedError('HydraCore config validation requires Android.');
+    }
+    final value = await _withMethodChannelFallback<String>(
+      () => _hostApi.validateHydraConfig(content, profile),
+      () async =>
+          await _methods.invokeMethod<String>('validateHydraConfig', {
+            'content': content,
+            'profile': profile,
+          }) ??
+          '',
+    );
+    return _decodeHydraCoreJson(value, operation: 'config validation');
+  }
+
+  Future<Map<String, dynamic>> validateHydraSubscription(String content) async {
+    if (!Platform.isAndroid) {
+      throw UnsupportedError('Hydra subscription validation requires Android.');
+    }
+    final value = await _withMethodChannelFallback<String>(
+      () => _hostApi.validateHydraSubscription(content),
+      () async =>
+          await _methods.invokeMethod<String>('validateHydraSubscription', {
+            'content': content,
+          }) ??
+          '',
+    );
+    return _decodeHydraCoreJson(value, operation: 'subscription validation');
+  }
+
+  Future<Map<String, dynamic>> inspectHydraSubscription(String content) async {
+    if (!Platform.isAndroid) {
+      throw UnsupportedError('Hydra subscription inspection requires Android.');
+    }
+    final value = await _withMethodChannelFallback<String>(
+      () => _hostApi.inspectHydraSubscription(content),
+      () async =>
+          await _methods.invokeMethod<String>('inspectHydraSubscription', {
+            'content': content,
+          }) ??
+          '',
+    );
+    return _decodeHydraCoreJson(value, operation: 'subscription inspection');
+  }
+
+  Future<String> openHydraSubscriptionJwe({
+    required String envelope,
+    required String keyBase64Url,
+  }) async {
+    if (!Platform.isAndroid) {
+      throw UnsupportedError('Hydra subscription JWE requires Android.');
+    }
+    final value = await _withMethodChannelFallback<String>(
+      () => _hostApi.openHydraSubscriptionJwe(envelope, keyBase64Url),
+      () async =>
+          await _methods.invokeMethod<String>('openHydraSubscriptionJwe', {
+            'envelope': envelope,
+            'keyBase64Url': keyBase64Url,
+          }) ??
+          '',
+    );
+    if (value.trim().isEmpty) {
+      throw const FormatException('HydraCore returned empty JWE plaintext');
+    }
+    return value;
+  }
+
+  Future<Map<String, dynamic>> validateHydraSubscriptionJwe({
+    required String envelope,
+    required String keyBase64Url,
+  }) async {
+    if (!Platform.isAndroid) {
+      throw UnsupportedError('Hydra subscription JWE requires Android.');
+    }
+    final value = await _withMethodChannelFallback<String>(
+      () => _hostApi.validateHydraSubscriptionJwe(envelope, keyBase64Url),
+      () async =>
+          await _methods.invokeMethod<String>('validateHydraSubscriptionJwe', {
+            'envelope': envelope,
+            'keyBase64Url': keyBase64Url,
+          }) ??
+          '',
+    );
+    return _decodeHydraCoreJson(value, operation: 'JWE validation');
+  }
+
+  Future<Map<String, dynamic>> inspectHydraSubscriptionJwe({
+    required String envelope,
+    required String keyBase64Url,
+  }) async {
+    if (!Platform.isAndroid) {
+      throw UnsupportedError('Hydra subscription JWE requires Android.');
+    }
+    final value = await _withMethodChannelFallback<String>(
+      () => _hostApi.inspectHydraSubscriptionJwe(envelope, keyBase64Url),
+      () async =>
+          await _methods.invokeMethod<String>('inspectHydraSubscriptionJwe', {
+            'envelope': envelope,
+            'keyBase64Url': keyBase64Url,
+          }) ??
+          '',
+    );
+    return _decodeHydraCoreJson(value, operation: 'JWE inspection');
+  }
+
+  static Map<String, dynamic> _decodeHydraCoreJson(
+    String content, {
+    required String operation,
+  }) {
+    try {
+      final decoded = jsonDecode(content);
+      if (decoded is! Map) throw const FormatException();
+      return Map<String, dynamic>.from(decoded);
+    } on FormatException {
+      throw FormatException('HydraCore $operation returned invalid JSON');
     }
   }
 

@@ -1,4 +1,4 @@
-name: HydraBox · Test APK
+name: HydraBox test APK
 
 on:
   workflow_dispatch:
@@ -15,22 +15,17 @@ env:
   JAVA_VERSION: "21"
 
 jobs:
-  build-test-apk:
-    name: Build debug-signed release APK
+  build:
+    name: Build remotely verified APK
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 90
 
     steps:
-      - name: Checkout
+      - name: Checkout pinned sources
         uses: actions/checkout@v7.0.1
         with:
-          submodules: true
-
-      - name: Fetch verified libbox release asset
-        run: python3 -B scripts/fetch_libbox.py
-
-      - name: Verify pinned libbox binary
-        run: python3 -B scripts/verify_libbox.py
+          fetch-depth: 0
+          submodules: recursive
 
       - name: Set up JDK
         uses: actions/setup-java@v5.6.0
@@ -39,71 +34,36 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
 
       - name: Set up Flutter
-        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
 
-      - name: Show tool versions
+      - name: Verify and fetch HydraCore
         run: |
-          java -version
-          flutter --version
-          dart --version
+          python3 -B scripts/verify_extended_core.py --source-only
+          python3 -B scripts/fetch_libbox.py
+          python3 -B scripts/verify_libbox.py
+          python3 -B scripts/verify_client_boundaries.py
 
-      - name: Install dependencies
-        run: flutter pub get
-
-      - name: Generate localization
-        run: flutter gen-l10n
-
-      - name: Generate Pigeon bindings
-        shell: bash
+      - name: Generate client sources
         run: |
-          if [ -f pigeons/singbox_api.dart ]; then
-            dart run pigeon --input pigeons/singbox_api.dart
-          else
-            echo "No Pigeon schema found; skipping."
-          fi
+          flutter pub get
+          flutter gen-l10n
+          dart run pigeon --input pigeons/singbox_api.dart
 
-      - name: Build test APK
-        shell: bash
+      - name: Build debug-signed release-mode APKs
         env:
-          MEOW_ALLOW_DEBUG_RELEASE_SIGNING: "true"
-        run: |
-          version="$(awk -F': ' '/^version:/ {print $2; exit}' pubspec.yaml | cut -d+ -f1)"
-          if [ -z "$version" ]; then
-            echo "::error title=Missing version::Could not read the version from pubspec.yaml"
-            exit 1
-          fi
+          HYDRABOX_ALLOW_DEBUG_RELEASE_SIGNING: "true"
+        run: flutter build apk --release --split-per-abi
 
-          mkdir -p build/test-apks
-          flutter build apk --release
-          cp build/app/outputs/flutter-apk/app-release.apk \
-            "build/test-apks/hydrabox-v${version}-TEST-DEBUG-SIGNED-NOT-FOR-RELEASE.apk"
-
-          sha256sum build/test-apks/*.apk > build/test-apks/SHA256SUMS.txt
-          {
-            echo "TEST BUILD — NOT FOR DISTRIBUTION"
-            echo "Source commit: ${GITHUB_SHA}"
-            echo "Version: ${version}"
-            echo "Build mode: Flutter release"
-            echo "Signing: Android debug certificate"
-            echo "Private Happ Crypto assets: not included"
-            echo "Libbox SHA-256: $(cut -d' ' -f1 android/app/libs/libbox.sha256)"
-          } > build/test-apks/BUILD-INFO.txt
-
-      - name: List APK outputs
-        run: |
-          ls -lah build/test-apks
-          cat build/test-apks/SHA256SUMS.txt
-          cat build/test-apks/BUILD-INFO.txt
-
-      - name: Upload test APK artifact
-        uses: actions/upload-artifact@v6.0.0
+      - name: Upload APKs and generated bindings
+        uses: actions/upload-artifact@v7.0.0
         with:
-          name: hydrabox-test-apks-${{ github.run_number }}
-          path: build/test-apks/**
-          if-no-files-found: error
-          compression-level: 0
+          name: hydrabox-test-apk-${{ github.run_number }}
           retention-days: 14
+          path: |
+            build/app/outputs/flutter-apk/*.apk
+            lib/singbox/singbox_api.g.dart
+            android/app/src/main/kotlin/io/hydrabox/client/generated/SingboxApi.g.kt

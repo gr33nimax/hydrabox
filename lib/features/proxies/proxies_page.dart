@@ -9,16 +9,16 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
-import 'package:meow_client/core/demo_utils.dart';
-import 'package:meow_client/core/lowest_proxy_groups.dart';
-import 'package:meow_client/core/widgets/app_notice.dart';
-import 'package:meow_client/l10n/generated/app_localizations.dart';
-import 'package:meow_client/models/app_view_models.dart';
-import 'package:meow_client/models/proxy_runtime_visual_state.dart';
-import 'package:meow_client/models/subscription.dart';
-import 'package:meow_client/widgets/country_flag_badge.dart';
-import 'package:meow_client/widgets/ip_refresh_dots.dart';
-import 'package:meow_client/widgets/progressive_blur_scaffold.dart';
+import 'package:hydrabox/core/demo_utils.dart';
+import 'package:hydrabox/core/lowest_proxy_groups.dart';
+import 'package:hydrabox/core/widgets/app_notice.dart';
+import 'package:hydrabox/l10n/generated/app_localizations.dart';
+import 'package:hydrabox/models/app_view_models.dart';
+import 'package:hydrabox/models/proxy_runtime_visual_state.dart';
+import 'package:hydrabox/models/subscription.dart';
+import 'package:hydrabox/widgets/country_flag_badge.dart';
+import 'package:hydrabox/widgets/ip_refresh_dots.dart';
+import 'package:hydrabox/widgets/progressive_blur_scaffold.dart';
 
 import 'proxy_list_ordering.dart';
 import 'proxy_panel_shell.dart';
@@ -371,6 +371,8 @@ class ProxiesPage extends StatefulWidget {
 
 class _ProxiesPageState extends State<ProxiesPage> {
   late ProxySort _sort;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
   List<AppProxySummary> _visibleItems = const [];
   Timer? _runtimeResortTimer;
   ValueListenable<ProxyPanelMetrics>? _observedSheetMetrics;
@@ -430,6 +432,7 @@ class _ProxiesPageState extends State<ProxiesPage> {
   @override
   void dispose() {
     _runtimeResortTimer?.cancel();
+    _searchController.dispose();
     widget.runtimeStates?.revision.removeListener(_onRuntimeStatesChanged);
     _observedSheetMetrics?.removeListener(_onSheetMetricsChanged);
     super.dispose();
@@ -520,6 +523,9 @@ class _ProxiesPageState extends State<ProxiesPage> {
       if (parentTag != null && parentTag.isNotEmpty) {
         continue;
       }
+      if (!_matchesSearch(proxy)) {
+        continue;
+      }
       if (_isPinnedHeaderProxy(proxy)) {
         pinnedItems.add(proxy);
       } else if (shouldShowProxyForSort(
@@ -535,6 +541,25 @@ class _ProxiesPageState extends State<ProxiesPage> {
     _visibleItems = [...pinnedItems, ...visibleItems];
     _invalidateVisibleEntries();
     _visibleEntriesImpl();
+  }
+
+  bool _matchesSearch(AppProxySummary proxy) {
+    final query = _searchQuery;
+    if (query.isEmpty) return true;
+    return proxy.displayName.toLowerCase().contains(query) ||
+        proxy.tag.toLowerCase().contains(query) ||
+        proxy.server.toLowerCase().contains(query) ||
+        proxy.protocolLabel.toLowerCase().contains(query) ||
+        proxy.countryCode.toLowerCase().contains(query);
+  }
+
+  void _setSearchQuery(String value) {
+    final next = value.trim().toLowerCase();
+    if (next == _searchQuery) return;
+    setState(() {
+      _searchQuery = next;
+      _rebuildVisibleItems();
+    });
   }
 
   bool _isPinnedHeaderProxy(AppProxySummary proxy) =>
@@ -765,7 +790,7 @@ class _ProxiesPageState extends State<ProxiesPage> {
     }
 
     final topPadding = appSystemStatusBarInset(context);
-    final headerHeight = topPadding + kToolbarHeight;
+    final headerHeight = topPadding + kToolbarHeight + 68;
     final footerHeight = appBottomNavigationTotalHeight(context);
     final listTopPadding = widget.progressiveBlurEnabled
         ? headerHeight + 8
@@ -794,6 +819,31 @@ class _ProxiesPageState extends State<ProxiesPage> {
             icon: const Icon(FluentIcons.arrow_sort_24_regular),
           ),
         ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(68),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: SearchBar(
+              controller: _searchController,
+              hintText: MaterialLocalizations.of(context).searchFieldLabel,
+              leading: const Icon(FluentIcons.search_24_regular),
+              trailing: [
+                if (_searchQuery.isNotEmpty)
+                  IconButton(
+                    tooltip: MaterialLocalizations.of(
+                      context,
+                    ).deleteButtonTooltip,
+                    onPressed: () {
+                      _searchController.clear();
+                      _setSearchQuery('');
+                    },
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+              ],
+              onChanged: _setSearchQuery,
+            ),
+          ),
+        ),
       ),
       body: ColoredBox(
         color: theme.scaffoldBackgroundColor,

@@ -1,6 +1,6 @@
-import 'package:meow_client/data/local/app_settings_store.dart';
-import 'package:meow_client/core/lowest_proxy_groups.dart';
-import 'package:meow_client/singbox/libbox_capabilities.dart';
+import 'package:hydrabox/data/local/app_settings_store.dart';
+import 'package:hydrabox/core/lowest_proxy_groups.dart';
+import 'package:hydrabox/singbox/hydracore_capabilities.dart';
 
 const currentCoreConfigSchemaVersion = 1;
 
@@ -32,7 +32,7 @@ class CoreConfigMigration {
 
   static CoreConfigMigrationResult plan({
     required AppSettingsState state,
-    required LibboxCapabilities capabilities,
+    required HydraCoreCapabilities capabilities,
   }) {
     if (!capabilities.hasVersionedContract) {
       return CoreConfigMigrationResult(
@@ -100,7 +100,7 @@ class CoreConfigMigration {
   }
 
   static TunImplementationPreference? _firstSupportedTunStack(
-    LibboxCapabilities capabilities,
+    HydraCoreCapabilities capabilities,
   ) {
     for (final candidate in const <TunImplementationPreference>[
       TunImplementationPreference.gvisor,

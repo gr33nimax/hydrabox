@@ -1,8 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/app/latency_coordinator.dart';
-import 'package:meow_client/singbox/libbox_capabilities.dart';
+import 'package:hydrabox/app/latency_coordinator.dart';
+import 'package:hydrabox/singbox/hydracore_capabilities.dart';
 
 const _testPolicy = LatencyUiPolicy(
   nativeCommandTimeout: Duration(milliseconds: 80),
@@ -12,17 +12,17 @@ const _testPolicy = LatencyUiPolicy(
 );
 
 void main() {
-  test('bundled core capabilities do not advertise unsupported controls', () {
-    const capabilities = LibboxCapabilities.bundledLegacy;
+  test('pinned HydraCore advertises managed URL-test controls', () {
+    const capabilities = HydraCoreCapabilities.requiredV2;
 
-    expect(capabilities.supportsTargetedUrlTest, isFalse);
-    expect(capabilities.supportsUrlTestTimeout, isFalse);
-    expect(capabilities.supportsUrlTestConcurrency, isFalse);
-    expect(capabilities.supportsUrlTestDeadline, isFalse);
-    expect(capabilities.supportsUrlTestForce, isFalse);
+    expect(capabilities.supportsTargetedUrlTest, isTrue);
+    expect(capabilities.supportsUrlTestTimeout, isTrue);
+    expect(capabilities.supportsUrlTestConcurrency, isTrue);
+    expect(capabilities.supportsUrlTestDeadline, isTrue);
+    expect(capabilities.supportsUrlTestForce, isTrue);
     expect(
       capabilities.urlTestCompletionModel,
-      UrlTestCompletionModel.groupEvents,
+      UrlTestCompletionModel.rpcCompletion,
     );
   });
 
@@ -57,9 +57,7 @@ void main() {
     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     final coordinator = _coordinator(
       runTest: (request) async => requests.add(request),
-      capabilities: LibboxCapabilities.parseOrLegacy(
-        '{"api_version":1,"supports_targeted_url_test":true}',
-      ),
+      capabilities: HydraCoreCapabilities.requiredV2,
     );
     addTearDown(coordinator.dispose);
 
@@ -308,7 +306,7 @@ LatencyCoordinator _coordinator({
   LatencyEventTimesReader? eventBaselineTimes,
   LatencyIntReader? operationGeneration,
   LatencyExpectedTagsReader? expectedTags,
-  LibboxCapabilities capabilities = LibboxCapabilities.bundledLegacy,
+  HydraCoreCapabilities capabilities = HydraCoreCapabilities.requiredV2,
 }) {
   return LatencyCoordinator(
     runTest: runTest,

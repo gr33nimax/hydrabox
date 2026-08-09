@@ -1,7 +1,6 @@
 import java.security.MessageDigest
 import java.util.Properties
 import org.gradle.api.GradleException
-import org.gradle.api.tasks.compile.JavaCompile
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -18,7 +17,7 @@ if (keyPropertiesFile.exists()) {
     keyPropertiesFile.inputStream().use { keyProperties.load(it) }
 }
 val allowDebugReleaseSigning =
-    System.getenv("MEOW_ALLOW_DEBUG_RELEASE_SIGNING")?.equals("true", ignoreCase = true) == true
+    System.getenv("HYDRABOX_ALLOW_DEBUG_RELEASE_SIGNING")?.equals("true", ignoreCase = true) == true
 val libboxAar = file("libs/libbox.aar")
 val libboxChecksum = file("libs/libbox.sha256")
 
@@ -67,7 +66,7 @@ val verifyPinnedLibbox by tasks.registering {
 }
 
 android {
-    namespace = "com.etonify.meow_client"
+    namespace = "io.hydrabox.client"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -78,7 +77,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.etonify.meow_client"
+        applicationId = "io.hydrabox.client"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 26
@@ -121,8 +120,6 @@ android {
     packaging {
         jniLibs {
             useLegacyPackaging = true
-            // Keep the old Happ native library on disk, but do not package it.
-            excludes += setOf("**/liberror-code.so")
         }
     }
 
@@ -146,7 +143,7 @@ gradle.taskGraph.whenReady {
     if (releaseTaskRequested && !keyPropertiesFile.exists() && !allowDebugReleaseSigning) {
         throw GradleException(
             "Release signing requires android/key.properties. " +
-                "Set MEOW_ALLOW_DEBUG_RELEASE_SIGNING=true only for local release testing.",
+                "Set HYDRABOX_ALLOW_DEBUG_RELEASE_SIGNING=true only for local release testing.",
         )
     }
 }
@@ -164,14 +161,4 @@ dependencies {
 
 tasks.matching { it.name == "preBuild" }.configureEach {
     dependsOn(verifyPinnedLibbox)
-}
-
-tasks.withType<JavaCompile>().configureEach {
-    // Legacy Happ native crypt5 bridge is kept in-tree for reference,
-    // but crypt5/5.1 now uses the pure Dart implementation.
-    exclude(
-        "com/etonify/meow_client/happcrypto/**",
-        "com/happproxy/util/protection/**",
-        "su/happ/proxyutility/**",
-    )
 }

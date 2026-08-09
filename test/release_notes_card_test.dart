@@ -2,8 +2,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/l10n/generated/app_localizations.dart';
-import 'package:meow_client/widgets/release_notes_card.dart';
+import 'package:hydrabox/l10n/generated/app_localizations.dart';
+import 'package:hydrabox/widgets/release_notes_card.dart';
 
 void main() {
   testWidgets('renders common GitHub markdown without exposing its markers', (
@@ -47,10 +47,7 @@ closeAll()
           .map((widget) => widget.text.toPlainText()),
       ...tester
           .widgetList<SelectableText>(find.byType(SelectableText))
-          .map(
-            (widget) =>
-                widget.data ?? widget.textSpan?.toPlainText() ?? '',
-          ),
+          .map((widget) => widget.data ?? widget.textSpan?.toPlainText() ?? ''),
     ].join('\n');
 
     expect(renderedText, contains('Исправления'));
@@ -76,15 +73,10 @@ closeAll()
     expect(
       openedUris,
       contains(
-        Uri.parse(
-          'https://github.com/yamixdev/etonify-core/tree/etonify-dev',
-        ),
+        Uri.parse('https://github.com/yamixdev/etonify-core/tree/etonify-dev'),
       ),
     );
-    expect(
-      openedUris,
-      contains(Uri.parse('https://example.com/docs')),
-    );
+    expect(openedUris, contains(Uri.parse('https://example.com/docs')));
   });
 }
 

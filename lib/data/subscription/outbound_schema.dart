@@ -519,7 +519,7 @@ class ParsedOutboundSchema {
     if (type.isEmpty) {
       return null;
     }
-    final sourceSection = outbound['_etonify_source_section']?.toString();
+    final sourceSection = outbound['_hydra_source_section']?.toString();
     final isEndpoint = sourceSection == 'endpoints';
     // The extended core deliberately registers these as descriptive stubs.
     // WireGuard remains available as a top-level endpoint, not an outbound.
@@ -532,7 +532,7 @@ class ParsedOutboundSchema {
     }
     // Marks this object for the later store validation pass. The marker is
     // stripped by SingboxConfigBuilder and never reaches libbox.
-    cloned['_etonify_core_passthrough'] = true;
+    cloned['_hydra_core_passthrough'] = true;
     return cloned;
   }
 
@@ -545,8 +545,8 @@ class ParsedOutboundSchema {
       return 'unsupported outbound type: shadowsocksr';
     }
     if (type == 'wireguard' &&
-        config['_etonify_core_passthrough'] == true &&
-        config['_etonify_source_section'] != 'endpoints') {
+        config['_hydra_core_passthrough'] == true &&
+        config['_hydra_source_section'] != 'endpoints') {
       return 'unsupported outbound type: wireguard; use a WireGuard endpoint';
     }
     if (type == 'wireguard') {
@@ -561,7 +561,7 @@ class ParsedOutboundSchema {
     // A complete sing-box document is already authored against the native
     // schema. Avoid second-guessing protocol-specific options in Flutter;
     // libbox performs the authoritative validation before startup.
-    if (config['_etonify_core_passthrough'] == true) {
+    if (config['_hydra_core_passthrough'] == true) {
       return null;
     }
 

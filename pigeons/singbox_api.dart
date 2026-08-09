@@ -5,8 +5,8 @@ import 'package:pigeon/pigeon.dart';
     dartOut: 'lib/singbox/singbox_api.g.dart',
     dartOptions: DartOptions(),
     kotlinOut:
-        'android/app/src/main/kotlin/com/etonify/meow_client/generated/SingboxApi.g.kt',
-    kotlinOptions: KotlinOptions(package: 'com.etonify.meow_client.generated'),
+        'android/app/src/main/kotlin/io/hydrabox/client/generated/SingboxApi.g.kt',
+    kotlinOptions: KotlinOptions(package: 'io.hydrabox.client.generated'),
   ),
 )
 class RuntimeFlagsMessage {
@@ -67,6 +67,42 @@ class UrlTestRequestMessage {
   bool force;
 }
 
+class PreconnectUrlTestRequestMessage {
+  PreconnectUrlTestRequestMessage({
+    required this.config,
+    required this.groupTag,
+    required this.targetOutboundTag,
+    required this.url,
+    required this.timeoutMillis,
+    required this.deadlineMillis,
+  });
+
+  String config;
+  String groupTag;
+  String targetOutboundTag;
+  String url;
+  int timeoutMillis;
+  int deadlineMillis;
+}
+
+class PreconnectUrlTestResultMessage {
+  PreconnectUrlTestResultMessage({
+    required this.tag,
+    required this.delayMillis,
+    required this.timeSeconds,
+    required this.status,
+    required this.error,
+    required this.errorCode,
+  });
+
+  String tag;
+  int delayMillis;
+  int timeSeconds;
+  String status;
+  String error;
+  String errorCode;
+}
+
 @HostApi()
 abstract class SingboxHostApi {
   @async
@@ -115,6 +151,26 @@ abstract class SingboxHostApi {
   void urlTest(UrlTestRequestMessage request);
 
   @async
+  Map<String?, Object?> startManagedUrlTest(UrlTestRequestMessage request);
+
+  @async
+  Map<String?, Object?> getManagedUrlTestSession(String sessionId);
+
+  @async
+  Map<String?, Object?> cancelManagedUrlTest(String sessionId);
+
+  @async
+  Map<String?, Object?> getRuntimeSnapshot();
+
+  @async
+  PreconnectUrlTestResultMessage preconnectUrlTest(
+    PreconnectUrlTestRequestMessage request,
+  );
+
+  @async
+  void cancelPreconnectUrlTest();
+
+  @async
   void removeUrlTestOutbounds(String groupTag, List<String?> outboundTags);
 
   @async
@@ -133,6 +189,9 @@ abstract class SingboxHostApi {
   String getAndroidId();
 
   @async
+  String getHydraDeviceId(String canonicalOrigin);
+
+  @async
   Map<String?, Object?> getSubscriptionRequestDeviceInfo();
 
   @async
@@ -146,6 +205,27 @@ abstract class SingboxHostApi {
 
   @async
   String getCoreCapabilities();
+
+  @async
+  String getHydraCoreBuildInfo();
+
+  @async
+  String validateHydraConfig(String content, String profile);
+
+  @async
+  String validateHydraSubscription(String content);
+
+  @async
+  String inspectHydraSubscription(String content);
+
+  @async
+  String openHydraSubscriptionJwe(String envelope, String keyBase64Url);
+
+  @async
+  String validateHydraSubscriptionJwe(String envelope, String keyBase64Url);
+
+  @async
+  String inspectHydraSubscriptionJwe(String envelope, String keyBase64Url);
 
   @async
   void checkConfig(String config);

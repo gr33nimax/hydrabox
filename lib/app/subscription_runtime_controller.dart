@@ -2,11 +2,11 @@ import 'dart:convert';
 import 'dart:isolate';
 import 'dart:math';
 
-import 'package:meow_client/app/app_background_tasks.dart';
-import 'package:meow_client/app/proxy_selection_controller.dart';
-import 'package:meow_client/core/lowest_proxy_groups.dart';
-import 'package:meow_client/data/subscription/subscription_store.dart';
-import 'package:meow_client/models/subscription.dart';
+import 'package:hydrabox/app/app_background_tasks.dart';
+import 'package:hydrabox/app/proxy_selection_controller.dart';
+import 'package:hydrabox/core/lowest_proxy_groups.dart';
+import 'package:hydrabox/data/subscription/subscription_store.dart';
+import 'package:hydrabox/models/subscription.dart';
 
 class SubscriptionRuntimeSelection {
   const SubscriptionRuntimeSelection({
@@ -324,7 +324,7 @@ class SubscriptionRuntimeController {
         normalized: normalized,
         proxyCache: proxyCache,
       );
-    }, debugName: 'meow-active-subscription');
+    }, debugName: 'hydrabox-active-subscription');
   }
 
   String subscriptionRuntimeFingerprint(Subscription subscription) {

@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:collection';
 
-import 'package:meow_client/app/runtime_recovery_policy.dart';
+import 'package:hydrabox/app/runtime_recovery_policy.dart';
 
 class NetworkInterfaceIssueDecision {
   const NetworkInterfaceIssueDecision({

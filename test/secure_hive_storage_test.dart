@@ -3,7 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
-import 'package:meow_client/data/local/secure_hive_storage.dart';
+import 'package:hydrabox/data/local/secure_hive_storage.dart';
 
 void main() {
   test('AES-GCM Hive cipher authenticates and round-trips frames', () {
@@ -39,7 +39,7 @@ void main() {
   });
 
   test('encrypted Hive box does not persist a plaintext secret', () async {
-    final directory = await Directory.systemTemp.createTemp('etonify-gcm-');
+    final directory = await Directory.systemTemp.createTemp('hydrabox-gcm-');
     addTearDown(() async {
       await Hive.close();
       if (directory.existsSync()) await directory.delete(recursive: true);

@@ -98,7 +98,7 @@ class HiveAesGcmCipher implements HiveCipher {
 class SecureHiveStorage {
   SecureHiveStorage._();
 
-  static const _channel = MethodChannel('meow_client/secure_storage');
+  static const _channel = MethodChannel('io.hydrabox.client/secure_storage');
   static HiveCipher? _cipher;
   static bool _initialized = false;
   static Future<void>? _initialization;

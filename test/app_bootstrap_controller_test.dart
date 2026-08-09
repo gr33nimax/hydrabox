@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/app/app_bootstrap_controller.dart';
-import 'package:meow_client/data/local/app_settings_store.dart';
-import 'package:meow_client/singbox/libbox_capabilities.dart';
-import 'package:meow_client/singbox/singbox_runtime.dart';
+import 'package:hydrabox/app/app_bootstrap_controller.dart';
+import 'package:hydrabox/data/local/app_settings_store.dart';
+import 'package:hydrabox/singbox/hydracore_capabilities.dart';
+import 'package:hydrabox/singbox/singbox_runtime.dart';
 
 void main() {
   test('memory bootstrap skips durable storage initialization', () async {
@@ -18,11 +18,11 @@ void main() {
         return MemoryAppSettingsStore();
       },
       loadAppVersionInfo: () async => const AppVersionInfo(
-        packageName: 'com.etonify.meow_client',
+        packageName: 'io.hydrabox.client',
         versionName: '0.3.0',
         versionCode: 12,
       ),
-      loadCoreCapabilities: () async => LibboxCapabilities.bundledLegacy,
+      loadCoreCapabilities: () async => HydraCoreCapabilities.requiredV2,
     );
 
     final result = await controller.load(
@@ -50,7 +50,7 @@ void main() {
         versionName: '0.3.0',
         versionCode: 0,
       ),
-      loadCoreCapabilities: () async => LibboxCapabilities.bundledLegacy,
+      loadCoreCapabilities: () async => HydraCoreCapabilities.requiredV2,
     );
 
     final result = await controller.load();
@@ -74,7 +74,7 @@ void main() {
 
     expect(result.appVersionInfo.versionName, '0.3.0');
     expect(result.appVersionInfo.versionCode, 0);
-    expect(result.coreCapabilities, same(LibboxCapabilities.bundledLegacy));
+    expect(result.coreCapabilities, same(HydraCoreCapabilities.requiredV2));
   });
 
   test('disabled rule-set status is deferred until after bootstrap', () async {
@@ -87,7 +87,7 @@ void main() {
         versionName: '0.3.0',
         versionCode: 0,
       ),
-      loadCoreCapabilities: () async => LibboxCapabilities.bundledLegacy,
+      loadCoreCapabilities: () async => HydraCoreCapabilities.requiredV2,
       loadAdBlockStatus: () async {
         adBlockRequests++;
         throw StateError('ad block status unavailable');
@@ -130,7 +130,7 @@ void main() {
         versionName: '0.3.0',
         versionCode: 0,
       ),
-      loadCoreCapabilities: () async => LibboxCapabilities.bundledLegacy,
+      loadCoreCapabilities: () async => HydraCoreCapabilities.requiredV2,
       loadAdBlockStatus: () async {
         adBlockRequests++;
         throw StateError('ad block status unavailable');

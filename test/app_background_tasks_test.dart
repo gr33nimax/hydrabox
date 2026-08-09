@@ -1,12 +1,32 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/app/app_background_tasks.dart';
+import 'package:hydrabox/app/app_background_tasks.dart';
 
 void main() {
+  test('detects interactive VK call outbounds', () {
+    expect(
+      singboxConfigHasInteractiveVkCall({
+        'outbounds': [
+          {'type': 'call', 'platform': 'vk', 'tag': 'call-vk-out'},
+        ],
+      }),
+      isTrue,
+    );
+    expect(
+      singboxConfigHasInteractiveVkCall({
+        'outbounds': [
+          {'type': 'call', 'platform': 'telemost'},
+          {'type': 'vless'},
+        ],
+      }),
+      isFalse,
+    );
+  });
+
   test('fast retry prunes empty proxy groups after removing an outbound', () {
     final tempDir = Directory.systemTemp.createTempSync(
-      'meow-config-mutation-',
+      'hydrabox-config-mutation-',
     );
     addTearDown(() => tempDir.deleteSync(recursive: true));
 
@@ -52,7 +72,7 @@ void main() {
 
   test('fast retry retains native-config identity after the last proxy', () {
     final tempDir = Directory.systemTemp.createTempSync(
-      'meow-native-config-mutation-',
+      'hydrabox-native-config-mutation-',
     );
     addTearDown(() => tempDir.deleteSync(recursive: true));
 
@@ -94,7 +114,7 @@ void main() {
 
   test('fast retry preserves object-valued extended outbound groups', () {
     final tempDir = Directory.systemTemp.createTempSync(
-      'meow-object-group-mutation-',
+      'hydrabox-object-group-mutation-',
     );
     addTearDown(() => tempDir.deleteSync(recursive: true));
 
@@ -150,7 +170,7 @@ void main() {
 
   test('fast retry remains startable while a native endpoint survives', () {
     final tempDir = Directory.systemTemp.createTempSync(
-      'meow-endpoint-config-mutation-',
+      'hydrabox-endpoint-config-mutation-',
     );
     addTearDown(() => tempDir.deleteSync(recursive: true));
 

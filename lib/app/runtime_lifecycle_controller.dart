@@ -1,10 +1,19 @@
 import 'dart:async';
 
-import 'package:meow_client/app/app_background_tasks.dart';
-import 'package:meow_client/logging/app_log_store.dart';
-import 'package:meow_client/singbox/singbox_runtime.dart';
+import 'package:hydrabox/app/app_background_tasks.dart';
+import 'package:hydrabox/logging/app_log_store.dart';
+import 'package:hydrabox/singbox/singbox_runtime.dart';
 
 enum RuntimeApplyPolicy { logOnly, safeCoreRestart, fullServiceRestart }
+
+class _NativeRuntimeStartFailure implements Exception {
+  const _NativeRuntimeStartFailure(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
 
 class RuntimeLifecycleResult {
   const RuntimeLifecycleResult({
@@ -125,6 +134,7 @@ class RuntimeLifecycleController {
   RuntimeLifecycleController({
     RuntimeLifecycleRuntime? runtime,
     this.startTimeout = const Duration(seconds: 15),
+    this.interactiveStartTimeout = const Duration(minutes: 5, seconds: 15),
     this.stopTimeout = const Duration(seconds: 7),
     this.stopVerificationTimeout = const Duration(seconds: 2),
     this.stopSettleDelay = const Duration(milliseconds: 200),
@@ -133,6 +143,7 @@ class RuntimeLifecycleController {
 
   final RuntimeLifecycleRuntime _runtime;
   final Duration startTimeout;
+  final Duration interactiveStartTimeout;
   final Duration stopTimeout;
   final Duration stopVerificationTimeout;
   final Duration stopSettleDelay;
@@ -143,6 +154,14 @@ class RuntimeLifecycleController {
   int _handledStartTimeoutGeneration = 0;
 
   bool get startWatchdogActive => _startWatchdogTimer != null;
+
+  Duration startTimeoutForBuild(SingboxConfigBuildResult build) {
+    if (!build.hasInteractiveVkCall ||
+        interactiveStartTimeout <= startTimeout) {
+      return startTimeout;
+    }
+    return interactiveStartTimeout;
+  }
 
   void dispose() {
     cancelStartWatchdog();
@@ -165,6 +184,7 @@ class RuntimeLifecycleController {
   }) async {
     trimMemory('before_runtime_start_build');
     cacheStartedBuild(build);
+    final effectiveStartTimeout = startTimeoutForBuild(build);
     Future<void> startFuture;
     if (build.hasPreparedConfig) {
       await promotePreparedConfig(build);
@@ -175,6 +195,7 @@ class RuntimeLifecycleController {
       );
       final watchdogGeneration = _armStartWatchdog(
         useVpn: useVpn,
+        timeout: effectiveStartTimeout,
         onTimeout: onWatchdogTimeout,
       );
       startFuture = _runtime.startPrepared(useVpn: useVpn);
@@ -182,6 +203,7 @@ class RuntimeLifecycleController {
         startFuture,
         watchdogGeneration: watchdogGeneration,
         useVpn: useVpn,
+        timeout: effectiveStartTimeout,
       );
     } else {
       logCall(
@@ -192,6 +214,7 @@ class RuntimeLifecycleController {
       );
       final watchdogGeneration = _armStartWatchdog(
         useVpn: useVpn,
+        timeout: effectiveStartTimeout,
         onTimeout: onWatchdogTimeout,
       );
       startFuture = _runtime.start(config: build.configJson, useVpn: useVpn);
@@ -199,6 +222,7 @@ class RuntimeLifecycleController {
         startFuture,
         watchdogGeneration: watchdogGeneration,
         useVpn: useVpn,
+        timeout: effectiveStartTimeout,
       );
     }
   }
@@ -207,10 +231,11 @@ class RuntimeLifecycleController {
     Future<void> startFuture, {
     required int watchdogGeneration,
     required bool useVpn,
+    required Duration timeout,
   }) async {
-    final deadline = DateTime.now().add(startTimeout);
+    final deadline = DateTime.now().add(timeout);
     try {
-      await startFuture.timeout(startTimeout);
+      await startFuture.timeout(timeout);
       final startConfirmed = await _waitForStartedRuntime(
         useVpn: useVpn,
         deadline: deadline,
@@ -218,7 +243,7 @@ class RuntimeLifecycleController {
       if (!startConfirmed) {
         throw TimeoutException(
           'Native runtime start was not confirmed',
-          startTimeout,
+          timeout,
         );
       }
       cancelStartWatchdog();
@@ -229,6 +254,7 @@ class RuntimeLifecycleController {
       return _handleImmediateStartTimeout(
         generation: watchdogGeneration,
         useVpn: useVpn,
+        timeout: timeout,
         error: error,
         stackTrace: stackTrace,
       );
@@ -260,6 +286,10 @@ class RuntimeLifecycleController {
           : const Duration(seconds: 2);
       try {
         lastStatus = await _runtime.status().timeout(statusTimeout);
+        final nativeError = lastStatus['lastError']?.toString().trim() ?? '';
+        if (nativeError.isNotEmpty && lastStatus['running'] != true) {
+          throw _NativeRuntimeStartFailure(nativeError);
+        }
         if (_isStartedRuntimeStatus(lastStatus, useVpn: useVpn)) {
           AppLogStore.info(
             'runtime',
@@ -269,6 +299,7 @@ class RuntimeLifecycleController {
           return true;
         }
       } catch (error) {
+        if (error is _NativeRuntimeStartFailure) rethrow;
         AppLogStore.warning(
           'runtime',
           'failed to verify native start useVpn=$useVpn: $error',
@@ -570,14 +601,17 @@ class RuntimeLifecycleController {
 
   int _armStartWatchdog({
     required bool useVpn,
+    required Duration timeout,
     required RuntimeTimeoutHook onTimeout,
   }) {
     final generation = ++_startWatchdogGeneration;
     _startWatchdogTimer?.cancel();
     _startWatchdogTimer = Timer(
-      startTimeout + const Duration(milliseconds: 250),
+      timeout + const Duration(milliseconds: 250),
       () {
-        unawaited(_handleStartWatchdogTimeout(generation, useVpn, onTimeout));
+        unawaited(
+          _handleStartWatchdogTimeout(generation, useVpn, timeout, onTimeout),
+        );
       },
     );
     return generation;
@@ -597,6 +631,7 @@ class RuntimeLifecycleController {
   Future<void> _handleStartWatchdogTimeout(
     int generation,
     bool useVpn,
+    Duration timeout,
     RuntimeTimeoutHook onTimeout,
   ) async {
     if (generation != _startWatchdogGeneration) {
@@ -608,7 +643,7 @@ class RuntimeLifecycleController {
     AppLogStore.error(
       'sing-box',
       'runtime start watchdog timeout useVpn=$useVpn '
-          'timeoutMs=${startTimeout.inMilliseconds}',
+          'timeoutMs=${timeout.inMilliseconds}',
     );
     final status = await _runtime
         .status()
@@ -650,6 +685,7 @@ class RuntimeLifecycleController {
   Future<RuntimeLifecycleResult> _handleImmediateStartTimeout({
     required int generation,
     required bool useVpn,
+    required Duration timeout,
     required TimeoutException error,
     required StackTrace stackTrace,
   }) async {
@@ -677,7 +713,7 @@ class RuntimeLifecycleController {
     AppLogStore.error(
       'sing-box',
       'runtime start timeout useVpn=$useVpn '
-          'timeoutMs=${startTimeout.inMilliseconds} error=$error\n'
+          'timeoutMs=${timeout.inMilliseconds} error=$error\n'
           '$stackTrace',
     );
     final status = await _runtime

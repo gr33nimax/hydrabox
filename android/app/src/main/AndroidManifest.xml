@@ -18,9 +18,10 @@
 
     <application
         android:label="HydraBox"
-        android:name=".MeowApplication"
+        android:name=".HydraBoxApplication"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:allowBackup="false"
         android:fullBackupContent="false"
         android:dataExtractionRules="@xml/data_extraction_rules">
@@ -53,8 +54,6 @@
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="hydrabox" android:host="import"/>
-                <data android:scheme="etonify" android:host="import"/>
-                <data android:scheme="meowvpn" android:host="import"/>
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>
@@ -99,7 +98,7 @@
         <!-- Configured VPN apps are eligible for the systemExempted FGS type.
              Android lint cannot infer that eligibility from BIND_VPN_SERVICE. -->
         <service
-            android:name=".singbox.MeowVpnService"
+            android:name=".singbox.HydraBoxVpnService"
             android:exported="false"
             android:foregroundServiceType="systemExempted"
             android:permission="android.permission.BIND_VPN_SERVICE"
@@ -111,7 +110,7 @@
         </service>
 
         <service
-            android:name=".singbox.MeowProxyService"
+            android:name=".singbox.HydraBoxProxyService"
             android:exported="false"
             android:foregroundServiceType="specialUse">
             <property
@@ -120,9 +119,9 @@
         </service>
 
         <service
-            android:name=".MeowQuickSettingsTileService"
+            android:name=".HydraBoxQuickSettingsTileService"
             android:exported="true"
-            android:icon="@drawable/ic_meow_status"
+            android:icon="@drawable/ic_hydrabox_status"
             android:label="HydraBox"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter>
@@ -130,13 +129,6 @@
             </intent-filter>
         </service>
 
-        <!-- Legacy Happ native crypt5 service is kept documented but excluded from build.
-        <service
-            android:name=".happcrypto.Crypto5IsolatedService"
-            android:exported="false"
-            android:isolatedProcess="true"
-            android:process=":happ_crypto5_isolated" />
-        -->
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

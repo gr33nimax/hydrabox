@@ -1,8 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/app/runtime_event_controller.dart';
-import 'package:meow_client/logging/app_log_store.dart';
+import 'package:hydrabox/app/runtime_event_controller.dart';
+import 'package:hydrabox/logging/app_log_store.dart';
 
 void main() {
   tearDown(AppLogStore.clear);
@@ -12,6 +12,7 @@ void main() {
     Map<String, dynamic>? status;
     Map<String, dynamic>? network;
     RuntimeGroupsEvent? groups;
+    RuntimeUrlTestSessionsEvent? urlTestSessions;
 
     final controller = RuntimeEventController(
       events: const Stream.empty(),
@@ -19,6 +20,7 @@ void main() {
       onStatus: (event) => status = event,
       onNetwork: (event) => network = event,
       onGroups: (event) => groups = event,
+      onUrlTestSessions: (event) => urlTestSessions = event,
       shouldRecordLog: (_) => true,
     );
 
@@ -31,6 +33,25 @@ void main() {
         {'tag': 'select'},
       ],
     });
+    controller.dispatch({
+      'type': 'urlTestSessions',
+      'runtimeGeneration': 7,
+      'sequence': 12,
+      'reset': true,
+      'sessions': [
+        {
+          'groupTag': 'proxy',
+          'results': [
+            {
+              'outboundTag': 'vless-1',
+              'delayMillis': 83,
+              'observedAt': 1700000000123,
+              'status': 'success',
+            },
+          ],
+        },
+      ],
+    });
 
     expect(state?.running, isTrue);
     expect(state?.hasError, isFalse);
@@ -40,6 +61,62 @@ void main() {
       {'tag': 'select'},
     ]);
     expect(groups?.runtimeGeneration, 0);
+    expect(urlTestSessions?.runtimeGeneration, 7);
+    expect(urlTestSessions?.sequence, 12);
+    expect(urlTestSessions?.reset, isTrue);
+    expect(urlTestSessions?.toGroupUpdates(), [
+      {
+        'tag': 'proxy',
+        'items': [
+          {
+            'tag': 'vless-1',
+            'delay': 83,
+            'time': 1700000000,
+            'status': 'success',
+            'error': '',
+            'errorCode': '',
+          },
+        ],
+      },
+    ]);
+  });
+
+  test('captcha callbacks only accept the local solver URL', () {
+    final required = <Uri>[];
+    var solved = 0;
+    final controller = RuntimeEventController(
+      events: const Stream.empty(),
+      onState: (_) {},
+      onStatus: (_) {},
+      onNetwork: (_) {},
+      onGroups: (_) {},
+      onCaptchaRequired: required.add,
+      onCaptchaSolved: () => solved++,
+      shouldRecordLog: (_) => false,
+    );
+
+    controller.dispatch({
+      'type': 'nativeLog',
+      'level': 'notice',
+      'message':
+          'outbound/call[call-vk-out]: vk-auth: solve the captcha to continue: '
+          'http://127.0.0.1:35887/session',
+    });
+    controller.dispatch({
+      'type': 'nativeLog',
+      'level': 'notice',
+      'message':
+          'vk-auth: solve the captcha to continue: http://example.com:35887/',
+    });
+    controller.dispatch({
+      'type': 'logs',
+      'logs': [
+        {'level': 2, 'message': 'vk-auth: captcha solved, retrying'},
+      ],
+    });
+
+    expect(required, [Uri.parse('http://127.0.0.1:35887/session')]);
+    expect(solved, 1);
   });
 
   test('nativeLog normalizes warn and records through AppLogStore', () {

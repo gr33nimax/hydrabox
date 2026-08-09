@@ -239,8 +239,8 @@ class _AddSubscriptionSheetState extends State<_AddSubscriptionSheet> {
       final file = result.files.single;
       final content = await readSubscriptionFile(file);
       if (!mounted || _cancelRequested) return;
-      if (content.contains(EtonifyBackupService.profileMagic) ||
-          content.contains(EtonifyBackupService.settingsMagic)) {
+      if (content.contains(HydraBoxBackupService.profileMagic) ||
+          content.contains(HydraBoxBackupService.settingsMagic)) {
         _setError(l10n.backupUseSettingsImport);
         return;
       }

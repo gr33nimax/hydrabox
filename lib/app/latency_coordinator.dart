@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:meow_client/logging/app_log_store.dart';
-import 'package:meow_client/singbox/libbox_capabilities.dart';
+import 'package:hydrabox/logging/app_log_store.dart';
+import 'package:hydrabox/singbox/hydracore_capabilities.dart';
 
 enum LatencySessionKind { full, startup, targeted }
 
@@ -69,7 +69,7 @@ class LatencyCoordinator {
     LatencyIntReader? operationGeneration,
     LatencyEventTimesReader? eventBaselineTimes,
     LatencyExpectedTagsReader? expectedTags,
-    LibboxCapabilities capabilities = LibboxCapabilities.bundledLegacy,
+    HydraCoreCapabilities capabilities = HydraCoreCapabilities.requiredV2,
     this.uiPolicy = const LatencyUiPolicy(),
   }) : _runTest = runTest,
        _isConnected = isConnected,
@@ -99,7 +99,7 @@ class LatencyCoordinator {
   final LatencyIntReader _operationGeneration;
   final LatencyEventTimesReader _eventBaselineTimes;
   final LatencyExpectedTagsReader _expectedTags;
-  LibboxCapabilities _capabilities;
+  HydraCoreCapabilities _capabilities;
   final LatencyUiPolicy uiPolicy;
 
   static bool _alwaysReady() => true;
@@ -130,9 +130,9 @@ class LatencyCoordinator {
   LatencySessionKind? get kind => isRunning ? _kind : null;
   LatencySessionPhase get phase => _phase;
   int get sessionStartedAtSeconds => _sessionStartedAtSeconds;
-  LibboxCapabilities get capabilities => _capabilities;
+  HydraCoreCapabilities get capabilities => _capabilities;
 
-  void updateCapabilities(LibboxCapabilities value) {
+  void updateCapabilities(HydraCoreCapabilities value) {
     if (identical(_capabilities, value)) return;
     if (isRunning) {
       cancel();

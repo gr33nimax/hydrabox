@@ -1,5 +1,18 @@
-import 'package:meow_client/data/subscription/subscription_failure.dart';
-import 'package:meow_client/l10n/generated/app_localizations.dart';
+import 'package:hydrabox/data/subscription/subscription_failure.dart';
+import 'package:hydrabox/l10n/generated/app_localizations.dart';
+
+String subscriptionErrorForLog(Object error) {
+  if (error is HydraSubscriptionValidationException) {
+    return '${error.runtimeType}: ${error.diagnostic}';
+  }
+  if (error is SubscriptionHttpStatusException) {
+    return '${error.runtimeType}: HTTP ${error.statusCode}';
+  }
+  if (error is SubscriptionContentException) {
+    return '${error.runtimeType}: ${error.kind.name}';
+  }
+  return error.runtimeType.toString();
+}
 
 String subscriptionErrorMessage(Object error, AppLocalizations l10n) {
   final failure = classifySubscriptionFailure(error);
@@ -26,7 +39,10 @@ String subscriptionErrorMessage(Object error, AppLocalizations l10n) {
     SubscriptionFailureKind.noUsableProxies =>
       l10n.subscriptionErrorNoUsableProxies,
     SubscriptionFailureKind.invalidContent =>
-      l10n.subscriptionErrorInvalidContent,
+      failure.diagnostic == null
+          ? l10n.subscriptionErrorInvalidContent
+          : '${l10n.subscriptionErrorInvalidContent}\n'
+                'HydraCore: ${failure.diagnostic}',
     SubscriptionFailureKind.happUnsupported => l10n.happCryptUnsupportedMessage,
     SubscriptionFailureKind.happInvalid => l10n.subscriptionErrorHappInvalid,
     SubscriptionFailureKind.unknown => l10n.subscriptionErrorUnknown,

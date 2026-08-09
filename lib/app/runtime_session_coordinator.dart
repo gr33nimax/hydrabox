@@ -1,5 +1,5 @@
-import 'package:meow_client/app/runtime_connection_controller.dart';
-import 'package:meow_client/app/runtime_lifecycle_controller.dart';
+import 'package:hydrabox/app/runtime_connection_controller.dart';
+import 'package:hydrabox/app/runtime_lifecycle_controller.dart';
 
 enum RuntimeStartDisposition {
   success,

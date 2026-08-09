@@ -1,17 +1,17 @@
-import 'package:meow_client/data/adblock/ad_block_rule_set_service.dart';
-import 'package:meow_client/data/local/app_settings_store.dart';
-import 'package:meow_client/data/routing/russia_route_data_service.dart';
-import 'package:meow_client/data/subscription/subscription_fetcher.dart';
-import 'package:meow_client/data/subscription/subscription_store.dart';
-import 'package:meow_client/logging/app_log_store.dart';
-import 'package:meow_client/singbox/core_config_migration.dart';
-import 'package:meow_client/singbox/libbox_capabilities.dart';
-import 'package:meow_client/singbox/singbox_runtime.dart';
+import 'package:hydrabox/data/adblock/ad_block_rule_set_service.dart';
+import 'package:hydrabox/data/local/app_settings_store.dart';
+import 'package:hydrabox/data/routing/russia_route_data_service.dart';
+import 'package:hydrabox/data/subscription/subscription_fetcher.dart';
+import 'package:hydrabox/data/subscription/subscription_store.dart';
+import 'package:hydrabox/logging/app_log_store.dart';
+import 'package:hydrabox/singbox/core_config_migration.dart';
+import 'package:hydrabox/singbox/hydracore_capabilities.dart';
+import 'package:hydrabox/singbox/singbox_runtime.dart';
 
 typedef BootstrapAction = Future<void> Function();
 typedef SettingsStoreLoader = Future<AppSettingsStore> Function();
 typedef AppVersionInfoLoader = Future<AppVersionInfo> Function();
-typedef CoreCapabilitiesLoader = Future<LibboxCapabilities> Function();
+typedef CoreCapabilitiesLoader = Future<HydraCoreCapabilities> Function();
 typedef AdBlockStatusLoader = Future<AdBlockRuleSetStatus> Function();
 typedef RussiaRouteStatusLoader = Future<RussiaRouteDataStatus> Function();
 
@@ -34,7 +34,7 @@ class AppBootstrapResult {
   final AdBlockRuleSetStatus adBlockStatus;
   final RussiaRouteDataStatus russiaRouteDataStatus;
   final AppVersionInfo appVersionInfo;
-  final LibboxCapabilities coreCapabilities;
+  final HydraCoreCapabilities coreCapabilities;
   final CoreConfigMigrationResult? pendingCoreConfigMigration;
   final bool usesInMemoryStore;
 }
@@ -238,7 +238,7 @@ class AppBootstrapController {
     );
   }
 
-  Future<LibboxCapabilities> _readCoreCapabilities() async {
+  Future<HydraCoreCapabilities> _readCoreCapabilities() async {
     try {
       return await _loadCoreCapabilities();
     } catch (error) {
@@ -246,7 +246,7 @@ class AppBootstrapController {
         'sing-box',
         'Failed to read core capabilities, using legacy contract: $error',
       );
-      return LibboxCapabilities.bundledLegacy;
+      return HydraCoreCapabilities.requiredV2;
     }
   }
 

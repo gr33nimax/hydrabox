@@ -1,7 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/app/bounded_task_runner.dart';
+import 'package:hydrabox/app/bounded_task_runner.dart';
 
 void main() {
   test('limits concurrency and preserves result order', () async {

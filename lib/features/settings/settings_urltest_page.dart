@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:meow_client/data/local/app_settings_store.dart';
-import 'package:meow_client/l10n/generated/app_localizations.dart';
-import 'package:meow_client/models/subscription.dart';
-import 'package:meow_client/widgets/progressive_blur_scaffold.dart';
+import 'package:hydrabox/data/local/app_settings_store.dart';
+import 'package:hydrabox/l10n/generated/app_localizations.dart';
+import 'package:hydrabox/models/subscription.dart';
+import 'package:hydrabox/widgets/progressive_blur_scaffold.dart';
 
 class SettingsUrlTestPage extends StatefulWidget {
   const SettingsUrlTestPage({

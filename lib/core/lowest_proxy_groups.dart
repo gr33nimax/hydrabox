@@ -1,6 +1,6 @@
 const String lowestProxyTag = 'lowest';
-// Legacy synthetic tags are kept only so settings saved by older Etonify
-// builds can be migrated without losing the user's selection. They are no
+// Legacy synthetic tags are kept only so older local settings can be migrated
+// without losing the user's selection. They are no
 // longer emitted into a sing-box config or shown in the proxy list.
 const String lowestOpenProxyTag = 'lowest-open';
 const String lowestFreeProxyTag = 'lowest-free';

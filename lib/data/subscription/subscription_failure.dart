@@ -32,10 +32,54 @@ enum SubscriptionContentFailureKind {
 }
 
 class SubscriptionFailure {
-  const SubscriptionFailure(this.kind, {this.httpStatus});
+  const SubscriptionFailure(this.kind, {this.httpStatus, this.diagnostic});
 
   final SubscriptionFailureKind kind;
   final int? httpStatus;
+  final String? diagnostic;
+}
+
+/// A non-secret HydraCore validation result that is safe to surface to users.
+///
+/// HydraCore owns both [code] and [path]. The constructor normalizes them so a
+/// server-controlled document cannot inject arbitrary text into logs or UI.
+class HydraSubscriptionValidationException extends FormatException {
+  HydraSubscriptionValidationException({
+    required String operation,
+    required String code,
+    required String path,
+  }) : operation = _safeToken(operation, fallback: 'validation'),
+       code = _safeToken(code, fallback: 'invalid'),
+       path = _safePath(path),
+       super(
+         'HydraCore ${_safeToken(operation, fallback: 'validation')} failed: '
+         '${_safeToken(code, fallback: 'invalid')} at ${_safePath(path)}',
+       );
+
+  final String operation;
+  final String code;
+  final String path;
+
+  String get diagnostic => '$operation: $code at $path';
+
+  @override
+  String toString() => 'HydraSubscriptionValidationException: $diagnostic';
+
+  static String _safeToken(String value, {required String fallback}) {
+    final normalized = value.trim();
+    return RegExp(r'^[A-Za-z0-9_. -]{1,80}$').hasMatch(normalized)
+        ? normalized
+        : fallback;
+  }
+
+  static String _safePath(String value) {
+    final normalized = value.trim();
+    return RegExp(
+          r'^\$(?:\.[A-Za-z0-9_]+|\[[0-9]+\]){0,32}$',
+        ).hasMatch(normalized)
+        ? normalized
+        : r'$';
+  }
 }
 
 class SubscriptionHttpStatusException extends HttpException {
@@ -76,6 +120,12 @@ class SubscriptionImportCancelledException implements Exception {
 }
 
 SubscriptionFailure classifySubscriptionFailure(Object error) {
+  if (error is HydraSubscriptionValidationException) {
+    return SubscriptionFailure(
+      SubscriptionFailureKind.invalidContent,
+      diagnostic: error.diagnostic,
+    );
+  }
   if (error is SubscriptionHttpStatusException) {
     return SubscriptionFailure(
       SubscriptionFailureKind.httpStatus,

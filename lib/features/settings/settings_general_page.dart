@@ -2,13 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
-import 'package:meow_client/data/local/app_settings_store.dart';
-import 'package:meow_client/features/settings/settings_ui.dart';
-import 'package:meow_client/l10n/generated/app_localizations.dart';
-import 'package:meow_client/widgets/progressive_blur_scaffold.dart';
+import 'package:hydrabox/data/local/app_settings_store.dart';
+import 'package:hydrabox/features/settings/settings_ui.dart';
+import 'package:hydrabox/l10n/generated/app_localizations.dart';
+import 'package:hydrabox/widgets/progressive_blur_scaffold.dart';
 
 /// Static accent colors the user can pick from (after dynamic ones).
 const _staticAccentOptions = <_AccentOption>[
+  _AccentOption(hex: 'default', color: Color(0xFF176B3A), label: 'Hydra'),
   _AccentOption(hex: '2D5BFF', color: Color(0xFF2D5BFF), label: 'Blue'),
   _AccentOption(hex: '7B61FF', color: Color(0xFF7B61FF), label: 'Purple'),
   _AccentOption(hex: 'E91E63', color: Color(0xFFE91E63), label: 'Pink'),
@@ -19,14 +20,14 @@ const _staticAccentOptions = <_AccentOption>[
   _AccentOption(hex: '009688', color: Color(0xFF009688), label: 'Teal'),
 ];
 
-/// Build accent options: dynamic Material You colors first, then static.
+/// Build accent options: the Hydra brand is the default; Material You is opt-in.
 List<_AccentOption> _buildAccentOptions(ColorScheme? dynamicLightScheme) {
   if (dynamicLightScheme != null) {
     return [
       _AccentOption(
-        hex: 'default',
+        hex: 'dynamic',
         color: dynamicLightScheme.primary,
-        label: 'M3',
+        label: 'Material You',
         previewColors: [
           dynamicLightScheme.primary,
           dynamicLightScheme.secondary,
@@ -36,10 +37,7 @@ List<_AccentOption> _buildAccentOptions(ColorScheme? dynamicLightScheme) {
       ..._staticAccentOptions,
     ];
   }
-  return [
-    const _AccentOption(hex: 'default', color: Color(0xFF6750A4), label: 'M3'),
-    ..._staticAccentOptions,
-  ];
+  return _staticAccentOptions;
 }
 
 class _AccentOption {

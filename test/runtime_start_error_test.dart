@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/singbox/runtime_start_error.dart';
+import 'package:hydrabox/singbox/runtime_start_error.dart';
 
 void main() {
   group('parseRuntimeInvalidOutboundError', () {

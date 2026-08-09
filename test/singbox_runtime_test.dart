@@ -1,11 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/singbox/singbox_runtime.dart';
+import 'package:hydrabox/singbox/singbox_runtime.dart';
 
 void main() {
   group('AppVersionInfo', () {
     test('does not expose Android versionCode in display version', () {
       const info = AppVersionInfo(
-        packageName: 'com.etonify.meow_client',
+        packageName: 'io.hydrabox.client',
         versionName: '0.2.1',
         versionCode: 2005,
       );
@@ -16,12 +16,12 @@ void main() {
 
     test('uses the current release label when native metadata is empty', () {
       const info = AppVersionInfo(
-        packageName: 'com.etonify.meow_client',
+        packageName: 'io.hydrabox.client',
         versionName: '',
         versionCode: 2012,
       );
 
-      expect(info.displayVersion, '0.3.0-beta.2');
+      expect(info.displayVersion, '0.4.0-beta.1');
       expect(info.updateBuildNumber, 12);
     });
   });

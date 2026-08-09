@@ -3,10 +3,10 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
-import 'package:meow_client/core/demo_utils.dart';
-import 'package:meow_client/l10n/generated/app_localizations.dart';
-import 'package:meow_client/models/app_view_models.dart';
-import 'package:meow_client/widgets/country_flag_badge.dart';
+import 'package:hydrabox/core/demo_utils.dart';
+import 'package:hydrabox/l10n/generated/app_localizations.dart';
+import 'package:hydrabox/models/app_view_models.dart';
+import 'package:hydrabox/widgets/country_flag_badge.dart';
 
 class TrafficDashboardPage extends StatelessWidget {
   const TrafficDashboardPage({

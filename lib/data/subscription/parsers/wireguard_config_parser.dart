@@ -41,7 +41,7 @@ class WireGuardConfigParser {
     final result = <String, dynamic>{
       'type': 'wireguard',
       'tag': '',
-      '_etonify_source_section': 'endpoints',
+      '_hydra_source_section': 'endpoints',
     };
 
     // Interface → private_key, address, mtu

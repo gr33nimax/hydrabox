@@ -15,7 +15,7 @@ import UIKit
     open url: URL,
     options: [UIApplication.OpenURLOptionsKey: Any] = [:]
   ) -> Bool {
-    MeowDeepLinkBridge.shared.handle(url: url)
+    HydraBoxDeepLinkBridge.shared.handle(url: url)
     return true
   }
 

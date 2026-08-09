@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meow_client/app/traffic_status_reducer.dart';
+import 'package:hydrabox/app/traffic_status_reducer.dart';
 
 void main() {
   const reducer = TrafficStatusReducer();
