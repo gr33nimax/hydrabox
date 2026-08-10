@@ -38,6 +38,15 @@ void main() {
     expect(map['notification_traffic_display_mode'], 'both');
   });
 
+  test('migrates the previous Google URLTest default to Cloudflare', () {
+    final state = _TestSettingsStore().mapState(const <String, dynamic>{
+      'urltest_url': 'https://www.gstatic.com/generate_204',
+    });
+
+    expect(state.urlTestUrl, defaultUrlTestUrl);
+    expect(defaultUrlTestUrl, 'https://cp.cloudflare.com/generate_204');
+  });
+
   test('migrates legacy aggressive performance mode to standard', () {
     final store = _TestSettingsStore();
     final state = store.mapState(const <String, dynamic>{

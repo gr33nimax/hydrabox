@@ -86,4 +86,28 @@ void main() {
     expect(reduction.preservedTotals, isFalse);
     expect(reduction.status.totalBytes, 200);
   });
+
+  test('preserves a regressed upload even when the combined total grew', () {
+    final reduction = reducer.reduce(
+      current: const RuntimeTrafficStatus(
+        uplinkBytesPerSecond: 10,
+        downlinkBytesPerSecond: 20,
+        uplinkTotalBytes: 500,
+        downlinkTotalBytes: 100,
+        available: true,
+      ),
+      event: const RuntimeTrafficEvent(
+        uplinkBytesPerSecond: 30,
+        downlinkBytesPerSecond: 40,
+        uplinkTotalBytes: 0,
+        downlinkTotalBytes: 800,
+        availableHint: true,
+      ),
+    );
+
+    expect(reduction.preservedTotals, isTrue);
+    expect(reduction.status.uplinkTotalBytes, 500);
+    expect(reduction.status.downlinkTotalBytes, 800);
+    expect(reduction.status.totalBytes, 1300);
+  });
 }

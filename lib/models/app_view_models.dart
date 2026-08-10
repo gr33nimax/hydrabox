@@ -4,26 +4,35 @@ import 'package:flutter/foundation.dart';
 class TrafficUiSnapshot {
   const TrafficUiSnapshot({
     required this.speedBytesPerSecond,
+    this.uplinkBytesPerSecond = 0,
     required this.trafficBytes,
   });
 
   static const zero = TrafficUiSnapshot(
     speedBytesPerSecond: 0,
+    uplinkBytesPerSecond: 0,
     trafficBytes: 0,
   );
 
+  /// Download rate. Kept under the legacy name for source compatibility.
   final double speedBytesPerSecond;
+  final double uplinkBytesPerSecond;
   final double trafficBytes;
 
   @override
   bool operator ==(Object other) {
     return other is TrafficUiSnapshot &&
         other.speedBytesPerSecond == speedBytesPerSecond &&
+        other.uplinkBytesPerSecond == uplinkBytesPerSecond &&
         other.trafficBytes == trafficBytes;
   }
 
   @override
-  int get hashCode => Object.hash(speedBytesPerSecond, trafficBytes);
+  int get hashCode => Object.hash(
+    speedBytesPerSecond,
+    uplinkBytesPerSecond,
+    trafficBytes,
+  );
 }
 
 class AppProfileSummary {

@@ -43,7 +43,7 @@ class FetchResult {
 class SubscriptionFetcher {
   SubscriptionFetcher._();
 
-  static const fallbackAppVersion = '0.4.0-beta.1';
+  static const fallbackAppVersion = '0.5.0';
   static String _appVersion = fallbackAppVersion;
   static String get defaultUserAgent => 'HydraBox/$_appVersion';
   static const _maxSubscriptionResponseBytes = 16 * 1024 * 1024;

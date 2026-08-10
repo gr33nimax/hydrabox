@@ -127,6 +127,7 @@ class HydraBoxService(
         Thread(runnable, "HydraBoxRecovery").apply { isDaemon = true }
     }
     private val recoveryGate = RuntimeRecoveryGate(RUNTIME_RECOVERY_MIN_INTERVAL_MS)
+    private val networkRecoveryGate = RuntimeRecoveryGate(RUNTIME_RECOVERY_MIN_INTERVAL_MS)
     private val foregroundNotification = HydraBoxForegroundNotification(
         service = service,
         notificationId = NOTIFICATION_ID,
@@ -260,6 +261,7 @@ class HydraBoxService(
         cancelPendingStartRetry("service_onDestroy")
         retryExecutor.shutdownNow()
         recoveryGate.reset()
+        networkRecoveryGate.reset()
         recoveryExecutor.shutdownNow()
         submitServiceTask("service_onDestroy", allowAfterDestroy = true) {
             stopInternal("service_onDestroy", stopSelf = false, cancelStarts = false)
@@ -274,6 +276,7 @@ class HydraBoxService(
     fun requestRuntimeRecovery(source: String) {
         val server = commandServer
         val ownsRuntime = ownsActiveRuntime()
+        val resetNetwork = source.startsWith("network_change:")
         if (destroyed || !SingboxController.running || !ownsRuntime || server == null) {
             HydraBoxDiagnostics.log(
                 TAG,
@@ -283,7 +286,12 @@ class HydraBoxService(
             return
         }
         val now = SystemClock.elapsedRealtime()
-        if (!recoveryGate.tryAcquire(now)) {
+        val accepted = if (resetNetwork) {
+            networkRecoveryGate.tryAcquire(now)
+        } else {
+            recoveryGate.tryAcquire(now)
+        }
+        if (!accepted) {
             HydraBoxDiagnostics.log(TAG, "runtime recovery coalesced source=$source")
             return
         }
@@ -292,7 +300,6 @@ class HydraBoxService(
             "runtime recovery requested source=$source " +
                 "current=${HydraBoxDefaultNetworkMonitor.describeCurrentState()}",
         )
-
         // Re-apply Android's physical upstream immediately. This path remains
         // owned by the foreground service and therefore does not depend on a
         // Flutter Activity or command-event subscription being attached.
@@ -312,9 +319,18 @@ class HydraBoxService(
                     return@execute
                 }
                 runCatching {
+                    // Wake only resumes the pause manager. A physical network
+                    // handover also needs ResetNetwork so stale route state is
+                    // closed and new outbound sockets bind to the new upstream.
+                    if (resetNetwork) {
+                        server.resetNetwork()
+                    }
                     server.wake()
                 }.onSuccess {
-                    HydraBoxDiagnostics.log(TAG, "runtime recovery wake completed source=$source")
+                    HydraBoxDiagnostics.log(
+                        TAG,
+                        "runtime recovery completed source=$source resetNetwork=$resetNetwork",
+                    )
                     HydraBoxDefaultNetworkMonitor.reassertDefaultInterface(
                         "runtime_recovery_after_wake:$source",
                     )

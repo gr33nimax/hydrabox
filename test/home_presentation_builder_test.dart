@@ -20,6 +20,7 @@ void main() {
       ).toViewState();
 
       expect(state.speedBytesPerSecond, 0);
+      expect(state.uplinkBytesPerSecond, 0);
       expect(state.trafficBytes, 0);
     });
 
@@ -37,6 +38,7 @@ void main() {
       ).toViewState();
 
       expect(state.speedBytesPerSecond, 1536);
+      expect(state.uplinkBytesPerSecond, 768);
       expect(state.trafficBytes, 7168);
       expect(state.trafficListenable, same(traffic));
     });
@@ -61,6 +63,7 @@ HomePresentationData _data({
     hapticEnabled: true,
     trafficAvailable: trafficAvailable,
     downlinkBytesPerSecond: 1536,
+    uplinkBytesPerSecond: 768,
     uplinkTotalBytes: 2048,
     downlinkTotalBytes: 5120,
     trafficListenable: traffic,

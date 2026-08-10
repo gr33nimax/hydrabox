@@ -92,7 +92,7 @@ class HydraSubscriptionParser {
 
   static const apiVersion = 'hydra.io/subscription/v2';
   static const sourceFormat = 'hydra-subscription-v2';
-  static const clientVersion = '0.4.0-beta.1';
+  static const clientVersion = '0.5.0';
   static const maxPlaintextBytes = 12 * 1024 * 1024;
 
   static const supportedPermissions = {

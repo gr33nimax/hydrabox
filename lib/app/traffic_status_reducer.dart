@@ -96,20 +96,24 @@ class TrafficStatusReducer {
     required RuntimeTrafficStatus current,
     required RuntimeTrafficEvent event,
   }) {
-    final preservedTotals =
+    final preserveUplink =
         current.available &&
         event.available &&
-        current.totalBytes > 0 &&
-        event.totalBytes < current.totalBytes;
+        current.uplinkTotalBytes > event.uplinkTotalBytes;
+    final preserveDownlink =
+        current.available &&
+        event.available &&
+        current.downlinkTotalBytes > event.downlinkTotalBytes;
+    final preservedTotals = preserveUplink || preserveDownlink;
     return TrafficStatusReduction(
       preservedTotals: preservedTotals,
       status: RuntimeTrafficStatus(
         uplinkBytesPerSecond: event.uplinkBytesPerSecond,
         downlinkBytesPerSecond: event.downlinkBytesPerSecond,
-        uplinkTotalBytes: preservedTotals
+        uplinkTotalBytes: preserveUplink
             ? current.uplinkTotalBytes
             : event.uplinkTotalBytes,
-        downlinkTotalBytes: preservedTotals
+        downlinkTotalBytes: preserveDownlink
             ? current.downlinkTotalBytes
             : event.downlinkTotalBytes,
         available: event.available,

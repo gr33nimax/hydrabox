@@ -53,17 +53,28 @@ jobs:
           flutter gen-l10n
           dart run pigeon --input pigeons/singbox_api.dart
 
-      - name: Build debug-signed release-mode APKs
+      - name: Analyze Dart sources
+        run: flutter analyze
+
+      - name: Run Flutter tests
+        run: flutter test
+
+      - name: Run Android unit tests
+        working-directory: android
+        run: ./gradlew testDebugUnitTest
+
+      - name: Build debug-signed release-mode APK
         env:
           HYDRABOX_ALLOW_DEBUG_RELEASE_SIGNING: "true"
-        run: flutter build apk --release --split-per-abi
+        run: |
+          flutter build apk --release
+          mv build/app/outputs/flutter-apk/app-release.apk \
+            build/app/outputs/flutter-apk/HydraBox-0.5.0-test.apk
 
-      - name: Upload APKs and generated bindings
+      - name: Upload test APK
         uses: actions/upload-artifact@v7.0.0
         with:
-          name: hydrabox-test-apk-${{ github.run_number }}
+          name: hydrabox-0.5.0-test-apk
           retention-days: 14
-          path: |
-            build/app/outputs/flutter-apk/*.apk
-            lib/singbox/singbox_api.g.dart
-            android/app/src/main/kotlin/io/hydrabox/client/generated/SingboxApi.g.kt
+          if-no-files-found: error
+          path: build/app/outputs/flutter-apk/HydraBox-0.5.0-test.apk

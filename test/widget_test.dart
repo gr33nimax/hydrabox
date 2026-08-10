@@ -1044,6 +1044,37 @@ void main() {
     expect(find.byIcon(Icons.network_ping_rounded), findsNothing);
   });
 
+  testWidgets('server URLTest uses a toolbar action instead of a floating button', (
+    tester,
+  ) async {
+    var requests = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        supportedLocales: AppLocalizations.supportedLocales,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        home: ProxiesPage(
+          proxies: <AppProxySummary>[_proxy('proxy-1', 'Amsterdam')],
+          selectedTag: 'proxy-1',
+          connected: true,
+          progressiveBlurEnabled: false,
+          onSelected: (_) {},
+          onUrlTest: () async {
+            requests++;
+          },
+        ),
+      ),
+    );
+
+    expect(find.byType(FloatingActionButton), findsNothing);
+    final action = find.byKey(const ValueKey('preconnect-urltest-action'));
+    expect(action, findsOneWidget);
+
+    await tester.tap(action);
+    await tester.pump();
+
+    expect(requests, 1);
+  });
+
   testWidgets('active proxy delay indicator keeps visual ping tap target', (
     tester,
   ) async {
@@ -1236,7 +1267,7 @@ void main() {
     expect(find.text('Poland'), findsOneWidget);
     expect(find.text('57.128.200.35'), findsNothing);
     expect(find.text('—'), findsOneWidget);
-    expect(find.text('0.00 B/s'), findsOneWidget);
+    expect(find.text('0.00 B/s'), findsNWidgets(2));
     expect(find.text('0.00 B'), findsOneWidget);
   });
 

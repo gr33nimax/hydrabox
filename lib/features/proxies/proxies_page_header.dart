@@ -122,8 +122,10 @@ class _ProxySheetHeader extends StatelessWidget {
     required this.connected,
     required this.hapticEnabled,
     required this.speedBytesPerSecond,
+    required this.uplinkBytesPerSecond,
     required this.trafficBytes,
     required this.trafficListenable,
+    required this.urlTestRunning,
     required this.onSortSelected,
     required this.onUrlTest,
     required this.onRefreshIp,
@@ -141,8 +143,10 @@ class _ProxySheetHeader extends StatelessWidget {
   final bool connected;
   final bool hapticEnabled;
   final double speedBytesPerSecond;
+  final double uplinkBytesPerSecond;
   final double trafficBytes;
   final ValueListenable<TrafficUiSnapshot>? trafficListenable;
+  final bool urlTestRunning;
   final ValueChanged<ProxySort> onSortSelected;
   final Future<void> Function() onUrlTest;
   final VoidCallback? onRefreshIp;
@@ -208,6 +212,7 @@ class _ProxySheetHeader extends StatelessWidget {
                             hideIp: activeProxyHideIp,
                             hapticEnabled: hapticEnabled,
                             speedBytesPerSecond: speedBytesPerSecond,
+                            uplinkBytesPerSecond: uplinkBytesPerSecond,
                             trafficBytes: trafficBytes,
                             unknownText: '—',
                             onRefreshIp: onRefreshIp,
@@ -222,6 +227,8 @@ class _ProxySheetHeader extends StatelessWidget {
                                 hapticEnabled: hapticEnabled,
                                 speedBytesPerSecond:
                                     traffic.speedBytesPerSecond,
+                                uplinkBytesPerSecond:
+                                    traffic.uplinkBytesPerSecond,
                                 trafficBytes: traffic.trafficBytes,
                                 unknownText: '—',
                                 onRefreshIp: onRefreshIp,
@@ -287,9 +294,21 @@ class _ProxySheetHeader extends StatelessWidget {
                       children: [
                         if (connected)
                           IconButton(
-                            onPressed: () => onUrlTest(),
+                            key: const ValueKey('preconnect-urltest-action'),
+                            onPressed: urlTestRunning
+                                ? null
+                                : () => onUrlTest(),
                             tooltip: l10n.urlTestTitle,
-                            icon: const Icon(FluentIcons.flash_24_filled),
+                            icon: urlTestRunning
+                                ? const SizedBox.square(
+                                    dimension: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(
+                                    FluentIcons.arrow_sync_24_regular,
+                                  ),
                           ),
                         IconButton(
                           tooltip: l10n.sort,
@@ -321,6 +340,7 @@ class _ActiveProxyLabel extends StatelessWidget {
     required this.hideIp,
     required this.hapticEnabled,
     required this.speedBytesPerSecond,
+    required this.uplinkBytesPerSecond,
     required this.trafficBytes,
     required this.unknownText,
     required this.onRefreshIp,
@@ -331,6 +351,7 @@ class _ActiveProxyLabel extends StatelessWidget {
   final bool hideIp;
   final bool hapticEnabled;
   final double speedBytesPerSecond;
+  final double uplinkBytesPerSecond;
   final double trafficBytes;
   final String unknownText;
   final VoidCallback? onRefreshIp;
@@ -384,7 +405,12 @@ class _ActiveProxyLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
-    final speedText = formatSpeed(connected ? speedBytesPerSecond : 0);
+    final downloadSpeedText = formatSpeed(
+      connected ? speedBytesPerSecond : 0,
+    );
+    final uploadSpeedText = formatSpeed(
+      connected ? uplinkBytesPerSecond : 0,
+    );
     final trafficText = formatBytes(connected ? trafficBytes : 0);
     return ConstrainedBox(
       constraints: const BoxConstraints(minHeight: 74),
@@ -487,9 +513,14 @@ class _ActiveProxyLabel extends StatelessWidget {
               children: [
                 _ActiveProxyStatLine(
                   icon: FluentIcons.arrow_download_20_regular,
-                  text: speedText,
+                  text: downloadSpeedText,
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 4),
+                _ActiveProxyStatLine(
+                  icon: FluentIcons.arrow_upload_20_regular,
+                  text: uploadSpeedText,
+                ),
+                const SizedBox(height: 4),
                 _ActiveProxyStatLine(
                   icon: FluentIcons.arrow_bidirectional_up_down_20_regular,
                   text: trafficText,

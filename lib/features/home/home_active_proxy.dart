@@ -200,6 +200,7 @@ class ActiveProxyFooter extends StatelessWidget {
     required this.hideIp,
     required this.hapticEnabled,
     required this.speedBytesPerSecond,
+    this.uplinkBytesPerSecond = 0,
     required this.trafficBytes,
     required this.unknownText,
     this.onRefreshIp,
@@ -210,6 +211,7 @@ class ActiveProxyFooter extends StatelessWidget {
   final bool hideIp;
   final bool hapticEnabled;
   final double speedBytesPerSecond;
+  final double uplinkBytesPerSecond;
   final double trafficBytes;
   final String unknownText;
   final VoidCallback? onRefreshIp;
@@ -262,7 +264,12 @@ class ActiveProxyFooter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final speedText = formatSpeed(connected ? speedBytesPerSecond : 0);
+    final downloadSpeedText = formatSpeed(
+      connected ? speedBytesPerSecond : 0,
+    );
+    final uploadSpeedText = formatSpeed(
+      connected ? uplinkBytesPerSecond : 0,
+    );
     final trafficText = formatBytes(connected ? trafficBytes : 0);
     return Padding(
       padding: const EdgeInsets.only(top: 8),
@@ -380,9 +387,14 @@ class ActiveProxyFooter extends StatelessWidget {
                       children: [
                         _FooterStatLine(
                           icon: FluentIcons.arrow_download_20_regular,
-                          text: speedText,
+                          text: downloadSpeedText,
                         ),
-                        const Gap(8),
+                        const Gap(4),
+                        _FooterStatLine(
+                          icon: FluentIcons.arrow_upload_20_regular,
+                          text: uploadSpeedText,
+                        ),
+                        const Gap(4),
                         _FooterStatLine(
                           icon: FluentIcons
                               .arrow_bidirectional_up_down_20_regular,

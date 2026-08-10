@@ -25,7 +25,7 @@ enum NotificationTrafficDisplayMode { speed, total, both }
 enum TlsFragmentationMode { disabled, record, fragment }
 
 const int maxSplitRoutingPackageCount = 128;
-const String defaultUrlTestUrl = 'https://www.gstatic.com/generate_204';
+const String defaultUrlTestUrl = 'https://cp.cloudflare.com/generate_204';
 const String defaultRussiaDnsDirectResolver = 'udp://77.88.8.8';
 const String defaultProxyUsername = 'hydrabox';
 const int proxyUsernameMaxLength = 64;
@@ -1077,7 +1077,8 @@ class MemoryAppSettingsStore extends AppSettingsStore {
 String _migrateUrlTestUrl(String? value) {
   final normalized = value?.trim() ?? '';
   if (normalized.isEmpty ||
-      normalized == 'http://connectivitycheck.gstatic.com/generate_204') {
+      normalized == 'http://connectivitycheck.gstatic.com/generate_204' ||
+      normalized == 'https://www.gstatic.com/generate_204') {
     return defaultUrlTestUrl;
   }
   return normalized;

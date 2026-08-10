@@ -18,6 +18,7 @@ class ProxiesPresentationData {
     required this.hapticEnabled,
     required this.trafficAvailable,
     required this.downlinkBytesPerSecond,
+    this.uplinkBytesPerSecond = 0,
     required this.uplinkTotalBytes,
     required this.downlinkTotalBytes,
     required this.trafficListenable,
@@ -35,6 +36,7 @@ class ProxiesPresentationData {
   final bool hapticEnabled;
   final bool trafficAvailable;
   final int downlinkBytesPerSecond;
+  final int uplinkBytesPerSecond;
   final int uplinkTotalBytes;
   final int downlinkTotalBytes;
   final ValueListenable<TrafficUiSnapshot> trafficListenable;
@@ -44,6 +46,9 @@ class ProxiesPresentationData {
 
   double get speedBytesPerSecond =>
       connected && trafficAvailable ? downlinkBytesPerSecond.toDouble() : 0;
+
+  double get uplinkSpeedBytesPerSecond =>
+      connected && trafficAvailable ? uplinkBytesPerSecond.toDouble() : 0;
 
   double get trafficBytes => connected && trafficAvailable
       ? (uplinkTotalBytes + downlinkTotalBytes).toDouble()
@@ -109,6 +114,7 @@ class ProxiesPresentationBuilder {
       connected: data.connected,
       hapticEnabled: data.hapticEnabled,
       speedBytesPerSecond: data.speedBytesPerSecond,
+      uplinkBytesPerSecond: data.uplinkSpeedBytesPerSecond,
       trafficBytes: data.trafficBytes,
       trafficListenable: data.trafficListenable,
       initialSort: data.initialSort,
@@ -150,6 +156,7 @@ class ProxiesPresentationBuilder {
       connected: data.connected,
       hapticEnabled: data.hapticEnabled,
       speedBytesPerSecond: data.speedBytesPerSecond,
+      uplinkBytesPerSecond: data.uplinkSpeedBytesPerSecond,
       trafficBytes: data.trafficBytes,
       trafficListenable: data.trafficListenable,
       initialSort: data.initialSort,

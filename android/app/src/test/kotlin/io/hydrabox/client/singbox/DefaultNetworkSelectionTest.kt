@@ -45,6 +45,33 @@ class DefaultNetworkSelectionTest {
     }
 
     @Test
+    fun `validated callback transport wins over higher scoring stale wifi`() {
+        val selected = selectDefaultNetworkCandidate(
+            candidates = listOf(
+                candidate("wifi", validated = true, hasInterface = true, score = 130),
+                candidate("cell", validated = true, hasInterface = true, score = 110),
+            ),
+            current = "wifi",
+            preferred = "cell",
+        )
+
+        assertEquals("cell", selected?.value)
+    }
+
+    @Test
+    fun `retains the validated handover target after callback processing`() {
+        val selected = selectDefaultNetworkCandidate(
+            candidates = listOf(
+                candidate("wifi", validated = true, hasInterface = true, score = 130),
+                candidate("cell", validated = true, hasInterface = true, score = 110),
+            ),
+            current = "cell",
+        )
+
+        assertEquals("cell", selected?.value)
+    }
+
+    @Test
     fun `uses connected physical fallback when current network was lost`() {
         val selected = selectDefaultNetworkCandidate(
             candidates = listOf(

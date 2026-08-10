@@ -71,11 +71,13 @@ void main() {
 
     traffic.value = const TrafficUiSnapshot(
       speedBytesPerSecond: 2048,
+      uplinkBytesPerSecond: 1024,
       trafficBytes: 4096,
     );
     await tester.pump();
 
     expect(find.text('2.00 KB/s'), findsOneWidget);
+    expect(find.text('1.00 KB/s'), findsOneWidget);
     expect(find.text('4.00 KB'), findsOneWidget);
   });
 }

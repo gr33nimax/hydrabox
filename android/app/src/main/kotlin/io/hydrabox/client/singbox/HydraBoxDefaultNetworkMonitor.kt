@@ -305,7 +305,7 @@ object HydraBoxDefaultNetworkMonitor {
             TAG,
             "listener_attached count=${listenerCount()} current=${describeCurrentState()}",
         )
-        notifyListener(immediate = true, force = true)
+        notifyListener(immediate = true, force = true, recoverRuntime = false)
     }
 
     fun removeListener(listener: InterfaceUpdateListener) {
@@ -327,7 +327,7 @@ object HydraBoxDefaultNetworkMonitor {
             "reassertDefaultInterface reason=$reason listener=$hasListener current=${describeCurrentState()}",
         )
         if (!hasListener) return
-        notifyListener(immediate = true, force = true)
+        notifyListener(immediate = true, force = true, recoverRuntime = false)
     }
 
     private fun updateNetwork(network: Network) {
@@ -378,7 +378,11 @@ object HydraBoxDefaultNetworkMonitor {
         }
     }
 
-    private fun notifyListener(immediate: Boolean = false, force: Boolean = false) {
+    private fun notifyListener(
+        immediate: Boolean = false,
+        force: Boolean = false,
+        recoverRuntime: Boolean = true,
+    ) {
         val generation = notificationGeneration.incrementAndGet()
         val capturedNetwork = synchronized(lock) {
             if (listeners.isEmpty()) return
@@ -386,7 +390,14 @@ object HydraBoxDefaultNetworkMonitor {
         }
         val runnable = Runnable {
             notifyExecutor.execute {
-                runCatching { notifyListenerInternal(generation, capturedNetwork, force) }
+                runCatching {
+                    notifyListenerInternal(
+                        generation,
+                        capturedNetwork,
+                        force,
+                        recoverRuntime,
+                    )
+                }
                     .onFailure { Log.e(TAG, "notifyListenerInternal failed", it) }
             }
         }
@@ -413,11 +424,12 @@ object HydraBoxDefaultNetworkMonitor {
         generation: Long,
         capturedNetwork: Network?,
         force: Boolean,
+        recoverRuntime: Boolean,
     ) {
         if (notificationGeneration.get() != generation) return
         val currentListeners = synchronized(lock) { listeners.snapshot() }
         if (currentListeners.isEmpty()) return
-        val bestNetwork = resolveBestNetwork()
+        val bestNetwork = resolveBestNetwork(preferred = capturedNetwork)
         val effectiveNetwork = bestNetwork ?: capturedNetwork?.takeIf(::isSelectableNetwork)
         if (effectiveNetwork == null) {
             if (notificationGeneration.get() != generation) return
@@ -438,6 +450,11 @@ object HydraBoxDefaultNetworkMonitor {
                     -1,
                     notificationGeneration.get(),
                 )
+                if (recoverRuntime) {
+                    HydraBoxVpnService.requestRuntimeRecoveryAfterNetworkChange(
+                        "default_interface_lost",
+                    )
+                }
             }
             return
         }
@@ -464,6 +481,11 @@ object HydraBoxDefaultNetworkMonitor {
                     -1,
                     notificationGeneration.get(),
                 )
+                if (recoverRuntime) {
+                    HydraBoxVpnService.requestRuntimeRecoveryAfterNetworkChange(
+                        "default_interface_missing",
+                    )
+                }
             }
             return
         }
@@ -509,11 +531,18 @@ object HydraBoxDefaultNetworkMonitor {
                 index,
                 notificationGeneration.get(),
             )
-            // The monitor belongs to the foreground VPN service. Wake the
-            // runtime here rather than waiting for Flutter to resume, so a
-            // transport handover also recovers while the app is backgrounded.
+        }
+        // Force a router reset even when Android reuses the same interface.
+        // Long-lived call sockets otherwise remain pinned to a dead path after
+        // a Wi-Fi/mobile handover while the VPN itself still looks connected.
+        val recoveryReason = if (duplicate) {
+            "default_interface_reassert"
+        } else {
+            "default_interface"
+        }
+        if (recoverRuntime) {
             HydraBoxVpnService.requestRuntimeRecoveryAfterNetworkChange(
-                "default_interface:$interfaceName",
+                "$recoveryReason:$interfaceName",
             )
         }
     }

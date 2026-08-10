@@ -14,6 +14,7 @@ class HomeViewState {
     required this.hideServerIp,
     required this.hapticEnabled,
     required this.speedBytesPerSecond,
+    this.uplinkBytesPerSecond = 0,
     required this.trafficBytes,
     required this.brandName,
     required this.versionLabel,
@@ -33,6 +34,7 @@ class HomeViewState {
   final bool hideServerIp;
   final bool hapticEnabled;
   final double speedBytesPerSecond;
+  final double uplinkBytesPerSecond;
   final double trafficBytes;
   final ValueListenable<TrafficUiSnapshot>? trafficListenable;
   final bool activeProfileRefreshing;

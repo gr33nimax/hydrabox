@@ -294,6 +294,7 @@ class ProxiesPage extends StatefulWidget {
     required this.connected,
     this.hapticEnabled = true,
     this.speedBytesPerSecond = 0,
+    this.uplinkBytesPerSecond = 0,
     this.trafficBytes = 0,
     this.trafficListenable,
     this.initialSort = ProxySort.source,
@@ -332,6 +333,7 @@ class ProxiesPage extends StatefulWidget {
   final bool connected;
   final bool hapticEnabled;
   final double speedBytesPerSecond;
+  final double uplinkBytesPerSecond;
   final double trafficBytes;
   final ValueListenable<TrafficUiSnapshot>? trafficListenable;
   final ProxySort initialSort;
@@ -757,8 +759,10 @@ class _ProxiesPageState extends State<ProxiesPage> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-
     final theme = Theme.of(context);
+    final urlTestRunning = widget.proxies.any(
+      (proxy) => proxy.latencyChecking,
+    );
     if (widget.embedded) {
       final sheetMetricsListenable = widget.sheetMetricsListenable;
       final list = _buildEmbeddedProxyList(context: context, l10n: l10n);
@@ -808,6 +812,18 @@ class _ProxiesPageState extends State<ProxiesPage> {
         surfaceTintColor: Colors.transparent,
         shadowColor: Colors.transparent,
         actions: [
+          if (widget.connected)
+            IconButton(
+              key: const ValueKey('preconnect-urltest-action'),
+              tooltip: l10n.urlTestTitle,
+              onPressed: urlTestRunning ? null : () => widget.onUrlTest(),
+              icon: urlTestRunning
+                  ? const SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(FluentIcons.arrow_sync_24_regular),
+            ),
           IconButton(
             tooltip: l10n.sort,
             onPressed: () => _showProxySortPicker(
@@ -864,16 +880,6 @@ class _ProxiesPageState extends State<ProxiesPage> {
                 listBottomPadding: listBottomPadding,
               ),
             ),
-            if (widget.connected)
-              Positioned(
-                right: 24,
-                bottom: footerHeight + 24,
-                child: FloatingActionButton.small(
-                  onPressed: () => widget.onUrlTest(),
-                  tooltip: l10n.urlTestTitle,
-                  child: const Icon(FluentIcons.flash_24_filled),
-                ),
-              ),
           ],
         ),
       ),
@@ -922,8 +928,10 @@ class _ProxiesPageState extends State<ProxiesPage> {
       connected: widget.connected,
       hapticEnabled: widget.hapticEnabled,
       speedBytesPerSecond: widget.speedBytesPerSecond,
+      uplinkBytesPerSecond: widget.uplinkBytesPerSecond,
       trafficBytes: widget.trafficBytes,
       trafficListenable: widget.trafficListenable,
+      urlTestRunning: widget.proxies.any((proxy) => proxy.latencyChecking),
       onSortSelected: _setSort,
       onUrlTest: widget.onUrlTest,
       onRefreshIp: widget.onActiveProxyIpRefresh,

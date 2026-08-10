@@ -549,6 +549,17 @@ class SingboxConfigCoordinator {
     return buildSingboxConfigInBackground(input);
   }
 
+  /// Builds the ordinary subscription's current selector graph for an
+  /// isolated URLTest without touching the runtime config-build generation.
+  /// A diagnostic must not invalidate a concurrent lifecycle build.
+  Future<SingboxConfigBuildResult?> buildCurrentUrlTestConfig() async {
+    if (!await _ensureActiveSubscriptionHydrated() || !_isMounted()) {
+      return null;
+    }
+    final input = _currentSingboxConfigBuildInput(returnConfig: true);
+    return buildSingboxConfigInBackground(input);
+  }
+
   static void _requireValidHydraConfig(Map<String, dynamic> result) {
     if (result['valid'] == true) return;
     final diagnostics = result['diagnostics'];

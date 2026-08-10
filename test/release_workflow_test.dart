@@ -89,7 +89,7 @@ void main() {
       multiLine: true,
     ).firstMatch(pubspec)!.group(1)!;
 
-    expect(version, '0.4.0-beta.1');
+    expect(version, '0.5.0');
     expect(
       File('lib/app/app.dart').readAsStringSync(),
       contains("_fallbackClientVersionLabel = '$version'"),

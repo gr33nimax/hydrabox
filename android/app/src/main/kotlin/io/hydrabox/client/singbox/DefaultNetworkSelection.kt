@@ -11,15 +11,23 @@ internal data class DefaultNetworkCandidate<T>(
 /**
  * Keeps the current usable physical network when Android reports the VPN itself as
  * active and temporarily removes VALIDATED from its underlying network. When a
- * callback identifies a different physical network as the new best candidate,
- * that callback network wins over an unvalidated stale interface.
+ * callback identifies a validated physical handover target, that callback
+ * network wins and remains preferred over a higher-scoring stale transport.
  */
 internal fun <T> selectDefaultNetworkCandidate(
     candidates: List<DefaultNetworkCandidate<T>>,
     current: T?,
     preferred: T? = null,
 ): DefaultNetworkCandidate<T>? {
-    return candidates
+    val usablePreferred = candidates.firstOrNull {
+        it.value == preferred && it.isValidated && it.hasUsableInterface
+    }
+    val usableCurrent = candidates.firstOrNull {
+        it.value == current && it.isValidated && it.hasUsableInterface
+    }
+    return usablePreferred
+        ?: usableCurrent
+        ?: candidates
         .filter { it.isValidated }
         .maxByOrNull { it.score }
         ?: candidates

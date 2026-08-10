@@ -20,6 +20,7 @@ class HomePresentationData {
     required this.hapticEnabled,
     required this.trafficAvailable,
     required this.downlinkBytesPerSecond,
+    this.uplinkBytesPerSecond = 0,
     required this.uplinkTotalBytes,
     required this.downlinkTotalBytes,
     required this.trafficListenable,
@@ -40,6 +41,7 @@ class HomePresentationData {
   final bool hapticEnabled;
   final bool trafficAvailable;
   final int downlinkBytesPerSecond;
+  final int uplinkBytesPerSecond;
   final int uplinkTotalBytes;
   final int downlinkTotalBytes;
   final ValueListenable<TrafficUiSnapshot> trafficListenable;
@@ -61,6 +63,9 @@ class HomePresentationData {
       hideServerIp: hideServerIp,
       hapticEnabled: hapticEnabled,
       speedBytesPerSecond: showTraffic ? downlinkBytesPerSecond.toDouble() : 0,
+      uplinkBytesPerSecond: showTraffic
+          ? uplinkBytesPerSecond.toDouble()
+          : 0,
       trafficBytes: showTraffic
           ? (uplinkTotalBytes + downlinkTotalBytes).toDouble()
           : 0,

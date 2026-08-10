@@ -1,5 +1,19 @@
 # HydraBox changelog
 
+## [0.5.0]
+
+- Unified manual and active-proxy latency checks behind one isolated URLTest
+  path for every supported outbound protocol, including WireGuard, AnyTLS,
+  Hysteria2, VLESS/XHTTP, and proxy chains.
+- Replaced the floating server-list action with a toolbar refresh action and a
+  visible in-progress state.
+- Added live upload speed to compact traffic views and made upload/download
+  totals independently monotonic when native snapshots arrive out of order.
+- Fixed Wi-Fi/mobile handover recovery for long-lived VK Calls connections by
+  preferring the callback network and resetting native route state in the VPN
+  foreground service.
+- Switched the migrated default connectivity probe from Google to Cloudflare.
+
 ## [0.4.0-beta.1]
 
 - Исправлен lifecycle default-network monitor: основной VPN runtime и

@@ -22,6 +22,7 @@ void main() {
       hapticEnabled: true,
       trafficAvailable: trafficAvailable,
       downlinkBytesPerSecond: 1536,
+      uplinkBytesPerSecond: 768,
       uplinkTotalBytes: 4096,
       downlinkTotalBytes: 7168,
       trafficListenable: traffic,
@@ -35,6 +36,7 @@ void main() {
     final data = createData(connected: false, trafficAvailable: true);
 
     expect(data.speedBytesPerSecond, 0);
+    expect(data.uplinkSpeedBytesPerSecond, 0);
     expect(data.trafficBytes, 0);
   });
 
@@ -42,6 +44,7 @@ void main() {
     final data = createData(connected: true, trafficAvailable: true);
 
     expect(data.speedBytesPerSecond, 1536);
+    expect(data.uplinkSpeedBytesPerSecond, 768);
     expect(data.trafficBytes, 11264);
   });
 }

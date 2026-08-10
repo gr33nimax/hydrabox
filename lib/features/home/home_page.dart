@@ -47,6 +47,7 @@ class HomePage extends StatelessWidget {
   bool get hideServerIp => state.hideServerIp;
   bool get hapticEnabled => state.hapticEnabled;
   double get speedBytesPerSecond => state.speedBytesPerSecond;
+  double get uplinkBytesPerSecond => state.uplinkBytesPerSecond;
   double get trafficBytes => state.trafficBytes;
   ValueListenable<TrafficUiSnapshot>? get trafficListenable =>
       state.trafficListenable;
@@ -299,6 +300,7 @@ class HomePage extends StatelessWidget {
         hideIp: hideServerIp,
         hapticEnabled: hapticEnabled,
         speedBytesPerSecond: speedBytesPerSecond,
+        uplinkBytesPerSecond: uplinkBytesPerSecond,
         trafficBytes: trafficBytes,
         unknownText: '—',
         onRefreshIp: onRefreshActiveProxyIp,
@@ -313,6 +315,7 @@ class HomePage extends StatelessWidget {
           hideIp: hideServerIp,
           hapticEnabled: hapticEnabled,
           speedBytesPerSecond: traffic.speedBytesPerSecond,
+          uplinkBytesPerSecond: traffic.uplinkBytesPerSecond,
           trafficBytes: traffic.trafficBytes,
           unknownText: '—',
           onRefreshIp: onRefreshActiveProxyIp,
