@@ -14,7 +14,11 @@ void main() {
     expect(capabilities.supportsRuntimeEvents, isTrue);
     expect(capabilities.supportsManagedUrlTestSessions, isTrue);
     expect(capabilities.supportsSubscriptionJwe, isTrue);
-    expect(capabilities.remoteSafeInboundTypes, {'call'});
+    expect(capabilities.coreRole, 'client');
+    expect(capabilities.supportsCallVkMultiUserClient, isTrue);
+    expect(capabilities.supportsCallVkMultiUserServer, isFalse);
+    expect(capabilities.remoteSafeInboundTypes, isEmpty);
+    expect(capabilities.remoteSafeOutboundTypes, contains('call'));
     expect(capabilities.remoteSafeEndpointTypes, {'wireguard'});
     expect(capabilities.isCompatibleRelease, isTrue);
   });
