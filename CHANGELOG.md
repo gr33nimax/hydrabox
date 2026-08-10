@@ -3,10 +3,17 @@
 ## [0.4.0-beta.1]
 
 - Switched the Android runtime to HydraCore
-  `v1.13.16-extended-hydracore.1` and its versioned API v2 contract.
+  `v1.13.16-extended-hydracore.5` and its versioned API v2 contract.
 - Replaced the client-specific subscription formats with Hydra Subscription v2.
 - Added independent multi-resource storage and deterministic single-resource
   profile activation.
+- Separated app profile identities from resource-local sing-box tags, so
+  resources that all expose `proxy` retain independent selection and latency.
+- Fixed managed targeted URL tests for group entrypoints by keeping the native
+  leaf probe internal while reporting the requested profile identity.
+- Added the HydraCore VK Calls `multi_user` capability and outbound contract.
+- Replaced the notification and Quick Settings glyph with the monochrome Hydra
+  silhouette.
 - Made `requested_permissions` an automatic fail-closed compatibility check;
   valid subscriptions are added without a user approval flow.
 - Delegated Subscription v2, native config, and JWE validation to HydraCore.

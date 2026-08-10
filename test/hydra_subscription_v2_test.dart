@@ -56,12 +56,22 @@ void main() {
       'resource-main',
       'resource-backup',
     });
+    expect(parsed.profiles.map((profile) => profile.entrypointTag).toSet(), {
+      'proxy',
+    });
+    expect(
+      parsed.profiles.map((profile) => profile.runtimeTag).toSet(),
+      hasLength(2),
+    );
   });
 
   test('accepts the VK Calls outbound published by HYDRA ULTIMATE', () {
     final document = _document();
     final requirements = document['requirements'] as Map<String, dynamic>;
-    (requirements['core'] as Map<String, dynamic>)['features'] = ['call'];
+    (requirements['core'] as Map<String, dynamic>)['features'] = [
+      'call',
+      'call_vk_multi_user',
+    ];
     final resource =
         (document['resources'] as List<dynamic>).single as Map<String, dynamic>;
     resource['document'] = {
@@ -70,8 +80,18 @@ void main() {
           'type': 'call',
           'tag': 'call-vk-out',
           'platform': 'vk',
-          'read_buffer': 65536,
-          'join_link': 'https://calls.example/join/secret',
+          'mode': 'multi_user',
+          'server': 'vpn.example',
+          'server_port': 2443,
+          'join_links': <String>[
+            'https://calls.example/join/room-a',
+            'https://calls.example/join/room-b',
+          ],
+          'user': 'alice',
+          'password': 'per-user-secret',
+          'obfs_password': 'ooooooooooooooooooooooooooooooooooooooooooo',
+          'workers': 4,
+          'worker_connect_timeout': '12s',
         },
       ],
     };
@@ -84,6 +104,8 @@ void main() {
     expect(parsed.format, SubscriptionFormat.hydraV2);
     expect(parsed.outbounds.single['type'], 'call');
     expect(parsed.outbounds.single['platform'], 'vk');
+    expect(parsed.outbounds.single['mode'], 'multi_user');
+    expect(parsed.outbounds.single['join_links'], hasLength(2));
     expect(parsed.nativeConfig?['outbounds'], hasLength(1));
   });
 

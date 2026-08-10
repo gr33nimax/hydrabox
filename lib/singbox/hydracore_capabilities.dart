@@ -35,12 +35,14 @@ class HydraCoreCapabilities {
     this.supportsVlessEncryption = true,
     this.supportsRmux = true,
     this.supportsCall = true,
+    this.supportsCallVkMultiUser = true,
     this.amneziaVersion = 3,
     this.tunStacks = const {'system', 'gvisor', 'mixed'},
     this.inboundProtocols = const <String>{},
     this.outboundProtocols = const <String>{},
     this.endpointProtocols = const <String>{},
     this.callPlatforms = const <String>{},
+    this.callModes = const {'p2p', 'multi_user'},
     this.validationProfiles = const {'local', 'remote_v2'},
     this.subscriptionContracts = const {2},
     this.subscriptionMediaTypes = const {
@@ -74,7 +76,7 @@ class HydraCoreCapabilities {
   /// Expected release surface used by pure-Dart code and test fakes.
   static const requiredV2 = HydraCoreCapabilities(
     apiVersion: supportedApiVersion,
-    coreVersion: 'v1.13.16-extended-hydracore.1',
+    coreVersion: 'v1.13.16-extended-hydracore.5',
     inboundProtocols: {'call'},
     outboundProtocols: {
       'socks',
@@ -172,12 +174,14 @@ class HydraCoreCapabilities {
       supportsVlessEncryption: _requiredBool(features, 'vless_encryption'),
       supportsRmux: _requiredBool(features, 'rmux'),
       supportsCall: _requiredBool(features, 'call'),
+      supportsCallVkMultiUser: _requiredBool(features, 'call_vk_multi_user'),
       amneziaVersion: _requiredInt(features, 'amnezia_version'),
       tunStacks: _requiredStringSet(root, 'tun_stacks'),
       inboundProtocols: _requiredStringSet(protocols, 'inbounds'),
       outboundProtocols: _requiredStringSet(protocols, 'outbounds'),
       endpointProtocols: _requiredStringSet(protocols, 'endpoints'),
       callPlatforms: _requiredStringSet(protocols, 'call_platforms'),
+      callModes: _requiredStringSet(protocols, 'call_modes'),
       validationProfiles: _requiredStringSet(root, 'validation_profiles'),
       subscriptionContracts: _requiredIntSet(root, 'subscription_contracts'),
       subscriptionMediaTypes: _requiredStringSet(
@@ -267,12 +271,14 @@ class HydraCoreCapabilities {
   final bool supportsVlessEncryption;
   final bool supportsRmux;
   final bool supportsCall;
+  final bool supportsCallVkMultiUser;
   final int amneziaVersion;
   final Set<String> tunStacks;
   final Set<String> inboundProtocols;
   final Set<String> outboundProtocols;
   final Set<String> endpointProtocols;
   final Set<String> callPlatforms;
+  final Set<String> callModes;
   final Set<String> validationProfiles;
   final Set<int> subscriptionContracts;
   final Set<String> subscriptionMediaTypes;
@@ -312,6 +318,9 @@ class HydraCoreCapabilities {
       supportsManagedUrlTestSessions &&
       supportsSubscriptionJwe &&
       supportsCall &&
+      supportsCallVkMultiUser &&
+      callPlatforms.contains('vk') &&
+      callModes.containsAll(const {'p2p', 'multi_user'}) &&
       supportsRmux &&
       amneziaVersion >= 3 &&
       subscriptionContracts.contains(2) &&

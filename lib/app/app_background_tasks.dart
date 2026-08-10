@@ -273,7 +273,7 @@ ProxyCacheBuildResult buildProxyCache(ProxyCacheBuildInput input) {
   }
 
   final activeProfile = _buildProfileSummary(subscription);
-  final visibleOutbounds = subscription.outbounds
+  final visibleOutbounds = subscription.selectableOutbounds
       .where((outbound) => !outbound.info.deleted)
       .toList(growable: false);
   final selectableOutbounds = visibleOutbounds
@@ -743,7 +743,7 @@ AppProfileSummary _buildProfileSummary(Subscription subscription) {
     consumed: info?.consumed.toDouble() ?? 0,
     total: info?.total?.toDouble() ?? 0,
     remainingDays: info?.remainingDays,
-    outboundsCount: subscription.outbounds
+    outboundsCount: subscription.selectableOutbounds
         .where((outbound) => !outbound.info.deleted)
         .where((outbound) => !_isGroupOnlyOutbound(outbound))
         .length,
@@ -1183,8 +1183,8 @@ AppProxySummary _fallbackDisplayProxy(
   String fallbackName = subscription.name;
   if (visibleOutbounds.isNotEmpty) {
     fallbackName = visibleOutbounds.first.name;
-  } else if (subscription.outbounds.isNotEmpty) {
-    fallbackName = subscription.outbounds.first.name;
+  } else if (subscription.selectableOutbounds.isNotEmpty) {
+    fallbackName = subscription.selectableOutbounds.first.name;
   }
   return AppProxySummary(
     tag: '',

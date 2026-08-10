@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hydrabox/app/app_background_tasks.dart';
+import 'package:hydrabox/core/hydra_profile_identity.dart';
 import 'package:hydrabox/core/lowest_proxy_groups.dart';
 import 'package:hydrabox/data/local/app_settings_store.dart';
 import 'package:hydrabox/data/subscription/subscription_parser.dart';
@@ -1502,6 +1503,274 @@ void main() {
     expect(chain['transport']['type'], 'ws');
   });
 
+  test(
+    'Hydra proxy chain resolves same-resource app identities to native tags',
+    () {
+      final targetRuntimeTag = HydraProfileIdentity.runtimeTag(
+        profileId: 'target-profile',
+        resourceId: 'resource-a',
+      );
+      final detourRuntimeTag = HydraProfileIdentity.runtimeTag(
+        profileId: 'detour-profile',
+        resourceId: 'resource-a',
+      );
+      final subscription = Subscription(
+        id: 'hydra-chain',
+        name: 'Hydra chain',
+        url: 'https://provider.example/hydra-chain',
+        selectedProxyTag: 'chain-a',
+        selectedProfileId: 'target-profile',
+        profiles: <SubscriptionProfile>[
+          SubscriptionProfile(
+            id: 'target-profile',
+            resourceId: 'resource-a',
+            name: 'Target',
+            entrypointSection: 'outbounds',
+            entrypointTag: 'target-native',
+            runtimeTag: targetRuntimeTag,
+          ),
+          SubscriptionProfile(
+            id: 'detour-profile',
+            resourceId: 'resource-a',
+            name: 'Detour',
+            entrypointSection: 'outbounds',
+            entrypointTag: 'hop-native',
+            runtimeTag: detourRuntimeTag,
+          ),
+        ],
+        proxyChains: <SubscriptionProxyChain>[
+          SubscriptionProxyChain(
+            tag: 'chain-a',
+            name: 'Hop -> Target',
+            targetTag: targetRuntimeTag,
+            detourTag: detourRuntimeTag,
+            targetSubscriptionId: 'hydra-chain',
+          ),
+        ],
+        outbounds: const <Outbound>[
+          Outbound(
+            tag: 'target-native',
+            name: 'Target',
+            config: <String, dynamic>{
+              'type': 'vless',
+              'tag': 'target-native',
+              'server': 'target.example.com',
+              'server_port': 443,
+              'uuid': '7c6a5b3e-4f1a-4d2b-8c9e-1a2b3c4d5e6f',
+              '_source_scope': 'resource-a',
+              '_hydra_source_section': 'outbounds',
+              '_hydra_source_index_section': 'outbounds',
+              '_hydra_source_index': 0,
+              '_hydra_original_tag': 'target-native',
+              '_hydra_core_passthrough': true,
+            },
+          ),
+          Outbound(
+            tag: 'hop-native',
+            name: 'Hop',
+            config: <String, dynamic>{
+              'type': 'trojan',
+              'tag': 'hop-native',
+              'server': 'hop.example.com',
+              'server_port': 443,
+              'password': 'secret',
+              '_source_scope': 'resource-a',
+              '_hydra_source_section': 'outbounds',
+              '_hydra_source_index_section': 'outbounds',
+              '_hydra_source_index': 1,
+              '_hydra_original_tag': 'hop-native',
+              '_hydra_core_passthrough': true,
+            },
+          ),
+        ],
+        resourceConfigs: const <String, Map<String, dynamic>>{
+          'resource-a': <String, dynamic>{
+            'outbounds': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'type': 'vless',
+                'tag': 'target-native',
+                'server': 'target.example.com',
+                'server_port': 443,
+                'uuid': '7c6a5b3e-4f1a-4d2b-8c9e-1a2b3c4d5e6f',
+              },
+              <String, dynamic>{
+                'type': 'trojan',
+                'tag': 'hop-native',
+                'server': 'hop.example.com',
+                'server_port': 443,
+                'password': 'secret',
+              },
+            ],
+          },
+        },
+      );
+
+      final config = _defaultBuilder(
+        subscription,
+        selectedProxyTag: 'chain-a',
+      ).build();
+      final outbounds = (config['outbounds'] as List)
+          .cast<Map<String, dynamic>>();
+      final chain = outbounds.firstWhere(
+        (outbound) => outbound['tag'] == 'chain-a',
+      );
+      final remoteDns = ((config['dns'] as Map)['servers'] as List)
+          .cast<Map<String, dynamic>>()
+          .firstWhere((server) => server['tag'] == 'dns-remote');
+
+      expect(chain['server'], 'target.example.com');
+      expect(chain['detour'], 'hop-native');
+      expect(remoteDns['detour'], 'hop-native');
+      expect(jsonEncode(config), isNot(contains(targetRuntimeTag)));
+      expect(jsonEncode(config), isNot(contains(detourRuntimeTag)));
+    },
+  );
+
+  test('Hydra chain owned by resource A does not block active resource B', () {
+    final subscription = _foreignOwnerHydraChainSubscription();
+
+    final config = _defaultBuilder(
+      subscription,
+      selectedProxyTag: subscription.selectedProxyTag,
+    ).build();
+    final outbounds = (config['outbounds'] as List)
+        .cast<Map<String, dynamic>>();
+
+    expect(
+      outbounds.map((outbound) => outbound['tag']),
+      isNot(contains('chain-a')),
+    );
+    expect(jsonEncode(config), contains('b.example.com'));
+    expect(jsonEncode(config), isNot(contains('a-target.example.com')));
+  });
+
+  test(
+    'Hydra proxy chain rejects duplicate native tag from another resource',
+    () {
+      final resourceARuntimeTag = HydraProfileIdentity.runtimeTag(
+        profileId: 'profile-a',
+        resourceId: 'resource-a',
+      );
+      final resourceBRuntimeTag = HydraProfileIdentity.runtimeTag(
+        profileId: 'profile-b',
+        resourceId: 'resource-b',
+      );
+      final subscription = Subscription(
+        id: 'hydra-cross-resource-chain',
+        name: 'Hydra cross-resource chain',
+        url: 'https://provider.example/hydra-cross-resource-chain',
+        selectedProxyTag: 'chain-cross',
+        selectedProfileId: 'profile-a',
+        profiles: <SubscriptionProfile>[
+          SubscriptionProfile(
+            id: 'profile-a',
+            resourceId: 'resource-a',
+            name: 'A',
+            entrypointSection: 'outbounds',
+            entrypointTag: 'proxy',
+            runtimeTag: resourceARuntimeTag,
+          ),
+          SubscriptionProfile(
+            id: 'profile-b',
+            resourceId: 'resource-b',
+            name: 'B',
+            entrypointSection: 'outbounds',
+            entrypointTag: 'proxy',
+            runtimeTag: resourceBRuntimeTag,
+          ),
+        ],
+        proxyChains: <SubscriptionProxyChain>[
+          SubscriptionProxyChain(
+            tag: 'chain-cross',
+            name: 'Cross-resource chain',
+            targetTag: resourceARuntimeTag,
+            detourTag: resourceBRuntimeTag,
+            targetSubscriptionId: 'hydra-cross-resource-chain',
+          ),
+        ],
+        outbounds: const <Outbound>[
+          Outbound(
+            tag: 'proxy',
+            name: 'A',
+            config: <String, dynamic>{
+              'type': 'vless',
+              'tag': 'proxy',
+              'server': 'a.example.com',
+              'server_port': 443,
+              'uuid': '7c6a5b3e-4f1a-4d2b-8c9e-1a2b3c4d5e6f',
+              '_source_scope': 'resource-a',
+              '_hydra_source_section': 'outbounds',
+              '_hydra_source_index_section': 'outbounds',
+              '_hydra_source_index': 0,
+              '_hydra_original_tag': 'proxy',
+              '_hydra_core_passthrough': true,
+            },
+          ),
+          Outbound(
+            tag: 'proxy',
+            name: 'B',
+            config: <String, dynamic>{
+              'type': 'trojan',
+              'tag': 'proxy',
+              'server': 'b.example.com',
+              'server_port': 443,
+              'password': 'secret',
+              '_source_scope': 'resource-b',
+              '_hydra_source_section': 'outbounds',
+              '_hydra_source_index_section': 'outbounds',
+              '_hydra_source_index': 0,
+              '_hydra_original_tag': 'proxy',
+              '_hydra_core_passthrough': true,
+            },
+          ),
+        ],
+        resourceConfigs: const <String, Map<String, dynamic>>{
+          'resource-a': <String, dynamic>{
+            'outbounds': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'type': 'vless',
+                'tag': 'proxy',
+                'server': 'a.example.com',
+                'server_port': 443,
+                'uuid': '7c6a5b3e-4f1a-4d2b-8c9e-1a2b3c4d5e6f',
+              },
+            ],
+          },
+          'resource-b': <String, dynamic>{
+            'outbounds': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'type': 'trojan',
+                'tag': 'proxy',
+                'server': 'b.example.com',
+                'server_port': 443,
+                'password': 'secret',
+              },
+            ],
+          },
+        },
+      );
+
+      expect(resourceARuntimeTag, isNot(resourceBRuntimeTag));
+      expect(
+        () => _defaultBuilder(
+          subscription,
+          selectedProxyTag: 'chain-cross',
+        ).build(),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message.toString(),
+            'message',
+            allOf(
+              contains('chain-cross'),
+              contains('resource-b'),
+              contains('resource-a'),
+            ),
+          ),
+        ),
+      );
+    },
+  );
+
   test('proxy chain cache uses chain runtime latency and can be selected', () {
     const subscription = Subscription(
       id: 'sub',
@@ -2318,6 +2587,144 @@ void main() {
     expect(ruDirect['type'], 'udp');
     expect(ruDirect['server'], '77.88.8.1');
   });
+}
+
+Subscription _foreignOwnerHydraChainSubscription() {
+  final targetRuntimeTag = HydraProfileIdentity.runtimeTag(
+    profileId: 'target-a',
+    resourceId: 'resource-a',
+  );
+  final detourRuntimeTag = HydraProfileIdentity.runtimeTag(
+    profileId: 'detour-a',
+    resourceId: 'resource-a',
+  );
+  final resourceBRuntimeTag = HydraProfileIdentity.runtimeTag(
+    profileId: 'profile-b',
+    resourceId: 'resource-b',
+  );
+  return Subscription(
+    id: 'foreign-owner-chain',
+    name: 'Foreign owner chain',
+    url: 'https://provider.example/foreign-owner-chain',
+    selectedProxyTag: resourceBRuntimeTag,
+    selectedProfileId: 'profile-b',
+    profiles: <SubscriptionProfile>[
+      SubscriptionProfile(
+        id: 'target-a',
+        resourceId: 'resource-a',
+        name: 'Target A',
+        entrypointSection: 'outbounds',
+        entrypointTag: 'a-target',
+        runtimeTag: targetRuntimeTag,
+      ),
+      SubscriptionProfile(
+        id: 'detour-a',
+        resourceId: 'resource-a',
+        name: 'Detour A',
+        entrypointSection: 'outbounds',
+        entrypointTag: 'a-hop',
+        runtimeTag: detourRuntimeTag,
+      ),
+      SubscriptionProfile(
+        id: 'profile-b',
+        resourceId: 'resource-b',
+        name: 'Resource B',
+        entrypointSection: 'outbounds',
+        entrypointTag: 'b-proxy',
+        runtimeTag: resourceBRuntimeTag,
+      ),
+    ],
+    proxyChains: <SubscriptionProxyChain>[
+      SubscriptionProxyChain(
+        tag: 'chain-a',
+        name: 'A hop -> A target',
+        targetTag: targetRuntimeTag,
+        detourTag: detourRuntimeTag,
+        targetSubscriptionId: 'foreign-owner-chain',
+      ),
+    ],
+    outbounds: const <Outbound>[
+      Outbound(
+        tag: 'a-target',
+        name: 'A target',
+        config: <String, dynamic>{
+          'type': 'vless',
+          'tag': 'a-target',
+          'server': 'a-target.example.com',
+          'server_port': 443,
+          'uuid': '7c6a5b3e-4f1a-4d2b-8c9e-1a2b3c4d5e6f',
+          '_source_scope': 'resource-a',
+          '_hydra_source_section': 'outbounds',
+          '_hydra_source_index_section': 'outbounds',
+          '_hydra_original_tag': 'a-target',
+          '_hydra_core_passthrough': true,
+        },
+      ),
+      Outbound(
+        tag: 'a-hop',
+        name: 'A hop',
+        config: <String, dynamic>{
+          'type': 'trojan',
+          'tag': 'a-hop',
+          'server': 'a-hop.example.com',
+          'server_port': 443,
+          'password': 'secret',
+          '_source_scope': 'resource-a',
+          '_hydra_source_section': 'outbounds',
+          '_hydra_source_index_section': 'outbounds',
+          '_hydra_original_tag': 'a-hop',
+          '_hydra_core_passthrough': true,
+        },
+      ),
+      Outbound(
+        tag: 'b-proxy',
+        name: 'B proxy',
+        config: <String, dynamic>{
+          'type': 'trojan',
+          'tag': 'b-proxy',
+          'server': 'b.example.com',
+          'server_port': 443,
+          'password': 'secret',
+          '_source_scope': 'resource-b',
+          '_hydra_source_section': 'outbounds',
+          '_hydra_source_index_section': 'outbounds',
+          '_hydra_original_tag': 'b-proxy',
+          '_hydra_core_passthrough': true,
+        },
+      ),
+    ],
+    resourceConfigs: const <String, Map<String, dynamic>>{
+      'resource-a': <String, dynamic>{
+        'outbounds': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'type': 'vless',
+            'tag': 'a-target',
+            'server': 'a-target.example.com',
+            'server_port': 443,
+            'uuid': '7c6a5b3e-4f1a-4d2b-8c9e-1a2b3c4d5e6f',
+          },
+          <String, dynamic>{
+            'type': 'trojan',
+            'tag': 'a-hop',
+            'server': 'a-hop.example.com',
+            'server_port': 443,
+            'password': 'secret',
+          },
+        ],
+      },
+      'resource-b': <String, dynamic>{
+        'outbounds': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'type': 'trojan',
+            'tag': 'b-proxy',
+            'server': 'b.example.com',
+            'server_port': 443,
+            'password': 'secret',
+          },
+        ],
+      },
+    },
+  );
 }
 
 SingboxConfigBuilder _defaultBuilder(

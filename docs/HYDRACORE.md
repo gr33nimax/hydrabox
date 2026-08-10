@@ -16,6 +16,20 @@ feature requirements, stores each resource independently, and activates only
 the single resource selected by the current profile. Resources are never
 merged.
 
+HydraBox assigns every profile/resource pair a stable app-owned identity under
+the reserved `__hydra.profile.` namespace. Selection state and latency caches
+use that identity. The provider's native entrypoint tag remains untouched and
+is used only while assembling or probing that one isolated resource. Thus two
+resources may both expose an entrypoint named `proxy` without sharing ping or
+selection state.
+
+The required Calls surface advertises `features.call_vk_multi_user` and
+`protocols.call_modes` containing both `p2p` and `multi_user`. A VK multi-user
+outbound carries the VPS endpoint, one to four join links, per-user credentials,
+the shared obfuscation password, and one shared worker pool. The pool is bounded
+to `1..min(108, 27 * join_links)` allocations; its native default is the number
+of join links, and duplicate links are rejected.
+
 `requested_permissions` is an internal compatibility declaration. HydraCore
 and the client require it to exactly describe the resource authority:
 

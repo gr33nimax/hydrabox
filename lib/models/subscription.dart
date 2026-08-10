@@ -1,3 +1,5 @@
+import 'package:hydrabox/core/hydra_profile_identity.dart';
+
 /// Parsed subscription header info (subscription-userinfo, profile-title, etc.)
 class SubscriptionInfo {
   const SubscriptionInfo({
@@ -367,8 +369,9 @@ class SubscriptionGroup {
 /// Stable UI identity declared by Hydra Subscription v2.
 ///
 /// A profile points at a native sing-box outbound or endpoint but is not
-/// itself a native runtime object. [runtimeTag] is the resolved compatibility
-/// projection used by the existing selector pipeline.
+/// itself a native runtime object. [runtimeTag] is an app-owned stable identity
+/// used by selection and latency caches; [entrypointTag] is used only at the
+/// isolated native config boundary.
 class SubscriptionProfile {
   const SubscriptionProfile({
     required this.id,
@@ -405,19 +408,53 @@ class SubscriptionProfile {
   };
 
   factory SubscriptionProfile.fromMap(Map<String, dynamic> map) {
+    final id = map['id'] as String? ?? '';
+    final resourceId = map['resource_id'] as String? ?? '';
+    final appRuntimeTag = HydraProfileIdentity.runtimeTag(
+      profileId: id,
+      resourceId: resourceId,
+    );
     return SubscriptionProfile(
-      id: map['id'] as String? ?? '',
-      resourceId: map['resource_id'] as String? ?? '',
+      id: id,
+      resourceId: resourceId,
       name: map['name'] as String? ?? '',
       entrypointSection: map['entrypoint_section'] as String? ?? '',
       entrypointTag: map['entrypoint_tag'] as String? ?? '',
-      runtimeTag:
-          map['runtime_tag'] as String? ??
-          map['entrypoint_tag'] as String? ??
-          '',
+      // Always migrate persisted v2 payloads away from their old native-tag
+      // identity. Older HydraBox versions stored entrypoint_tag here, which
+      // collapses independent resources that both use tags such as `proxy`.
+      runtimeTag: appRuntimeTag.isNotEmpty
+          ? appRuntimeTag
+          : map['runtime_tag'] as String? ??
+                map['entrypoint_tag'] as String? ??
+                '',
       enabled: map['enabled'] != false,
       country: map['country']?.toString(),
       metadata: Map<String, dynamic>.from(map['metadata'] as Map? ?? const {}),
+    );
+  }
+
+  SubscriptionProfile copyWith({
+    String? id,
+    String? resourceId,
+    String? name,
+    String? entrypointSection,
+    String? entrypointTag,
+    String? runtimeTag,
+    bool? enabled,
+    String? country,
+    Map<String, dynamic>? metadata,
+  }) {
+    return SubscriptionProfile(
+      id: id ?? this.id,
+      resourceId: resourceId ?? this.resourceId,
+      name: name ?? this.name,
+      entrypointSection: entrypointSection ?? this.entrypointSection,
+      entrypointTag: entrypointTag ?? this.entrypointTag,
+      runtimeTag: runtimeTag ?? this.runtimeTag,
+      enabled: enabled ?? this.enabled,
+      country: country ?? this.country,
+      metadata: metadata ?? this.metadata,
     );
   }
 }
@@ -554,6 +591,104 @@ class Subscription {
   final UrlTestConfig urlTestConfig;
   final SubscriptionInfo? info;
 
+  /// User-visible/selectable projection of the current Hydra resources.
+  ///
+  /// A native resource may contain an internal graph with arbitrary tags. Only
+  /// its declared profile entrypoint is exposed to app-level selection, under
+  /// the stable profile identity. The native document and its tags are never
+  /// rewritten or merged.
+  List<Outbound> get selectableOutbounds {
+    if (resourceConfigs.isEmpty || profiles.isEmpty) {
+      return outbounds;
+    }
+    final projected = <Outbound>[];
+    for (final profile in profiles) {
+      if (!profile.enabled || profile.runtimeTag.trim().isEmpty) {
+        continue;
+      }
+      final native = nativeEntrypointForProfile(profile);
+      if (native == null) {
+        continue;
+      }
+      projected.add(
+        native.copyWith(
+          tag: profile.runtimeTag,
+          name: profile.name.trim().isEmpty ? native.name : profile.name,
+        ),
+      );
+    }
+    return List<Outbound>.unmodifiable(projected);
+  }
+
+  SubscriptionProfile? profileForRuntimeTag(String runtimeTag) {
+    final normalized = runtimeTag.trim();
+    if (normalized.isEmpty) return null;
+    for (final profile in profiles) {
+      if (profile.enabled && profile.runtimeTag.trim() == normalized) {
+        return profile;
+      }
+    }
+    return null;
+  }
+
+  SubscriptionProfile? profileForId(String profileId) {
+    final normalized = profileId.trim();
+    if (normalized.isEmpty) return null;
+    for (final profile in profiles) {
+      if (profile.enabled && profile.id == normalized) {
+        return profile;
+      }
+    }
+    return null;
+  }
+
+  Outbound? nativeEntrypointForProfile(SubscriptionProfile profile) {
+    for (final outbound in outbounds) {
+      if (_isNativeEntrypointForProfile(outbound, profile)) {
+        return outbound;
+      }
+    }
+    return null;
+  }
+
+  SubscriptionProfile? profileForNativeEntrypoint(Outbound outbound) {
+    final selected = profileForId(selectedProfileId);
+    if (selected != null && _isNativeEntrypointForProfile(outbound, selected)) {
+      return selected;
+    }
+    for (final profile in profiles) {
+      if (profile.enabled && _isNativeEntrypointForProfile(outbound, profile)) {
+        return profile;
+      }
+    }
+    return null;
+  }
+
+  String runtimeTagForNativeEntrypoint(Outbound outbound) {
+    if (resourceConfigs.isEmpty) return outbound.tag;
+    return profileForNativeEntrypoint(outbound)?.runtimeTag.trim() ?? '';
+  }
+
+  String nativeEntrypointTagForRuntimeTag(String runtimeTag) =>
+      profileForRuntimeTag(runtimeTag)?.entrypointTag.trim() ??
+      runtimeTag.trim();
+
+  static bool _isNativeEntrypointForProfile(
+    Outbound outbound,
+    SubscriptionProfile profile,
+  ) {
+    final sourceSection =
+        outbound.config['_hydra_source_index_section']?.toString() ??
+        outbound.config['_hydra_source_section']?.toString() ??
+        '';
+    final sourceTag =
+        outbound.config['_hydra_original_tag']?.toString() ?? outbound.tag;
+    final sourceScope = outbound.config['_source_scope']?.toString() ?? '';
+    return sourceScope == profile.resourceId &&
+        sourceSection == profile.entrypointSection &&
+        sourceTag == profile.entrypointTag;
+  }
+
   bool get needsRefresh {
     if (disableAutoUpdate || autoRefreshMinutes <= 0) return false;
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -563,7 +698,7 @@ class Subscription {
   Map<String, dynamic> toMetadataMap() {
     final payloadLoaded = rawContent.isNotEmpty || outbounds.isNotEmpty;
     final visibleProxyCount = payloadLoaded
-        ? outbounds
+        ? selectableOutbounds
               .where((outbound) => !outbound.info.deleted)
               .where((outbound) => outbound.config['_group_only'] != true)
               .length
@@ -727,6 +862,10 @@ class Subscription {
     UrlTestConfig? urlTestConfig,
     SubscriptionInfo? info,
   }) {
+    final nextProfiles = profiles ?? this.profiles;
+    final selectedProfileForRuntimeTag = selectedProxyTag == null
+        ? ''
+        : _profileIdForRuntimeTag(nextProfiles, selectedProxyTag);
     return Subscription(
       id: id ?? this.id,
       name: name ?? this.name,
@@ -734,12 +873,9 @@ class Subscription {
       selectedProxyTag: selectedProxyTag ?? this.selectedProxyTag,
       selectedProfileId:
           selectedProfileId ??
-          (selectedProxyTag == null
+          (selectedProxyTag == null || selectedProfileForRuntimeTag.isEmpty
               ? this.selectedProfileId
-              : _profileIdForRuntimeTag(
-                  profiles ?? this.profiles,
-                  selectedProxyTag,
-                )),
+              : selectedProfileForRuntimeTag),
       sortOrder: sortOrder ?? this.sortOrder,
       lastUpdated: lastUpdated ?? this.lastUpdated,
       disableAutoUpdate: disableAutoUpdate ?? this.disableAutoUpdate,
@@ -752,7 +888,7 @@ class Subscription {
       rawContent: rawContent ?? this.rawContent,
       outbounds: outbounds ?? this.outbounds,
       groups: groups ?? this.groups,
-      profiles: profiles ?? this.profiles,
+      profiles: nextProfiles,
       proxyChains: proxyChains ?? this.proxyChains,
       nativeConfig: clearNativeConfig
           ? null

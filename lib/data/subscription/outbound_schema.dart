@@ -39,6 +39,7 @@ class ParsedOutboundSchema {
     'tuic',
     'sudoku',
     'snell',
+    'call',
     'bandwidth-limiter',
     'connection-limiter',
     'traffic-limiter',
@@ -73,6 +74,7 @@ class ParsedOutboundSchema {
     'mtproxy',
     'sudoku',
     'snell',
+    'call',
   };
 
   /// V2Ray and extended transports accepted by the core.
@@ -464,6 +466,22 @@ class ParsedOutboundSchema {
     'min_idle_session',
   };
 
+  static const Set<String> _typeSpecificKeysCall = {
+    'platform',
+    'mode',
+    'read_buffer',
+    'max_buffered_amount',
+    'memory_limit',
+    'join_link',
+    'join_links',
+    'cookies',
+    'user',
+    'password',
+    'obfs_password',
+    'workers',
+    'worker_connect_timeout',
+  };
+
   static const Set<String> _typeSpecificKeysWireguard = {
     'system',
     'name',
@@ -581,6 +599,91 @@ class ParsedOutboundSchema {
       }
       if (serverPort == null || serverPort <= 0) {
         return 'missing server_port';
+      }
+    }
+
+    if (type == 'call') {
+      final platformValue = config['platform'];
+      final platform = platformValue is String
+          ? platformValue.trim().toLowerCase()
+          : '';
+      final modeValue = config['mode'];
+      var mode = 'p2p';
+      if (modeValue is String) {
+        mode = modeValue.trim().toLowerCase();
+      }
+      if (platform.isEmpty) {
+        return 'missing call platform';
+      }
+      if (modeValue != null && modeValue is! String) {
+        return 'invalid call mode';
+      }
+      if (mode == 'multi_user') {
+        if (platform != 'vk') {
+          return 'call multi_user mode currently requires platform vk';
+        }
+        final serverValue = config['server'];
+        final server = serverValue is String ? serverValue.trim() : '';
+        final serverPort = config['server_port'];
+        if (server.isEmpty) return 'missing server';
+        if (serverPort is! int || serverPort <= 0 || serverPort > 65535) {
+          return 'missing server_port';
+        }
+        final joinLinks = config['join_links'];
+        if (joinLinks is! List ||
+            joinLinks.isEmpty ||
+            joinLinks.length > 4 ||
+            joinLinks.any(
+              (value) =>
+                  value is! String ||
+                  value.trim().isEmpty ||
+                  utf8.encode(value.trim()).length > 2048,
+            )) {
+          return 'call join_links must contain 1..4 bounded links';
+        }
+        final normalizedJoinLinks = joinLinks
+            .cast<String>()
+            .map((value) => value.trim())
+            .toSet();
+        if (normalizedJoinLinks.length != joinLinks.length) {
+          return 'call join_links must be unique';
+        }
+        final credentialBounds = <String, int>{
+          'user': 64,
+          'password': 256,
+          'obfs_password': 256,
+        };
+        for (final entry in credentialBounds.entries) {
+          final value = config[entry.key];
+          if (value is! String ||
+              value.isEmpty ||
+              utf8.encode(value).length > entry.value) {
+            return 'call ${entry.key} must contain 1..${entry.value} bytes';
+          }
+        }
+        final workers = config['workers'];
+        final maximumWorkers = 27 * joinLinks.length;
+        if (workers != null &&
+            (workers is! int || workers < 1 || workers > maximumWorkers)) {
+          return 'call workers must be between 1 and $maximumWorkers';
+        }
+        final workerConnectTimeout = config['worker_connect_timeout'];
+        if (workerConnectTimeout != null) {
+          final seconds = workerConnectTimeout is String
+              ? _durationSeconds(workerConnectTimeout)
+              : null;
+          if (seconds == null || seconds < 1 || seconds > 120) {
+            return 'call worker_connect_timeout must be between 1s and 2m';
+          }
+        }
+      } else {
+        // Existing creator/joiner role labels are still accepted by the
+        // legacy native Calls path. The core distinguishes the role from the
+        // inbound/outbound side and only reserves multi_user as a new mode.
+        final joinLink = config['join_link'];
+        if (joinLink is! String || joinLink.trim().isEmpty) {
+          return 'missing call join_link';
+        }
       }
     }
 
@@ -1027,6 +1130,15 @@ class ParsedOutboundSchema {
     final canonical = Map<String, dynamic>.from(outbound);
     canonical['type'] = _normalizedType(canonical['type']);
 
+    if (canonical['type'] == 'call') {
+      for (final key in const {'platform', 'mode'}) {
+        final value = canonical[key];
+        if (value is String) {
+          canonical[key] = value.trim().toLowerCase();
+        }
+      }
+    }
+
     if (canonical['type'] == 'hysteria' &&
         canonical.containsKey('auth_string') &&
         !canonical.containsKey('auth_str')) {
@@ -1070,6 +1182,7 @@ class ParsedOutboundSchema {
         'hysteria2' => _typeSpecificKeysHysteria2,
         'tuic' => _typeSpecificKeysTuic,
         'anytls' => _typeSpecificKeysAnytls,
+        'call' => _typeSpecificKeysCall,
         'naive' => _typeSpecificKeysNaive,
         'wireguard' => _typeSpecificKeysWireguard,
         'snowtun' => _typeSpecificKeysSnowtun,
@@ -1556,6 +1669,9 @@ class ParsedOutboundSchema {
     'traffic-limiter',
     'rate-limiter',
     'parser',
+    // Legacy Calls obtains its endpoint from join_link. multi_user mode is
+    // checked explicitly below and requires server/server_port.
+    'call',
     'wireguard',
     'snowtun',
   }.contains(type);
@@ -1571,6 +1687,34 @@ class ParsedOutboundSchema {
       return int.tryParse(value);
     }
     return null;
+  }
+
+  static double? _durationSeconds(String raw) {
+    final value = raw.trim();
+    if (value.isEmpty || value.length > 32) return null;
+    final pattern = RegExp(r'(\d+(?:\.\d+)?)(ns|us|\u00b5s|ms|s|m|h)');
+    final matches = pattern.allMatches(value).toList(growable: false);
+    if (matches.isEmpty ||
+        matches.map((match) => match.group(0)).join() != value) {
+      return null;
+    }
+    var total = 0.0;
+    for (final match in matches) {
+      final amount = double.tryParse(match.group(1)!);
+      if (amount == null || !amount.isFinite) return null;
+      final factor = switch (match.group(2)) {
+        'ns' => 0.000000001,
+        'us' || '\u00b5s' => 0.000001,
+        'ms' => 0.001,
+        's' => 1.0,
+        'm' => 60.0,
+        'h' => 3600.0,
+        _ => 0.0,
+      };
+      total += amount * factor;
+      if (!total.isFinite) return null;
+    }
+    return total;
   }
 
   static String _normalizedType(dynamic value) {

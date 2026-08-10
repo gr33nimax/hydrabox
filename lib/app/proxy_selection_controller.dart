@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:hydrabox/core/lowest_proxy_groups.dart';
 import 'package:hydrabox/models/subscription.dart';
+import 'package:hydrabox/singbox/hydra_proxy_chain_resolver.dart';
 
 class ProxySelectionTimeout {
   const ProxySelectionTimeout({
@@ -137,9 +138,7 @@ class ProxySelectionController {
   bool isCurrentGeneration(int generation) => generation == _generation;
 
   Subscription withSelectedOutbound(Subscription subscription, String tag) {
-    return subscription.copyWith(
-      selectedProxyTag: normalizeProxySelectionTag(tag),
-    );
+    return withSelectedProxyOutbound(subscription, tag);
   }
 
   List<Subscription> replaceSubscription(
@@ -159,7 +158,7 @@ class ProxySelectionController {
     String preferredTag,
   ) {
     final normalized = normalizeProxySelectionTag(preferredTag);
-    final liveOutbounds = subscription.outbounds
+    final liveOutbounds = subscription.selectableOutbounds
         .where(
           (outbound) =>
               !outbound.info.deleted && outbound.config['_group_only'] != true,
@@ -172,6 +171,9 @@ class ProxySelectionController {
       return liveOutbounds.length == 1
           ? liveOutbounds.first.tag
           : lowestProxyTag;
+    }
+    if (subscription.profileForRuntimeTag(normalized) != null) {
+      return normalized;
     }
     if (isLowestProxyTag(normalized)) {
       return liveOutbounds.length == 1 ? liveOutbounds.first.tag : normalized;
@@ -196,6 +198,14 @@ class ProxySelectionController {
     for (final outbound in liveOutbounds) {
       if (outbound.tag == normalized) {
         return normalized;
+      }
+    }
+    if (subscription.resourceConfigs.isNotEmpty) {
+      final selectedProfile = subscription.profileForId(
+        subscription.selectedProfileId,
+      );
+      if (selectedProfile != null) {
+        return selectedProfile.runtimeTag;
       }
     }
     return liveOutbounds.length == 1 ? liveOutbounds.first.tag : lowestProxyTag;
@@ -231,4 +241,16 @@ class ProxySelectionController {
     _pendingRuntimeSelectTag = null;
     _pendingRuntimeSelectPreviousTag = null;
   }
+}
+
+Subscription withSelectedProxyOutbound(Subscription subscription, String tag) {
+  final normalized = normalizeProxySelectionTag(tag);
+  final owner = HydraProxyChainResolver.ownerProfileForSelection(
+    subscription,
+    normalized,
+  );
+  return subscription.copyWith(
+    selectedProxyTag: normalized,
+    selectedProfileId: owner?.id,
+  );
 }

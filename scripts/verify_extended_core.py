@@ -18,13 +18,19 @@ PROVENANCE = ROOT / "android" / "app" / "libs" / "libbox.provenance.json"
 
 REQUIRED_SOURCE_MARKERS: dict[str, tuple[str, ...]] = {
     "experimental/libbox/hydracore_capabilities.go": (
-        "const hydraCoreAPIVersion = 2",
+        "const hydraCoreAPIVersion = H.APIVersion",
         "func HydraCoreCapabilities() string",
+        "return H.CapabilitiesJSON()",
+    ),
+    "common/hydracore/capabilities.go": (
+        "const APIVersion = 2",
         'CoreID:      "io.hydrabox.hydracore"',
         'json:"runtime_events"',
         'json:"managed_url_test_sessions"',
         'json:"subscription_jwe"',
         'json:"call"',
+        'json:"call_vk_multi_user"',
+        'callModes = []string{"p2p", "multi_user"}',
         '[]int{2}',
         '[]string{"__hydra."}',
     ),

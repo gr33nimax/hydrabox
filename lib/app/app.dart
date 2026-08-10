@@ -17,6 +17,7 @@ import 'package:hydrabox/app/app_settings_controller.dart';
 import 'package:hydrabox/app/deep_link_import.dart';
 import 'package:hydrabox/app/group_url_test_scheduler.dart';
 import 'package:hydrabox/app/hydra_resource_latency_plan.dart';
+import 'package:hydrabox/app/hydra_runtime_tag_projection.dart';
 import 'package:hydrabox/app/latency_coordinator.dart';
 import 'package:hydrabox/app/network_recovery_controller.dart';
 import 'package:hydrabox/app/proxy_runtime_controller.dart';
@@ -71,6 +72,7 @@ import 'package:hydrabox/models/app_view_models.dart';
 import 'package:hydrabox/models/proxy_runtime_visual_state.dart';
 import 'package:hydrabox/models/subscription.dart';
 import 'package:hydrabox/singbox/core_config_migration.dart';
+import 'package:hydrabox/singbox/hydra_proxy_chain_resolver.dart';
 import 'package:hydrabox/singbox/singbox_config_builder.dart';
 import 'package:hydrabox/singbox/singbox_runtime.dart';
 import 'package:hydrabox/theme/demo_app_theme.dart';
@@ -849,7 +851,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     if (subscription == null) {
       return null;
     }
-    for (final outbound in subscription.outbounds) {
+    for (final outbound in subscription.selectableOutbounds) {
       if (outbound.tag == tag && !outbound.info.deleted) {
         return outbound;
       }
@@ -869,7 +871,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
             consumed: subscription.info?.consumed.toDouble() ?? 0,
             total: subscription.info?.total?.toDouble() ?? 0,
             remainingDays: subscription.info?.remainingDays,
-            outboundsCount: subscription.outbounds
+            outboundsCount: subscription.selectableOutbounds
                 .where((outbound) => !outbound.info.deleted)
                 .where((outbound) => !_isGroupOnlyOutbound(outbound))
                 .length,
@@ -911,7 +913,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     if (subscription == null) {
       return const [];
     }
-    return subscription.outbounds
+    return subscription.selectableOutbounds
         .where((outbound) => !outbound.info.deleted)
         .where((outbound) => !_isGroupOnlyOutbound(outbound))
         .map(
@@ -984,7 +986,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       final outboundTag = parts.sublist(1).join('\n').trim();
       final cached = _proxyChainTargetSourceCache[subscriptionId];
       if (cached != null) {
-        for (final outbound in cached.outbounds) {
+        for (final outbound in cached.selectableOutbounds) {
           if (outbound.tag == outboundTag && !outbound.info.deleted) {
             return (subscription: cached, outbound: outbound);
           }
@@ -1004,7 +1006,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
             );
           }
         }
-        for (final outbound in subscription.outbounds) {
+        for (final outbound in subscription.selectableOutbounds) {
           if (outbound.tag == outboundTag && !outbound.info.deleted) {
             return (subscription: subscription, outbound: outbound);
           }
@@ -1089,10 +1091,14 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       consumed: info?.consumed.toDouble() ?? 0,
       total: info?.total?.toDouble() ?? 0,
       remainingDays: info?.remainingDays,
-      outboundsCount: subscription.outbounds
-          .where((outbound) => !outbound.info.deleted)
-          .where((outbound) => outbound.config['_group_only'] != true)
-          .length,
+      outboundsCount: subscription.outbounds.isEmpty
+          ? (subscription.cachedVisibleProxyCount < 0
+                ? 0
+                : subscription.cachedVisibleProxyCount)
+          : subscription.selectableOutbounds
+                .where((outbound) => !outbound.info.deleted)
+                .where((outbound) => outbound.config['_group_only'] != true)
+                .length,
       sourceLabel: '',
     );
   }
@@ -1626,7 +1632,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     }
     final visibleOutbounds = <Outbound>[];
     final outboundByTag = <String, Outbound>{};
-    for (final outbound in subscription.outbounds) {
+    for (final outbound in subscription.selectableOutbounds) {
       if (outbound.info.deleted) {
         continue;
       }
@@ -1741,6 +1747,9 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     final targetTag = _connected
         ? (_currentResolvedActiveOutboundTag()?.trim() ?? '')
         : '';
+    final nativeTargetTag =
+        _activeSubscription?.nativeEntrypointTagForRuntimeTag(targetTag) ??
+        targetTag;
     final title = _buildVpnNotificationTitle();
     final timeoutMillis = _urlTestTimeoutSeconds * 1000;
     final signature = <Object?>[
@@ -1765,8 +1774,8 @@ class _HydraBoxClientState extends State<HydraBoxClient>
         title: title,
         latencyMillis: latency,
         groupTag: 'select',
-        targetOutboundTag: targetTag,
-        priorityOutboundTag: targetTag,
+        targetOutboundTag: nativeTargetTag,
+        priorityOutboundTag: nativeTargetTag,
         excludeOutboundTag: '',
         url: _urlTestUrl,
         timeoutMillis: timeoutMillis,
@@ -3510,7 +3519,26 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       requestedRuntimeTag: requestedTag,
       runtimeLatencies: _runtimeLatencies,
     );
-    if (_selectedProxyTag == tag) {
+    late final Subscription updatedSubscription;
+    late final bool requiresRuntimeReload;
+    try {
+      updatedSubscription = _withSelectedOutbound(activeSubscription, tag);
+      requiresRuntimeReload = HydraResourceLatencyPlan.requiresRuntimeReload(
+        subscription: activeSubscription,
+        previousRuntimeTag: _selectedProxyTag,
+        nextRuntimeTag: tag,
+      );
+    } on StateError catch (error) {
+      AppLogStore.warning(
+        'proxy',
+        'Rejected invalid Hydra outbound selection tag=$tag error=$error',
+      );
+      _showAppSnackBar('This proxy chain is unavailable: $error');
+      return;
+    }
+    if (_selectedProxyTag == tag &&
+        activeSubscription.selectedProfileId ==
+            updatedSubscription.selectedProfileId) {
       return;
     }
 
@@ -3529,13 +3557,6 @@ class _HydraBoxClientState extends State<HydraBoxClient>
           'connected=$_connected',
     );
     _haptic();
-    final updatedSubscription = _withSelectedOutbound(activeSubscription, tag);
-    final requiresRuntimeReload =
-        HydraResourceLatencyPlan.requiresRuntimeReload(
-          subscription: activeSubscription,
-          previousRuntimeTag: previousTag,
-          nextRuntimeTag: tag,
-        );
     _runtimeOperations.beginSelection(tag);
     _resetActiveProxyIpState(rebuild: false);
     final selectInRuntime =
@@ -3598,7 +3619,10 @@ class _HydraBoxClientState extends State<HydraBoxClient>
             'selectOutbound',
             'reason=user proxy select group=select outbound=$tag',
           );
-          final result = await _runtimeCommands.selectOutbound(tag);
+          final nativeTag = activeSubscription.nativeEntrypointTagForRuntimeTag(
+            tag,
+          );
+          final result = await _runtimeCommands.selectOutbound(nativeTag);
           if (!mounted ||
               !_proxySelection.isCurrentGeneration(selectionGeneration)) {
             return;
@@ -3947,6 +3971,26 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     SubscriptionProxyChain chain, {
     required bool selectAfterApply,
   }) async {
+    final chains = [
+      for (final existing in subscription.proxyChains)
+        if (existing.tag != chain.tag) existing,
+      chain,
+    ];
+    if (subscription.resourceConfigs.isNotEmpty) {
+      try {
+        HydraProxyChainResolver.resolveForLatency(
+          subscription: subscription.copyWith(proxyChains: chains),
+          chain: chain,
+        );
+      } on StateError catch (error) {
+        AppLogStore.warning(
+          'proxy chain',
+          'Rejected invalid Hydra proxy chain tag=${chain.tag}: $error',
+        );
+        _showAppSnackBar('This proxy chain cannot be created: $error');
+        return;
+      }
+    }
     _ensureActiveLookupCaches();
     final target = _targetOutboundForProxyChain(chain);
     if (target == null) {
@@ -3968,17 +4012,10 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     if (config == null) {
       return;
     }
-    final chains = [
-      for (final existing in subscription.proxyChains)
-        if (existing.tag != chain.tag) existing,
-      chain,
-    ];
-    final updated = subscription.copyWith(
-      proxyChains: chains,
-      selectedProxyTag: selectAfterApply
-          ? chain.tag
-          : subscription.selectedProxyTag,
-    );
+    final withChain = subscription.copyWith(proxyChains: chains);
+    final updated = selectAfterApply
+        ? withSelectedProxyOutbound(withChain, chain.tag)
+        : withChain;
     setState(() {
       _subscriptions = _replaceSubscription(updated);
       _activeLookupSubscription = null;
@@ -5217,12 +5254,21 @@ class _HydraBoxClientState extends State<HydraBoxClient>
         }
         PreconnectUrlTestResult result;
         try {
+          if (target.validationError.isNotEmpty) {
+            throw StateError(target.validationError);
+          }
           final build = await _configCoordinator.buildUrlTestConfigForTarget(
             target.runtimeTag,
+            profileId: target.profileId,
           );
-          if (build == null ||
-              !_standaloneUrlTestIsCurrent(generation, subscriptionId)) {
+          if (!_standaloneUrlTestIsCurrent(generation, subscriptionId)) {
             break;
+          }
+          if (build == null) {
+            throw StateError(
+              'Standalone URLTest config is unavailable for '
+              '${target.runtimeTag}',
+            );
           }
           final config = build.configJson.isNotEmpty
               ? build.configJson
@@ -5230,7 +5276,10 @@ class _HydraBoxClientState extends State<HydraBoxClient>
           result = await SingboxRuntime.instance.preconnectUrlTest(
             config: config,
             groupTag: 'select',
-            targetOutboundTag: target.runtimeTag,
+            // The measurement remains keyed by the app-owned runtimeTag, but
+            // libbox can only address the exact tag inside this isolated native
+            // resource document.
+            targetOutboundTag: target.nativeEntrypointTag,
             url: _urlTestUrl,
             timeoutMillis: LatencyCoordinator.perOutboundTimeoutMillis,
             deadlineMillis: LatencyCoordinator.perOutboundTimeoutMillis + 5000,
@@ -5243,7 +5292,9 @@ class _HydraBoxClientState extends State<HydraBoxClient>
             timeSeconds: now,
             status: ProxyRuntimeController.urlTestStatusUnavailable,
             error: error.toString(),
-            errorCode: 'standalone_urltest_failed',
+            errorCode: target.validationError.isEmpty
+                ? 'standalone_urltest_failed'
+                : 'hydra_chain_unbuildable',
           );
           AppLogStore.warning(
             'latency',
@@ -5378,11 +5429,15 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       _haptic();
     }
     if (!_latencyCoordinator.capabilities.supportsTargetedUrlTest) {
-      await _latencyCoordinator.runFull(reason: 'manual_active_fallback');
+      await _runFullLatencyTest(reason: 'manual_active_fallback');
       return;
     }
+    final nativeTargetTag =
+        _activeSubscription?.nativeEntrypointTagForRuntimeTag(targetTag) ??
+        targetTag;
     await _latencyCoordinator.runTarget(
-      targetOutboundTag: targetTag,
+      targetOutboundTag: nativeTargetTag,
+      resultOutboundTag: targetTag,
       reason: 'manual_active',
     );
   }
@@ -5547,7 +5602,9 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       'proxy',
       'reasserting selected outbound after runtime start tag=$tag',
     );
-    final result = await _runtimeCommands.selectOutbound(tag);
+    final nativeTag =
+        _activeSubscription?.nativeEntrypointTagForRuntimeTag(tag) ?? tag;
+    final result = await _runtimeCommands.selectOutbound(nativeTag);
     if (!mounted ||
         !_proxySelection.isCurrentGeneration(generation) ||
         _proxySelection.pendingRuntimeSelectTag != tag ||
@@ -6438,10 +6495,15 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       return;
     }
     final activeSubscription = _activeSubscription;
-    final rawGroups = event.toGroupUpdates();
-    if (activeSubscription == null || rawGroups.isEmpty) {
+    final sourceGroups = event.toGroupUpdates();
+    if (activeSubscription == null || sourceGroups.isEmpty) {
       return;
     }
+    final rawGroups = HydraRuntimeTagProjection.canonicalizeGroupUpdates(
+      subscription: activeSubscription,
+      selectedRuntimeTag: _selectedProxyTag,
+      rawGroups: sourceGroups,
+    );
 
     final previousActiveOutboundTag = _currentResolvedActiveOutboundTag();
     _ensureActiveLookupCaches();
@@ -6487,12 +6549,16 @@ class _HydraBoxClientState extends State<HydraBoxClient>
   }
 
   void _applyGroupUpdatesImpl(RuntimeGroupsEvent event) {
-    final rawGroups = event.groups;
-    _recordGroupsDiagnostics(rawGroups.length);
     final activeSubscription = _activeSubscription;
-    if (activeSubscription == null || rawGroups.isEmpty || !mounted) {
+    if (activeSubscription == null || event.groups.isEmpty || !mounted) {
       return;
     }
+    final rawGroups = HydraRuntimeTagProjection.canonicalizeGroupUpdates(
+      subscription: activeSubscription,
+      selectedRuntimeTag: _selectedProxyTag,
+      rawGroups: event.groups,
+    );
+    _recordGroupsDiagnostics(rawGroups.length);
     var canonicalSelectedTag = '';
     for (final rawGroup in rawGroups) {
       if (rawGroup is Map && rawGroup['tag']?.toString() == 'select') {
@@ -6913,8 +6979,11 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     if (existing != null) {
       return existing;
     }
+    final nativeTag =
+        _activeSubscription?.nativeEntrypointTagForRuntimeTag(normalizedTag) ??
+        normalizedTag;
     final lookup = SingboxRuntime.instance.lookupOutboundExternalInfo(
-      outboundTag: normalizedTag,
+      outboundTag: nativeTag,
     );
     _externalInfoLookups[key] = lookup;
     unawaited(
@@ -6987,7 +7056,10 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     final updatedSubscription = latestSubscription.copyWith(
       outbounds: latestSubscription.outbounds
           .map((outbound) {
-            final resolved = resolvedByTag[outbound.tag];
+            final runtimeTag = latestSubscription.runtimeTagForNativeEntrypoint(
+              outbound,
+            );
+            final resolved = resolvedByTag[runtimeTag];
             if (resolved == null) {
               return outbound;
             }
@@ -7023,10 +7095,15 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       _subscriptions = _replaceSubscription(updatedSubscription);
       _rebuildDerivedCaches();
     });
-    final sourceCountriesByTag = <String, String?>{
-      for (final outbound in updatedSubscription.outbounds)
-        outbound.tag: outbound.info.country,
-    };
+    final sourceCountriesByTag = <String, String?>{};
+    for (final outbound in updatedSubscription.outbounds) {
+      final runtimeTag = updatedSubscription.runtimeTagForNativeEntrypoint(
+        outbound,
+      );
+      if (runtimeTag.isNotEmpty) {
+        sourceCountriesByTag[runtimeTag] = outbound.info.country;
+      }
+    }
     await SubscriptionStore.saveOutboundRuntimeInfoInBackground(
       updatedSubscription.id,
       externalInfos: {
@@ -7161,9 +7238,19 @@ class _HydraBoxClientState extends State<HydraBoxClient>
 
   List<Outbound> _bestOutboundsForLocationLookup() {
     _ensureActiveLookupCaches();
+    final activeSubscription = _activeSubscription;
+    final selectedHydraRuntimeTag =
+        activeSubscription == null || activeSubscription.resourceConfigs.isEmpty
+        ? ''
+        : activeSubscription
+                  .profileForId(activeSubscription.selectedProfileId)
+                  ?.runtimeTag ??
+              '';
     final outbounds = _activeVisibleOutboundsLookup
         .where(
           (outbound) =>
+              (selectedHydraRuntimeTag.isEmpty ||
+                  outbound.tag == selectedHydraRuntimeTag) &&
               !_unavailableLatencyTags.contains(outbound.tag) &&
               !_proxyRuntime.isLatencyInvalidated(outbound.tag) &&
               _effectiveOutboundLatency(outbound) != null,

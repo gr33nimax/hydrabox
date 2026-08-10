@@ -82,6 +82,35 @@ void main() {
     expect(await result, isTrue);
   });
 
+  test('targeted native tag can report under an app-owned identity', () async {
+    final requests = <LatencyTestRequest>[];
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final coordinator = _coordinator(
+      runTest: (request) async => requests.add(request),
+      capabilities: HydraCoreCapabilities.requiredV2,
+    );
+    addTearDown(coordinator.dispose);
+
+    final result = coordinator.runTarget(
+      targetOutboundTag: 'proxy',
+      resultOutboundTag: '__hydra.profile.abc',
+      reason: 'home',
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    expect(requests.single.targetOutboundTag, 'proxy');
+    expect(coordinator.isChecking('__hydra.profile.abc'), isTrue);
+    expect(coordinator.isChecking('proxy'), isFalse);
+    expect(
+      coordinator.handleGroupEvent(
+        tag: '__hydra.profile.abc',
+        timeSeconds: now,
+      ),
+      isTrue,
+    );
+    expect(await result, isTrue);
+  });
+
   test(
     'RPC acceptance without fresh events does not fabricate success',
     () async {

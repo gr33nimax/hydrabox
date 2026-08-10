@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
+import 'package:hydrabox/core/hydra_profile_identity.dart';
 
 import 'singbox_config_parser.dart';
 
@@ -308,7 +309,10 @@ class HydraSubscriptionParser {
           name: _localizedText(profile['name']),
           entrypointSection: section,
           entrypointTag: tag,
-          runtimeTag: tag,
+          runtimeTag: HydraProfileIdentity.runtimeTag(
+            profileId: id,
+            resourceId: resourceId,
+          ),
           enabled: profile['enabled'] != false,
           requiredFeatures: _stringList(
             profile['required_features'],
