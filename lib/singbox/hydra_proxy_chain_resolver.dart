@@ -427,19 +427,22 @@ class HydraProxyChainResolver {
     required SubscriptionProfile profile,
     required List<Outbound> ownerResourceOutbounds,
   }) {
-    final matches = ownerResourceOutbounds.where((outbound) {
-      final sourceSection =
-          outbound.config['_hydra_source_index_section']?.toString() ??
-          outbound.config['_hydra_source_section']?.toString() ??
-          '';
-      final sourceTag =
-          outbound.config['_hydra_original_tag']?.toString() ?? outbound.tag;
-      final sourceScope =
-          outbound.config['_source_scope']?.toString() ?? '';
-      return sourceScope == profile.resourceId &&
-          sourceSection == profile.entrypointSection &&
-          sourceTag == profile.entrypointTag;
-    }).toList(growable: false);
+    final matches = ownerResourceOutbounds
+        .where((outbound) {
+          final sourceSection =
+              outbound.config['_hydra_source_index_section']?.toString() ??
+              outbound.config['_hydra_source_section']?.toString() ??
+              '';
+          final sourceTag =
+              outbound.config['_hydra_original_tag']?.toString() ??
+              outbound.tag;
+          final sourceScope =
+              outbound.config['_source_scope']?.toString() ?? '';
+          return sourceScope == profile.resourceId &&
+              sourceSection == profile.entrypointSection &&
+              sourceTag == profile.entrypointTag;
+        })
+        .toList(growable: false);
     if (matches.length != 1) {
       throw StateError(
         'Hydra proxy chain "$chainTag" $role profile "${profile.id}" did not '

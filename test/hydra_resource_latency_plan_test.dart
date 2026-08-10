@@ -273,43 +273,49 @@ void main() {
     expect(cache.displayProxy?.tag, resourceBRuntimeTag);
   });
 
-  test('legacy native selection migrates through selected profile identity', () {
-    final legacyProfile = SubscriptionProfile.fromMap(<String, dynamic>{
-      'id': 'profile-b',
-      'resource_id': 'resource-b',
-      'entrypoint_section': 'outbounds',
-      'entrypoint_tag': 'proxy',
-      'runtime_tag': 'proxy',
-    });
-    final legacySelection = sameNativeTagSubscription.copyWith(
-      selectedProfileId: 'profile-b',
-    );
-    final normalized = normalizeActiveSubscriptionSelection(
-      legacySelection,
-      selectedProxyTag: 'proxy',
-      preferSelectedProxyTag: true,
-    );
+  test(
+    'legacy native selection migrates through selected profile identity',
+    () {
+      final legacyProfile = SubscriptionProfile.fromMap(<String, dynamic>{
+        'id': 'profile-b',
+        'resource_id': 'resource-b',
+        'entrypoint_section': 'outbounds',
+        'entrypoint_tag': 'proxy',
+        'runtime_tag': 'proxy',
+      });
+      final legacySelection = sameNativeTagSubscription.copyWith(
+        selectedProfileId: 'profile-b',
+      );
+      final normalized = normalizeActiveSubscriptionSelection(
+        legacySelection,
+        selectedProxyTag: 'proxy',
+        preferSelectedProxyTag: true,
+      );
 
-    expect(legacyProfile.runtimeTag, resourceBRuntimeTag);
-    expect(normalized.selectedProxyTag, resourceBRuntimeTag);
-  });
+      expect(legacyProfile.runtimeTag, resourceBRuntimeTag);
+      expect(normalized.selectedProxyTag, resourceBRuntimeTag);
+    },
+  );
 
-  test('app selection chooses one native resource without rewriting its tag', () {
-    final selected = sameNativeTagSubscription.copyWith(
-      selectedProxyTag: resourceBRuntimeTag,
-    );
+  test(
+    'app selection chooses one native resource without rewriting its tag',
+    () {
+      final selected = sameNativeTagSubscription.copyWith(
+        selectedProxyTag: resourceBRuntimeTag,
+      );
 
-    expect(selected.selectedProfileId, 'profile-b');
-    expect(selected.activeNativeConfig?['marker'], 'b');
-    expect(
-      selected.nativeEntrypointTagForRuntimeTag(resourceBRuntimeTag),
-      'proxy',
-    );
-    expect(
-      selected.runtimeTagForNativeEntrypoint(selected.outbounds.last),
-      resourceBRuntimeTag,
-    );
-  });
+      expect(selected.selectedProfileId, 'profile-b');
+      expect(selected.activeNativeConfig?['marker'], 'b');
+      expect(
+        selected.nativeEntrypointTagForRuntimeTag(resourceBRuntimeTag),
+        'proxy',
+      );
+      expect(
+        selected.runtimeTagForNativeEntrypoint(selected.outbounds.last),
+        resourceBRuntimeTag,
+      );
+    },
+  );
 
   test('full Hydra latency plan builds a chain in its owner resource', () {
     final withChain = sameNativeTagSubscription.copyWith(
@@ -326,9 +332,9 @@ void main() {
       ],
     );
 
-    final chainTarget = HydraResourceLatencyPlan.targets(withChain).singleWhere(
-      (target) => target.runtimeTag == 'chain-a',
-    );
+    final chainTarget = HydraResourceLatencyPlan.targets(
+      withChain,
+    ).singleWhere((target) => target.runtimeTag == 'chain-a');
 
     expect(chainTarget.profileId, 'profile-a');
     expect(chainTarget.resourceId, 'resource-a');
@@ -485,8 +491,9 @@ void main() {
       ],
     );
 
-    final chainTargets = HydraResourceLatencyPlan.targets(withVirtualDetours)
-        .where((target) => target.runtimeTag.startsWith('chain-'));
+    final chainTargets = HydraResourceLatencyPlan.targets(
+      withVirtualDetours,
+    ).where((target) => target.runtimeTag.startsWith('chain-'));
 
     expect(chainTargets, hasLength(2));
     expect(
@@ -532,11 +539,10 @@ void main() {
       ],
     );
 
-    final target = HydraResourceLatencyPlan.targets(
-      withCrossSubscriptionChain,
-    ).singleWhere(
-      (candidate) => candidate.runtimeTag == 'chain-cross-subscription',
-    );
+    final target = HydraResourceLatencyPlan.targets(withCrossSubscriptionChain)
+        .singleWhere(
+          (candidate) => candidate.runtimeTag == 'chain-cross-subscription',
+        );
 
     expect(target.validationError, contains('cross-subscription'));
     expect(target.validationError, contains('another-subscription'));

@@ -243,10 +243,7 @@ class ProxySelectionController {
   }
 }
 
-Subscription withSelectedProxyOutbound(
-  Subscription subscription,
-  String tag,
-) {
+Subscription withSelectedProxyOutbound(Subscription subscription, String tag) {
   final normalized = normalizeProxySelectionTag(tag);
   final owner = HydraProxyChainResolver.ownerProfileForSelection(
     subscription,

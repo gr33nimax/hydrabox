@@ -3619,8 +3619,9 @@ class _HydraBoxClientState extends State<HydraBoxClient>
             'selectOutbound',
             'reason=user proxy select group=select outbound=$tag',
           );
-          final nativeTag = activeSubscription
-              .nativeEntrypointTagForRuntimeTag(tag);
+          final nativeTag = activeSubscription.nativeEntrypointTagForRuntimeTag(
+            tag,
+          );
           final result = await _runtimeCommands.selectOutbound(nativeTag);
           if (!mounted ||
               !_proxySelection.isCurrentGeneration(selectionGeneration)) {
@@ -7055,8 +7056,9 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     final updatedSubscription = latestSubscription.copyWith(
       outbounds: latestSubscription.outbounds
           .map((outbound) {
-            final runtimeTag = latestSubscription
-                .runtimeTagForNativeEntrypoint(outbound);
+            final runtimeTag = latestSubscription.runtimeTagForNativeEntrypoint(
+              outbound,
+            );
             final resolved = resolvedByTag[runtimeTag];
             if (resolved == null) {
               return outbound;
@@ -7237,13 +7239,13 @@ class _HydraBoxClientState extends State<HydraBoxClient>
   List<Outbound> _bestOutboundsForLocationLookup() {
     _ensureActiveLookupCaches();
     final activeSubscription = _activeSubscription;
-    final selectedHydraRuntimeTag = activeSubscription == null ||
-            activeSubscription.resourceConfigs.isEmpty
+    final selectedHydraRuntimeTag =
+        activeSubscription == null || activeSubscription.resourceConfigs.isEmpty
         ? ''
         : activeSubscription
-                .profileForId(activeSubscription.selectedProfileId)
-                ?.runtimeTag ??
-            '';
+                  .profileForId(activeSubscription.selectedProfileId)
+                  ?.runtimeTag ??
+              '';
     final outbounds = _activeVisibleOutboundsLookup
         .where(
           (outbound) =>

@@ -23,29 +23,34 @@ class HydraRuntimeTagProjection {
     }
     final nativeTag = profile.entrypointTag.trim();
     final appTag = profile.runtimeTag.trim();
-    return rawGroups.map<dynamic>((rawGroup) {
-      if (rawGroup is! Map) return rawGroup;
-      final group = Map<String, dynamic>.from(rawGroup);
-      if (group['tag']?.toString() == nativeTag) {
-        group['tag'] = appTag;
-      }
-      if (group['selected']?.toString() == nativeTag) {
-        group['selected'] = appTag;
-      }
-      final rawItems = group['items'];
-      if (rawItems is List) {
-        group['items'] = rawItems.map<dynamic>((rawItem) {
-          if (rawItem is! Map || rawItem['tag']?.toString() != nativeTag) {
-            return rawItem;
+    return rawGroups
+        .map<dynamic>((rawGroup) {
+          if (rawGroup is! Map) return rawGroup;
+          final group = Map<String, dynamic>.from(rawGroup);
+          if (group['tag']?.toString() == nativeTag) {
+            group['tag'] = appTag;
           }
-          return <String, dynamic>{
-            ...Map<String, dynamic>.from(rawItem),
-            'tag': appTag,
-          };
-        }).toList(growable: false);
-      }
-      return group;
-    }).toList(growable: false);
+          if (group['selected']?.toString() == nativeTag) {
+            group['selected'] = appTag;
+          }
+          final rawItems = group['items'];
+          if (rawItems is List) {
+            group['items'] = rawItems
+                .map<dynamic>((rawItem) {
+                  if (rawItem is! Map ||
+                      rawItem['tag']?.toString() != nativeTag) {
+                    return rawItem;
+                  }
+                  return <String, dynamic>{
+                    ...Map<String, dynamic>.from(rawItem),
+                    'tag': appTag,
+                  };
+                })
+                .toList(growable: false);
+          }
+          return group;
+        })
+        .toList(growable: false);
   }
 
   static SubscriptionProfile? _selectedProfile(Subscription subscription) {

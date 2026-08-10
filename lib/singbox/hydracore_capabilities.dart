@@ -174,10 +174,7 @@ class HydraCoreCapabilities {
       supportsVlessEncryption: _requiredBool(features, 'vless_encryption'),
       supportsRmux: _requiredBool(features, 'rmux'),
       supportsCall: _requiredBool(features, 'call'),
-      supportsCallVkMultiUser: _requiredBool(
-        features,
-        'call_vk_multi_user',
-      ),
+      supportsCallVkMultiUser: _requiredBool(features, 'call_vk_multi_user'),
       amneziaVersion: _requiredInt(features, 'amnezia_version'),
       tunStacks: _requiredStringSet(root, 'tun_stacks'),
       inboundProtocols: _requiredStringSet(protocols, 'inbounds'),

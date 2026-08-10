@@ -3614,8 +3614,8 @@ String? _rewriteOutboundRuntimeInfoPayload(
           final tag = outbound['tag']?.toString() ?? '';
           final nativeIdentity = _hydraNativeEntrypointIdentity(outbound);
           Map<String, Object?>? update;
-          for (final runtimeTag in
-              hydraRuntimeTags[nativeIdentity] ?? const <String>[]) {
+          for (final runtimeTag
+              in hydraRuntimeTags[nativeIdentity] ?? const <String>[]) {
             final candidate = updatesByTag[runtimeTag];
             if (candidate != null) {
               update = candidate;
@@ -3696,10 +3696,7 @@ Map<String, List<String>> _hydraRuntimeTagsByNativeEntrypoint(
     );
     if (runtimeTag.isEmpty || section.isEmpty || tag.isEmpty) continue;
     result
-        .putIfAbsent(
-          '$resourceId\u0000$section\u0000$tag',
-          () => <String>[],
-        )
+        .putIfAbsent('$resourceId\u0000$section\u0000$tag', () => <String>[])
         .add(runtimeTag);
   }
   return result;

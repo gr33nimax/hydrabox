@@ -192,10 +192,7 @@ void main() {
         hydraOutbound('resource-a', latestPing: 101),
         hydraOutbound('resource-b', latestPing: 202),
       ],
-      <Outbound>[
-        hydraOutbound('resource-b'),
-        hydraOutbound('resource-a'),
-      ],
+      <Outbound>[hydraOutbound('resource-b'), hydraOutbound('resource-a')],
     );
 
     expect(refreshed.first.info.latestPing, 202);

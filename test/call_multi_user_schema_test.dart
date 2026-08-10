@@ -46,10 +46,7 @@ void main() {
       ParsedOutboundSchema.validate(tooManyWorkers),
       contains('between 1 and 54'),
     );
-    expect(
-      ParsedOutboundSchema.validate(tooManyLinks),
-      contains('1..4'),
-    );
+    expect(ParsedOutboundSchema.validate(tooManyLinks), contains('1..4'));
     expect(
       ParsedOutboundSchema.validate(duplicateLinks),
       contains('must be unique'),

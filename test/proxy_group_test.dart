@@ -1626,26 +1626,23 @@ void main() {
     },
   );
 
-  test(
-    'Hydra chain owned by resource A does not block active resource B',
-    () {
-      final subscription = _foreignOwnerHydraChainSubscription();
+  test('Hydra chain owned by resource A does not block active resource B', () {
+    final subscription = _foreignOwnerHydraChainSubscription();
 
-      final config = _defaultBuilder(
-        subscription,
-        selectedProxyTag: subscription.selectedProxyTag,
-      ).build();
-      final outbounds = (config['outbounds'] as List)
-          .cast<Map<String, dynamic>>();
+    final config = _defaultBuilder(
+      subscription,
+      selectedProxyTag: subscription.selectedProxyTag,
+    ).build();
+    final outbounds = (config['outbounds'] as List)
+        .cast<Map<String, dynamic>>();
 
-      expect(
-        outbounds.map((outbound) => outbound['tag']),
-        isNot(contains('chain-a')),
-      );
-      expect(jsonEncode(config), contains('b.example.com'));
-      expect(jsonEncode(config), isNot(contains('a-target.example.com')));
-    },
-  );
+    expect(
+      outbounds.map((outbound) => outbound['tag']),
+      isNot(contains('chain-a')),
+    );
+    expect(jsonEncode(config), contains('b.example.com'));
+    expect(jsonEncode(config), isNot(contains('a-target.example.com')));
+  });
 
   test(
     'Hydra proxy chain rejects duplicate native tag from another resource',
