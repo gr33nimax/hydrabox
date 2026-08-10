@@ -5307,7 +5307,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
             break;
           }
           result = await SingboxRuntime.instance.preconnectUrlTest(
-            config: sharedConfig!,
+            config: sharedConfig,
             groupTag: 'select',
             targetOutboundTag: target.nativeOutboundTag,
             url: testUrl,
