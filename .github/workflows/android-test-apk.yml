@@ -61,7 +61,7 @@ jobs:
 
       - name: Run Android unit tests
         working-directory: android
-        run: ./gradlew testDebugUnitTest
+        run: bash ./gradlew :app:testDebugUnitTest
 
       - name: Build debug-signed release-mode APK
         env:
