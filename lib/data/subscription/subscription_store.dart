@@ -6,6 +6,7 @@ import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:hydrabox/core/hydra_profile_identity.dart';
 import 'package:hydrabox/core/lowest_proxy_groups.dart';
 import 'package:hydrabox/data/local/hive_storage_diagnostics.dart';
 import 'package:hydrabox/data/local/secure_hive_storage.dart';
@@ -2373,7 +2374,7 @@ class SubscriptionStore {
           name: profile.name,
           entrypointSection: profile.entrypointSection,
           entrypointTag: profile.entrypointTag,
-          runtimeTag: matches.single.tag,
+          runtimeTag: profile.runtimeTag,
           enabled: profile.enabled,
           metadata: {
             if (profile.requiredFeatures.isNotEmpty)
@@ -2686,9 +2687,14 @@ class SubscriptionStore {
     List<Outbound> newOutbounds,
   ) {
     final oldByTag = <String, Outbound>{};
+    final oldByHydraIdentity = <String, Outbound>{};
     final oldByKey = <String, List<Outbound>>{};
     for (final ob in oldOutbounds) {
       oldByTag[ob.tag] = ob;
+      final hydraIdentity = _hydraOutboundIdentity(ob.config);
+      if (hydraIdentity.isNotEmpty) {
+        oldByHydraIdentity[hydraIdentity] = ob;
+      }
       final key = _outboundKey(ob.config);
       oldByKey.putIfAbsent(key, () => <Outbound>[]).add(ob);
     }
@@ -2702,20 +2708,29 @@ class SubscriptionStore {
     final merged = newOutbounds
         .map((ob) {
           final key = _outboundKey(ob.config);
-          final exactOldOutbound = oldByTag[ob.tag];
+          final hydraIdentity = _hydraOutboundIdentity(ob.config);
+          final scopedOldOutbound = hydraIdentity.isEmpty
+              ? null
+              : oldByHydraIdentity[hydraIdentity];
+          final exactOldOutbound = hydraIdentity.isEmpty
+              ? oldByTag[ob.tag]
+              : scopedOldOutbound;
           final oldMatches = oldByKey[key] ?? const <Outbound>[];
           final exactOldKeyMatches =
               exactOldOutbound != null &&
               _outboundKey(exactOldOutbound.config) == key;
           final oldOutbound =
               (exactOldKeyMatches ? exactOldOutbound : null) ??
-              (oldMatches.length == 1 && newKeyCounts[key] == 1
+              (hydraIdentity.isEmpty &&
+                      oldMatches.length == 1 &&
+                      newKeyCounts[key] == 1
                   ? oldMatches.single
                   : null);
           final oldInfo = oldOutbound?.info;
           if (oldInfo != null) {
             final canCarryEndpointState =
-                oldMatches.length == 1 && newKeyCounts[key] == 1;
+                exactOldKeyMatches ||
+                (oldMatches.length == 1 && newKeyCounts[key] == 1);
             return ob.copyWith(
               info: ob.info.copyWith(
                 checked: oldInfo.checked,
@@ -2736,11 +2751,31 @@ class SubscriptionStore {
     return merged;
   }
 
+  static String _hydraOutboundIdentity(Map<String, dynamic> config) {
+    final resourceId = config['_source_scope']?.toString() ?? '';
+    final section =
+        config['_hydra_source_index_section']?.toString() ??
+        config['_hydra_source_section']?.toString() ??
+        '';
+    final tag =
+        config['_hydra_original_tag']?.toString() ??
+        config['tag']?.toString() ??
+        '';
+    if (resourceId.isEmpty || section.isEmpty || tag.isEmpty) return '';
+    return '$resourceId\u0000$section\u0000$tag';
+  }
+
   @visibleForTesting
   static List<Outbound> preserveUserStateForTest(
     List<Outbound> oldOutbounds,
     List<Outbound> newOutbounds,
   ) => _preserveUserState(oldOutbounds, newOutbounds);
+
+  @visibleForTesting
+  static String? rewriteOutboundRuntimeInfoPayloadForTest(
+    String raw,
+    Map<String, Map<String, Object?>> updatesByTag,
+  ) => _rewriteOutboundRuntimeInfoPayload(raw, updatesByTag);
 
   @visibleForTesting
   static ({String name, String? countryCode}) extractCountryFromNameForTest(
@@ -3568,6 +3603,7 @@ String? _rewriteOutboundRuntimeInfoPayload(
     if (rawOutbounds is! List || rawOutbounds.isEmpty) {
       return null;
     }
+    final hydraRuntimeTags = _hydraRuntimeTagsByNativeEntrypoint(map);
     var changed = false;
     final outbounds = rawOutbounds
         .map((rawOutbound) {
@@ -3576,7 +3612,17 @@ String? _rewriteOutboundRuntimeInfoPayload(
           }
           final outbound = Map<String, dynamic>.from(rawOutbound);
           final tag = outbound['tag']?.toString() ?? '';
-          final update = updatesByTag[tag];
+          final nativeIdentity = _hydraNativeEntrypointIdentity(outbound);
+          Map<String, Object?>? update;
+          for (final runtimeTag in
+              hydraRuntimeTags[nativeIdentity] ?? const <String>[]) {
+            final candidate = updatesByTag[runtimeTag];
+            if (candidate != null) {
+              update = candidate;
+              break;
+            }
+          }
+          update ??= updatesByTag[tag];
           if (update == null || update.isEmpty) {
             return rawOutbound;
           }
@@ -3629,6 +3675,50 @@ String? _rewriteOutboundRuntimeInfoPayload(
   } catch (_) {
     return null;
   }
+}
+
+Map<String, List<String>> _hydraRuntimeTagsByNativeEntrypoint(
+  Map<String, dynamic> payload,
+) {
+  final rawProfiles = payload['profiles'];
+  if (rawProfiles is! List) return const <String, List<String>>{};
+  final result = <String, List<String>>{};
+  for (final rawProfile in rawProfiles) {
+    if (rawProfile is! Map) continue;
+    final profile = Map<String, dynamic>.from(rawProfile);
+    final profileId = profile['id']?.toString() ?? '';
+    final resourceId = profile['resource_id']?.toString() ?? '';
+    final section = profile['entrypoint_section']?.toString() ?? '';
+    final tag = profile['entrypoint_tag']?.toString() ?? '';
+    final runtimeTag = HydraProfileIdentity.runtimeTag(
+      profileId: profileId,
+      resourceId: resourceId,
+    );
+    if (runtimeTag.isEmpty || section.isEmpty || tag.isEmpty) continue;
+    result
+        .putIfAbsent(
+          '$resourceId\u0000$section\u0000$tag',
+          () => <String>[],
+        )
+        .add(runtimeTag);
+  }
+  return result;
+}
+
+String _hydraNativeEntrypointIdentity(Map<String, dynamic> outbound) {
+  final config = outbound['config'];
+  if (config is! Map) return '';
+  final resourceId = config['_source_scope']?.toString() ?? '';
+  final section =
+      config['_hydra_source_index_section']?.toString() ??
+      config['_hydra_source_section']?.toString() ??
+      '';
+  final tag =
+      config['_hydra_original_tag']?.toString() ??
+      outbound['tag']?.toString() ??
+      '';
+  if (resourceId.isEmpty || section.isEmpty || tag.isEmpty) return '';
+  return '$resourceId\u0000$section\u0000$tag';
 }
 
 class _StoreMutationWaiter {

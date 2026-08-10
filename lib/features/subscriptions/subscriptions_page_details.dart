@@ -455,7 +455,7 @@ class _SubscriptionDetailsPageState extends State<_SubscriptionDetailsPage> {
       hydraMetadata['format'],
     );
     final isRussian = Localizations.localeOf(context).languageCode == 'ru';
-    final userVisibleOutbounds = subscription.outbounds
+    final userVisibleOutbounds = subscription.selectableOutbounds
         .where((outbound) => outbound.config['_group_only'] != true)
         .toList(growable: false);
     final visibleOutbounds = userVisibleOutbounds

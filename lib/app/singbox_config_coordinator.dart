@@ -8,6 +8,7 @@ import 'package:hydrabox/data/local/app_settings_store.dart';
 import 'package:hydrabox/data/subscription/parsers/hydra_subscription_parser.dart';
 import 'package:hydrabox/logging/app_log_store.dart';
 import 'package:hydrabox/models/subscription.dart';
+import 'package:hydrabox/singbox/hydra_proxy_chain_resolver.dart';
 import 'package:hydrabox/singbox/hydracore_capabilities.dart';
 import 'package:hydrabox/singbox/singbox_runtime.dart';
 
@@ -510,10 +511,13 @@ class SingboxConfigCoordinator {
   /// Builds one isolated Hydra Subscription v2 resource for a standalone
   /// URLTest without changing the active subscription or runtime selection.
   Future<SingboxConfigBuildResult?> buildUrlTestConfigForTarget(
-    String targetOutboundTag,
-  ) async {
-    final normalizedTarget = targetOutboundTag.trim();
+    String profileRuntimeTag, {
+    required String profileId,
+  }) async {
+    final normalizedTarget = profileRuntimeTag.trim();
+    final normalizedProfileId = profileId.trim();
     if (normalizedTarget.isEmpty ||
+        normalizedProfileId.isEmpty ||
         !await _ensureActiveSubscriptionHydrated() ||
         !_isMounted()) {
       return null;
@@ -523,8 +527,19 @@ class SingboxConfigCoordinator {
     if (activeSubscription == null) {
       return null;
     }
+    final owner = HydraProxyChainResolver.ownerProfileForSelection(
+      activeSubscription,
+      normalizedTarget,
+    );
+    if (owner == null || owner.id != normalizedProfileId) {
+      throw StateError(
+        'Standalone Hydra URLTest target "$normalizedTarget" does not belong '
+        'to profile "$normalizedProfileId"',
+      );
+    }
     final selectedSubscription = activeSubscription.copyWith(
       selectedProxyTag: normalizedTarget,
+      selectedProfileId: normalizedProfileId,
     );
     final input = _currentSingboxConfigBuildInput(
       returnConfig: true,

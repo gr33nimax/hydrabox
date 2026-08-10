@@ -7,6 +7,7 @@ import 'package:hydrabox/data/subscription/hydra_subscription_time.dart';
 import 'package:hydrabox/data/subscription/parsers/hydra_subscription_parser.dart';
 import 'package:hydrabox/data/subscription/parsers/singbox_config_parser.dart';
 import 'package:hydrabox/models/subscription.dart';
+import 'package:hydrabox/singbox/hydra_proxy_chain_resolver.dart';
 import 'package:hydrabox/singbox/hydracore_capabilities.dart';
 
 class SingboxConfigBuilder {
@@ -251,7 +252,7 @@ class SingboxConfigBuilder {
     final groupTags = visibleGroups
         .map((group) => group.tag)
         .toList(growable: false);
-    final chainOutbounds = _visibleProxyChainOutbounds(
+    final chainBuild = _visibleProxyChainOutbounds(
       visibleOutbounds: outbounds,
       selectableBaseTags: <String>{
         ...availableLowestTags,
@@ -260,6 +261,7 @@ class SingboxConfigBuilder {
       },
       tagRemapping: coreTagRemapping,
     );
+    final chainOutbounds = chainBuild.outbounds;
     final chainTags = chainOutbounds
         .map((outbound) => outbound['tag']?.toString() ?? '')
         .where((tag) => tag.isNotEmpty)
@@ -289,7 +291,7 @@ class SingboxConfigBuilder {
     final adBlockAllowActive =
         adBlockActive && _validRuleSetPath(adBlockAllowRuleSetPath);
     final normalizedSelectedProxyTag = normalizeProxySelectionTag(
-      selectedProxyTag,
+      _nativeSelectionTag(selectedProxyTag),
     );
     final selectorDefault = hasProxies
         ? (normalizedSelectedProxyTag.isNotEmpty &&
@@ -302,7 +304,11 @@ class SingboxConfigBuilder {
     final routeFinal = hasProxies ? 'select' : 'direct';
     final dnsFinal = hasProxies ? 'dns-remote' : 'dns-direct';
     final dnsRemoteDetour = hasProxies
-        ? _dnsRemoteDetourFor(selectorDefault, selectableTags.toSet())
+        ? _dnsRemoteDetourFor(
+            selectorDefault,
+            selectableTags.toSet(),
+            chainBuild.nativeDetoursByChainTag,
+          )
         : 'direct';
 
     final generatedConfig = <String, dynamic>{
@@ -918,6 +924,16 @@ class SingboxConfigBuilder {
       if (strictHydraBox) rethrow;
       return null;
     }
+  }
+
+  /// Converts the app-owned profile identity to the entrypoint tag inside the
+  /// one isolated native resource selected by that profile.
+  String _nativeSelectionTag(String appSelectionTag) {
+    final subscription = activeSubscription;
+    if (subscription == null || subscription.resourceConfigs.isEmpty) {
+      return appSelectionTag;
+    }
+    return subscription.nativeEntrypointTagForRuntimeTag(appSelectionTag);
   }
 
   Map<String, dynamic>? _decodeRawSubscriptionConfig() {
@@ -1671,21 +1687,8 @@ class SingboxConfigBuilder {
     final subscription = activeSubscription;
     if (subscription == null) return const <Outbound>[];
     if (subscription.resourceConfigs.isEmpty) return subscription.outbounds;
-    String activeResourceId = '';
-    for (final profile in subscription.profiles) {
-      if (profile.enabled && profile.id == subscription.selectedProfileId) {
-        activeResourceId = profile.resourceId;
-        break;
-      }
-    }
-    if (activeResourceId.isEmpty) {
-      for (final profile in subscription.profiles) {
-        if (profile.enabled) {
-          activeResourceId = profile.resourceId;
-          break;
-        }
-      }
-    }
+    final activeProfile = HydraProxyChainResolver.activeProfile(subscription);
+    final activeResourceId = activeProfile?.resourceId.trim() ?? '';
     if (activeResourceId.isEmpty) return const <Outbound>[];
     return subscription.outbounds.where((outbound) {
       final scope = outbound.config['_source_scope']?.toString() ?? '';
@@ -1884,19 +1887,30 @@ class SingboxConfigBuilder {
   String _dnsRemoteDetourFor(
     String selectorDefault,
     Set<String> selectableTags,
+    Map<String, String> nativeDetoursByChainTag,
   ) {
     final subscription = activeSubscription;
-    if (subscription == null) {
+    if (subscription != null && subscription.resourceConfigs.isEmpty) {
+      for (final chain in subscription.proxyChains) {
+        if (chain.tag == selectorDefault) {
+          final detour = chain.detourTag.trim();
+          return selectableTags.contains(detour) ? detour : 'select';
+        }
+      }
+      for (final chain in subscription.proxyChains) {
+        final detour = chain.detourTag.trim();
+        if (selectableTags.contains(detour)) {
+          return detour;
+        }
+      }
       return 'select';
     }
-    for (final chain in subscription.proxyChains) {
-      if (chain.tag == selectorDefault) {
-        final detour = chain.detourTag.trim();
-        return selectableTags.contains(detour) ? detour : 'select';
-      }
+    final selectedChainDetour = nativeDetoursByChainTag[selectorDefault];
+    if (selectedChainDetour != null &&
+        selectableTags.contains(selectedChainDetour)) {
+      return selectedChainDetour;
     }
-    for (final chain in subscription.proxyChains) {
-      final detour = chain.detourTag.trim();
+    for (final detour in nativeDetoursByChainTag.values) {
       if (selectableTags.contains(detour)) {
         return detour;
       }
@@ -1974,32 +1988,75 @@ class SingboxConfigBuilder {
     config.removeWhere((key, _) => key.startsWith('_hydrabox_'));
   }
 
-  List<Map<String, dynamic>> _visibleProxyChainOutbounds({
+  _ProxyChainBuildResult _visibleProxyChainOutbounds({
     required List<Outbound> visibleOutbounds,
     required Set<String> selectableBaseTags,
     required Map<String, String> tagRemapping,
   }) {
     final subscription = activeSubscription;
     if (subscription == null || subscription.proxyChains.isEmpty) {
-      return const [];
+      return _ProxyChainBuildResult.empty;
     }
     final outboundByTag = {
       for (final outbound in visibleOutbounds) outbound.tag: outbound,
     };
     final result = <Map<String, dynamic>>[];
+    final nativeDetoursByChainTag = <String, String>{};
     final seen = <String>{};
+    final hydraResources = subscription.resourceConfigs.isNotEmpty;
+    final activeHydraProfile = hydraResources
+        ? HydraProxyChainResolver.activeProfile(subscription)
+        : null;
     for (final chain in subscription.proxyChains) {
       final tag = chain.tag.trim();
-      final target = _targetOutboundForChain(chain, outboundByTag);
-      if (tag.isEmpty ||
-          target == null ||
-          _isEndpointBacked(target) ||
-          !seen.add(tag) ||
-          !selectableBaseTags.contains(chain.detourTag.trim())) {
-        continue;
+      late final Outbound target;
+      late final String nativeDetourTag;
+      if (hydraResources) {
+        if (tag.isEmpty) {
+          throw StateError('Hydra proxy chain has an empty runtime tag');
+        }
+        if (!seen.add(tag)) {
+          throw StateError('Duplicate Hydra proxy chain runtime tag "$tag"');
+        }
+        final owner = HydraProxyChainResolver.ownerProfile(
+          subscription: subscription,
+          chain: chain,
+        );
+        if (owner.resourceId.trim() !=
+            (activeHydraProfile?.resourceId.trim() ?? '')) {
+          // Every chain is validated above, but only the owner resource may
+          // materialize it. A valid chain owned by another isolated native
+          // document must not block or silently bind to the active document.
+          continue;
+        }
+        if (selectableBaseTags.contains(tag)) {
+          throw StateError(
+            'Hydra proxy chain runtime tag "$tag" collides with a native '
+            'selectable entry',
+          );
+        }
+        final resolution = HydraProxyChainResolver.resolve(
+          subscription: subscription,
+          chain: chain,
+          activeResourceOutbounds: visibleOutbounds,
+          selectableBaseTags: selectableBaseTags,
+        );
+        target = resolution.target;
+        nativeDetourTag = resolution.nativeDetourTag;
+      } else {
+        final legacyTarget = _targetOutboundForChain(chain, outboundByTag);
+        if (tag.isEmpty ||
+            legacyTarget == null ||
+            _isEndpointBacked(legacyTarget) ||
+            !seen.add(tag) ||
+            !selectableBaseTags.contains(chain.detourTag.trim())) {
+          continue;
+        }
+        target = legacyTarget;
+        nativeDetourTag = chain.detourTag.trim();
       }
       final config = buildProxyChainOutboundConfig(
-        chain: chain,
+        chain: chain.copyWith(detourTag: nativeDetourTag),
         target: target,
         snowtunBinaryPath: snowtunBinaryPath,
         snowtunProtectPath: snowtunProtectPath,
@@ -2014,9 +2071,18 @@ class SingboxConfigBuilder {
       );
       if (config != null) {
         result.add(config);
+        nativeDetoursByChainTag[tag] = nativeDetourTag;
+      } else if (hydraResources) {
+        throw StateError(
+          'Hydra proxy chain "$tag" could not be represented as a native '
+          'outbound',
+        );
       }
     }
-    return result;
+    return _ProxyChainBuildResult(
+      outbounds: result,
+      nativeDetoursByChainTag: nativeDetoursByChainTag,
+    );
   }
 
   Outbound? _targetOutboundForChain(
@@ -2392,6 +2458,21 @@ class SingboxConfigBuilder {
       config.remove('encryption');
     }
   }
+}
+
+class _ProxyChainBuildResult {
+  const _ProxyChainBuildResult({
+    required this.outbounds,
+    required this.nativeDetoursByChainTag,
+  });
+
+  static const empty = _ProxyChainBuildResult(
+    outbounds: <Map<String, dynamic>>[],
+    nativeDetoursByChainTag: <String, String>{},
+  );
+
+  final List<Map<String, dynamic>> outbounds;
+  final Map<String, String> nativeDetoursByChainTag;
 }
 
 class SingboxBuildPlan {

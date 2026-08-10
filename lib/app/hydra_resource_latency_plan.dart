@@ -1,16 +1,21 @@
 import 'package:hydrabox/core/lowest_proxy_groups.dart';
 import 'package:hydrabox/models/subscription.dart';
+import 'package:hydrabox/singbox/hydra_proxy_chain_resolver.dart';
 
 class HydraResourceLatencyTarget {
   const HydraResourceLatencyTarget({
     required this.profileId,
     required this.resourceId,
     required this.runtimeTag,
+    required this.nativeEntrypointTag,
+    this.validationError = '',
   });
 
   final String profileId;
   final String resourceId;
   final String runtimeTag;
+  final String nativeEntrypointTag;
+  final String validationError;
 }
 
 /// Plans operations that must keep Hydra Subscription v2 resources isolated.
@@ -32,9 +37,11 @@ class HydraResourceLatencyPlan {
     for (final profile in subscription.profiles) {
       final tag = profile.runtimeTag.trim();
       final resourceId = profile.resourceId.trim();
+      final nativeEntrypointTag = profile.entrypointTag.trim();
       if (!profile.enabled ||
           tag.isEmpty ||
           resourceId.isEmpty ||
+          nativeEntrypointTag.isEmpty ||
           excludedRuntimeTags.contains(tag) ||
           !subscription.resourceConfigs.containsKey(resourceId) ||
           !seenRuntimeTags.add(tag)) {
@@ -45,6 +52,54 @@ class HydraResourceLatencyPlan {
           profileId: profile.id,
           resourceId: resourceId,
           runtimeTag: tag,
+          nativeEntrypointTag: nativeEntrypointTag,
+        ),
+      );
+    }
+    for (final chain in subscription.proxyChains) {
+      final tag = chain.tag.trim();
+      if (tag.isEmpty || excludedRuntimeTags.contains(tag)) {
+        continue;
+      }
+      if (!seenRuntimeTags.add(tag)) {
+        final existingIndex = targets.indexWhere(
+          (target) => target.runtimeTag == tag,
+        );
+        if (existingIndex >= 0) {
+          final existing = targets[existingIndex];
+          targets[existingIndex] = HydraResourceLatencyTarget(
+            profileId: existing.profileId,
+            resourceId: existing.resourceId,
+            runtimeTag: tag,
+            nativeEntrypointTag: existing.nativeEntrypointTag,
+            validationError:
+                'Hydra proxy chain runtime tag "$tag" is ambiguous',
+          );
+        }
+        continue;
+      }
+      HydraProxyChainResolution? resolution;
+      var validationError = '';
+      try {
+        resolution = HydraProxyChainResolver.resolveForLatency(
+          subscription: subscription,
+          chain: chain,
+        );
+      } on StateError catch (error) {
+        validationError = error.message.toString();
+      }
+      final owner = resolution?.ownerProfile;
+      // The generated chain is app-owned and is emitted into the selected
+      // native document under the same tag. Invalid advertised chains remain
+      // planned with a validation error so the caller can publish a terminal
+      // unavailable result instead of leaving latency state pending forever.
+      targets.add(
+        HydraResourceLatencyTarget(
+          profileId: owner?.id ?? '',
+          resourceId: owner?.resourceId ?? '',
+          runtimeTag: tag,
+          nativeEntrypointTag: tag,
+          validationError: validationError,
         ),
       );
     }
@@ -59,7 +114,10 @@ class HydraResourceLatencyPlan {
     if (subscription.resourceConfigs.isEmpty) {
       return false;
     }
-    final next = _enabledProfileForRuntimeTag(subscription, nextRuntimeTag);
+    final next = HydraProxyChainResolver.ownerProfileForSelection(
+      subscription,
+      nextRuntimeTag,
+    );
     if (next == null) {
       return false;
     }
@@ -70,7 +128,10 @@ class HydraResourceLatencyPlan {
     if (current == null) {
       return true;
     }
-    return current.resourceId.trim() != next.resourceId.trim();
+    // App selection identities are not native selector tags. Rebuilding is the
+    // transactional boundary that selects the profile's exact native
+    // entrypoint, even when two profiles happen to share one resource.
+    return current.id != next.id;
   }
 
   /// A selector group cannot span independent native documents. Resolve the
@@ -89,6 +150,9 @@ class HydraResourceLatencyPlan {
     HydraResourceLatencyTarget? fastest;
     int? fastestDelay;
     for (final candidate in candidates) {
+      if (candidate.validationError.isNotEmpty) {
+        continue;
+      }
       final delay = runtimeLatencies[candidate.runtimeTag];
       if (delay != null &&
           delay > 0 &&
@@ -101,11 +165,17 @@ class HydraResourceLatencyPlan {
       return fastest.runtimeTag;
     }
     for (final candidate in candidates) {
-      if (candidate.profileId == subscription.selectedProfileId) {
+      if (candidate.validationError.isEmpty &&
+          candidate.profileId == subscription.selectedProfileId) {
         return candidate.runtimeTag;
       }
     }
-    return candidates.isEmpty ? requested : candidates.first.runtimeTag;
+    for (final candidate in candidates) {
+      if (candidate.validationError.isEmpty) {
+        return candidate.runtimeTag;
+      }
+    }
+    return requested;
   }
 
   static SubscriptionProfile? _enabledProfileForId(

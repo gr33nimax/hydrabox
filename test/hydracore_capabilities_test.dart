@@ -11,7 +11,9 @@ void main() {
 
     expect(capabilities.apiVersion, 2);
     expect(capabilities.coreId, 'io.hydrabox.hydracore');
-    expect(capabilities.coreVersion, 'v1.13.16-extended-hydracore.1');
+    expect(capabilities.coreVersion, 'v1.13.16-extended-hydracore.5');
+    expect(capabilities.supportsCallVkMultiUser, isTrue);
+    expect(capabilities.callModes, {'p2p', 'multi_user'});
     expect(capabilities.validationProfiles, {'local', 'remote_v2'});
     expect(capabilities.subscriptionContracts, {2});
     expect(capabilities.remoteSafeInboundTypes, {'call'});
@@ -29,6 +31,7 @@ void main() {
       'managed_url_test_sessions',
       'subscription_jwe',
       'call',
+      'call_vk_multi_user',
     ]) {
       final document = _capabilities();
       (document['features'] as Map<String, dynamic>)[feature] = false;
@@ -66,7 +69,7 @@ Map<String, dynamic> _capabilities() => {
   'identity': {
     'core_id': 'io.hydrabox.hydracore',
     'core_name': 'HydraCore',
-    'core_version': 'v1.13.16-extended-hydracore.1',
+    'core_version': 'v1.13.16-extended-hydracore.5',
   },
   'features': {
     'targeted_url_test': true,
@@ -84,6 +87,7 @@ Map<String, dynamic> _capabilities() => {
     'vless_encryption': true,
     'rmux': true,
     'call': true,
+    'call_vk_multi_user': true,
     'amnezia_version': 3,
   },
   'protocols': {
@@ -108,6 +112,7 @@ Map<String, dynamic> _capabilities() => {
     ],
     'endpoints': ['wireguard'],
     'call_platforms': ['dion', 'telemost', 'vk', 'wbstream'],
+    'call_modes': ['p2p', 'multi_user'],
   },
   'tun_stacks': ['system', 'gvisor', 'mixed'],
   'xhttp_modes': ['packet-up', 'stream-up', 'stream-one'],

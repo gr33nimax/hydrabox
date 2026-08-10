@@ -186,8 +186,13 @@ class LatencyCoordinator {
   Future<bool> runTarget({
     required String targetOutboundTag,
     required String reason,
+    String? resultOutboundTag,
   }) {
     final targetTag = targetOutboundTag.trim();
+    final normalizedResultTag = resultOutboundTag?.trim() ?? '';
+    final resultTag = normalizedResultTag.isEmpty
+        ? targetTag
+        : normalizedResultTag;
     if (targetTag.isEmpty || !_capabilities.supportsTargetedUrlTest) {
       AppLogStore.warning(
         'latency',
@@ -199,7 +204,7 @@ class LatencyCoordinator {
     return _runSession(
       kind: LatencySessionKind.targeted,
       reason: reason,
-      targetTag: targetTag,
+      targetTag: resultTag,
       request: LatencyTestRequest(
         targetOutboundTag: targetTag,
         priorityOutboundTag: targetTag,

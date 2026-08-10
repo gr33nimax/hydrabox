@@ -301,9 +301,20 @@ class SubscriptionRuntimeController {
         selectedProxyTag: selectedProxyTag,
         preferSelectedProxyTag: preferSelectedProxyTag,
       );
-      final normalizedSubscription = subscription.copyWith(
-        selectedProxyTag: normalized.selectedProxyTag,
-      );
+      late final Subscription normalizedSubscription;
+      try {
+        normalizedSubscription = withSelectedProxyOutbound(
+          subscription,
+          normalized.selectedProxyTag,
+        );
+      } on StateError {
+        // Keep malformed persisted chains visible so latency can publish a
+        // terminal unavailable result. Runtime assembly still validates them
+        // fail-closed; only a valid chain may change the resource owner here.
+        normalizedSubscription = subscription.copyWith(
+          selectedProxyTag: normalized.selectedProxyTag,
+        );
+      }
       final proxyCache = buildProxyCache(
         ProxyCacheBuildInput(
           subscription: normalizedSubscription,
@@ -331,12 +342,43 @@ class SubscriptionRuntimeController {
     return jsonEncode(
       stableRuntimeFingerprintValue({
         'selected': subscription.selectedProxyTag,
+        'selected_profile_id': subscription.selectedProfileId,
         'outbounds': [
           for (final outbound in subscription.outbounds)
             if (!outbound.info.deleted)
               {'tag': outbound.tag, 'config': outbound.config},
         ],
-        'groups': [for (final group in subscription.groups) group.toMap()],
+        'groups': [
+          for (final group in subscription.groups)
+            {
+              'tag': group.tag,
+              'type': group.type,
+              'outbounds': group.outboundTags,
+              'urltest_config': group.urlTestConfig.toMap(),
+            },
+        ],
+        'profiles': [
+          for (final profile in subscription.profiles)
+            {
+              'id': profile.id,
+              'resource_id': profile.resourceId,
+              'entrypoint_section': profile.entrypointSection,
+              'entrypoint_tag': profile.entrypointTag,
+              'runtime_tag': profile.runtimeTag,
+              'enabled': profile.enabled,
+            },
+        ],
+        'resource_configs': subscription.resourceConfigs,
+        'proxy_chains': [
+          for (final chain in subscription.proxyChains)
+            {
+              'tag': chain.tag,
+              'target_tag': chain.targetTag,
+              'detour_tag': chain.detourTag,
+              'target_subscription_id': chain.targetSubscriptionId,
+              'target_config': chain.targetConfig,
+            },
+        ],
       }),
     );
   }
@@ -375,7 +417,7 @@ SubscriptionRuntimeSelection normalizeActiveSubscriptionSelection(
   Outbound? selectedOutbound;
   final visibleOutbounds = <Outbound>[];
   final visibleOutboundTags = <String>{};
-  for (final outbound in activeSubscription.outbounds) {
+  for (final outbound in activeSubscription.selectableOutbounds) {
     if (outbound.info.deleted || outbound.config['_group_only'] == true) {
       continue;
     }
@@ -392,11 +434,34 @@ SubscriptionRuntimeSelection normalizeActiveSubscriptionSelection(
       .map((chain) => chain.tag.trim())
       .where((tag) => tag.isNotEmpty)
       .toSet();
+  final selectedHydraProfile = activeSubscription.profileForRuntimeTag(
+    effectiveSelectedProxyTag,
+  );
+  if (selectedHydraProfile != null) {
+    return SubscriptionRuntimeSelection(
+      activeSubscriptionId: activeSubscription.id,
+      selectedProxyTag: selectedHydraProfile.runtimeTag,
+    );
+  }
   if (proxyChainTags.contains(effectiveSelectedProxyTag)) {
     return SubscriptionRuntimeSelection(
       activeSubscriptionId: activeSubscription.id,
       selectedProxyTag: effectiveSelectedProxyTag,
     );
+  }
+  if (activeSubscription.resourceConfigs.isNotEmpty) {
+    // Legacy HydraBox versions persisted a resource-local entrypoint tag here
+    // (commonly `proxy`). Migrate that value through the selected profile only
+    // after preserving app-owned selections such as proxy chains.
+    final persistedProfile = activeSubscription.profileForId(
+      activeSubscription.selectedProfileId,
+    );
+    if (persistedProfile != null) {
+      return SubscriptionRuntimeSelection(
+        activeSubscriptionId: activeSubscription.id,
+        selectedProxyTag: persistedProfile.runtimeTag,
+      );
+    }
   }
   if (visibleOutbounds.length == 1) {
     final singleTag = visibleOutbounds.single.tag;

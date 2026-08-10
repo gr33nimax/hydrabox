@@ -207,7 +207,9 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
           subscription,
         );
       }
-      final visibleProxyCount = _visibleProxyCount(hydrated.outbounds);
+      final visibleProxyCount = _visibleProxyCount(
+        hydrated.selectableOutbounds,
+      );
       final hasRawPayload = hydrated.rawContent.trim().length > 16;
       counts[subscription.id] = visibleProxyCount;
       summaries[subscription.id] = (
@@ -493,7 +495,7 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
       if (mounted) {
         setState(() {
           _subscriptionServerCounts[created.id] = _visibleProxyCount(
-            created.outbounds,
+            created.selectableOutbounds,
           );
           if (created.rawContent.trim().length > 16) {
             _subscriptionsWithRawPayload.add(created.id);
@@ -1125,7 +1127,9 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
                                               _subscriptionServerCounts[sub.id];
                                           final serverCount =
                                               hydratedServerCount ??
-                                              _visibleProxyCount(sub.outbounds);
+                                              _visibleProxyCount(
+                                                sub.selectableOutbounds,
+                                              );
                                           final rawLooksNonEmpty =
                                               _subscriptionsWithRawPayload
                                                   .contains(sub.id) ||

@@ -99,9 +99,21 @@ def verify(producer: Path, expected_commit: str) -> None:
         '"automatic-permissions"',
         '"multi-resource"',
         '"call"',
+        '"multi_user"',
+        '"call_vk_multi_user"',
     ):
         if marker not in producer_source:
             fail(f"HYDRA ULTIMATE producer is missing contract marker: {marker}")
+
+    calls_runtime_source = (
+        producer / "hydra" / "services" / "calls_infrastructure.py"
+    ).read_text(encoding="utf-8")
+    for marker in (
+        'features.get("call_vk_multi_user") is True',
+        '"multi_user" in modes',
+    ):
+        if marker not in calls_runtime_source:
+            fail(f"HYDRA ULTIMATE Calls runtime is missing capability gate: {marker}")
 
     print(
         "Verified HYDRA ULTIMATE producer contract: "
