@@ -306,9 +306,7 @@ class _ProxySheetHeader extends StatelessWidget {
                                       strokeWidth: 2,
                                     ),
                                   )
-                                : const Icon(
-                                    FluentIcons.arrow_sync_24_regular,
-                                  ),
+                                : const Icon(FluentIcons.arrow_sync_24_regular),
                           ),
                         IconButton(
                           tooltip: l10n.sort,
@@ -405,12 +403,8 @@ class _ActiveProxyLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
-    final downloadSpeedText = formatSpeed(
-      connected ? speedBytesPerSecond : 0,
-    );
-    final uploadSpeedText = formatSpeed(
-      connected ? uplinkBytesPerSecond : 0,
-    );
+    final downloadSpeedText = formatSpeed(connected ? speedBytesPerSecond : 0);
+    final uploadSpeedText = formatSpeed(connected ? uplinkBytesPerSecond : 0);
     final trafficText = formatBytes(connected ? trafficBytes : 0);
     return ConstrainedBox(
       constraints: const BoxConstraints(minHeight: 74),

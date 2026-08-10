@@ -32,10 +32,7 @@ void main() {
         Outbound(
           tag: 'internal-group',
           name: 'Internal',
-          config: <String, dynamic>{
-            'type': 'selector',
-            '_group_only': true,
-          },
+          config: <String, dynamic>{'type': 'selector', '_group_only': true},
         ),
       ],
       proxyChains: <SubscriptionProxyChain>[
@@ -57,10 +54,7 @@ void main() {
       'vless-xhttp',
       'chain',
     ]);
-    expect(
-      targets.every((target) => !target.requiresIsolatedConfig),
-      isTrue,
-    );
+    expect(targets.every((target) => !target.requiresIsolatedConfig), isTrue);
   });
 
   test('maps Hydra resources to the same universal target contract', () {

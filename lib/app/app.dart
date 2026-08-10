@@ -5429,10 +5429,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     _universalUrlTestGeneration++;
     _universalUrlTestInFlight = false;
     _universalUrlTestPendingTags.clear();
-    AppLogStore.info(
-      'latency',
-      'universal URLTest cancelled reason=$reason',
-    );
+    AppLogStore.info('latency', 'universal URLTest cancelled reason=$reason');
     unawaited(SingboxRuntime.instance.cancelPreconnectUrlTest());
   }
 

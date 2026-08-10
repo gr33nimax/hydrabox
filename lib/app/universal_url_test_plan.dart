@@ -33,9 +33,9 @@ class UniversalUrlTestPlan {
   }) {
     if (subscription.resourceConfigs.isNotEmpty) {
       return HydraResourceLatencyPlan.targets(
-        subscription,
-        excludedRuntimeTags: excludedRuntimeTags,
-      )
+            subscription,
+            excludedRuntimeTags: excludedRuntimeTags,
+          )
           .map(
             (target) => UniversalUrlTestTarget(
               runtimeTag: target.runtimeTag,
@@ -52,16 +52,11 @@ class UniversalUrlTestPlan {
     final targets = <UniversalUrlTestTarget>[];
     void addTarget(String rawTag) {
       final tag = rawTag.trim();
-      if (tag.isEmpty ||
-          excludedRuntimeTags.contains(tag) ||
-          !seen.add(tag)) {
+      if (tag.isEmpty || excludedRuntimeTags.contains(tag) || !seen.add(tag)) {
         return;
       }
       targets.add(
-        UniversalUrlTestTarget(
-          runtimeTag: tag,
-          nativeOutboundTag: tag,
-        ),
+        UniversalUrlTestTarget(runtimeTag: tag, nativeOutboundTag: tag),
       );
     }
 

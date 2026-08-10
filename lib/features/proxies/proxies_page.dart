@@ -760,9 +760,7 @@ class _ProxiesPageState extends State<ProxiesPage> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
-    final urlTestRunning = widget.proxies.any(
-      (proxy) => proxy.latencyChecking,
-    );
+    final urlTestRunning = widget.proxies.any((proxy) => proxy.latencyChecking);
     if (widget.embedded) {
       final sheetMetricsListenable = widget.sheetMetricsListenable;
       final list = _buildEmbeddedProxyList(context: context, l10n: l10n);

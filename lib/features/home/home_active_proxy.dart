@@ -264,12 +264,8 @@ class ActiveProxyFooter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final downloadSpeedText = formatSpeed(
-      connected ? speedBytesPerSecond : 0,
-    );
-    final uploadSpeedText = formatSpeed(
-      connected ? uplinkBytesPerSecond : 0,
-    );
+    final downloadSpeedText = formatSpeed(connected ? speedBytesPerSecond : 0);
+    final uploadSpeedText = formatSpeed(connected ? uplinkBytesPerSecond : 0);
     final trafficText = formatBytes(connected ? trafficBytes : 0);
     return Padding(
       padding: const EdgeInsets.only(top: 8),

@@ -63,9 +63,7 @@ class HomePresentationData {
       hideServerIp: hideServerIp,
       hapticEnabled: hapticEnabled,
       speedBytesPerSecond: showTraffic ? downlinkBytesPerSecond.toDouble() : 0,
-      uplinkBytesPerSecond: showTraffic
-          ? uplinkBytesPerSecond.toDouble()
-          : 0,
+      uplinkBytesPerSecond: showTraffic ? uplinkBytesPerSecond.toDouble() : 0,
       trafficBytes: showTraffic
           ? (uplinkTotalBytes + downlinkTotalBytes).toDouble()
           : 0,

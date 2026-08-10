@@ -28,11 +28,8 @@ class TrafficUiSnapshot {
   }
 
   @override
-  int get hashCode => Object.hash(
-    speedBytesPerSecond,
-    uplinkBytesPerSecond,
-    trafficBytes,
-  );
+  int get hashCode =>
+      Object.hash(speedBytesPerSecond, uplinkBytesPerSecond, trafficBytes);
 }
 
 class AppProfileSummary {
