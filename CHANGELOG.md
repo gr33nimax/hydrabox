@@ -3,7 +3,9 @@
 ## [0.4.0-beta.1]
 
 - Switched the Android runtime to HydraCore
-  `v1.13.16-extended-hydracore.5` and its versioned API v2 contract.
+  `v1.13.16-extended-hydracore.6` and its versioned API v2 contract.
+- Fixed native JWE subscription validation for the advertised and required
+  `call_vk_multi_user` capability.
 - Replaced the client-specific subscription formats with Hydra Subscription v2.
 - Added independent multi-resource storage and deterministic single-resource
   profile activation.

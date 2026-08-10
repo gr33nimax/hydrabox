@@ -47,6 +47,7 @@ REQUIRED_SOURCE_MARKERS: dict[str, tuple[str, ...]] = {
         "func HydraCoreSubscriptionSchema() string",
         "func HydraCoreValidateSubscription(content string) string",
         "func HydraCoreInspectSubscription(content string) string",
+        'supportedFeatures["call_vk_multi_user"] = true',
         '"network.outbound"',
         '"network.inbound.call"',
         '"network.endpoint.wireguard"',
