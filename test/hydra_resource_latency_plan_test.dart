@@ -133,17 +133,17 @@ void main() {
   test('cross-resource selection requires a runtime reload', () {
     expect(
       HydraResourceLatencyPlan.requiresRuntimeReload(
-        subscription: subscription,
-        previousRuntimeTag: 'amnezia',
-        nextRuntimeTag: 'hysteria2',
+        subscription: sameNativeTagSubscription,
+        previousRuntimeTag: resourceARuntimeTag,
+        nextRuntimeTag: resourceBRuntimeTag,
       ),
       isTrue,
     );
     expect(
       HydraResourceLatencyPlan.requiresRuntimeReload(
-        subscription: subscription,
-        previousRuntimeTag: 'amnezia',
-        nextRuntimeTag: 'amnezia',
+        subscription: sameNativeTagSubscription,
+        previousRuntimeTag: resourceARuntimeTag,
+        nextRuntimeTag: resourceARuntimeTag,
       ),
       isFalse,
     );
