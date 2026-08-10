@@ -11,7 +11,7 @@ void main() {
 
     expect(capabilities.apiVersion, 2);
     expect(capabilities.coreId, 'io.hydrabox.hydracore');
-    expect(capabilities.coreVersion, 'v1.13.16-extended-hydracore.7');
+    expect(capabilities.coreVersion, 'v1.13.16-extended-hydracore.9');
     expect(capabilities.coreRole, 'client');
     expect(capabilities.supportsCallVkMultiUser, isTrue);
     expect(capabilities.supportsCallVkMultiUserClient, isTrue);
@@ -82,7 +82,7 @@ Map<String, dynamic> _capabilities() => {
   'identity': {
     'core_id': 'io.hydrabox.hydracore',
     'core_name': 'HydraCore',
-    'core_version': 'v1.13.16-extended-hydracore.7',
+    'core_version': 'v1.13.16-extended-hydracore.9',
     'role': 'client',
   },
   'features': {

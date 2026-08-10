@@ -12,6 +12,8 @@
 - Fixed Wi-Fi/mobile handover recovery for long-lived VK Calls connections by
   preferring the callback network and resetting native route state in the VPN
   foreground service.
+- Upgraded Android to HydraCore `v1.13.16-extended-hydracore.9`, where XHTTP
+  resets are reusable and runtime events expose both traffic rates.
 - Switched the migrated default connectivity probe from Google to Cloudflare.
 
 ## [0.4.0-beta.1]
