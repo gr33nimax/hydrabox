@@ -110,7 +110,11 @@ def verify(producer: Path, expected_commit: str) -> None:
     ).read_text(encoding="utf-8")
     for marker in (
         'features.get("call_vk_multi_user") is True',
-        '"multi_user" in modes',
+        'identity.get("role") == "vps"',
+        'features.get("call_vk_multi_user_server") is True',
+        'modes == ["multi_user"]',
+        'wire.get("min") == 1',
+        'wire.get("max") == 2',
     ):
         if marker not in calls_runtime_source:
             fail(f"HYDRA ULTIMATE Calls runtime is missing capability gate: {marker}")

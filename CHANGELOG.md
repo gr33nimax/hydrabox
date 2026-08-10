@@ -2,8 +2,18 @@
 
 ## [0.4.0-beta.1]
 
-- Switched the Android runtime to HydraCore
-  `v1.13.16-extended-hydracore.6` and its versioned API v2 contract.
+- Исправлен lifecycle default-network monitor: основной VPN runtime и
+  standalone URLTest теперь зарегистрированы независимо. Закрытие latency
+  probe больше не отцепляет VPN listener и не создаёт ложный `network_changed`.
+- Native Calls получает немедленный Hydracore rebind при Wi-Fi/mobile handover;
+  worker transports пересоздаются без потери логического KCP/RelayBridge.
+- Клиент проверяет role-specific Hydracore contract (`client`, multi-user-only,
+  wire v2) и загружает отдельный `hydracore-client-libbox.aar`.
+- Adaptive launcher artwork уменьшен до безопасной 64dp-зоны, чтобы OEM mask
+  не растягивала и не обрезала головы Hydra.
+
+- Switched the Android runtime to the client-role HydraCore
+  `v1.13.16-extended-hydracore.7` and its versioned API v2 contract.
 - Fixed native JWE subscription validation for the advertised and required
   `call_vk_multi_user` capability.
 - Replaced the client-specific subscription formats with Hydra Subscription v2.

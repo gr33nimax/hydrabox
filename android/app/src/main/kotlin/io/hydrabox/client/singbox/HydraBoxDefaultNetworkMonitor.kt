@@ -39,7 +39,7 @@ object HydraBoxDefaultNetworkMonitor {
 
     private var started = false
     private var currentNetwork: Network? = null
-    private var listener: InterfaceUpdateListener? = null
+    private val listeners = IdentityListenerRegistry<InterfaceUpdateListener>()
     private var heartbeatFuture: ScheduledFuture<*>? = null
     private var pendingNotifyRunnable: Runnable? = null
     private var lastNotificationKey: String? = null
@@ -296,25 +296,32 @@ object HydraBoxDefaultNetworkMonitor {
         )
     }
 
-    fun setListener(newListener: InterfaceUpdateListener?) {
+    fun addListener(newListener: InterfaceUpdateListener) {
         synchronized(lock) {
-            listener = newListener
-            lastNotificationKey = null
+            listeners.add(newListener)
         }
         notificationGeneration.incrementAndGet()
-        if (newListener != null) {
+        HydraBoxDiagnostics.log(
+            TAG,
+            "listener_attached count=${listenerCount()} current=${describeCurrentState()}",
+        )
+        notifyListener(immediate = true, force = true)
+    }
+
+    fun removeListener(listener: InterfaceUpdateListener) {
+        val removed = synchronized(lock) { listeners.remove(listener) }
+        if (removed) {
             HydraBoxDiagnostics.log(
                 TAG,
-                "listener_attached force_default_interface current=${describeCurrentState()}",
+                "listener_detached count=${listenerCount()} current=${describeCurrentState()}",
             )
-            notifyListener(immediate = true, force = true)
-        } else {
-            HydraBoxDiagnostics.log(TAG, "listener_detached current=${describeCurrentState()}")
         }
     }
 
+    internal fun listenerCount(): Int = synchronized(lock) { listeners.size() }
+
     fun reassertDefaultInterface(reason: String) {
-        val hasListener = synchronized(lock) { listener != null }
+        val hasListener = synchronized(lock) { !listeners.isEmpty() }
         HydraBoxDiagnostics.log(
             TAG,
             "reassertDefaultInterface reason=$reason listener=$hasListener current=${describeCurrentState()}",
@@ -374,7 +381,7 @@ object HydraBoxDefaultNetworkMonitor {
     private fun notifyListener(immediate: Boolean = false, force: Boolean = false) {
         val generation = notificationGeneration.incrementAndGet()
         val capturedNetwork = synchronized(lock) {
-            if (listener == null) return
+            if (listeners.isEmpty()) return
             currentNetwork
         }
         val runnable = Runnable {
@@ -408,7 +415,8 @@ object HydraBoxDefaultNetworkMonitor {
         force: Boolean,
     ) {
         if (notificationGeneration.get() != generation) return
-        val currentListener = synchronized(lock) { listener } ?: return
+        val currentListeners = synchronized(lock) { listeners.snapshot() }
+        if (currentListeners.isEmpty()) return
         val bestNetwork = resolveBestNetwork()
         val effectiveNetwork = bestNetwork ?: capturedNetwork?.takeIf(::isSelectableNetwork)
         if (effectiveNetwork == null) {
@@ -421,8 +429,7 @@ object HydraBoxDefaultNetworkMonitor {
                 null,
                 if (force) "default_interface_lost_forced" else "default_interface_lost",
             )
-            runCatching { currentListener.updateDefaultInterface("", -1, false, false) }
-                .onFailure { Log.e(TAG, "updateDefaultInterface failed", it) }
+            notifyListeners(currentListeners, "", -1)
             if (!duplicate) {
                 SingboxController.emitNetworkChanged(
                     "default_interface_lost",
@@ -448,8 +455,7 @@ object HydraBoxDefaultNetworkMonitor {
                 null,
                 if (force) "default_interface_missing_forced" else "default_interface_missing",
             )
-            runCatching { currentListener.updateDefaultInterface("", -1, false, false) }
-                .onFailure { Log.e(TAG, "updateDefaultInterface failed", it) }
+            notifyListeners(currentListeners, "", -1)
             if (!duplicate) {
                 SingboxController.emitNetworkChanged(
                     "default_interface_missing",
@@ -494,8 +500,7 @@ object HydraBoxDefaultNetworkMonitor {
                 "default_interface"
             },
         )
-        runCatching { currentListener.updateDefaultInterface(interfaceName, index, false, false) }
-            .onFailure { Log.e(TAG, "updateDefaultInterface failed", it) }
+        notifyListeners(currentListeners, interfaceName, index)
         if (!duplicate) {
             SingboxController.emitNetworkChanged(
                 "default_interface",
@@ -510,6 +515,25 @@ object HydraBoxDefaultNetworkMonitor {
             HydraBoxVpnService.requestRuntimeRecoveryAfterNetworkChange(
                 "default_interface:$interfaceName",
             )
+        }
+    }
+
+    private fun notifyListeners(
+        snapshot: List<InterfaceUpdateListener>,
+        interfaceName: String,
+        interfaceIndex: Int,
+    ) {
+        snapshot.forEach { currentListener ->
+            val stillAttached = synchronized(lock) { listeners.contains(currentListener) }
+            if (!stillAttached) return@forEach
+            runCatching {
+                currentListener.updateDefaultInterface(
+                    interfaceName,
+                    interfaceIndex,
+                    false,
+                    false,
+                )
+            }.onFailure { Log.e(TAG, "updateDefaultInterface failed", it) }
         }
     }
 

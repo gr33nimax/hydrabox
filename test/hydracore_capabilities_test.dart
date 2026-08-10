@@ -11,12 +11,17 @@ void main() {
 
     expect(capabilities.apiVersion, 2);
     expect(capabilities.coreId, 'io.hydrabox.hydracore');
-    expect(capabilities.coreVersion, 'v1.13.16-extended-hydracore.6');
+    expect(capabilities.coreVersion, 'v1.13.16-extended-hydracore.7');
+    expect(capabilities.coreRole, 'client');
     expect(capabilities.supportsCallVkMultiUser, isTrue);
-    expect(capabilities.callModes, {'p2p', 'multi_user'});
+    expect(capabilities.supportsCallVkMultiUserClient, isTrue);
+    expect(capabilities.supportsCallVkMultiUserServer, isFalse);
+    expect(capabilities.callVkMultiUserWireMin, 2);
+    expect(capabilities.callVkMultiUserWireMax, 2);
+    expect(capabilities.callModes, {'multi_user'});
     expect(capabilities.validationProfiles, {'local', 'remote_v2'});
     expect(capabilities.subscriptionContracts, {2});
-    expect(capabilities.remoteSafeInboundTypes, {'call'});
+    expect(capabilities.remoteSafeInboundTypes, isEmpty);
     expect(capabilities.remoteSafeEndpointTypes, {'wireguard'});
     expect(capabilities.minimumEventIntervalMillis, 250);
     expect(capabilities.maximumEventIntervalMillis, 30000);
@@ -32,6 +37,7 @@ void main() {
       'subscription_jwe',
       'call',
       'call_vk_multi_user',
+      'call_vk_multi_user_client',
     ]) {
       final document = _capabilities();
       (document['features'] as Map<String, dynamic>)[feature] = false;
@@ -61,6 +67,13 @@ void main() {
       () => HydraCoreCapabilities.parseStrict(jsonEncode(missingRuntime)),
       throwsFormatException,
     );
+
+    final vpsRole = _capabilities();
+    (vpsRole['identity'] as Map<String, dynamic>)['role'] = 'vps';
+    expect(
+      () => HydraCoreCapabilities.parseStrict(jsonEncode(vpsRole)),
+      throwsFormatException,
+    );
   });
 }
 
@@ -69,7 +82,8 @@ Map<String, dynamic> _capabilities() => {
   'identity': {
     'core_id': 'io.hydrabox.hydracore',
     'core_name': 'HydraCore',
-    'core_version': 'v1.13.16-extended-hydracore.6',
+    'core_version': 'v1.13.16-extended-hydracore.7',
+    'role': 'client',
   },
   'features': {
     'targeted_url_test': true,
@@ -88,10 +102,12 @@ Map<String, dynamic> _capabilities() => {
     'rmux': true,
     'call': true,
     'call_vk_multi_user': true,
+    'call_vk_multi_user_client': true,
+    'call_vk_multi_user_server': false,
     'amnezia_version': 3,
   },
   'protocols': {
-    'inbounds': ['call'],
+    'inbounds': <String>[],
     'outbounds': [
       'socks',
       'http',
@@ -111,8 +127,9 @@ Map<String, dynamic> _capabilities() => {
       'call',
     ],
     'endpoints': ['wireguard'],
-    'call_platforms': ['dion', 'telemost', 'vk', 'wbstream'],
-    'call_modes': ['p2p', 'multi_user'],
+    'call_platforms': ['vk'],
+    'call_modes': ['multi_user'],
+    'call_vk_multi_user_wire': {'min': 2, 'max': 2},
   },
   'tun_stacks': ['system', 'gvisor', 'mixed'],
   'xhttp_modes': ['packet-up', 'stream-up', 'stream-one'],
@@ -134,7 +151,7 @@ Map<String, dynamic> _capabilities() => {
   'remote_policy': {
     'version': 2,
     'safe_top_level_fields': [r'$schema', 'inbounds', 'outbounds', 'endpoints'],
-    'safe_inbound_types': ['call'],
+    'safe_inbound_types': <String>[],
     'safe_outbound_types': [
       'socks',
       'http',

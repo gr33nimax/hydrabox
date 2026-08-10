@@ -152,8 +152,12 @@ def main() -> None:
         fail("HydraCore submodule URL does not match provenance")
     if submodule_setting("branch") != "main":
         fail("HydraCore submodule branch must be main")
-    if list(provenance.build_tags) != build_tags:
-        fail("bundled AAR build tags do not match UPSTREAM_BASELINE")
+    client_build_tags = [
+        "with_call_client" if tag == "with_call" else tag
+        for tag in build_tags
+    ]
+    if list(provenance.build_tags) != client_build_tags:
+        fail("bundled AAR build tags do not match the client role")
     if provenance.android_api != android_api:
         fail("bundled AAR Android API does not match UPSTREAM_BASELINE")
     if provenance.android_ndk_requested != baseline["ANDROID_NDK_VERSION"]:

@@ -11,8 +11,8 @@ from typing import NoReturn
 
 
 PROVENANCE_SCHEMA_VERSION = 3
-LIBBOX_ARTIFACT = "libbox.aar"
-LIBBOX_SOURCES_ARTIFACT = "libbox-sources.jar"
+LIBBOX_ARTIFACT = "hydracore-client-libbox.aar"
+LIBBOX_SOURCES_ARTIFACT = "hydracore-client-libbox-sources.jar"
 LIBBOX_RELEASE_REPOSITORY = "gr33nimax/hydracore"
 LIBBOX_RELEASE_BASE_URL = (
     f"https://github.com/{LIBBOX_RELEASE_REPOSITORY}/releases/download"
@@ -72,6 +72,7 @@ class LibboxProvenance:
     download_url: str
     distribution_id: str
     distribution_name: str
+    distribution_role: str
     upstream_project: str
     upstream_commit: str
     upstream_tag: str
@@ -98,6 +99,13 @@ def parse_provenance(value: object) -> LibboxProvenance:
         fail("libbox provenance has an unexpected distribution.id")
     if distribution_name != HYDRACORE_DISTRIBUTION_NAME:
         fail("libbox provenance has an unexpected distribution.name")
+    distribution_role = required_string(
+        distribution,
+        "role",
+        prefix="distribution",
+    )
+    if distribution_role != "client":
+        fail("libbox provenance has an unexpected distribution.role")
     if _RELEASE_TAG.fullmatch(release_tag) is None:
         fail("libbox provenance distribution.version is malformed")
 
@@ -163,6 +171,7 @@ def parse_provenance(value: object) -> LibboxProvenance:
         download_url=expected_download_url(release_tag),
         distribution_id=distribution_id,
         distribution_name=distribution_name,
+        distribution_role=distribution_role,
         upstream_project=upstream_project,
         upstream_commit=upstream_commit,
         upstream_tag=upstream_tag,
