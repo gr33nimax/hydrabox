@@ -11,7 +11,7 @@ void main() {
 
     expect(capabilities.apiVersion, 2);
     expect(capabilities.coreId, 'io.hydrabox.hydracore');
-    expect(capabilities.coreVersion, 'v1.13.16-extended-hydracore.5');
+    expect(capabilities.coreVersion, 'v1.13.16-extended-hydracore.6');
     expect(capabilities.supportsCallVkMultiUser, isTrue);
     expect(capabilities.callModes, {'p2p', 'multi_user'});
     expect(capabilities.validationProfiles, {'local', 'remote_v2'});
@@ -69,7 +69,7 @@ Map<String, dynamic> _capabilities() => {
   'identity': {
     'core_id': 'io.hydrabox.hydracore',
     'core_name': 'HydraCore',
-    'core_version': 'v1.13.16-extended-hydracore.5',
+    'core_version': 'v1.13.16-extended-hydracore.6',
   },
   'features': {
     'targeted_url_test': true,
