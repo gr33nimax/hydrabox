@@ -72,7 +72,9 @@ abstract class HydraBoxBasePlatformInterface(
     override fun clearDNSCache() = Unit
 
     override fun closeDefaultInterfaceMonitor(listener: InterfaceUpdateListener?) {
-        HydraBoxDefaultNetworkMonitor.setListener(null)
+        if (listener != null) {
+            HydraBoxDefaultNetworkMonitor.removeListener(listener)
+        }
     }
 
     override fun findConnectionOwner(
@@ -173,7 +175,7 @@ abstract class HydraBoxBasePlatformInterface(
 
     override fun startDefaultInterfaceMonitor(listener: InterfaceUpdateListener?) {
         if (listener != null) {
-            HydraBoxDefaultNetworkMonitor.setListener(listener)
+            HydraBoxDefaultNetworkMonitor.addListener(listener)
         }
     }
 

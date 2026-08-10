@@ -17,6 +17,7 @@ if str(SCRIPTS) not in sys.path:
 
 from fetch_libbox import MAX_DOWNLOAD_BYTES, fetch_libbox  # noqa: E402
 from libbox_provenance import (  # noqa: E402
+    LIBBOX_ARTIFACT,
     expected_download_url,
     parse_provenance,
 )
@@ -32,7 +33,7 @@ PINNED_PROVENANCE = json.loads(
 
 def provenance_for(payload: bytes) -> dict[str, object]:
     provenance = deepcopy(PINNED_PROVENANCE)
-    provenance["artifacts"]["libbox.aar"]["sha256"] = hashlib.sha256(
+    provenance["artifacts"][LIBBOX_ARTIFACT]["sha256"] = hashlib.sha256(
         payload
     ).hexdigest()
     return provenance
@@ -93,10 +94,11 @@ class FetchLibboxTest(unittest.TestCase):
 
         self.assertEqual(parsed.distribution_id, "io.hydrabox.hydracore")
         self.assertEqual(parsed.distribution_name, "HydraCore")
-        self.assertEqual(parsed.release_tag, "v1.13.16-extended-hydracore.6")
+        self.assertEqual(parsed.distribution_role, "client")
+        self.assertEqual(parsed.release_tag, "v1.13.16-extended-hydracore.7")
         self.assertEqual(
             parsed.source_commit,
-            "06ea83ca44a2a321cb5330afe0c62edea86aa3bf",
+            "3711eabb79720cf62a90f3f0cc9b7812d1efa63e",
         )
         self.assertEqual(
             parsed.upstream_commit,
@@ -104,7 +106,7 @@ class FetchLibboxTest(unittest.TestCase):
         )
         self.assertEqual(
             parsed.sha256,
-            "6b0f738e74223d25cd0dbf70856e2fa975f9ffe2acbc13ba8a73210bdf2601b2",
+            "b7a221be33c500983e027b4c0dc92ac88a7eb8866d6b848f3665dd04ab485a61",
         )
 
     def test_downloads_only_the_pinned_release_asset(self) -> None:
@@ -199,7 +201,7 @@ class FetchLibboxTest(unittest.TestCase):
             lambda value: value["distribution"].update(id="other.core"),
             lambda value: value["source"].update(commit="short"),
             lambda value: value["upstream"].update(project="other"),
-            lambda value: value["artifacts"]["libbox.aar"].update(
+            lambda value: value["artifacts"][LIBBOX_ARTIFACT].update(
                 sha256="invalid"
             ),
         ):

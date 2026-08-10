@@ -30,7 +30,9 @@ REQUIRED_SOURCE_MARKERS: dict[str, tuple[str, ...]] = {
         'json:"subscription_jwe"',
         'json:"call"',
         'json:"call_vk_multi_user"',
-        'callModes = []string{"p2p", "multi_user"}',
+        'json:"call_vk_multi_user_client"',
+        'json:"call_vk_multi_user_server"',
+        'json:"call_vk_multi_user_wire"',
         '[]int{2}',
         '[]string{"__hydra."}',
     ),
@@ -76,6 +78,15 @@ REQUIRED_SOURCE_MARKERS: dict[str, tuple[str, ...]] = {
         "URLTestSessionCancelled",
     ),
     "include/call.go": ("call.RegisterInbound", "call.RegisterOutbound"),
+    "common/hydracore/call_client.go": (
+        'distributionRole  = "client"',
+        'callModes     = []string{"multi_user"}',
+    ),
+    "common/hydracore/call_server.go": (
+        'distributionRole  = "vps"',
+        "callWireMin       = 1",
+        "callWireMax       = 2",
+    ),
 }
 
 REQUIRED_CONTRACT_FILES = (
@@ -180,8 +191,12 @@ def verify_provenance(build_tags: list[str], android_api: int) -> None:
         fail(f"invalid libbox provenance JSON: {error}")
     recorded_tags = provenance.get("toolchain", {}).get("build_tags")
     recorded_api = provenance.get("android", {}).get("api")
-    if recorded_tags != build_tags:
-        fail("bundled AAR build tags do not match UPSTREAM_BASELINE")
+    client_build_tags = [
+        "with_call_client" if tag == "with_call" else tag
+        for tag in build_tags
+    ]
+    if recorded_tags != client_build_tags:
+        fail("bundled AAR build tags do not match the client role")
     if recorded_api != android_api:
         fail("bundled AAR Android API does not match UPSTREAM_BASELINE")
 

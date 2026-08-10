@@ -8,6 +8,7 @@ class HydraCoreCapabilities {
     required this.apiVersion,
     this.coreId = hydraCoreId,
     this.coreName = 'HydraCore',
+    this.coreRole = 'client',
     required this.coreVersion,
     this.supportsTargetedUrlTest = true,
     this.supportsPreconnectUrlTest = true,
@@ -36,13 +37,17 @@ class HydraCoreCapabilities {
     this.supportsRmux = true,
     this.supportsCall = true,
     this.supportsCallVkMultiUser = true,
+    this.supportsCallVkMultiUserClient = true,
+    this.supportsCallVkMultiUserServer = false,
+    this.callVkMultiUserWireMin = 2,
+    this.callVkMultiUserWireMax = 2,
     this.amneziaVersion = 3,
     this.tunStacks = const {'system', 'gvisor', 'mixed'},
     this.inboundProtocols = const <String>{},
     this.outboundProtocols = const <String>{},
     this.endpointProtocols = const <String>{},
     this.callPlatforms = const <String>{},
-    this.callModes = const {'p2p', 'multi_user'},
+    this.callModes = const {'multi_user'},
     this.validationProfiles = const {'local', 'remote_v2'},
     this.subscriptionContracts = const {2},
     this.subscriptionMediaTypes = const {
@@ -76,8 +81,7 @@ class HydraCoreCapabilities {
   /// Expected release surface used by pure-Dart code and test fakes.
   static const requiredV2 = HydraCoreCapabilities(
     apiVersion: supportedApiVersion,
-    coreVersion: 'v1.13.16-extended-hydracore.6',
-    inboundProtocols: {'call'},
+    coreVersion: 'v1.13.16-extended-hydracore.7',
     outboundProtocols: {
       'socks',
       'http',
@@ -97,8 +101,7 @@ class HydraCoreCapabilities {
       'call',
     },
     endpointProtocols: {'wireguard'},
-    callPlatforms: {'dion', 'telemost', 'vk', 'wbstream'},
-    remoteSafeInboundTypes: {'call'},
+    callPlatforms: {'vk'},
     remoteSafeOutboundTypes: {
       'socks',
       'http',
@@ -143,6 +146,7 @@ class HydraCoreCapabilities {
       apiVersion: _requiredInt(root, 'api_version'),
       coreId: _requiredString(identity, 'core_id'),
       coreName: _requiredString(identity, 'core_name'),
+      coreRole: _requiredString(identity, 'role'),
       coreVersion: _requiredString(identity, 'core_version'),
       supportsTargetedUrlTest: _requiredBool(features, 'targeted_url_test'),
       supportsPreconnectUrlTest: _requiredBool(features, 'preconnect_url_test'),
@@ -175,6 +179,22 @@ class HydraCoreCapabilities {
       supportsRmux: _requiredBool(features, 'rmux'),
       supportsCall: _requiredBool(features, 'call'),
       supportsCallVkMultiUser: _requiredBool(features, 'call_vk_multi_user'),
+      supportsCallVkMultiUserClient: _requiredBool(
+        features,
+        'call_vk_multi_user_client',
+      ),
+      supportsCallVkMultiUserServer: _requiredBool(
+        features,
+        'call_vk_multi_user_server',
+      ),
+      callVkMultiUserWireMin: _requiredInt(
+        _requiredMap(protocols, 'call_vk_multi_user_wire'),
+        'min',
+      ),
+      callVkMultiUserWireMax: _requiredInt(
+        _requiredMap(protocols, 'call_vk_multi_user_wire'),
+        'max',
+      ),
       amneziaVersion: _requiredInt(features, 'amnezia_version'),
       tunStacks: _requiredStringSet(root, 'tun_stacks'),
       inboundProtocols: _requiredStringSet(protocols, 'inbounds'),
@@ -244,6 +264,7 @@ class HydraCoreCapabilities {
   final int apiVersion;
   final String coreId;
   final String coreName;
+  final String coreRole;
   final String coreVersion;
   final bool supportsTargetedUrlTest;
   final bool supportsPreconnectUrlTest;
@@ -272,6 +293,10 @@ class HydraCoreCapabilities {
   final bool supportsRmux;
   final bool supportsCall;
   final bool supportsCallVkMultiUser;
+  final bool supportsCallVkMultiUserClient;
+  final bool supportsCallVkMultiUserServer;
+  final int callVkMultiUserWireMin;
+  final int callVkMultiUserWireMax;
   final int amneziaVersion;
   final Set<String> tunStacks;
   final Set<String> inboundProtocols;
@@ -319,8 +344,15 @@ class HydraCoreCapabilities {
       supportsSubscriptionJwe &&
       supportsCall &&
       supportsCallVkMultiUser &&
+      supportsCallVkMultiUserClient &&
+      !supportsCallVkMultiUserServer &&
+      coreRole == 'client' &&
+      callVkMultiUserWireMin == 2 &&
+      callVkMultiUserWireMax == 2 &&
+      callPlatforms.length == 1 &&
       callPlatforms.contains('vk') &&
-      callModes.containsAll(const {'p2p', 'multi_user'}) &&
+      callModes.length == 1 &&
+      callModes.contains('multi_user') &&
       supportsRmux &&
       amneziaVersion >= 3 &&
       subscriptionContracts.contains(2) &&
