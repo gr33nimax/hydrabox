@@ -11,7 +11,6 @@ import android.graphics.drawable.Icon
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.os.SystemClock
 import io.hydrabox.client.MainActivity
 import io.hydrabox.client.R
 import java.util.concurrent.atomic.AtomicLong
@@ -38,7 +37,6 @@ internal class HydraBoxForegroundNotification(
         private const val CONTENT_REQUEST_CODE = 4203
         private const val DEFAULT_LATENCY_TIMEOUT_MS = 20_000L
         private const val MAX_TEXT_LENGTH = 120
-        private const val TRAFFIC_REFRESH_INTERVAL_MS = 2_000L
         private const val PRESENTATION_PREFS = "hydrabox_foreground_notification"
         private const val PREF_DETAILED = "detailed"
         private const val PREF_TRAFFIC_DISPLAY_MODE = "traffic_display_mode"
@@ -131,7 +129,6 @@ internal class HydraBoxForegroundNotification(
     private var trafficAvailable = false
     private var displayedUplink = 0L
     private var displayedDownlink = 0L
-    private var lastTrafficRefreshAt = 0L
     private var latencyChecking = false
     private var latencyActionGeneration = 0L
     private var latencyActionInFlight = false
@@ -190,7 +187,6 @@ internal class HydraBoxForegroundNotification(
         trafficAvailable: Boolean,
     ) {
         synchronized(this) {
-            val availabilityChanged = this.trafficAvailable != trafficAvailable
             val changed = this.uplink != uplink ||
                 this.downlink != downlink ||
                 this.uplinkTotal != uplinkTotal ||
@@ -201,13 +197,9 @@ internal class HydraBoxForegroundNotification(
             this.uplinkTotal = uplinkTotal
             this.downlinkTotal = downlinkTotal
             this.trafficAvailable = trafficAvailable
-            val now = SystemClock.elapsedRealtime()
-            val refreshDue = lastTrafficRefreshAt == 0L ||
-                now - lastTrafficRefreshAt >= TRAFFIC_REFRESH_INTERVAL_MS
-            if (changed && (availabilityChanged || refreshDue)) {
+            if (changed) {
                 displayedUplink = smoothRate(displayedUplink, uplink, trafficAvailable)
                 displayedDownlink = smoothRate(displayedDownlink, downlink, trafficAvailable)
-                lastTrafficRefreshAt = now
                 refreshLocked()
             }
         }
@@ -219,7 +211,6 @@ internal class HydraBoxForegroundNotification(
             presentation = Presentation()
             displayedUplink = 0L
             displayedDownlink = 0L
-            lastTrafficRefreshAt = 0L
         }
     }
 

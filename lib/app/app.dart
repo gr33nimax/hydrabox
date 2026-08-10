@@ -5417,6 +5417,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     }
     _publishProxyRuntimeVisualStatesForTags(<String>{tag});
     unawaited(_syncQuickSettingsTileLabel());
+    _scheduleVpnNotificationSync();
     if (applied.realOutboundRuntimeStateChanged) {
       _scheduleBestOutboundLocationRefresh();
     }

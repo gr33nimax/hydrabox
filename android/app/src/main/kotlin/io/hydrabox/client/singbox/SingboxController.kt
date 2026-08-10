@@ -142,6 +142,8 @@ object SingboxController {
     @Volatile
     private var trafficAvailable: Boolean = false
 
+    private val trafficRateTracker = RuntimeTrafficRateTracker()
+
     @Volatile
     private var commandClient: CommandClient? = null
     private val commandClientLifecycle = CommandClientLifecycle()
@@ -294,8 +296,15 @@ object SingboxController {
         override fun writeStatus(message: StatusMessage?) {
             if (message == null || !commandClientLifecycle.acceptsEvents(epoch)) return
             statusCallbackCount.incrementAndGet()
-            uplink = message.uplink
-            downlink = message.downlink
+            val traffic = trafficRateTracker.update(
+                nativeUplink = message.uplink,
+                nativeDownlink = message.downlink,
+                uplinkTotal = message.uplinkTotal,
+                downlinkTotal = message.downlinkTotal,
+                observedAtMillis = SystemClock.elapsedRealtime(),
+            )
+            uplink = traffic.uplink
+            downlink = traffic.downlink
             uplinkTotal = message.uplinkTotal
             downlinkTotal = message.downlinkTotal
             // Some libbox builds briefly report trafficAvailable=false while
@@ -427,6 +436,7 @@ object SingboxController {
         }
         HydraBoxDiagnostics.log(TAG, "setRunning value=$value mode=$serviceMode error=$error")
         if (!value) {
+            trafficRateTracker.reset()
             uplink = 0
             downlink = 0
             uplinkTotal = 0
@@ -782,6 +792,11 @@ object SingboxController {
                 HydraBoxDiagnostics.log(TAG, "command_stream_connecting epoch=$epoch")
                 val options = CommandClientOptions().apply {
                     addCommand(Libbox.CommandLog)
+                    // RuntimeEvents carries authoritative totals/groups, but
+                    // releases before HydraCore .8 do not calculate its
+                    // instantaneous rates. Keep the dedicated status stream
+                    // as the protocol-independent source of B/s values.
+                    addCommand(Libbox.CommandStatus)
                     addCommand(Libbox.CommandRuntimeEvents)
                     runtimeEventIntervalMillis = runtimeEventIntervalMillis()
                 }
@@ -793,14 +808,12 @@ object SingboxController {
                             if (events == null || !commandClientLifecycle.acceptsEvents(epoch)) return
                             val snapshot = events.snapshot
                             if (snapshot != null) {
-                                handler.writeStatus(snapshot.status)
                                 handler.writeGroups(snapshot.groups())
                                 emitUrlTestSessions(events.sequence, true, snapshot.urlTestSessions())
                             }
                             val iterator = events.events()
                             while (iterator.hasNext()) {
                                 val event = iterator.next()
-                                event.status?.let(handler::writeStatus)
                                 val groups = event.groups()
                                 if (groups.hasNext()) handler.writeGroups(groups)
                                 val sessions = event.urlTestSessions()

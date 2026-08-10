@@ -305,7 +305,16 @@ object HydraBoxDefaultNetworkMonitor {
             TAG,
             "listener_attached count=${listenerCount()} current=${describeCurrentState()}",
         )
-        notifyListener(immediate = true, force = true, recoverRuntime = false)
+        // A newly attached libbox runtime must receive the current interface
+        // even if the physical network did not change. Limit that forced
+        // delivery to the new listener so an existing runtime is not reset.
+        notifyListener(
+            immediate = true,
+            force = true,
+            recoverRuntime = false,
+            notifyDuplicate = true,
+            targetListener = newListener,
+        )
     }
 
     fun removeListener(listener: InterfaceUpdateListener) {
@@ -327,6 +336,10 @@ object HydraBoxDefaultNetworkMonitor {
             "reassertDefaultInterface reason=$reason listener=$hasListener current=${describeCurrentState()}",
         )
         if (!hasListener) return
+        // Re-apply VpnService.setUnderlyingNetworks(), but do not send the same
+        // interface to libbox again. Android emits repeated capability/link
+        // callbacks for one Network and every duplicate core notification
+        // resets all outbound transports.
         notifyListener(immediate = true, force = true, recoverRuntime = false)
     }
 
@@ -382,6 +395,8 @@ object HydraBoxDefaultNetworkMonitor {
         immediate: Boolean = false,
         force: Boolean = false,
         recoverRuntime: Boolean = true,
+        notifyDuplicate: Boolean = false,
+        targetListener: InterfaceUpdateListener? = null,
     ) {
         val generation = notificationGeneration.incrementAndGet()
         val capturedNetwork = synchronized(lock) {
@@ -396,6 +411,8 @@ object HydraBoxDefaultNetworkMonitor {
                         capturedNetwork,
                         force,
                         recoverRuntime,
+                        notifyDuplicate,
+                        targetListener,
                     )
                 }
                     .onFailure { Log.e(TAG, "notifyListenerInternal failed", it) }
@@ -425,22 +442,30 @@ object HydraBoxDefaultNetworkMonitor {
         capturedNetwork: Network?,
         force: Boolean,
         recoverRuntime: Boolean,
+        notifyDuplicate: Boolean,
+        targetListener: InterfaceUpdateListener?,
     ) {
         if (notificationGeneration.get() != generation) return
-        val currentListeners = synchronized(lock) { listeners.snapshot() }
+        val currentListeners = synchronized(lock) {
+            if (targetListener != null) {
+                if (listeners.contains(targetListener)) listOf(targetListener) else emptyList()
+            } else {
+                listeners.snapshot()
+            }
+        }
         if (currentListeners.isEmpty()) return
         val bestNetwork = resolveBestNetwork(preferred = capturedNetwork)
         val effectiveNetwork = bestNetwork ?: capturedNetwork?.takeIf(::isSelectableNetwork)
         if (effectiveNetwork == null) {
             if (notificationGeneration.get() != generation) return
             val duplicate = markInterfaceState("none")
-            if (duplicate && !force) return
             Log.i(TAG, "updateDefaultInterface: none")
             HydraBoxDiagnostics.log(TAG, "updateDefaultInterface none current=${describeCurrentState()}")
             HydraBoxVpnService.setUnderlyingNetwork(
                 null,
                 if (force) "default_interface_lost_forced" else "default_interface_lost",
             )
+            if (duplicate && !notifyDuplicate) return
             notifyListeners(currentListeners, "", -1)
             if (!duplicate) {
                 SingboxController.emitNetworkChanged(
@@ -466,12 +491,12 @@ object HydraBoxDefaultNetworkMonitor {
         if (interfaceName.isNullOrBlank()) {
             if (notificationGeneration.get() != generation) return
             val duplicate = markInterfaceState("missing:$effectiveNetwork")
-            if (duplicate && !force) return
             Log.w(TAG, "updateDefaultInterface: missing link properties for $effectiveNetwork")
             HydraBoxVpnService.setUnderlyingNetwork(
                 null,
                 if (force) "default_interface_missing_forced" else "default_interface_missing",
             )
+            if (duplicate && !notifyDuplicate) return
             notifyListeners(currentListeners, "", -1)
             if (!duplicate) {
                 SingboxController.emitNetworkChanged(
@@ -505,7 +530,6 @@ object HydraBoxDefaultNetworkMonitor {
         if (notificationGeneration.get() != generation) return
         val notifyKey = "$effectiveNetwork:$interfaceName:$index"
         val duplicate = markInterfaceState(notifyKey)
-        if (duplicate && !force) return
         Log.i(TAG, "updateDefaultInterface: $interfaceName index=$index")
         HydraBoxDiagnostics.log(
             TAG,
@@ -522,6 +546,13 @@ object HydraBoxDefaultNetworkMonitor {
                 "default_interface"
             },
         )
+        if (duplicate && !notifyDuplicate) {
+            HydraBoxDiagnostics.log(
+                TAG,
+                "skip duplicate core interface update interface=$interfaceName index=$index",
+            )
+            return
+        }
         notifyListeners(currentListeners, interfaceName, index)
         if (!duplicate) {
             SingboxController.emitNetworkChanged(
@@ -532,17 +563,11 @@ object HydraBoxDefaultNetworkMonitor {
                 notificationGeneration.get(),
             )
         }
-        // Force a router reset even when Android reuses the same interface.
-        // Long-lived call sockets otherwise remain pinned to a dead path after
-        // a Wi-Fi/mobile handover while the VPN itself still looks connected.
-        val recoveryReason = if (duplicate) {
-            "default_interface_reassert"
-        } else {
-            "default_interface"
-        }
-        if (recoverRuntime) {
+        // A different Network/interface key is the handover signal. Repeated
+        // capability callbacks for the same key are not network changes.
+        if (recoverRuntime && !duplicate) {
             HydraBoxVpnService.requestRuntimeRecoveryAfterNetworkChange(
-                "$recoveryReason:$interfaceName",
+                "default_interface:$interfaceName",
             )
         }
     }

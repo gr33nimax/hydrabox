@@ -127,7 +127,6 @@ class HydraBoxService(
         Thread(runnable, "HydraBoxRecovery").apply { isDaemon = true }
     }
     private val recoveryGate = RuntimeRecoveryGate(RUNTIME_RECOVERY_MIN_INTERVAL_MS)
-    private val networkRecoveryGate = RuntimeRecoveryGate(RUNTIME_RECOVERY_MIN_INTERVAL_MS)
     private val foregroundNotification = HydraBoxForegroundNotification(
         service = service,
         notificationId = NOTIFICATION_ID,
@@ -261,7 +260,6 @@ class HydraBoxService(
         cancelPendingStartRetry("service_onDestroy")
         retryExecutor.shutdownNow()
         recoveryGate.reset()
-        networkRecoveryGate.reset()
         recoveryExecutor.shutdownNow()
         submitServiceTask("service_onDestroy", allowAfterDestroy = true) {
             stopInternal("service_onDestroy", stopSelf = false, cancelStarts = false)
@@ -276,7 +274,6 @@ class HydraBoxService(
     fun requestRuntimeRecovery(source: String) {
         val server = commandServer
         val ownsRuntime = ownsActiveRuntime()
-        val resetNetwork = source.startsWith("network_change:")
         if (destroyed || !SingboxController.running || !ownsRuntime || server == null) {
             HydraBoxDiagnostics.log(
                 TAG,
@@ -286,11 +283,7 @@ class HydraBoxService(
             return
         }
         val now = SystemClock.elapsedRealtime()
-        val accepted = if (resetNetwork) {
-            networkRecoveryGate.tryAcquire(now)
-        } else {
-            recoveryGate.tryAcquire(now)
-        }
+        val accepted = recoveryGate.tryAcquire(now)
         if (!accepted) {
             HydraBoxDiagnostics.log(TAG, "runtime recovery coalesced source=$source")
             return
@@ -319,17 +312,15 @@ class HydraBoxService(
                     return@execute
                 }
                 runCatching {
-                    // Wake only resumes the pause manager. A physical network
-                    // handover also needs ResetNetwork so stale route state is
-                    // closed and new outbound sockets bind to the new upstream.
-                    if (resetNetwork) {
-                        server.resetNetwork()
-                    }
+                    // The platform interface callback owns router ResetNetwork
+                    // for a real Network/interface change. Calling it again
+                    // here duplicates that reset and used to close XHTTP
+                    // permanently. Wake only resumes a paused runtime.
                     server.wake()
                 }.onSuccess {
                     HydraBoxDiagnostics.log(
                         TAG,
-                        "runtime recovery completed source=$source resetNetwork=$resetNetwork",
+                        "runtime recovery completed source=$source",
                     )
                     HydraBoxDefaultNetworkMonitor.reassertDefaultInterface(
                         "runtime_recovery_after_wake:$source",
