@@ -150,8 +150,8 @@ def main() -> None:
         str(provenance.raw["source"]["repository"])
     ):
         fail("HydraCore submodule URL does not match provenance")
-    if submodule_setting("branch") != "main":
-        fail("HydraCore submodule branch must be main")
+    if submodule_setting("branch") != "debug":
+        fail("HydraCore submodule branch must be debug")
     client_build_tags = [
         "with_call_client" if tag == "with_call" else tag
         for tag in build_tags

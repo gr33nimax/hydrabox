@@ -2,6 +2,10 @@
 
 ## [0.5.0]
 
+- Consolidated debug verification and test APK generation into one GitHub
+  Actions job. HydraBox now consumes the verified HydraCore `debug` release AAR
+  instead of rebuilding it in multiple workflows, while retaining exact source,
+  provenance, digest, ABI and API checks.
 - Unified manual and active-proxy latency checks behind one isolated URLTest
   path for every supported outbound protocol, including WireGuard, AnyTLS,
   Hysteria2, VLESS/XHTTP, and proxy chains.

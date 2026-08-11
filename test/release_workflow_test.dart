@@ -31,7 +31,9 @@ void main() {
     expect(workflow, contains('submodules: recursive'));
     expect(workflow, contains('scripts/verify_extended_core.py --source-only'));
     expect(workflow, contains('scripts/verify_client_boundaries.py'));
-    expect(workflow, contains('scripts/build_pinned_libbox.sh'));
+    expect(workflow, contains('scripts/fetch_libbox.py'));
+    expect(workflow, contains('scripts/verify_libbox.py'));
+    expect(workflow, isNot(contains('scripts/build_pinned_libbox.sh')));
     expect(workflow, contains('dart format lib test pigeons'));
     expect(workflow, contains('build/remote-generated.patch'));
     expect(workflow, contains('git diff --exit-code'));
@@ -40,10 +42,18 @@ void main() {
     expect(workflow, contains(':app:testDebugUnitTest'));
     expect(workflow, contains(':app:lintDebug'));
     expect(workflow, contains(':app:assembleDebug'));
+    expect(workflow, contains('Build debug-signed release-mode test APK'));
+    expect(workflow, contains('HYDRABOX_ALLOW_DEBUG_RELEASE_SIGNING'));
+    expect(workflow, contains('Upload test APK'));
     expect(
       workflow,
       contains('android/app/src/main/kotlin/io/hydrabox/client/generated'),
     );
+  });
+
+  test('duplicate automatic HydraCore and test APK workflows are removed', () {
+    expect(File('.github/workflows/android-test-apk.yml').existsSync(), isFalse);
+    expect(File('.github/workflows/sync-hydracore.yml').existsSync(), isFalse);
   });
 
   test('HydraCore provenance schema v3 pins exact source and artifacts', () {
@@ -59,12 +69,12 @@ void main() {
     expect(provenance['distribution'], {
       'id': 'io.hydrabox.hydracore',
       'name': 'HydraCore',
-      'version': 'v1.13.16-extended-hydracore.10',
+      'version': 'v1.13.16-extended-hydracore.10-debug.1',
       'role': 'client',
     });
     expect(
       (provenance['source'] as Map<String, dynamic>)['commit'],
-      '55d4113bcdfb335d15b8470b59d1ead69331ed9a',
+      'e2aff162fb240fd46fe4f312f101298d1a5637fa',
     );
     expect(
       (provenance['upstream'] as Map<String, dynamic>)['commit'],
@@ -74,7 +84,7 @@ void main() {
     expect(
       (artifacts['hydracore-client-libbox.aar']
           as Map<String, dynamic>)['sha256'],
-      'b976946609347ebeddce3632d38cccba6b55e7763a067d1acac4ee53d04fbf51',
+      '81254cfcaba6a84819ff0aa615695e624191916bbcc9027d6e61597db348d4d8',
     );
     expect(
       (artifacts['hydracore-client-libbox-sources.jar']

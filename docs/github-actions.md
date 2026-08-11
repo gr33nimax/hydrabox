@@ -3,17 +3,20 @@
 This repository uses GitHub Actions as the authoritative build and verification
 environment:
 
-- `HydraBox · Client checks` restores dependencies, generates localization and
-  Pigeon bindings, runs the analyzer and tests, then runs Android unit/lint and
-  debug assembly gates.
+- `HydraBox · Client checks` downloads and verifies the pinned HydraCore release
+  AAR, restores dependencies, generates localization and Pigeon bindings, runs
+  the analyzer and tests, then runs Android unit/lint and debug assembly gates.
+  A push to `debug` also uploads the debug-signed release-mode test APK from the
+  same verified job.
 - `HydraBox · CodeQL security` runs the repository security scan.
-- `HydraBox · Test APK` creates a clearly marked debug-signed test artifact.
 - `HydraBox · Android release` builds signed APKs for `universal`, `arm64-v8a`,
   `armeabi-v7a`, and `x86_64`, publishes updater metadata, and creates or
   updates a draft GitHub Release.
-- `HydraCore · Sync verified runtime` rebuilds the pinned core, verifies its
-  published release provenance, updates the checked-in metadata/source JAR,
-  and dispatches the client checks for the resulting commit.
+
+HydraCore is built once in its own workflow. HydraBox does not reproduce that
+14-minute AAR build or run a second automatic provenance-only workflow; the
+source gitlink, release provenance, digest, Java API and native ABI contents are
+validated in the main client-check job.
 
 ## Required Repository Secrets
 
