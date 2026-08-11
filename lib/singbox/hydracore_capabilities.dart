@@ -188,10 +188,7 @@ class HydraCoreCapabilities {
         features,
         'call_vk_multi_user_server',
       ),
-      supportsCallVkTelemetry: _requiredBool(
-        features,
-        'call_vk_telemetry',
-      ),
+      supportsCallVkTelemetry: _requiredBool(features, 'call_vk_telemetry'),
       callVkMultiUserWireMin: _requiredInt(
         _requiredMap(protocols, 'call_vk_multi_user_wire'),
         'min',
