@@ -52,7 +52,10 @@ void main() {
   });
 
   test('duplicate automatic HydraCore and test APK workflows are removed', () {
-    expect(File('.github/workflows/android-test-apk.yml').existsSync(), isFalse);
+    expect(
+      File('.github/workflows/android-test-apk.yml').existsSync(),
+      isFalse,
+    );
     expect(File('.github/workflows/sync-hydracore.yml').existsSync(), isFalse);
   });
 

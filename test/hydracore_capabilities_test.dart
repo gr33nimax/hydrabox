@@ -11,10 +11,7 @@ void main() {
 
     expect(capabilities.apiVersion, 2);
     expect(capabilities.coreId, 'io.hydrabox.hydracore');
-    expect(
-      capabilities.coreVersion,
-      'v1.13.16-extended-hydracore.10-debug.1',
-    );
+    expect(capabilities.coreVersion, 'v1.13.16-extended-hydracore.10-debug.1');
     expect(capabilities.coreRole, 'client');
     expect(capabilities.supportsCallVkMultiUser, isTrue);
     expect(capabilities.supportsCallVkMultiUserClient, isTrue);
