@@ -31,6 +31,7 @@ void main() {
     expect(workflow, contains('submodules: recursive'));
     expect(workflow, contains('scripts/verify_extended_core.py --source-only'));
     expect(workflow, contains('scripts/verify_client_boundaries.py'));
+    expect(workflow, contains('scripts/build_pinned_libbox.sh'));
     expect(workflow, contains('dart format lib test pigeons'));
     expect(workflow, contains('build/remote-generated.patch'));
     expect(workflow, contains('git diff --exit-code'));
@@ -58,12 +59,12 @@ void main() {
     expect(provenance['distribution'], {
       'id': 'io.hydrabox.hydracore',
       'name': 'HydraCore',
-      'version': 'v1.13.16-extended-hydracore.9',
+      'version': 'v1.13.16-extended-hydracore.10',
       'role': 'client',
     });
     expect(
       (provenance['source'] as Map<String, dynamic>)['commit'],
-      '06c48894c61a88b0ed72156010d239c81f14dec5',
+      '55d4113bcdfb335d15b8470b59d1ead69331ed9a',
     );
     expect(
       (provenance['upstream'] as Map<String, dynamic>)['commit'],
@@ -73,7 +74,7 @@ void main() {
     expect(
       (artifacts['hydracore-client-libbox.aar']
           as Map<String, dynamic>)['sha256'],
-      'a6126a21537c9b4bc5a07753f792f22f0c7c63b0a2ef8512a487c9ef88d2523c',
+      'b976946609347ebeddce3632d38cccba6b55e7763a067d1acac4ee53d04fbf51',
     );
     expect(
       (artifacts['hydracore-client-libbox-sources.jar']

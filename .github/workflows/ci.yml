@@ -44,6 +44,30 @@ jobs:
           path: build/hydra-ultimate
           persist-credentials: false
 
+      - name: Set up pinned HydraCore Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: hydracore/go.mod
+          cache: true
+          cache-dependency-path: hydracore/go.sum
+
+      - name: Set up HydraCore JDK
+        uses: actions/setup-java@v5.6.0
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android NDK for HydraCore
+        id: setup-hydracore-ndk
+        uses: nttld/setup-ndk@ed92fe6cadad69be94a966a7ee3271275e62f779 # v1.6.0
+        with:
+          ndk-version: r28
+
+      - name: Reproduce pinned HydraCore AAR
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-hydracore-ndk.outputs.ndk-path }}
+        run: bash scripts/build_pinned_libbox.sh
+
       - name: Set up JDK
         uses: actions/setup-java@v5.6.0
         with:
@@ -69,7 +93,7 @@ jobs:
           build/hydra-ultimate
           "$HYDRA_ULTIMATE_COMMIT"
 
-      - name: Fetch pinned HydraCore Android artifact
+      - name: Confirm pinned HydraCore Android artifact
         run: python3 -B scripts/fetch_libbox.py
 
       - name: Verify HydraCore artifacts and provenance

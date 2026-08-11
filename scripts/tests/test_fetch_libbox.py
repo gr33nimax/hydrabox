@@ -95,10 +95,10 @@ class FetchLibboxTest(unittest.TestCase):
         self.assertEqual(parsed.distribution_id, "io.hydrabox.hydracore")
         self.assertEqual(parsed.distribution_name, "HydraCore")
         self.assertEqual(parsed.distribution_role, "client")
-        self.assertEqual(parsed.release_tag, "v1.13.16-extended-hydracore.9")
+        self.assertEqual(parsed.release_tag, "v1.13.16-extended-hydracore.10")
         self.assertEqual(
             parsed.source_commit,
-            "06c48894c61a88b0ed72156010d239c81f14dec5",
+            "55d4113bcdfb335d15b8470b59d1ead69331ed9a",
         )
         self.assertEqual(
             parsed.upstream_commit,
@@ -106,7 +106,7 @@ class FetchLibboxTest(unittest.TestCase):
         )
         self.assertEqual(
             parsed.sha256,
-            "a6126a21537c9b4bc5a07753f792f22f0c7c63b0a2ef8512a487c9ef88d2523c",
+            "b976946609347ebeddce3632d38cccba6b55e7763a067d1acac4ee53d04fbf51",
         )
 
     def test_downloads_only_the_pinned_release_asset(self) -> None:

@@ -32,6 +32,7 @@ REQUIRED_SOURCE_MARKERS: dict[str, tuple[str, ...]] = {
         'json:"call_vk_multi_user"',
         'json:"call_vk_multi_user_client"',
         'json:"call_vk_multi_user_server"',
+        'json:"call_vk_telemetry"',
         'json:"call_vk_multi_user_wire"',
         '[]int{2}',
         '[]string{"__hydra."}',

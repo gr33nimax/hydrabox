@@ -11,11 +11,12 @@ void main() {
 
     expect(capabilities.apiVersion, 2);
     expect(capabilities.coreId, 'io.hydrabox.hydracore');
-    expect(capabilities.coreVersion, 'v1.13.16-extended-hydracore.9');
+    expect(capabilities.coreVersion, 'v1.13.16-extended-hydracore.10');
     expect(capabilities.coreRole, 'client');
     expect(capabilities.supportsCallVkMultiUser, isTrue);
     expect(capabilities.supportsCallVkMultiUserClient, isTrue);
     expect(capabilities.supportsCallVkMultiUserServer, isFalse);
+    expect(capabilities.supportsCallVkTelemetry, isTrue);
     expect(capabilities.callVkMultiUserWireMin, 2);
     expect(capabilities.callVkMultiUserWireMax, 2);
     expect(capabilities.callModes, {'multi_user'});
@@ -38,6 +39,7 @@ void main() {
       'call',
       'call_vk_multi_user',
       'call_vk_multi_user_client',
+      'call_vk_telemetry',
     ]) {
       final document = _capabilities();
       (document['features'] as Map<String, dynamic>)[feature] = false;
@@ -82,7 +84,7 @@ Map<String, dynamic> _capabilities() => {
   'identity': {
     'core_id': 'io.hydrabox.hydracore',
     'core_name': 'HydraCore',
-    'core_version': 'v1.13.16-extended-hydracore.9',
+    'core_version': 'v1.13.16-extended-hydracore.10',
     'role': 'client',
   },
   'features': {
@@ -104,6 +106,7 @@ Map<String, dynamic> _capabilities() => {
     'call_vk_multi_user': true,
     'call_vk_multi_user_client': true,
     'call_vk_multi_user_server': false,
+    'call_vk_telemetry': true,
     'amnezia_version': 3,
   },
   'protocols': {
