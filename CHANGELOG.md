@@ -16,9 +16,9 @@
 - Fixed Wi-Fi/mobile handover recovery for long-lived VK Calls connections by
   preferring the callback network and resetting native route state in the VPN
   foreground service.
-- Upgraded Android to HydraCore `v1.13.16-extended-hydracore.10-debug.2`, retaining the
-  reusable XHTTP/network handover fixes and adding the authenticated VK Calls
-  client telemetry required for protocol experiments.
+- Upgraded Android to HydraCore `v1.13.16-extended-hydracore.10-debug.3`, retaining the
+  authenticated VK Calls telemetry while fixing cancelled DTLS handshakes,
+  bounded ingress/peer queues, and wire-overhead diagnostics for long tests.
 - Switched the migrated default connectivity probe from Google to Cloudflare.
 
 ## [0.4.0-beta.1]

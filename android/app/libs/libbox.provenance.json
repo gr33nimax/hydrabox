@@ -3,13 +3,13 @@
   "distribution": {
     "id": "io.hydrabox.hydracore",
     "name": "HydraCore",
-    "version": "v1.13.16-extended-hydracore.10-debug.2",
+    "version": "v1.13.16-extended-hydracore.10-debug.3",
     "role": "client"
   },
   "source": {
     "repository": "https://github.com/gr33nimax/hydracore",
-    "commit": "1ece24963fecaac109e7383d3187c0ddaea5d6c0",
-    "version": "v1.13.16-extended-hydracore.10-debug.2"
+    "commit": "a0b350251fc945f272b7f88c1dbf93baebdcd52a",
+    "version": "v1.13.16-extended-hydracore.10-debug.3"
   },
   "upstream": {
     "project": "sing-box-extended",
@@ -67,13 +67,13 @@
   },
   "artifacts": {
     "hydracore-client-libbox.aar": {
-      "sha256": "ef985b2bad7502d09e01a3cbb803bfc18d6eedfbe183f71697ade30f4da7e94d"
+      "sha256": "7a9457c824a1156aab2fdb2a8ae8ec6387a75b65b6a26070a5eae59a5d3b5c06"
     },
     "hydracore-client-libbox-sources.jar": {
       "sha256": "e0bd7bdafdb9f90ab6a7a10e9311e7bcdea94970ab6a8d4da65f0742b9b8bf30"
     },
     "hydracore-source.tar.gz": {
-      "sha256": "dac2914aa33426a56f4711e0bd86fe41e2e95e75f56274cd345c35c389470292"
+      "sha256": "391f03458d55d8e8065be32f6b4aeb0ab5405fb511074f32994f5834a1559c8b"
     },
     "HYDRA_SUBSCRIPTION_V2.md": {
       "sha256": "0f7d11f55ab7b15f9ee4ee60bc29bb37b131cf277ab5722d51892ce9c801a91d"

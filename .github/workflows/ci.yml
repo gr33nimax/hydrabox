@@ -26,7 +26,7 @@ concurrency:
 env:
   FLUTTER_VERSION: "3.44.7"
   JAVA_VERSION: "21"
-  HYDRA_ULTIMATE_COMMIT: "e2ae47c164a680146f108df4bf22bcc4d49d9bd7"
+  HYDRA_ULTIMATE_COMMIT: "ce0959811b529e7c6d72b14b5beb067d88d5cb66"
 
 jobs:
   verify:
