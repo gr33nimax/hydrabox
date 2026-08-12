@@ -626,9 +626,10 @@ class ParsedOutboundSchema {
         final multipathProfile = config['multipath_profile'];
         if (multipathProfile != null &&
             (multipathProfile is! String ||
-                !const {'legacy', 'adaptive'}.contains(
-                  multipathProfile.trim().toLowerCase(),
-                ))) {
+                !const {
+                  'legacy',
+                  'adaptive',
+                }.contains(multipathProfile.trim().toLowerCase()))) {
           return 'call multipath_profile must be legacy or adaptive';
         }
         final serverValue = config['server'];
