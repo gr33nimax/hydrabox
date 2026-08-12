@@ -40,6 +40,7 @@ class HydraCoreCapabilities {
     this.supportsCallVkMultiUserClient = true,
     this.supportsCallVkMultiUserServer = false,
     this.supportsCallVkTelemetry = true,
+    this.supportsCallVkAdaptiveMultipath = true,
     this.callVkMultiUserWireMin = 2,
     this.callVkMultiUserWireMax = 2,
     this.amneziaVersion = 3,
@@ -82,7 +83,7 @@ class HydraCoreCapabilities {
   /// Expected release surface used by pure-Dart code and test fakes.
   static const requiredV2 = HydraCoreCapabilities(
     apiVersion: supportedApiVersion,
-    coreVersion: 'v1.13.16-extended-hydracore.10-debug.3',
+    coreVersion: 'v1.13.16-extended-hydracore.10-debug.4',
     outboundProtocols: {
       'socks',
       'http',
@@ -189,6 +190,10 @@ class HydraCoreCapabilities {
         'call_vk_multi_user_server',
       ),
       supportsCallVkTelemetry: _requiredBool(features, 'call_vk_telemetry'),
+      supportsCallVkAdaptiveMultipath: _requiredBool(
+        features,
+        'call_vk_adaptive_multipath',
+      ),
       callVkMultiUserWireMin: _requiredInt(
         _requiredMap(protocols, 'call_vk_multi_user_wire'),
         'min',
@@ -298,6 +303,7 @@ class HydraCoreCapabilities {
   final bool supportsCallVkMultiUserClient;
   final bool supportsCallVkMultiUserServer;
   final bool supportsCallVkTelemetry;
+  final bool supportsCallVkAdaptiveMultipath;
   final int callVkMultiUserWireMin;
   final int callVkMultiUserWireMax;
   final int amneziaVersion;
@@ -350,6 +356,7 @@ class HydraCoreCapabilities {
       supportsCallVkMultiUserClient &&
       !supportsCallVkMultiUserServer &&
       supportsCallVkTelemetry &&
+      supportsCallVkAdaptiveMultipath &&
       coreRole == 'client' &&
       callVkMultiUserWireMin == 2 &&
       callVkMultiUserWireMax == 2 &&

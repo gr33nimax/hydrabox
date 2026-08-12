@@ -7,6 +7,7 @@ void main() {
     'tag': 'call-vk-out',
     'platform': 'vk',
     'mode': 'multi_user',
+    'multipath_profile': 'adaptive',
     'server': 'vpn.example',
     'server_port': 2443,
     'join_links': <String>[
@@ -21,10 +22,12 @@ void main() {
   };
 
   test('retains and validates the VK Calls multi-user outbound', () {
-    final sanitized = ParsedOutboundSchema.sanitize(valid());
+    final input = valid()..['multipath_profile'] = ' Adaptive ';
+    final sanitized = ParsedOutboundSchema.sanitize(input);
 
     expect(sanitized, isNotNull);
     expect(sanitized?['mode'], 'multi_user');
+    expect(sanitized?['multipath_profile'], 'adaptive');
     expect(sanitized?['join_links'], hasLength(2));
     expect(sanitized?['workers'], 4);
     expect(ParsedOutboundSchema.validate(sanitized!), isNull);
@@ -41,6 +44,7 @@ void main() {
       ];
     final noSharedObfs = valid()..remove('obfs_password');
     final excessiveTimeout = valid()..['worker_connect_timeout'] = '121s';
+    final invalidMultipath = valid()..['multipath_profile'] = 'raw';
 
     expect(
       ParsedOutboundSchema.validate(tooManyWorkers),
@@ -58,6 +62,10 @@ void main() {
     expect(
       ParsedOutboundSchema.validate(excessiveTimeout),
       contains('between 1s and 2m'),
+    );
+    expect(
+      ParsedOutboundSchema.validate(invalidMultipath),
+      contains('legacy or adaptive'),
     );
   });
 

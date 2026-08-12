@@ -469,6 +469,7 @@ class ParsedOutboundSchema {
   static const Set<String> _typeSpecificKeysCall = {
     'platform',
     'mode',
+    'multipath_profile',
     'read_buffer',
     'max_buffered_amount',
     'memory_limit',
@@ -621,6 +622,14 @@ class ParsedOutboundSchema {
       if (mode == 'multi_user') {
         if (platform != 'vk') {
           return 'call multi_user mode currently requires platform vk';
+        }
+        final multipathProfile = config['multipath_profile'];
+        if (multipathProfile != null &&
+            (multipathProfile is! String ||
+                !const {'legacy', 'adaptive'}.contains(
+                  multipathProfile.trim().toLowerCase(),
+                ))) {
+          return 'call multipath_profile must be legacy or adaptive';
         }
         final serverValue = config['server'];
         final server = serverValue is String ? serverValue.trim() : '';
@@ -1131,7 +1140,7 @@ class ParsedOutboundSchema {
     canonical['type'] = _normalizedType(canonical['type']);
 
     if (canonical['type'] == 'call') {
-      for (final key in const {'platform', 'mode'}) {
+      for (final key in const {'platform', 'mode', 'multipath_profile'}) {
         final value = canonical[key];
         if (value is String) {
           canonical[key] = value.trim().toLowerCase();

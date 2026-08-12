@@ -101,6 +101,7 @@ def verify(producer: Path, expected_commit: str) -> None:
         '"call"',
         '"multi_user"',
         '"call_vk_multi_user"',
+        '"call_vk_adaptive_multipath"',
     ):
         if marker not in producer_source:
             fail(f"HYDRA ULTIMATE producer is missing contract marker: {marker}")
@@ -110,6 +111,7 @@ def verify(producer: Path, expected_commit: str) -> None:
     ).read_text(encoding="utf-8")
     for marker in (
         'features.get("call_vk_multi_user") is True',
+        'features.get("call_vk_adaptive_multipath") is True',
         'identity.get("role") == "vps"',
         'features.get("call_vk_multi_user_server") is True',
         'modes == ["multi_user"]',

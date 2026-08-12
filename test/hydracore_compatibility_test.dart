@@ -17,6 +17,7 @@ void main() {
     expect(capabilities.coreRole, 'client');
     expect(capabilities.supportsCallVkMultiUserClient, isTrue);
     expect(capabilities.supportsCallVkMultiUserServer, isFalse);
+    expect(capabilities.supportsCallVkAdaptiveMultipath, isTrue);
     expect(capabilities.remoteSafeInboundTypes, isEmpty);
     expect(capabilities.remoteSafeOutboundTypes, contains('call'));
     expect(capabilities.remoteSafeEndpointTypes, {'wireguard'});

@@ -71,6 +71,7 @@ void main() {
     (requirements['core'] as Map<String, dynamic>)['features'] = [
       'call',
       'call_vk_multi_user',
+      'call_vk_adaptive_multipath',
     ];
     final resource =
         (document['resources'] as List<dynamic>).single as Map<String, dynamic>;
@@ -81,6 +82,7 @@ void main() {
           'tag': 'call-vk-out',
           'platform': 'vk',
           'mode': 'multi_user',
+          'multipath_profile': 'adaptive',
           'server': 'vpn.example',
           'server_port': 2443,
           'join_links': <String>[
@@ -105,6 +107,7 @@ void main() {
     expect(parsed.outbounds.single['type'], 'call');
     expect(parsed.outbounds.single['platform'], 'vk');
     expect(parsed.outbounds.single['mode'], 'multi_user');
+    expect(parsed.outbounds.single['multipath_profile'], 'adaptive');
     expect(parsed.outbounds.single['join_links'], hasLength(2));
     expect(parsed.nativeConfig?['outbounds'], hasLength(1));
   });
