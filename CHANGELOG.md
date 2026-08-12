@@ -2,9 +2,9 @@
 
 ## [0.5.0]
 
-- Added the adaptive Hydra VK multipath profile with bounded TURN-path chunks,
-  per-worker pacing and loss feedback, control priority, retransmit path
-  switching, strict core capability checks, and an exact legacy A/B fallback.
+- Fixed the adaptive Hydra VK multipath feedback collapse: KCP now owns
+  congestion timing, while bounded TURN-path chunks, control priority and
+  retransmit path switching remain. The exact legacy A/B fallback is retained.
 - Consolidated debug verification and test APK generation into one GitHub
   Actions job. HydraBox now consumes the verified HydraCore `debug` release AAR
   instead of rebuilding it in multiple workflows, while retaining exact source,
@@ -19,8 +19,9 @@
 - Fixed Wi-Fi/mobile handover recovery for long-lived VK Calls connections by
   preferring the callback network and resetting native route state in the VPN
   foreground service.
-- Upgraded Android to HydraCore `v1.13.16-extended-hydracore.10-debug.4`, retaining
-  authenticated VK Calls telemetry and the previous ingress/DTLS diagnostics.
+- Upgraded Android to HydraCore `v1.13.16-extended-hydracore.10-debug.5`, adding
+  retry-pressure and output-queue-delay diagnostics to authenticated VK Calls
+  telemetry.
 - Switched the migrated default connectivity probe from Google to Cloudflare.
 
 ## [0.4.0-beta.1]
