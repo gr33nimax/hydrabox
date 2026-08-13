@@ -2,6 +2,11 @@
 
 ## [0.5.0]
 
+- Upgraded adaptive Hydra VK multipath to per-call delivery windows. Four live
+  VK/TURN calls start with a bounded aggregate window and pending queue, then
+  grow or back off independently from delivered ACKs, retries and local queue
+  pressure. This targets stable 20 Mbit/s-class operation without changing the
+  wire format, legacy fallback or raw mode.
 - Fixed the remaining adaptive Hydra VK multipath bottleneck: one dynamic KCP
   congestion window no longer throttles four independent TURN paths. Bounded
   chunks, control priority, exact path retry telemetry and retransmit path
@@ -20,9 +25,9 @@
 - Fixed Wi-Fi/mobile handover recovery for long-lived VK Calls connections by
   preferring the callback network and resetting native route state in the VPN
   foreground service.
-- Upgraded Android to HydraCore `v1.13.16-extended-hydracore.10-debug.6`, adding
-  the multipath KCP window fix and exact attempt/retry diagnostics to
-  authenticated VK Calls telemetry.
+- Upgraded Android to HydraCore `v1.13.16-extended-hydracore.10-debug.7`, adding
+  independent path delivery windows and delivered/window/in-flight/backoff
+  diagnostics to authenticated VK Calls telemetry.
 - Switched the migrated default connectivity probe from Google to Cloudflare.
 
 ## [0.4.0-beta.1]
