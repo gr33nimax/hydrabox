@@ -80,9 +80,11 @@ void main() {
     );
 
     final previousWire = _capabilities();
-    (previousWire['protocols'] as Map<String, dynamic>)[
-      'call_vk_multi_user_wire'
-    ] = {'min': 2, 'max': 2};
+    (previousWire['protocols']
+        as Map<String, dynamic>)['call_vk_multi_user_wire'] = {
+      'min': 2,
+      'max': 2,
+    };
     expect(
       () => HydraCoreCapabilities.parseStrict(jsonEncode(previousWire)),
       throwsFormatException,
