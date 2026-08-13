@@ -87,8 +87,8 @@ REQUIRED_SOURCE_MARKERS: dict[str, tuple[str, ...]] = {
     ),
     "common/hydracore/call_server.go": (
         'distributionRole  = "vps"',
-        "callWireMin       = 1",
-        "callWireMax       = 2",
+        "callWireMin       = 3",
+        "callWireMax       = 3",
     ),
 }
 
