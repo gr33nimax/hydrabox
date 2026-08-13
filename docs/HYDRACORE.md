@@ -23,12 +23,12 @@ is used only while assembling or probing that one isolated resource. Thus two
 resources may both expose an entrypoint named `proxy` without sharing ping or
 selection state.
 
-The required Calls surface advertises `features.call_vk_multi_user` and
-`protocols.call_modes` containing both `p2p` and `multi_user`. A VK multi-user
-outbound carries the VPS endpoint, one to four join links, per-user credentials,
-the shared obfuscation password, and one shared worker pool. The pool is bounded
-to `1..min(108, 27 * join_links)` allocations; its native default is the number
-of join links, and duplicate links are rejected.
+The required Calls surface advertises `features.call_vk_parasite`,
+`features.call_vk_four_lane_kcp`, and the sole client mode `vk_parasite` on
+wire v4. A VK parasite outbound carries the VPS endpoint, one to four join
+links, per-user credentials, and the shared obfuscation password. HydraCore
+always opens exactly four independently recovered KCP lanes; duplicate join
+links are rejected.
 
 `requested_permissions` is an internal compatibility declaration. HydraCore
 and the client require it to exactly describe the resource authority:

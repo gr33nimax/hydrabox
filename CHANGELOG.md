@@ -2,6 +2,11 @@
 
 ## [0.5.0]
 
+- Replaced the shared VK KCP session with the wire-v4 `vk_parasite`
+  transport: exactly four VK calls now carry four independently recovered KCP
+  lanes, while a flow-aware scheduler and bounded receiver reorder layer keep
+  TCP/UDP delivery coherent across them. HydraBox pins HydraCore debug.11 and
+  intentionally rejects older clients and servers.
 - Upgraded adaptive Hydra VK multipath to per-call delivery windows. Four live
   VK/TURN calls start with a bounded aggregate window and pending queue, then
   grow or back off independently from delivered ACKs, retries and local queue

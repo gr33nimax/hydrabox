@@ -469,7 +469,6 @@ class ParsedOutboundSchema {
   static const Set<String> _typeSpecificKeysCall = {
     'platform',
     'mode',
-    'multipath_profile',
     'read_buffer',
     'max_buffered_amount',
     'memory_limit',
@@ -619,18 +618,9 @@ class ParsedOutboundSchema {
       if (modeValue != null && modeValue is! String) {
         return 'invalid call mode';
       }
-      if (mode == 'multi_user') {
+      if (mode == 'vk_parasite') {
         if (platform != 'vk') {
-          return 'call multi_user mode currently requires platform vk';
-        }
-        final multipathProfile = config['multipath_profile'];
-        if (multipathProfile != null &&
-            (multipathProfile is! String ||
-                !const {
-                  'legacy',
-                  'adaptive',
-                }.contains(multipathProfile.trim().toLowerCase()))) {
-          return 'call multipath_profile must be legacy or adaptive';
+          return 'call vk_parasite mode currently requires platform vk';
         }
         final serverValue = config['server'];
         final server = serverValue is String ? serverValue.trim() : '';
@@ -672,10 +662,8 @@ class ParsedOutboundSchema {
           }
         }
         final workers = config['workers'];
-        final maximumWorkers = 27 * joinLinks.length;
-        if (workers != null &&
-            (workers is! int || workers < 1 || workers > maximumWorkers)) {
-          return 'call workers must be between 1 and $maximumWorkers';
+        if (workers != null && workers != 4) {
+          return 'call workers must define exactly four VK lanes';
         }
         final workerConnectTimeout = config['worker_connect_timeout'];
         if (workerConnectTimeout != null) {
@@ -689,7 +677,7 @@ class ParsedOutboundSchema {
       } else {
         // Existing creator/joiner role labels are still accepted by the
         // legacy native Calls path. The core distinguishes the role from the
-        // inbound/outbound side and only reserves multi_user as a new mode.
+        // inbound/outbound side and only reserves vk_parasite as a new mode.
         final joinLink = config['join_link'];
         if (joinLink is! String || joinLink.trim().isEmpty) {
           return 'missing call join_link';
@@ -1141,7 +1129,7 @@ class ParsedOutboundSchema {
     canonical['type'] = _normalizedType(canonical['type']);
 
     if (canonical['type'] == 'call') {
-      for (final key in const {'platform', 'mode', 'multipath_profile'}) {
+      for (final key in const {'platform', 'mode'}) {
         final value = canonical[key];
         if (value is String) {
           canonical[key] = value.trim().toLowerCase();
@@ -1679,7 +1667,7 @@ class ParsedOutboundSchema {
     'traffic-limiter',
     'rate-limiter',
     'parser',
-    // Legacy Calls obtains its endpoint from join_link. multi_user mode is
+    // Legacy Calls obtains its endpoint from join_link. vk_parasite mode is
     // checked explicitly below and requires server/server_port.
     'call',
     'wireguard',

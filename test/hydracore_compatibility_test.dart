@@ -15,9 +15,9 @@ void main() {
     expect(capabilities.supportsManagedUrlTestSessions, isTrue);
     expect(capabilities.supportsSubscriptionJwe, isTrue);
     expect(capabilities.coreRole, 'client');
-    expect(capabilities.supportsCallVkMultiUserClient, isTrue);
-    expect(capabilities.supportsCallVkMultiUserServer, isFalse);
-    expect(capabilities.supportsCallVkAdaptiveMultipath, isTrue);
+    expect(capabilities.supportsCallVkParasiteClient, isTrue);
+    expect(capabilities.supportsCallVkParasiteServer, isFalse);
+    expect(capabilities.supportsCallVkFourLaneKcp, isTrue);
     expect(capabilities.remoteSafeInboundTypes, isEmpty);
     expect(capabilities.remoteSafeOutboundTypes, contains('call'));
     expect(capabilities.remoteSafeEndpointTypes, {'wireguard'});

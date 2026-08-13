@@ -99,9 +99,9 @@ def verify(producer: Path, expected_commit: str) -> None:
         '"automatic-permissions"',
         '"multi-resource"',
         '"call"',
-        '"multi_user"',
-        '"call_vk_multi_user"',
-        '"call_vk_adaptive_multipath"',
+        '"vk_parasite"',
+        '"call_vk_parasite"',
+        '"call_vk_four_lane_kcp"',
     ):
         if marker not in producer_source:
             fail(f"HYDRA ULTIMATE producer is missing contract marker: {marker}")
@@ -110,13 +110,13 @@ def verify(producer: Path, expected_commit: str) -> None:
         producer / "hydra" / "services" / "calls_infrastructure.py"
     ).read_text(encoding="utf-8")
     for marker in (
-        'features.get("call_vk_multi_user") is True',
-        'features.get("call_vk_adaptive_multipath") is True',
+        'features.get("call_vk_parasite") is True',
+        'features.get("call_vk_four_lane_kcp") is True',
         'identity.get("role") == "vps"',
-        'features.get("call_vk_multi_user_server") is True',
-        'modes == ["multi_user"]',
-        'wire.get("min") == 3',
-        'wire.get("max") == 3',
+        'features.get("call_vk_parasite_server") is True',
+        'modes == ["vk_parasite"]',
+        'wire.get("min") == 4',
+        'wire.get("max") == 4',
     ):
         if marker not in calls_runtime_source:
             fail(f"HYDRA ULTIMATE Calls runtime is missing capability gate: {marker}")

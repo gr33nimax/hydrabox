@@ -13,8 +13,8 @@ parallel workflows. Generated Java sources are retained for API-surface
 inspection.
 
 The required runtime identity is `io.hydrabox.hydracore`, role `client`, public
-API version 2. The pinned client runtime exposes VK Calls multi-user outbound
-wire v2 and authenticated telemetry only; VPS inbound code is shipped
+API version 2. The pinned client runtime exposes the VK parasite client on
+wire v4 with four independent KCP lanes and authenticated telemetry; VPS code is shipped
 separately. HydraBox does not use deprecated capability aliases or fall back
 to older runtime and subscription contracts.
 

@@ -11,16 +11,16 @@ void main() {
 
     expect(capabilities.apiVersion, 2);
     expect(capabilities.coreId, 'io.hydrabox.hydracore');
-    expect(capabilities.coreVersion, 'v1.13.16-extended-hydracore.10-debug.10');
+    expect(capabilities.coreVersion, 'v1.13.16-extended-hydracore.11-debug.11');
     expect(capabilities.coreRole, 'client');
-    expect(capabilities.supportsCallVkMultiUser, isTrue);
-    expect(capabilities.supportsCallVkMultiUserClient, isTrue);
-    expect(capabilities.supportsCallVkMultiUserServer, isFalse);
+    expect(capabilities.supportsCallVkParasite, isTrue);
+    expect(capabilities.supportsCallVkParasiteClient, isTrue);
+    expect(capabilities.supportsCallVkParasiteServer, isFalse);
     expect(capabilities.supportsCallVkTelemetry, isTrue);
-    expect(capabilities.supportsCallVkAdaptiveMultipath, isTrue);
-    expect(capabilities.callVkMultiUserWireMin, 3);
-    expect(capabilities.callVkMultiUserWireMax, 3);
-    expect(capabilities.callModes, {'multi_user'});
+    expect(capabilities.supportsCallVkFourLaneKcp, isTrue);
+    expect(capabilities.callVkParasiteWireMin, 4);
+    expect(capabilities.callVkParasiteWireMax, 4);
+    expect(capabilities.callModes, {'vk_parasite'});
     expect(capabilities.validationProfiles, {'local', 'remote_v2'});
     expect(capabilities.subscriptionContracts, {2});
     expect(capabilities.remoteSafeInboundTypes, isEmpty);
@@ -38,10 +38,10 @@ void main() {
       'managed_url_test_sessions',
       'subscription_jwe',
       'call',
-      'call_vk_multi_user',
-      'call_vk_multi_user_client',
+      'call_vk_parasite',
+      'call_vk_parasite_client',
       'call_vk_telemetry',
-      'call_vk_adaptive_multipath',
+      'call_vk_four_lane_kcp',
     ]) {
       final document = _capabilities();
       (document['features'] as Map<String, dynamic>)[feature] = false;
@@ -81,9 +81,9 @@ void main() {
 
     final previousWire = _capabilities();
     (previousWire['protocols']
-        as Map<String, dynamic>)['call_vk_multi_user_wire'] = {
-      'min': 2,
-      'max': 2,
+        as Map<String, dynamic>)['call_vk_parasite_wire'] = {
+      'min': 3,
+      'max': 3,
     };
     expect(
       () => HydraCoreCapabilities.parseStrict(jsonEncode(previousWire)),
@@ -97,7 +97,7 @@ Map<String, dynamic> _capabilities() => {
   'identity': {
     'core_id': 'io.hydrabox.hydracore',
     'core_name': 'HydraCore',
-    'core_version': 'v1.13.16-extended-hydracore.10-debug.10',
+    'core_version': 'v1.13.16-extended-hydracore.11-debug.11',
     'role': 'client',
   },
   'features': {
@@ -116,11 +116,11 @@ Map<String, dynamic> _capabilities() => {
     'vless_encryption': true,
     'rmux': true,
     'call': true,
-    'call_vk_multi_user': true,
-    'call_vk_multi_user_client': true,
-    'call_vk_multi_user_server': false,
+    'call_vk_parasite': true,
+    'call_vk_parasite_client': true,
+    'call_vk_parasite_server': false,
     'call_vk_telemetry': true,
-    'call_vk_adaptive_multipath': true,
+    'call_vk_four_lane_kcp': true,
     'amnezia_version': 3,
   },
   'protocols': {
@@ -145,8 +145,8 @@ Map<String, dynamic> _capabilities() => {
     ],
     'endpoints': ['wireguard'],
     'call_platforms': ['vk'],
-    'call_modes': ['multi_user'],
-    'call_vk_multi_user_wire': {'min': 3, 'max': 3},
+    'call_modes': ['vk_parasite'],
+    'call_vk_parasite_wire': {'min': 4, 'max': 4},
   },
   'tun_stacks': ['system', 'gvisor', 'mixed'],
   'xhttp_modes': ['packet-up', 'stream-up', 'stream-one'],

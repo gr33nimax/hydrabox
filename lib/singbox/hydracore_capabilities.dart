@@ -36,20 +36,20 @@ class HydraCoreCapabilities {
     this.supportsVlessEncryption = true,
     this.supportsRmux = true,
     this.supportsCall = true,
-    this.supportsCallVkMultiUser = true,
-    this.supportsCallVkMultiUserClient = true,
-    this.supportsCallVkMultiUserServer = false,
+    this.supportsCallVkParasite = true,
+    this.supportsCallVkParasiteClient = true,
+    this.supportsCallVkParasiteServer = false,
     this.supportsCallVkTelemetry = true,
-    this.supportsCallVkAdaptiveMultipath = true,
-    this.callVkMultiUserWireMin = 3,
-    this.callVkMultiUserWireMax = 3,
+    this.supportsCallVkFourLaneKcp = true,
+    this.callVkParasiteWireMin = 4,
+    this.callVkParasiteWireMax = 4,
     this.amneziaVersion = 3,
     this.tunStacks = const {'system', 'gvisor', 'mixed'},
     this.inboundProtocols = const <String>{},
     this.outboundProtocols = const <String>{},
     this.endpointProtocols = const <String>{},
     this.callPlatforms = const <String>{},
-    this.callModes = const {'multi_user'},
+    this.callModes = const {'vk_parasite'},
     this.validationProfiles = const {'local', 'remote_v2'},
     this.subscriptionContracts = const {2},
     this.subscriptionMediaTypes = const {
@@ -83,7 +83,7 @@ class HydraCoreCapabilities {
   /// Expected release surface used by pure-Dart code and test fakes.
   static const requiredV2 = HydraCoreCapabilities(
     apiVersion: supportedApiVersion,
-    coreVersion: 'v1.13.16-extended-hydracore.10-debug.10',
+    coreVersion: 'v1.13.16-extended-hydracore.11-debug.11',
     outboundProtocols: {
       'socks',
       'http',
@@ -180,26 +180,26 @@ class HydraCoreCapabilities {
       supportsVlessEncryption: _requiredBool(features, 'vless_encryption'),
       supportsRmux: _requiredBool(features, 'rmux'),
       supportsCall: _requiredBool(features, 'call'),
-      supportsCallVkMultiUser: _requiredBool(features, 'call_vk_multi_user'),
-      supportsCallVkMultiUserClient: _requiredBool(
+      supportsCallVkParasite: _requiredBool(features, 'call_vk_parasite'),
+      supportsCallVkParasiteClient: _requiredBool(
         features,
-        'call_vk_multi_user_client',
+        'call_vk_parasite_client',
       ),
-      supportsCallVkMultiUserServer: _requiredBool(
+      supportsCallVkParasiteServer: _requiredBool(
         features,
-        'call_vk_multi_user_server',
+        'call_vk_parasite_server',
       ),
       supportsCallVkTelemetry: _requiredBool(features, 'call_vk_telemetry'),
-      supportsCallVkAdaptiveMultipath: _requiredBool(
+      supportsCallVkFourLaneKcp: _requiredBool(
         features,
-        'call_vk_adaptive_multipath',
+        'call_vk_four_lane_kcp',
       ),
-      callVkMultiUserWireMin: _requiredInt(
-        _requiredMap(protocols, 'call_vk_multi_user_wire'),
+      callVkParasiteWireMin: _requiredInt(
+        _requiredMap(protocols, 'call_vk_parasite_wire'),
         'min',
       ),
-      callVkMultiUserWireMax: _requiredInt(
-        _requiredMap(protocols, 'call_vk_multi_user_wire'),
+      callVkParasiteWireMax: _requiredInt(
+        _requiredMap(protocols, 'call_vk_parasite_wire'),
         'max',
       ),
       amneziaVersion: _requiredInt(features, 'amnezia_version'),
@@ -299,13 +299,13 @@ class HydraCoreCapabilities {
   final bool supportsVlessEncryption;
   final bool supportsRmux;
   final bool supportsCall;
-  final bool supportsCallVkMultiUser;
-  final bool supportsCallVkMultiUserClient;
-  final bool supportsCallVkMultiUserServer;
+  final bool supportsCallVkParasite;
+  final bool supportsCallVkParasiteClient;
+  final bool supportsCallVkParasiteServer;
   final bool supportsCallVkTelemetry;
-  final bool supportsCallVkAdaptiveMultipath;
-  final int callVkMultiUserWireMin;
-  final int callVkMultiUserWireMax;
+  final bool supportsCallVkFourLaneKcp;
+  final int callVkParasiteWireMin;
+  final int callVkParasiteWireMax;
   final int amneziaVersion;
   final Set<String> tunStacks;
   final Set<String> inboundProtocols;
@@ -352,18 +352,18 @@ class HydraCoreCapabilities {
       supportsManagedUrlTestSessions &&
       supportsSubscriptionJwe &&
       supportsCall &&
-      supportsCallVkMultiUser &&
-      supportsCallVkMultiUserClient &&
-      !supportsCallVkMultiUserServer &&
+      supportsCallVkParasite &&
+      supportsCallVkParasiteClient &&
+      !supportsCallVkParasiteServer &&
       supportsCallVkTelemetry &&
-      supportsCallVkAdaptiveMultipath &&
+      supportsCallVkFourLaneKcp &&
       coreRole == 'client' &&
-      callVkMultiUserWireMin == 3 &&
-      callVkMultiUserWireMax == 3 &&
+      callVkParasiteWireMin == 4 &&
+      callVkParasiteWireMax == 4 &&
       callPlatforms.length == 1 &&
       callPlatforms.contains('vk') &&
       callModes.length == 1 &&
-      callModes.contains('multi_user') &&
+      callModes.contains('vk_parasite') &&
       supportsRmux &&
       amneziaVersion >= 3 &&
       subscriptionContracts.contains(2) &&

@@ -6,8 +6,7 @@ void main() {
     'type': 'call',
     'tag': 'call-vk-out',
     'platform': 'vk',
-    'mode': 'multi_user',
-    'multipath_profile': 'adaptive',
+    'mode': 'vk_parasite',
     'server': 'vpn.example',
     'server_port': 2443,
     'join_links': <String>[
@@ -21,20 +20,18 @@ void main() {
     'worker_connect_timeout': '12s',
   };
 
-  test('retains and validates the VK Calls multi-user outbound', () {
-    final input = valid()..['multipath_profile'] = ' Adaptive ';
-    final sanitized = ParsedOutboundSchema.sanitize(input);
+  test('retains and validates the VK parasite outbound', () {
+    final sanitized = ParsedOutboundSchema.sanitize(valid());
 
     expect(sanitized, isNotNull);
-    expect(sanitized?['mode'], 'multi_user');
-    expect(sanitized?['multipath_profile'], 'adaptive');
+    expect(sanitized?['mode'], 'vk_parasite');
     expect(sanitized?['join_links'], hasLength(2));
     expect(sanitized?['workers'], 4);
     expect(ParsedOutboundSchema.validate(sanitized!), isNull);
   });
 
-  test('rejects unbounded or incomplete multi-user worker pools', () {
-    final tooManyWorkers = valid()..['workers'] = 55;
+  test('rejects incomplete four-lane configurations', () {
+    final wrongLaneCount = valid()..['workers'] = 3;
     final tooManyLinks = valid()
       ..['join_links'] = <String>['a', 'b', 'c', 'd', 'e'];
     final duplicateLinks = valid()
@@ -44,11 +41,10 @@ void main() {
       ];
     final noSharedObfs = valid()..remove('obfs_password');
     final excessiveTimeout = valid()..['worker_connect_timeout'] = '121s';
-    final invalidMultipath = valid()..['multipath_profile'] = 'raw';
 
     expect(
-      ParsedOutboundSchema.validate(tooManyWorkers),
-      contains('between 1 and 54'),
+      ParsedOutboundSchema.validate(wrongLaneCount),
+      contains('exactly four'),
     );
     expect(ParsedOutboundSchema.validate(tooManyLinks), contains('1..4'));
     expect(
@@ -62,10 +58,6 @@ void main() {
     expect(
       ParsedOutboundSchema.validate(excessiveTimeout),
       contains('between 1s and 2m'),
-    );
-    expect(
-      ParsedOutboundSchema.validate(invalidMultipath),
-      contains('legacy or adaptive'),
     );
   });
 
