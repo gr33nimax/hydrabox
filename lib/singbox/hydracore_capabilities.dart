@@ -41,8 +41,8 @@ class HydraCoreCapabilities {
     this.supportsCallVkMultiUserServer = false,
     this.supportsCallVkTelemetry = true,
     this.supportsCallVkAdaptiveMultipath = true,
-    this.callVkMultiUserWireMin = 2,
-    this.callVkMultiUserWireMax = 2,
+    this.callVkMultiUserWireMin = 3,
+    this.callVkMultiUserWireMax = 3,
     this.amneziaVersion = 3,
     this.tunStacks = const {'system', 'gvisor', 'mixed'},
     this.inboundProtocols = const <String>{},
@@ -83,7 +83,7 @@ class HydraCoreCapabilities {
   /// Expected release surface used by pure-Dart code and test fakes.
   static const requiredV2 = HydraCoreCapabilities(
     apiVersion: supportedApiVersion,
-    coreVersion: 'v1.13.16-extended-hydracore.10-debug.8',
+    coreVersion: 'v1.13.16-extended-hydracore.10-debug.10',
     outboundProtocols: {
       'socks',
       'http',
@@ -358,8 +358,8 @@ class HydraCoreCapabilities {
       supportsCallVkTelemetry &&
       supportsCallVkAdaptiveMultipath &&
       coreRole == 'client' &&
-      callVkMultiUserWireMin == 2 &&
-      callVkMultiUserWireMax == 2 &&
+      callVkMultiUserWireMin == 3 &&
+      callVkMultiUserWireMax == 3 &&
       callPlatforms.length == 1 &&
       callPlatforms.contains('vk') &&
       callModes.length == 1 &&

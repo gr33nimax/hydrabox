@@ -25,9 +25,12 @@
 - Fixed Wi-Fi/mobile handover recovery for long-lived VK Calls connections by
   preferring the callback network and resetting native route state in the VPN
   foreground service.
-- Upgraded Android to HydraCore `v1.13.16-extended-hydracore.10-debug.8`.
-  Adaptive path in-flight accounting now honors KCP cumulative acknowledgements,
-  preventing healthy paths from being falsely pinned to the minimum window.
+- Upgraded Android to HydraCore `v1.13.16-extended-hydracore.10-debug.10`.
+  The four VK calls now exchange mandatory same-path physical packet feedback;
+  KCP retries can no longer collapse the window of an unrelated healthy call.
+  ACK/control traffic has path affinity and redundant delivery, while data is
+  never duplicated. The v3 worker handshake intentionally rejects mixed
+  old/new client and server cores instead of allowing a silent wire mismatch.
 - Switched the migrated default connectivity probe from Google to Cloudflare.
 
 ## [0.4.0-beta.1]

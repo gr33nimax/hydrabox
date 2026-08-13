@@ -11,15 +11,15 @@ void main() {
 
     expect(capabilities.apiVersion, 2);
     expect(capabilities.coreId, 'io.hydrabox.hydracore');
-    expect(capabilities.coreVersion, 'v1.13.16-extended-hydracore.10-debug.8');
+    expect(capabilities.coreVersion, 'v1.13.16-extended-hydracore.10-debug.10');
     expect(capabilities.coreRole, 'client');
     expect(capabilities.supportsCallVkMultiUser, isTrue);
     expect(capabilities.supportsCallVkMultiUserClient, isTrue);
     expect(capabilities.supportsCallVkMultiUserServer, isFalse);
     expect(capabilities.supportsCallVkTelemetry, isTrue);
     expect(capabilities.supportsCallVkAdaptiveMultipath, isTrue);
-    expect(capabilities.callVkMultiUserWireMin, 2);
-    expect(capabilities.callVkMultiUserWireMax, 2);
+    expect(capabilities.callVkMultiUserWireMin, 3);
+    expect(capabilities.callVkMultiUserWireMax, 3);
     expect(capabilities.callModes, {'multi_user'});
     expect(capabilities.validationProfiles, {'local', 'remote_v2'});
     expect(capabilities.subscriptionContracts, {2});
@@ -78,6 +78,15 @@ void main() {
       () => HydraCoreCapabilities.parseStrict(jsonEncode(vpsRole)),
       throwsFormatException,
     );
+
+    final previousWire = _capabilities();
+    (previousWire['protocols'] as Map<String, dynamic>)[
+      'call_vk_multi_user_wire'
+    ] = {'min': 2, 'max': 2};
+    expect(
+      () => HydraCoreCapabilities.parseStrict(jsonEncode(previousWire)),
+      throwsFormatException,
+    );
   });
 }
 
@@ -86,7 +95,7 @@ Map<String, dynamic> _capabilities() => {
   'identity': {
     'core_id': 'io.hydrabox.hydracore',
     'core_name': 'HydraCore',
-    'core_version': 'v1.13.16-extended-hydracore.10-debug.8',
+    'core_version': 'v1.13.16-extended-hydracore.10-debug.10',
     'role': 'client',
   },
   'features': {
@@ -135,7 +144,7 @@ Map<String, dynamic> _capabilities() => {
     'endpoints': ['wireguard'],
     'call_platforms': ['vk'],
     'call_modes': ['multi_user'],
-    'call_vk_multi_user_wire': {'min': 2, 'max': 2},
+    'call_vk_multi_user_wire': {'min': 3, 'max': 3},
   },
   'tun_stacks': ['system', 'gvisor', 'mixed'],
   'xhttp_modes': ['packet-up', 'stream-up', 'stream-one'],
