@@ -72,7 +72,7 @@ class CoreProcessIsolationInstrumentedTest {
         assertTrue(contract.supportedProtocolIdsList.isNotEmpty())
 
         val snapshot = CoreRuntimeProtocol.RuntimeSnapshot.parseFrom(service.getSnapshot())
-        assertTrue(snapshot.sequence >= 0L)
+        assertTrue(snapshot.lastSequence >= 0L)
         assertTrue(snapshot.processEpoch.isNotBlank())
 
         val expectedProcess = "${context.packageName}:core"

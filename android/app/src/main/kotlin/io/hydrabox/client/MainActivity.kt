@@ -43,6 +43,9 @@ import io.hydrabox.client.singbox.RuntimeEventConsumer
 import io.hydrabox.client.runtime.CoreRuntimeClient
 import io.hydrabox.client.runtime.CoreRuntimeService
 import io.hydrabox.client.runtime.proto.CoreRuntimeProtocol
+import io.hydrabox.client.storage.DomainCrypto
+import io.hydrabox.client.storage.HydraDatabase
+import io.hydrabox.client.storage.IncidentRepository
 import io.hydrabox.client.update.AppUpdateManifestVerifier
 import io.hydrabox.client.generated.FlutterError as PigeonFlutterError
 import io.hydrabox.client.generated.NetworkInterfaceStateMessage
@@ -67,7 +70,9 @@ import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
+import java.util.UUID
 import java.util.concurrent.Executors
+import kotlinx.coroutines.runBlocking
 
 internal fun isLiteralLoopbackSubscriptionHost(rawHost: String): Boolean {
     val host = rawHost.trim().removePrefix("[").removeSuffix("]").lowercase()
@@ -1917,6 +1922,43 @@ class MainActivity : FlutterFragmentActivity() {
                         }.onFailure { error ->
                             mainHandler.post {
                                 callback(errorResult("app_update_manifest_untrusted", error.message))
+                            }
+                        }
+                    }
+                }
+
+                override fun recordIncident(
+                    category: String,
+                    code: String,
+                    safePayload: String,
+                    callback: (Result<String>) -> Unit,
+                ) {
+                    ioExecutor.execute {
+                        val correlationId = UUID.randomUUID().toString()
+                        runCatching {
+                            val redacted = HydraBoxLogSanitizer.redact(safePayload)
+                                .toByteArray(Charsets.UTF_8)
+                                .let { bytes ->
+                                    if (bytes.size <= 64 * 1024) bytes else bytes.copyOf(64 * 1024)
+                                }
+                            runBlocking {
+                                val database = HydraDatabase.open(applicationContext)
+                                IncidentRepository(
+                                    database.incidents(),
+                                    DomainCrypto(applicationContext),
+                                ).record(
+                                    category = category,
+                                    code = code,
+                                    correlationId = correlationId,
+                                    safePayload = redacted,
+                                )
+                            }
+                            correlationId
+                        }.onSuccess { id ->
+                            mainHandler.post { callback(Result.success(id)) }
+                        }.onFailure { error ->
+                            mainHandler.post {
+                                callback(errorResult("incident_persistence_failed", error.message))
                             }
                         }
                     }

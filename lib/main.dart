@@ -6,10 +6,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:hydrabox/app/app.dart';
 import 'package:hydrabox/logging/app_log_store.dart';
+import 'package:hydrabox/singbox/singbox_runtime.dart';
 
 void _recordFatalError(String source, Object error, StackTrace stackTrace) {
   final message = '$error\n$stackTrace';
   AppLogStore.error('fatal/$source', message);
+  unawaited(
+    SingboxRuntime.instance.recordIncident(
+      category: 'flutter',
+      code: 'fatal_$source',
+      safePayload: AppLogStore.redact(message),
+    ),
+  );
 }
 
 Future<void> main() async {

@@ -410,6 +410,9 @@ abstract class SingboxHostApi {
   int verifyAppUpdateManifest(Uint8List manifest, Uint8List signature);
 
   @async
+  String recordIncident(String category, String code, String safePayload);
+
+  @async
   DownloadedApkInspectionMessage inspectDownloadedApk(String path);
 
   @async

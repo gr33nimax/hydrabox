@@ -789,6 +789,21 @@ class SingboxRuntime {
     return _hostApi.verifyAppUpdateManifest(manifest, signature);
   }
 
+  Future<String?> recordIncident({
+    required String category,
+    required String code,
+    required String safePayload,
+  }) async {
+    if (!Platform.isAndroid) return null;
+    try {
+      return await _hostApi.recordIncident(category, code, safePayload);
+    } on MissingPluginException {
+      return null;
+    } on PlatformException {
+      return null;
+    }
+  }
+
   Future<Map<String, dynamic>> inspectDownloadedApk(String path) async {
     if (!Platform.isAndroid) {
       return const <String, dynamic>{'valid': true};

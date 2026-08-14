@@ -119,7 +119,7 @@ jobs:
 
       - name: Run Android unit tests, lint, and debug assembly
         working-directory: android
-        run: bash ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+        run: bash ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest
 
       - name: Resolve test APK version
         if: >-
