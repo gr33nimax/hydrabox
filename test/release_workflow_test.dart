@@ -75,7 +75,7 @@ void main() {
     expect(workflow, contains(':app:assembleDebugAndroidTest'));
     expect(workflow, contains('adb shell am instrument -w'));
     expect(workflow, isNot(contains('set -euo pipefail')));
-    expect(workflow, contains('>"$report" 2>&1'));
+    expect(workflow, contains(r'>"$report" 2>&1'));
     expect(workflow, contains('submodules: recursive'));
     expect(workflow, contains('scripts/fetch_libbox.py'));
     expect(workflow, contains('HYDRACORE_RELEASE_PUBLIC_KEYS'));
