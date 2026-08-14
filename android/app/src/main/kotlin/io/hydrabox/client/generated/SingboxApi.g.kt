@@ -1294,6 +1294,7 @@ interface SingboxHostApi {
   fun canInstallApks(callback: (Result<Boolean>) -> Unit)
   fun openApkInstallSettings(callback: (Result<Boolean>) -> Unit)
   fun installDownloadedApk(callback: (Result<Boolean>) -> Unit)
+  fun verifyAppUpdateManifest(manifest: ByteArray, signature: ByteArray, callback: (Result<Long>) -> Unit)
   fun inspectDownloadedApk(path: String, callback: (Result<DownloadedApkInspectionMessage>) -> Unit)
   fun fetchUrlOnUnderlyingNetwork(request: UnderlyingHttpRequestMessage, callback: (Result<UnderlyingHttpResponseMessage>) -> Unit)
   fun resolveHostOnUnderlyingNetwork(host: String, callback: (Result<List<String?>>) -> Unit)
@@ -1924,6 +1925,27 @@ interface SingboxHostApi {
         if (api != null) {
           channel.setMessageHandler { _, reply ->
             api.installDownloadedApk{ result: Result<Boolean> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(SingboxApiPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(SingboxApiPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.hydrabox.SingboxHostApi.verifyAppUpdateManifest$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val manifestArg = args[0] as ByteArray
+            val signatureArg = args[1] as ByteArray
+            api.verifyAppUpdateManifest(manifestArg, signatureArg) { result: Result<Long> ->
               val error = result.exceptionOrNull()
               if (error != null) {
                 reply.reply(SingboxApiPigeonUtils.wrapError(error))

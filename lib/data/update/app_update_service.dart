@@ -209,10 +209,7 @@ class AppUpdateManifest {
           assets.containsKey(name)) {
         return null;
       }
-      assets[name] = (
-        sizeBytes: sizeBytes,
-        sha256: sha256,
-      );
+      assets[name] = (sizeBytes: sizeBytes, sha256: sha256);
     }
     if (assets.isEmpty) return null;
     return AppUpdateManifest(
