@@ -87,7 +87,7 @@ void main() {
     expect(
       (artifacts['hydracore-client-libbox.aar']
           as Map<String, dynamic>)['sha256'],
-      'c825ca2d1a0f41dcadacbc9f81efc2d8cb77ac03a4e1dd6142ad336a9d07427a',
+      '96e8dbb75f946c19a972ed00ac1acdf66510f6de7b992aff9552f68d30b89339',
     );
     expect(
       (artifacts['hydracore-client-libbox-sources.jar']
