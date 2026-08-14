@@ -68,6 +68,7 @@ __pycache__/
 *.py[cod]
 *.hprof
 *.trace
+/dist/
 
 # Local caches and temporary files
 *.tmp
