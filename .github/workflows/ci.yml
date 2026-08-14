@@ -36,13 +36,13 @@ jobs:
 
     steps:
       - name: Checkout pinned sources
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           submodules: recursive
 
       - name: Checkout pinned HYDRA ULTIMATE producer
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: gr33nimax/HYDRA-ULTIMATE
           ref: ${{ env.HYDRA_ULTIMATE_COMMIT }}
@@ -50,7 +50,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up JDK
-        uses: actions/setup-java@v5.6.0
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
@@ -146,7 +146,7 @@ jobs:
         if: >-
           github.ref == 'refs/heads/debug' ||
           (github.event_name == 'workflow_dispatch' && inputs.build_test_apk)
-        uses: actions/upload-artifact@v7.0.0
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: hydrabox-${{ steps.test-version.outputs.version }}-test-apk
           retention-days: 14
@@ -155,7 +155,7 @@ jobs:
 
       - name: Upload remote-generated bindings and reports
         if: always()
-        uses: actions/upload-artifact@v7.0.0
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: hydrabox-remote-verification-${{ github.run_attempt }}
           if-no-files-found: warn

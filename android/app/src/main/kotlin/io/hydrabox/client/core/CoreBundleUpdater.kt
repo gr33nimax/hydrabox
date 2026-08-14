@@ -4,9 +4,9 @@ import android.content.Context
 import android.util.AtomicFile
 import io.hydrabox.client.BuildConfig
 import org.json.JSONObject
-import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URI
@@ -82,12 +82,23 @@ class CoreBundleUpdater(
             "Checked HydraCore release is no longer available"
         }
         val artifactAssetId = assetId(release, artifact.assetName)
-        val bytes = downloadAsset(artifactAssetId, artifact.sizeBytes.toInt())
-        return manager.stageCandidate(
-            manifestBytes,
-            signatureBytes,
-            ByteArrayInputStream(bytes),
-        )
+        require(artifact.sizeBytes in 1..MAX_ARTIFACT_DOWNLOAD_BYTES.toLong()) {
+            "HydraCore artifact exceeds the client download limit"
+        }
+        require(checkDirectory.mkdirs() || checkDirectory.isDirectory)
+        val temporaryArtifact = File(checkDirectory, "candidate-download.part")
+        return try {
+            downloadAssetToFile(
+                assetId = artifactAssetId,
+                maximumBytes = artifact.sizeBytes,
+                destination = temporaryArtifact,
+            )
+            FileInputStream(temporaryArtifact).use { artifactStream ->
+                manager.stageCandidate(manifestBytes, signatureBytes, artifactStream)
+            }
+        } finally {
+            temporaryArtifact.delete()
+        }
     }
 
     private fun persistCheckedRelease(
@@ -141,6 +152,25 @@ class CoreBundleUpdater(
             accept = "application/octet-stream",
         )
 
+    private fun downloadAssetToFile(
+        assetId: Long,
+        maximumBytes: Long,
+        destination: File,
+    ) {
+        if (destination.exists()) check(destination.delete())
+        try {
+            requestToFile(
+                initialUrl = api("releases/assets/$assetId"),
+                maximumBytes = maximumBytes,
+                accept = "application/octet-stream",
+                destination = destination,
+            )
+        } catch (error: Throwable) {
+            destination.delete()
+            throw error
+        }
+    }
+
     private fun readJson(url: URL, maximumBytes: Int): JSONObject =
         JSONObject(request(url, maximumBytes, "application/vnd.github+json").toString(Charsets.UTF_8))
 
@@ -190,6 +220,63 @@ class CoreBundleUpdater(
             }
             connection.disconnect()
             return output.toByteArray()
+        }
+        throw IllegalStateException("HydraCore request did not complete")
+    }
+
+    private fun requestToFile(
+        initialUrl: URL,
+        maximumBytes: Long,
+        accept: String,
+        destination: File,
+    ) {
+        require(maximumBytes in 1..MAX_ARTIFACT_DOWNLOAD_BYTES.toLong())
+        var current = initialUrl
+        repeat(MAX_REDIRECTS + 1) { redirectCount ->
+            require(current.protocol.equals("https", ignoreCase = true)) { "HTTPS is required" }
+            val connection = current.openConnection() as HttpsURLConnection
+            connection.instanceFollowRedirects = false
+            connection.connectTimeout = CONNECT_TIMEOUT_MILLIS
+            connection.readTimeout = READ_TIMEOUT_MILLIS
+            connection.setRequestProperty("Accept", accept)
+            connection.setRequestProperty("User-Agent", "HydraBox/${BuildConfig.VERSION_NAME}")
+            connection.setRequestProperty("X-GitHub-Api-Version", GITHUB_API_VERSION)
+            val status = connection.responseCode
+            if (status in REDIRECT_CODES) {
+                require(redirectCount < MAX_REDIRECTS) { "Too many HydraCore download redirects" }
+                val location = connection.getHeaderField("Location")
+                    ?: throw IllegalStateException("HydraCore redirect has no location")
+                val redirected = current.toURI().resolve(location).toURL()
+                require(redirected.protocol.equals("https", ignoreCase = true)) {
+                    "HydraCore download cannot downgrade HTTPS"
+                }
+                current = redirected
+                connection.disconnect()
+                return@repeat
+            }
+            require(status == HttpURLConnection.HTTP_OK) {
+                "HydraCore GitHub request failed with HTTP $status"
+            }
+            val declared = connection.contentLengthLong
+            require(declared <= 0L || declared <= maximumBytes) {
+                "HydraCore download exceeds the declared size limit"
+            }
+            var received = 0L
+            FileOutputStream(destination).buffered().use { output ->
+                connection.inputStream.use { input ->
+                    val buffer = ByteArray(64 * 1024)
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        received += read.toLong()
+                        require(received <= maximumBytes) { "HydraCore download is too large" }
+                        output.write(buffer, 0, read)
+                    }
+                }
+            }
+            connection.disconnect()
+            require(received == maximumBytes) { "HydraCore artifact size does not match the manifest" }
+            return
         }
         throw IllegalStateException("HydraCore request did not complete")
     }

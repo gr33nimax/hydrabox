@@ -1678,22 +1678,25 @@ class MainActivity : FlutterFragmentActivity() {
                         timeoutMillis = request.timeoutMillis.toInt(),
                         concurrency = request.concurrency.toInt(),
                         deadlineMillis = request.deadlineMillis.toInt(),
-                        callback = callback,
-                    )
+                    ) { result -> callback(result.map(::pigeonMap)) }
                 }
 
                 override fun getManagedUrlTestSession(
                     sessionId: String,
                     callback: (Result<Map<String?, Any?>>) -> Unit,
                 ) {
-                    coreRuntimeClient.getProbeSession(sessionId, callback)
+                    coreRuntimeClient.getProbeSession(sessionId) { result ->
+                        callback(result.map(::pigeonMap))
+                    }
                 }
 
                 override fun cancelManagedUrlTest(
                     sessionId: String,
                     callback: (Result<Map<String?, Any?>>) -> Unit,
                 ) {
-                    coreRuntimeClient.cancelProbe(sessionId, callback)
+                    coreRuntimeClient.cancelProbe(sessionId) { result ->
+                        callback(result.map(::pigeonMap))
+                    }
                 }
 
                 override fun getRuntimeSnapshot(
