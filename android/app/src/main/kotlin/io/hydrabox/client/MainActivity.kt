@@ -25,7 +25,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
 import io.hydrabox.client.core.CoreManagerHostApiHandler
 import io.hydrabox.client.generated.CoreManagerHostApi
+import io.hydrabox.client.generated.DownloadedApkInspectionMessage
 import io.hydrabox.client.generated.InstalledAppMessage
+import io.hydrabox.client.generated.NotificationPresentationMessage
+import io.hydrabox.client.generated.UnderlyingHttpRequestMessage
+import io.hydrabox.client.generated.UnderlyingHttpResponseMessage
 import io.hydrabox.client.singbox.HydraBoxService
 import io.hydrabox.client.singbox.HydraBoxDefaultNetworkMonitor
 import io.hydrabox.client.singbox.HydraBoxDiagnostics
@@ -1613,6 +1617,43 @@ class MainActivity : FlutterFragmentActivity() {
                     coreRuntimeClient.reload(callback)
                 }
 
+                override fun setRuntimeUiForeground(
+                    foreground: Boolean,
+                    callback: (Result<Unit>) -> Unit,
+                ) {
+                    // Runtime event cadence is core-owned in 1.0.
+                    callback(Result.success(Unit))
+                }
+
+                override fun ensureNotificationPermission(callback: (Result<Boolean>) -> Unit) {
+                    ensureNotificationPermission(boolResult(callback))
+                }
+
+                override fun updateVpnNotificationPresentation(
+                    presentation: NotificationPresentationMessage,
+                    callback: (Result<Unit>) -> Unit,
+                ) {
+                    val value = CoreRuntimeProtocol.NotificationPresentation.newBuilder()
+                        .setDetailed(presentation.detailed)
+                        .setTrafficDisplayMode(presentation.trafficDisplayMode)
+                        .setTitle(presentation.title)
+                        .setGroupId(presentation.groupTag)
+                        .setTargetOutboundId(presentation.targetOutboundTag)
+                        .setPriorityOutboundId(presentation.priorityOutboundTag)
+                        .setExcludedOutboundId(presentation.excludeOutboundTag)
+                        .setUrl(presentation.url)
+                        .setTimeoutMillis(presentation.timeoutMillis.coerceAtLeast(0).toInt())
+                        .setConcurrency(presentation.concurrency.coerceAtLeast(0).toInt())
+                        .setDeadlineMillis(presentation.deadlineMillis.coerceAtLeast(0).toInt())
+                        .setConnectedText(presentation.connectedText)
+                        .setCheckingText(presentation.checkingText)
+                        .setUnavailableText(presentation.unavailableText)
+                        .setRefreshLabel(presentation.refreshLabel)
+                        .setStopLabel(presentation.stopLabel)
+                    presentation.latencyMillis?.let(value::setLatencyMillis)
+                    coreRuntimeClient.updateNotificationPresentation(value.build(), callback)
+                }
+
                 override fun stop(reason: String, callback: (Result<Unit>) -> Unit) {
                     coreRuntimeClient.stop(reason, callback)
                 }
@@ -1846,6 +1887,120 @@ class MainActivity : FlutterFragmentActivity() {
                         suggestedName,
                         nullableStringResult(callback),
                     )
+                }
+
+                override fun canInstallApks(callback: (Result<Boolean>) -> Unit) {
+                    callback(Result.success(canRequestApkInstalls()))
+                }
+
+                override fun openApkInstallSettings(callback: (Result<Boolean>) -> Unit) {
+                    openApkInstallSettings(boolResult(callback))
+                }
+
+                override fun installDownloadedApk(callback: (Result<Boolean>) -> Unit) {
+                    runCatching { installDownloadedApk(boolResult(callback)) }
+                        .onFailure { callback(errorResult("install_apk_failed", it.message)) }
+                }
+
+                override fun inspectDownloadedApk(
+                    path: String,
+                    callback: (Result<DownloadedApkInspectionMessage>) -> Unit,
+                ) {
+                    val normalizedPath = path.trim()
+                    if (normalizedPath.isEmpty()) {
+                        callback(errorResult("missing_apk_path", "APK path is empty"))
+                        return
+                    }
+                    ioExecutor.execute {
+                        runCatching { inspectDownloadedApk(normalizedPath) }
+                            .onSuccess { inspection ->
+                                val message = DownloadedApkInspectionMessage(
+                                    valid = inspection["valid"] == true,
+                                    packageName = inspection["packageName"]?.toString().orEmpty(),
+                                    installedPackageName = inspection["installedPackageName"]?.toString().orEmpty(),
+                                    versionName = inspection["versionName"]?.toString().orEmpty(),
+                                    versionCode = (inspection["versionCode"] as? Number)?.toLong() ?: 0L,
+                                    minSdk = (inspection["minSdk"] as? Number)?.toLong() ?: 0L,
+                                    targetSdk = (inspection["targetSdk"] as? Number)?.toLong() ?: 0L,
+                                    deviceSdk = (inspection["deviceSdk"] as? Number)?.toLong() ?: 0L,
+                                    signingCertificateSha256 =
+                                        (inspection["signingCertificateSha256"] as? Iterable<*>)
+                                            ?.map { it?.toString() }.orEmpty(),
+                                    installedCertificateSha256 =
+                                        (inspection["installedCertificateSha256"] as? Iterable<*>)
+                                            ?.map { it?.toString() }.orEmpty(),
+                                )
+                                mainHandler.post { callback(Result.success(message)) }
+                            }
+                            .onFailure { error ->
+                                mainHandler.post {
+                                    callback(errorResult("inspect_apk_failed", error.message))
+                                }
+                            }
+                    }
+                }
+
+                override fun fetchUrlOnUnderlyingNetwork(
+                    request: UnderlyingHttpRequestMessage,
+                    callback: (Result<UnderlyingHttpResponseMessage>) -> Unit,
+                ) {
+                    val url = request.url.trim()
+                    if (url.isEmpty()) {
+                        callback(errorResult("missing_url", "URL is empty"))
+                        return
+                    }
+                    val headers = request.headers.entries.mapNotNull { (name, value) ->
+                        name?.trim()?.takeIf(String::isNotEmpty)?.let { it to value.orEmpty() }
+                    }.toMap()
+                    subscriptionNetworkExecutor.execute {
+                        runCatching {
+                            fetchUrlOnUnderlyingNetwork(
+                                url,
+                                headers,
+                                request.maxBytes.toInt().coerceIn(1, 32 * 1024 * 1024),
+                                request.timeoutMillis.toInt(),
+                            )
+                        }.onSuccess { response ->
+                            val responseHeaders = (response["headers"] as? Map<*, *>)
+                                .orEmpty()
+                                .entries
+                                .associate { (name, value) -> name?.toString() to value?.toString() }
+                            val message = UnderlyingHttpResponseMessage(
+                                statusCode = (response["statusCode"] as? Number)?.toLong() ?: 0L,
+                                body = response["body"]?.toString().orEmpty(),
+                                headers = responseHeaders,
+                                finalUrl = response["finalUrl"]?.toString().orEmpty(),
+                                network = response["network"]?.toString().orEmpty(),
+                            )
+                            mainHandler.post { callback(Result.success(message)) }
+                        }.onFailure { error ->
+                            mainHandler.post {
+                                callback(errorResult("underlying_http_failed", error.message))
+                            }
+                        }
+                    }
+                }
+
+                override fun resolveHostOnUnderlyingNetwork(
+                    host: String,
+                    callback: (Result<List<String?>>) -> Unit,
+                ) {
+                    val normalizedHost = host.trim()
+                    if (normalizedHost.isEmpty()) {
+                        callback(errorResult("missing_host", "Host is empty"))
+                        return
+                    }
+                    endpointDnsExecutor.execute {
+                        runCatching { resolveHostOnUnderlyingNetwork(normalizedHost) }
+                            .onSuccess { addresses ->
+                                mainHandler.post { callback(Result.success(addresses)) }
+                            }
+                            .onFailure { error ->
+                                mainHandler.post {
+                                    callback(errorResult("underlying_dns_failed", error.message))
+                                }
+                            }
+                    }
                 }
 
                 override fun getAndroidId(callback: (Result<String>) -> Unit) {
@@ -2289,46 +2444,6 @@ class MainActivity : FlutterFragmentActivity() {
                     result.success(true)
                 }
 
-                "setRuntimeUiForeground" -> {
-                    val foreground = call.argument<Boolean>("foreground")
-                    if (foreground == null) {
-                        result.error("missing_foreground", "Foreground state is missing", null)
-                    } else {
-                        // Runtime event cadence is core-owned in 1.0.
-                        result.success(true)
-                    }
-                }
-
-                "ensureNotificationPermission" -> {
-                    ensureNotificationPermission(result)
-                }
-
-                "updateVpnNotificationPresentation" -> {
-                    val arguments = call.arguments as? Map<*, *> ?: emptyMap<String, Any?>()
-                    val value = CoreRuntimeProtocol.NotificationPresentation.newBuilder()
-                        .setDetailed(arguments["detailed"] == true)
-                        .setTrafficDisplayMode(arguments["trafficDisplayMode"]?.toString().orEmpty())
-                        .setTitle(arguments["title"]?.toString().orEmpty())
-                        .setGroupId(arguments["groupTag"]?.toString().orEmpty())
-                        .setTargetOutboundId(arguments["targetOutboundTag"]?.toString().orEmpty())
-                        .setPriorityOutboundId(arguments["priorityOutboundTag"]?.toString().orEmpty())
-                        .setExcludedOutboundId(arguments["excludeOutboundTag"]?.toString().orEmpty())
-                        .setUrl(arguments["url"]?.toString().orEmpty())
-                        .setTimeoutMillis((arguments["timeoutMillis"] as? Number)?.toInt()?.coerceAtLeast(0) ?: 0)
-                        .setConcurrency((arguments["concurrency"] as? Number)?.toInt()?.coerceAtLeast(0) ?: 0)
-                        .setDeadlineMillis((arguments["deadlineMillis"] as? Number)?.toInt()?.coerceAtLeast(0) ?: 0)
-                        .setConnectedText(arguments["connectedText"]?.toString().orEmpty())
-                        .setCheckingText(arguments["checkingText"]?.toString().orEmpty())
-                        .setUnavailableText(arguments["unavailableText"]?.toString().orEmpty())
-                        .setRefreshLabel(arguments["refreshLabel"]?.toString().orEmpty())
-                        .setStopLabel(arguments["stopLabel"]?.toString().orEmpty())
-                    (arguments["latencyMillis"] as? Number)?.toLong()?.let(value::setLatencyMillis)
-                    coreRuntimeClient.updateNotificationPresentation(value.build()) { updateResult ->
-                        updateResult.onSuccess { result.success(true) }
-                            .onFailure { result.error("notification_update_failed", it.message, null) }
-                    }
-                }
-
                 "getPerformanceSnapshot" -> {
                     result.success(buildPerformanceSnapshot())
                 }
@@ -2619,91 +2734,6 @@ class MainActivity : FlutterFragmentActivity() {
                     launchLogExport(content, suggestedName, result)
                 }
 
-                "canInstallApks" -> {
-                    result.success(canRequestApkInstalls())
-                }
-
-                "openApkInstallSettings" -> {
-                    openApkInstallSettings(result)
-                }
-
-                "installDownloadedApk" -> {
-                    runCatching { installDownloadedApk(result) }
-                        .onFailure { result.error("install_apk_failed", it.message, null) }
-                }
-
-                "inspectDownloadedApk" -> {
-                    val path = call.argument<String>("path")?.trim().orEmpty()
-                    if (path.isEmpty()) {
-                        result.error("missing_apk_path", "APK path is empty", null)
-                        return@setMethodCallHandler
-                    }
-                    ioExecutor.execute {
-                        runCatching { inspectDownloadedApk(path) }
-                            .onSuccess { inspection ->
-                                mainHandler.post { result.success(inspection) }
-                            }
-                            .onFailure { error ->
-                                mainHandler.post {
-                                    result.error("inspect_apk_failed", error.message, null)
-                                }
-                            }
-                    }
-                }
-
-                "fetchUrlOnUnderlyingNetwork" -> {
-                    val url = call.argument<String>("url")?.trim().orEmpty()
-                    if (url.isEmpty()) {
-                        result.error("missing_url", "URL is empty", null)
-                        return@setMethodCallHandler
-                    }
-                    val rawHeaders = call.argument<Map<*, *>>("headers").orEmpty()
-                    val headers = rawHeaders.entries
-                        .mapNotNull { (key, value) ->
-                            val name = key?.toString()?.trim().orEmpty()
-                            val headerValue = value?.toString().orEmpty()
-                            if (name.isEmpty()) null else name to headerValue
-                        }
-                        .toMap()
-                    val maxBytes = (call.argument<Number>("maxBytes")?.toInt()
-                        ?: 16 * 1024 * 1024).coerceIn(1, 32 * 1024 * 1024)
-                    val timeoutMs = call.argument<Number>("timeoutMs")?.toInt() ?: 20_000
-                    subscriptionNetworkExecutor.execute {
-                        runCatching {
-                            fetchUrlOnUnderlyingNetwork(url, headers, maxBytes, timeoutMs)
-                        }.onSuccess { response ->
-                            mainHandler.post { result.success(response) }
-                        }.onFailure { error ->
-                            mainHandler.post {
-                                result.error("underlying_http_failed", error.message, null)
-                            }
-                        }
-                    }
-                }
-
-                "resolveHostOnUnderlyingNetwork" -> {
-                    val host = call.argument<String>("host")?.trim().orEmpty()
-                    if (host.isEmpty()) {
-                        result.error("missing_host", "Host is empty", null)
-                        return@setMethodCallHandler
-                    }
-                    endpointDnsExecutor.execute {
-                        runCatching { resolveHostOnUnderlyingNetwork(host) }
-                            .onSuccess { addresses ->
-                                mainHandler.post { result.success(addresses) }
-                            }
-                            .onFailure { error ->
-                                mainHandler.post {
-                                    result.error(
-                                        "underlying_dns_failed",
-                                        error.message,
-                                        null,
-                                    )
-                                }
-                            }
-                    }
-                }
-
                 "getAndroidId" -> {
                     result.success(
                         Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "",
@@ -2740,36 +2770,6 @@ class MainActivity : FlutterFragmentActivity() {
                     result.success(getHappCrypt5Support())
                 }
 
-                "getInstalledApps" -> {
-                    Thread {
-                        runCatching { getInstalledApps() }
-                            .onSuccess { apps ->
-                                mainHandler.post {
-                                    result.success(apps)
-                                }
-                            }
-                            .onFailure { error ->
-                                mainHandler.post {
-                                    result.error(
-                                        "get_installed_apps_failed",
-                                        error.message ?: error.toString(),
-                                        null,
-                                    )
-                                }
-                            }
-                    }.start()
-                }
-
-                "getInstalledAppIcon" -> {
-                    val packageName = call.argument<String>("packageName")
-                    val sizePx = call.argument<Int>("sizePx")
-                    appIconExecutor.execute {
-                        val iconBytes = getInstalledAppIcon(packageName, sizePx)
-                        mainHandler.post {
-                            result.success(iconBytes)
-                        }
-                    }
-                }
                 else -> result.notImplemented()
             }
         }

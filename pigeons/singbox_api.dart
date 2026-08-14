@@ -187,6 +187,102 @@ class InstalledAppMessage {
   bool launchable;
 }
 
+class NotificationPresentationMessage {
+  NotificationPresentationMessage({
+    required this.detailed,
+    required this.trafficDisplayMode,
+    required this.title,
+    this.latencyMillis,
+    required this.groupTag,
+    required this.targetOutboundTag,
+    required this.priorityOutboundTag,
+    required this.excludeOutboundTag,
+    required this.url,
+    required this.timeoutMillis,
+    required this.concurrency,
+    required this.deadlineMillis,
+    required this.connectedText,
+    required this.checkingText,
+    required this.unavailableText,
+    required this.refreshLabel,
+    required this.stopLabel,
+  });
+
+  bool detailed;
+  String trafficDisplayMode;
+  String title;
+  int? latencyMillis;
+  String groupTag;
+  String targetOutboundTag;
+  String priorityOutboundTag;
+  String excludeOutboundTag;
+  String url;
+  int timeoutMillis;
+  int concurrency;
+  int deadlineMillis;
+  String connectedText;
+  String checkingText;
+  String unavailableText;
+  String refreshLabel;
+  String stopLabel;
+}
+
+class DownloadedApkInspectionMessage {
+  DownloadedApkInspectionMessage({
+    required this.valid,
+    required this.packageName,
+    required this.installedPackageName,
+    required this.versionName,
+    required this.versionCode,
+    required this.minSdk,
+    required this.targetSdk,
+    required this.deviceSdk,
+    required this.signingCertificateSha256,
+    required this.installedCertificateSha256,
+  });
+
+  bool valid;
+  String packageName;
+  String installedPackageName;
+  String versionName;
+  int versionCode;
+  int minSdk;
+  int targetSdk;
+  int deviceSdk;
+  List<String?> signingCertificateSha256;
+  List<String?> installedCertificateSha256;
+}
+
+class UnderlyingHttpRequestMessage {
+  UnderlyingHttpRequestMessage({
+    required this.url,
+    required this.headers,
+    required this.maxBytes,
+    required this.timeoutMillis,
+  });
+
+  String url;
+  Map<String?, String?> headers;
+  int maxBytes;
+  int timeoutMillis;
+}
+
+class UnderlyingHttpResponseMessage {
+  UnderlyingHttpResponseMessage({
+    required this.statusCode,
+    required this.body,
+    required this.headers,
+    required this.finalUrl,
+    required this.network,
+  });
+
+  int statusCode;
+  String body;
+  Map<String?, String?> headers;
+  String finalUrl;
+  String network;
+}
+
 @HostApi()
 abstract class CoreManagerHostApi {
   @async
@@ -241,6 +337,17 @@ abstract class SingboxHostApi {
   void reload();
 
   @async
+  void setRuntimeUiForeground(bool foreground);
+
+  @async
+  bool ensureNotificationPermission();
+
+  @async
+  void updateVpnNotificationPresentation(
+    NotificationPresentationMessage presentation,
+  );
+
+  @async
   void stop(String reason);
 
   @async
@@ -289,6 +396,26 @@ abstract class SingboxHostApi {
 
   @async
   String? exportLogs(String content, String suggestedName);
+
+  @async
+  bool canInstallApks();
+
+  @async
+  bool openApkInstallSettings();
+
+  @async
+  bool installDownloadedApk();
+
+  @async
+  DownloadedApkInspectionMessage inspectDownloadedApk(String path);
+
+  @async
+  UnderlyingHttpResponseMessage fetchUrlOnUnderlyingNetwork(
+    UnderlyingHttpRequestMessage request,
+  );
+
+  @async
+  List<String?> resolveHostOnUnderlyingNetwork(String host);
 
   @async
   String getAndroidId();

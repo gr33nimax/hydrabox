@@ -324,9 +324,7 @@ class SingboxRuntime {
       return;
     }
     try {
-      await _methods.invokeMethod<void>('setRuntimeUiForeground', {
-        'foreground': foreground,
-      });
+      await _hostApi.setRuntimeUiForeground(foreground);
     } on MissingPluginException {
       // Older Android bridges keep their existing telemetry behavior.
     }
@@ -337,10 +335,7 @@ class SingboxRuntime {
       return true;
     }
     try {
-      return await _methods.invokeMethod<bool>(
-            'ensureNotificationPermission',
-          ) ??
-          false;
+      return await _hostApi.ensureNotificationPermission();
     } on MissingPluginException {
       // Android versions before the notification-status bridge continue to use
       // their existing foreground-service notification.
@@ -371,25 +366,27 @@ class SingboxRuntime {
       return;
     }
     try {
-      await _methods.invokeMethod<void>('updateVpnNotificationPresentation', {
-        'detailed': detailed,
-        'trafficDisplayMode': trafficDisplayMode,
-        'title': title,
-        'latencyMillis': latencyMillis,
-        'groupTag': groupTag,
-        'targetOutboundTag': targetOutboundTag,
-        'priorityOutboundTag': priorityOutboundTag,
-        'excludeOutboundTag': excludeOutboundTag,
-        'url': url,
-        'timeoutMillis': timeoutMillis,
-        'concurrency': concurrency,
-        'deadlineMillis': deadlineMillis,
-        'connectedText': connectedText,
-        'checkingText': checkingText,
-        'unavailableText': unavailableText,
-        'refreshLabel': refreshLabel,
-        'stopLabel': stopLabel,
-      });
+      await _hostApi.updateVpnNotificationPresentation(
+        pigeon.NotificationPresentationMessage(
+          detailed: detailed,
+          trafficDisplayMode: trafficDisplayMode,
+          title: title,
+          latencyMillis: latencyMillis,
+          groupTag: groupTag,
+          targetOutboundTag: targetOutboundTag,
+          priorityOutboundTag: priorityOutboundTag,
+          excludeOutboundTag: excludeOutboundTag,
+          url: url,
+          timeoutMillis: timeoutMillis,
+          concurrency: concurrency,
+          deadlineMillis: deadlineMillis,
+          connectedText: connectedText,
+          checkingText: checkingText,
+          unavailableText: unavailableText,
+          refreshLabel: refreshLabel,
+          stopLabel: stopLabel,
+        ),
+      );
     } on MissingPluginException {
       // Keep compatibility with a previously installed Android host during a
       // Flutter hot restart or an in-place development upgrade.
@@ -754,8 +751,7 @@ class SingboxRuntime {
       return false;
     }
     try {
-      final value = await _methods.invokeMethod<bool>('canInstallApks');
-      return value == true;
+      return await _hostApi.canInstallApks();
     } on MissingPluginException {
       return false;
     }
@@ -766,7 +762,7 @@ class SingboxRuntime {
       return;
     }
     try {
-      await _methods.invokeMethod<void>('openApkInstallSettings');
+      await _hostApi.openApkInstallSettings();
     } on MissingPluginException {
       // Ignore on non-Android bridge builds.
     }
@@ -777,8 +773,8 @@ class SingboxRuntime {
       return;
     }
     // Native code deliberately selects the sole APK from private files/updates.
-    // The package installer never receives a path controlled by MethodChannel.
-    await _methods.invokeMethod<void>('installDownloadedApk');
+    // The package installer never receives a path controlled by Flutter.
+    await _hostApi.installDownloadedApk();
   }
 
   Future<Map<String, dynamic>> inspectDownloadedApk(String path) async {
@@ -789,11 +785,19 @@ class SingboxRuntime {
     if (normalizedPath.isEmpty) {
       throw ArgumentError.value(path, 'path', 'APK path is empty');
     }
-    return await _methods.invokeMapMethod<String, dynamic>(
-          'inspectDownloadedApk',
-          <String, Object?>{'path': normalizedPath},
-        ) ??
-        const <String, dynamic>{'valid': false};
+    final inspection = await _hostApi.inspectDownloadedApk(normalizedPath);
+    return <String, dynamic>{
+      'valid': inspection.valid,
+      'packageName': inspection.packageName,
+      'installedPackageName': inspection.installedPackageName,
+      'versionName': inspection.versionName,
+      'versionCode': inspection.versionCode,
+      'minSdk': inspection.minSdk,
+      'targetSdk': inspection.targetSdk,
+      'deviceSdk': inspection.deviceSdk,
+      'signingCertificateSha256': inspection.signingCertificateSha256,
+      'installedCertificateSha256': inspection.installedCertificateSha256,
+    };
   }
 
   Future<Map<String, dynamic>> fetchUrlOnUnderlyingNetwork({
@@ -807,16 +811,21 @@ class SingboxRuntime {
         'Underlying-network HTTP is only available on Android.',
       );
     }
-    return await _methods.invokeMapMethod<String, dynamic>(
-          'fetchUrlOnUnderlyingNetwork',
-          <String, Object?>{
-            'url': uri.toString(),
-            'headers': headers,
-            'maxBytes': maxBytes,
-            'timeoutMs': timeout.inMilliseconds,
-          },
-        ) ??
-        const <String, dynamic>{};
+    final response = await _hostApi.fetchUrlOnUnderlyingNetwork(
+      pigeon.UnderlyingHttpRequestMessage(
+        url: uri.toString(),
+        headers: headers,
+        maxBytes: maxBytes,
+        timeoutMillis: timeout.inMilliseconds,
+      ),
+    );
+    return <String, dynamic>{
+      'statusCode': response.statusCode,
+      'body': response.body,
+      'headers': response.headers,
+      'finalUrl': response.finalUrl,
+      'network': response.network,
+    };
   }
 
   Future<List<String>> resolveHostOnUnderlyingNetwork({
@@ -832,13 +841,11 @@ class SingboxRuntime {
     if (normalizedHost.isEmpty) {
       throw ArgumentError.value(host, 'host', 'Host is empty');
     }
-    final addresses = await _methods
-        .invokeListMethod<String>(
-          'resolveHostOnUnderlyingNetwork',
-          <String, Object?>{'host': normalizedHost},
-        )
+    final addresses = await _hostApi
+        .resolveHostOnUnderlyingNetwork(normalizedHost)
         .timeout(timeout);
-    return (addresses ?? const <String>[])
+    return addresses
+        .whereType<String>()
         .map((address) => address.trim())
         .where((address) => address.isNotEmpty)
         .toSet()
