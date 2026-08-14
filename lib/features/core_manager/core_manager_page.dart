@@ -34,7 +34,7 @@ class CoreManagerPage extends ConsumerWidget {
           child: FilledButton.tonalIcon(
             onPressed: () => ref.invalidate(coreManagerControllerProvider),
             icon: const Icon(Icons.refresh_rounded),
-            label: Text(l10n.retry),
+            label: Text(l10n.refresh),
           ),
         ),
         data: (state) => _CoreManagerBody(state: state),
