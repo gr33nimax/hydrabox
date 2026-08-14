@@ -2608,8 +2608,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       if (mounted) {
         setState(() {
           _bootstrapInFlight = false;
-          _bootstrapFailureStage =
-              AppBootstrapFailureStage.storageRecovery;
+          _bootstrapFailureStage = AppBootstrapFailureStage.storageRecovery;
         });
       }
       return;

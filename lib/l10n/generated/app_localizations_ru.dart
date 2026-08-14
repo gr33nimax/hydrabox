@@ -2296,8 +2296,7 @@ class AppLocalizationsRu extends AppLocalizations {
       'HydraBox не смог открыть постоянные данные. Временные настройки не подставлялись. Повторите попытку или откройте Центр восстановления после восстановления доступа к данным.';
 
   @override
-  String get bootstrapCoreRecoveryTitle =>
-      'Требуется восстановление HydraCore';
+  String get bootstrapCoreRecoveryTitle => 'Требуется восстановление HydraCore';
 
   @override
   String get bootstrapCoreRecoveryMessage =>

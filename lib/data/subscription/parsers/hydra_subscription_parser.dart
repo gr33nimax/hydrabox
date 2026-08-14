@@ -102,6 +102,7 @@ class HydraSubscriptionParser {
     final normalized = value.trim().replaceFirst(RegExp(r'^v'), '');
     _clientVersion = normalized.isEmpty ? '0.0.0' : normalized;
   }
+
   static const maxPlaintextBytes = 12 * 1024 * 1024;
 
   static const supportedPermissions = {

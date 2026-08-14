@@ -4066,6 +4066,9 @@ abstract class AppLocalizations {
   String get bootstrapStorageRecoveryTitle;
 
   /// No description provided for @bootstrapStorageRecoveryMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'HydraBox could not open its durable data. No temporary defaults were substituted. Retry or open Recovery Center after storage becomes available.'**
   String get bootstrapStorageRecoveryMessage;
 
   /// No description provided for @bootstrapCoreRecoveryTitle.
@@ -4075,6 +4078,9 @@ abstract class AppLocalizations {
   String get bootstrapCoreRecoveryTitle;
 
   /// No description provided for @bootstrapCoreRecoveryMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'The installed core is missing, damaged, or incompatible. Connections stay disabled until a verified core is restored.'**
   String get bootstrapCoreRecoveryMessage;
 }
 
