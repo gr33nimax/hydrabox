@@ -1,16 +1,16 @@
 package io.hydrabox.client.storage
 
-import android.app.Application
 import android.content.Context
-import android.os.Build
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import io.hydrabox.client.platform.AndroidProcessIdentity
 
 @Database(
     entities = [
         SubscriptionEntity::class,
         SubscriptionVersionEntity::class,
+        SubscriptionRefreshCandidateEntity::class,
         ResourceEntity::class,
         ProfileEntity::class,
         OutboundPresentationEntity::class,
@@ -25,6 +25,7 @@ import androidx.room.RoomDatabase
 abstract class HydraDatabase : RoomDatabase() {
     abstract fun subscriptions(): SubscriptionDao
     abstract fun subscriptionVersions(): SubscriptionVersionDao
+    abstract fun subscriptionRefreshCandidates(): SubscriptionRefreshCandidateDao
     abstract fun resources(): ResourceDao
     abstract fun profiles(): ProfileDao
     abstract fun outboundPresentation(): OutboundPresentationDao
@@ -39,11 +40,7 @@ abstract class HydraDatabase : RoomDatabase() {
 
         fun open(context: Context): HydraDatabase {
             val app = context.applicationContext
-            val processName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                Application.getProcessName()
-            } else {
-                app.applicationInfo.processName
-            }.orEmpty()
+            val processName = AndroidProcessIdentity.current(app)
             check(!processName.endsWith(":core") && !processName.endsWith(":core_probe")) {
                 "The HydraCore process cannot open the domain database"
             }

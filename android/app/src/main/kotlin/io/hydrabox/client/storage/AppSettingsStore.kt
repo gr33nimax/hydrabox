@@ -1,12 +1,11 @@
 package io.hydrabox.client.storage
 
-import android.app.Application
 import android.content.Context
-import android.os.Build
 import androidx.datastore.core.DataStore
 import androidx.datastore.core.DataStoreFactory
 import androidx.datastore.core.Serializer
 import io.hydrabox.client.storage.proto.AppSettingsProtocol
+import io.hydrabox.client.platform.AndroidProcessIdentity
 import kotlinx.coroutines.flow.Flow
 import java.io.File
 import java.io.InputStream
@@ -60,11 +59,7 @@ class AppSettingsStore private constructor(
 
         fun open(context: Context): AppSettingsStore {
             val app = context.applicationContext
-            val processName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                Application.getProcessName()
-            } else {
-                app.applicationInfo.processName
-            }.orEmpty()
+            val processName = AndroidProcessIdentity.current(app)
             check(!processName.endsWith(":core") && !processName.endsWith(":core_probe")) {
                 "The HydraCore process cannot open application settings"
             }

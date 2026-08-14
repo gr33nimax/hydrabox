@@ -45,6 +45,27 @@ data class SubscriptionVersionEntity(
     val validationStatus: String,
 )
 
+/** Validated remote content waiting for authoritative CompiledPlan creation. */
+@Entity(
+    tableName = "subscription_refresh_candidates",
+    foreignKeys = [
+        ForeignKey(
+            entity = SubscriptionEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["subscriptionId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index("fetchedAtMillis")],
+)
+data class SubscriptionRefreshCandidateEntity(
+    @androidx.room.PrimaryKey val subscriptionId: String,
+    val fetchedAtMillis: Long,
+    val contentSha256: ByteArray,
+    val encryptedRawDocument: ByteArray,
+    val inspectionProjection: ByteArray,
+)
+
 @Entity(
     tableName = "resources",
     foreignKeys = [

@@ -3,21 +3,20 @@ package io.hydrabox.client
 import android.app.Application
 import android.content.Context
 import android.net.ConnectivityManager
-import android.os.Build
+import android.util.AtomicFile
+import io.hydrabox.client.background.SubscriptionRefreshScheduler
 import io.hydrabox.client.core.CoreBundleManager
+import io.hydrabox.client.platform.AndroidProcessIdentity
 import io.hydrabox.client.singbox.HydraBoxDiagnostics
 import java.io.File
+import java.io.FileOutputStream
 import kotlin.system.exitProcess
 
 class HydraBoxApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         application = this
-        val processName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            Application.getProcessName()
-        } else {
-            applicationInfo.processName
-        }.orEmpty()
+        val processName = AndroidProcessIdentity.current(this)
         val bundleManager = CoreBundleManager(this)
         when {
             processName.endsWith(":core_probe") ->
@@ -27,6 +26,9 @@ class HydraBoxApplication : Application() {
                 bundleManager.configureNativeLoader()
             }
             else -> bundleManager.configureNativeLoader()
+        }
+        if (processName == packageName) {
+            SubscriptionRefreshScheduler.ensureScheduled(this)
         }
         installUncaughtExceptionLogger()
         // Legacy native Happ crypt5 used an isolated process:
@@ -158,8 +160,8 @@ class HydraBoxApplication : Application() {
         fun writeServiceState(mode: String) {
             val pid = android.os.Process.myPid()
             val updatedAtMillis = System.currentTimeMillis()
-            serviceStateFile.parentFile?.mkdirs()
-            serviceStateFile.writeText(
+            writeAtomicText(
+                serviceStateFile,
                 buildString {
                     append("pid=")
                     append(pid)
@@ -181,8 +183,8 @@ class HydraBoxApplication : Application() {
         fun writeRuntimeIntent(mode: String, reason: String) {
             val pid = android.os.Process.myPid()
             val updatedAtMillis = System.currentTimeMillis()
-            runtimeIntentFile.parentFile?.mkdirs()
-            runtimeIntentFile.writeText(
+            writeAtomicText(
+                runtimeIntentFile,
                 buildString {
                     append("pid=")
                     append(pid)
@@ -353,6 +355,20 @@ class HydraBoxApplication : Application() {
             // clears it, allowing START_STICKY to recover after an overnight
             // low-memory or OEM process kill.
             return System.currentTimeMillis() >= state.updatedAtMillis
+        }
+
+        private fun writeAtomicText(file: File, content: String) {
+            require(file.parentFile?.let { it.mkdirs() || it.isDirectory } != false)
+            val atomic = AtomicFile(file)
+            var output: FileOutputStream? = null
+            try {
+                output = atomic.startWrite()
+                output.write(content.toByteArray(Charsets.UTF_8))
+                atomic.finishWrite(output)
+            } catch (error: Throwable) {
+                output?.let(atomic::failWrite)
+                throw error
+            }
         }
     }
 }

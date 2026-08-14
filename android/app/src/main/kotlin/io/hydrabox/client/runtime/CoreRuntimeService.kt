@@ -9,6 +9,7 @@ import android.os.RemoteCallbackList
 import android.util.AtomicFile
 import com.google.protobuf.ByteString
 import com.google.protobuf.InvalidProtocolBufferException
+import go.HydraNativeLoader
 import io.hydrabox.client.HydraBoxApplication
 import io.hydrabox.client.core.CoreBundleManager
 import io.hydrabox.client.runtime.proto.CoreRuntimeProtocol
@@ -147,6 +148,15 @@ class CoreRuntimeService : Service() {
             },
         )
         refreshFromController()
+        // Candidate activation already required a successful isolated probe.
+        // Here we confirm that the real :core process loaded the active bytes,
+        // completed native setup/capability handshake, and can emit a snapshot.
+        buildSnapshot()
+        if (HydraNativeLoader.loadedSource() == "active") {
+            CoreBundleManager(this).readState().active?.let { active ->
+                CoreBundleManager(this).markHealthy(active.releaseSequence)
+            }
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder = binder

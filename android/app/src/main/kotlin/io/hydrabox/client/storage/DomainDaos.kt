@@ -50,11 +50,31 @@ abstract class SubscriptionDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     protected abstract suspend fun insertResources(resources: List<ResourceEntity>)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    protected abstract suspend fun upsertRefreshCandidate(
+        candidate: SubscriptionRefreshCandidateEntity,
+    )
+
+    @Query("DELETE FROM subscription_refresh_candidates WHERE subscriptionId = :subscriptionId")
+    protected abstract suspend fun deleteRefreshCandidate(subscriptionId: String)
+
     @Query(
         "DELETE FROM subscription_versions WHERE subscriptionId = :subscriptionId " +
             "AND id NOT IN (:keepIds)",
     )
     protected abstract suspend fun deleteVersionsExcept(subscriptionId: String, keepIds: List<String>)
+
+    @Transaction
+    open suspend fun stageValidatedRefresh(
+        subscriptionId: String,
+        candidate: SubscriptionRefreshCandidateEntity,
+        nextRefreshAtMillis: Long,
+        updatedAtMillis: Long,
+    ) {
+        check(byId(subscriptionId) != null) { "Subscription disappeared during refresh" }
+        upsertRefreshCandidate(candidate)
+        scheduleNextRefresh(subscriptionId, nextRefreshAtMillis, updatedAtMillis)
+    }
 
     @Transaction
     open suspend fun commitValidatedVersion(
@@ -68,12 +88,22 @@ abstract class SubscriptionDao {
         check(activateVersion(subscriptionId, version.id, updatedAtMillis) == 1) {
             "Subscription disappeared during version activation"
         }
+        deleteRefreshCandidate(subscriptionId)
         val activated = requireNotNull(byId(subscriptionId))
         deleteVersionsExcept(
             subscriptionId,
             listOfNotNull(activated.activeVersionId, activated.previousVersionId).distinct(),
         )
     }
+}
+
+@Dao
+interface SubscriptionRefreshCandidateDao {
+    @Query("SELECT * FROM subscription_refresh_candidates WHERE subscriptionId = :subscriptionId")
+    suspend fun bySubscriptionId(subscriptionId: String): SubscriptionRefreshCandidateEntity?
+
+    @Query("DELETE FROM subscription_refresh_candidates WHERE subscriptionId = :subscriptionId")
+    suspend fun delete(subscriptionId: String): Int
 }
 
 @Dao

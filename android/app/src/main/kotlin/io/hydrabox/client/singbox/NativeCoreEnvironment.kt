@@ -1,9 +1,8 @@
 package io.hydrabox.client.singbox
 
-import android.app.Application
 import android.content.pm.ApplicationInfo
-import android.os.Build
 import io.hydrabox.client.HydraBoxApplication
+import io.hydrabox.client.platform.AndroidProcessIdentity
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.SetupOptions
 import java.io.File
@@ -18,11 +17,7 @@ object NativeCoreEnvironment {
         synchronized(this) {
             if (ready) return
             val app = HydraBoxApplication.application
-            val processName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                Application.getProcessName()
-            } else {
-                app.applicationInfo.processName
-            }.orEmpty()
+            val processName = AndroidProcessIdentity.current(app)
             check(processName.endsWith(":core") || processName.endsWith(":core_probe")) {
                 "HydraCore cannot be initialized in the Android UI process"
             }
