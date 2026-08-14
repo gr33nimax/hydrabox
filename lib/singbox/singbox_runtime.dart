@@ -777,6 +777,18 @@ class SingboxRuntime {
     await _hostApi.installDownloadedApk();
   }
 
+  Future<int> verifyAppUpdateManifest(
+    Uint8List manifest,
+    Uint8List signature,
+  ) async {
+    if (!Platform.isAndroid) {
+      throw UnsupportedError(
+        'Signed application updates are only available on Android.',
+      );
+    }
+    return _hostApi.verifyAppUpdateManifest(manifest, signature);
+  }
+
   Future<Map<String, dynamic>> inspectDownloadedApk(String path) async {
     if (!Platform.isAndroid) {
       return const <String, dynamic>{'valid': true};

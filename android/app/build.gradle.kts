@@ -29,6 +29,12 @@ val hydraCoreReleasePublicKeys =
         .get()
 val escapedHydraCoreReleasePublicKeys =
     hydraCoreReleasePublicKeys.replace("\\", "\\\\").replace("\"", "\\\"")
+val appUpdateReleasePublicKeys =
+    providers.gradleProperty("appUpdateReleasePublicKeys")
+        .orElse(System.getenv("HYDRABOX_UPDATE_RELEASE_PUBLIC_KEYS") ?: "")
+        .get()
+val escapedAppUpdateReleasePublicKeys =
+    appUpdateReleasePublicKeys.replace("\\", "\\\\").replace("\"", "\\\"")
 val embeddedHydraCoreVersionFile =
     rootProject.file("../hydracore/release/HYDRACORE_VERSION")
 val embeddedHydraCoreVersion =
@@ -110,6 +116,11 @@ android {
             "String",
             "HYDRACORE_RELEASE_PUBLIC_KEYS",
             "\"$escapedHydraCoreReleasePublicKeys\"",
+        )
+        buildConfigField(
+            "String",
+            "HYDRABOX_UPDATE_RELEASE_PUBLIC_KEYS",
+            "\"$escapedAppUpdateReleasePublicKeys\"",
         )
         buildConfigField(
             "String",

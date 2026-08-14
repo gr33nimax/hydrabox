@@ -27,10 +27,12 @@ concurrency:
 env:
   FLUTTER_VERSION: "3.44.7"
   JAVA_VERSION: "21"
+  GO_VERSION: "1.24.6"
   KEYSTORE_PATH: "android/app/hydrabox-release.jks"
   BUILD_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.build_name || '' }}
   BUILD_NUMBER: ${{ github.event_name == 'workflow_dispatch' && inputs.build_number || '' }}
   HYDRACORE_RELEASE_PUBLIC_KEYS: ${{ vars.HYDRACORE_RELEASE_PUBLIC_KEYS }}
+  HYDRABOX_UPDATE_RELEASE_PUBLIC_KEYS: ${{ vars.HYDRABOX_UPDATE_RELEASE_PUBLIC_KEYS }}
 
 jobs:
   build-release-apk:
@@ -114,6 +116,12 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+
       - name: Show tool versions
         run: |
           java -version
@@ -127,6 +135,7 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          HYDRABOX_UPDATE_ED25519_PRIVATE_KEY: ${{ secrets.HYDRABOX_UPDATE_ED25519_PRIVATE_KEY }}
         run: |
           missing=0
           for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
@@ -137,6 +146,14 @@ jobs:
           done
           if [ -z "${HYDRACORE_RELEASE_PUBLIC_KEYS}" ]; then
             echo "::error title=Missing HydraCore key ring::HYDRACORE_RELEASE_PUBLIC_KEYS repository variable is not configured"
+            missing=1
+          fi
+          if [ -z "${HYDRABOX_UPDATE_RELEASE_PUBLIC_KEYS}" ]; then
+            echo "::error title=Missing update key ring::HYDRABOX_UPDATE_RELEASE_PUBLIC_KEYS repository variable is not configured"
+            missing=1
+          fi
+          if [ -z "${HYDRABOX_UPDATE_ED25519_PRIVATE_KEY}" ]; then
+            echo "::error title=Missing secret::HYDRABOX_UPDATE_ED25519_PRIVATE_KEY is not configured"
             missing=1
           fi
           exit "$missing"
@@ -283,6 +300,9 @@ jobs:
 
       - name: Generate updater manifest
         shell: bash
+        env:
+          HYDRABOX_UPDATE_KEY_ID: ${{ vars.HYDRABOX_UPDATE_KEY_ID }}
+          HYDRABOX_UPDATE_ED25519_PRIVATE_KEY: ${{ secrets.HYDRABOX_UPDATE_ED25519_PRIVATE_KEY }}
         run: |
           apk="build/release-apks/hydrabox-v${RELEASE_VERSION}-universal.apk"
           analyzer="${ANDROID_HOME}/cmdline-tools/latest/bin/apkanalyzer"
@@ -295,13 +315,15 @@ jobs:
           fi
           min_sdk="$($analyzer manifest min-sdk "$apk")"
           version_code="$($analyzer manifest version-code "$apk")"
-          python3 - "$RELEASE_VERSION" "$version_code" "$min_sdk" <<'PY'
+          key_id="${HYDRABOX_UPDATE_KEY_ID:-hydrabox-update-1}"
+          published_at="$(git show -s --format=%cI HEAD)"
+          python3 - "$RELEASE_VERSION" "$version_code" "$min_sdk" "$GITHUB_RUN_NUMBER" "$GITHUB_SHA" "$published_at" "$key_id" <<'PY'
           import hashlib
           import json
           import sys
           from pathlib import Path
 
-          version, build_number, min_sdk = sys.argv[1:]
+          version, build_number, min_sdk, release_sequence, source_commit, published_at, key_id = sys.argv[1:]
           assets = []
           for apk in sorted(Path("build/release-apks").glob("*.apk")):
               assets.append({
@@ -311,10 +333,15 @@ jobs:
               })
           manifest = {
               "schemaVersion": 1,
+              "distributionId": "io.hydrabox.client",
+              "releaseSequence": int(release_sequence),
               "version": version,
               "buildNumber": int(build_number),
               "minSdk": int(min_sdk),
               "packageName": "io.hydrabox.client",
+              "sourceCommit": source_commit,
+              "publishedAt": published_at,
+              "keyId": key_id,
               "assets": assets,
           }
           Path("build/release-apks/hydrabox-update.json").write_text(
@@ -322,6 +349,11 @@ jobs:
               encoding="utf-8",
           )
           PY
+          go run scripts/sign_update_manifest.go \
+            -input build/release-apks/hydrabox-update.json \
+            -output build/release-apks/hydrabox-update.json.sig \
+            -private-key "$HYDRABOX_UPDATE_ED25519_PRIVATE_KEY"
+          test "$(wc -c < build/release-apks/hydrabox-update.json.sig)" -eq 64
           cat build/release-apks/hydrabox-update.json
 
       - name: Upload APK artifact
@@ -331,6 +363,7 @@ jobs:
           path: |
             build/release-apks/*.apk
             build/release-apks/hydrabox-update.json
+            build/release-apks/hydrabox-update.json.sig
           if-no-files-found: error
           retention-days: 14
 
@@ -370,6 +403,8 @@ jobs:
           - hydrabox-v${RELEASE_VERSION}-arm64-v8a.apk
           - hydrabox-v${RELEASE_VERSION}-armeabi-v7a.apk
           - hydrabox-v${RELEASE_VERSION}-x86_64.apk
+          - hydrabox-update.json
+          - hydrabox-update.json.sig
           EOF
 
           if gh release view "$TAG_NAME" --json isDraft,targetCommitish > release-state.json 2>/dev/null; then
@@ -383,9 +418,9 @@ jobs:
               exit 1
             fi
             gh release edit "$TAG_NAME" --title "$RELEASE_TITLE" --notes-file "$notes_file"
-            gh release upload "$TAG_NAME" build/release-apks/*.apk build/release-apks/hydrabox-update.json --clobber
+            gh release upload "$TAG_NAME" build/release-apks/*.apk build/release-apks/hydrabox-update.json build/release-apks/hydrabox-update.json.sig --clobber
           else
-            gh release create "$TAG_NAME" build/release-apks/*.apk build/release-apks/hydrabox-update.json \
+            gh release create "$TAG_NAME" build/release-apks/*.apk build/release-apks/hydrabox-update.json build/release-apks/hydrabox-update.json.sig \
               --draft \
               --target "$GITHUB_SHA" \
               --title "$RELEASE_TITLE" \

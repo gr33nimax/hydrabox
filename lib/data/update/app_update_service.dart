@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter/foundation.dart';
@@ -146,6 +147,10 @@ class AppUpdateInfo {
 
 class AppUpdateManifest {
   const AppUpdateManifest({
+    required this.releaseSequence,
+    required this.sourceCommit,
+    required this.publishedAt,
+    required this.keyId,
     required this.version,
     required this.buildNumber,
     required this.minimumAndroidSdk,
@@ -153,6 +158,10 @@ class AppUpdateManifest {
     required this.assets,
   });
 
+  final int releaseSequence;
+  final String sourceCommit;
+  final DateTime publishedAt;
+  final String keyId;
   final String version;
   final int? buildNumber;
   final int? minimumAndroidSdk;
@@ -161,25 +170,56 @@ class AppUpdateManifest {
 
   static AppUpdateManifest? fromJson(Object? value) {
     if (value is! Map) return null;
+    if (value['schemaVersion'] != 1 ||
+        value['distributionId'] != 'io.hydrabox.client') {
+      return null;
+    }
+    final releaseSequence = AppUpdateService.parsePositiveInt(
+      value['releaseSequence'],
+    );
+    final sourceCommit = value['sourceCommit']?.toString().trim() ?? '';
+    final publishedAt = DateTime.tryParse(
+      value['publishedAt']?.toString() ?? '',
+    );
+    final keyId = value['keyId']?.toString().trim() ?? '';
     final version = AppUpdateService.normalizeVersion(
       value['version']?.toString() ?? '',
     );
     final packageName = value['packageName']?.toString().trim() ?? '';
     final rawAssets = value['assets'];
-    if (version.isEmpty || packageName.isEmpty || rawAssets is! Iterable) {
+    if (releaseSequence == null ||
+        !RegExp(r'^[0-9a-f]{40}$').hasMatch(sourceCommit) ||
+        publishedAt == null ||
+        !RegExp(r'^[A-Za-z0-9._-]{1,64}$').hasMatch(keyId) ||
+        version.isEmpty ||
+        packageName != 'io.hydrabox.client' ||
+        rawAssets is! Iterable) {
       return null;
     }
     final assets = <String, ({int sizeBytes, String? sha256})>{};
     for (final raw in rawAssets) {
       if (raw is! Map) continue;
       final name = raw['name']?.toString().trim() ?? '';
-      if (name.isEmpty) continue;
+      final sizeBytes = int.tryParse(raw['sizeBytes']?.toString() ?? '') ?? 0;
+      final sha256 = AppUpdateService.normalizeSha256Digest(raw['sha256']);
+      if (name.isEmpty ||
+          !name.toLowerCase().endsWith('.apk') ||
+          sizeBytes <= 0 ||
+          sha256 == null ||
+          assets.containsKey(name)) {
+        return null;
+      }
       assets[name] = (
-        sizeBytes: int.tryParse(raw['sizeBytes']?.toString() ?? '') ?? 0,
-        sha256: AppUpdateService.normalizeSha256Digest(raw['sha256']),
+        sizeBytes: sizeBytes,
+        sha256: sha256,
       );
     }
+    if (assets.isEmpty) return null;
     return AppUpdateManifest(
+      releaseSequence: releaseSequence,
+      sourceCommit: sourceCommit,
+      publishedAt: publishedAt.toUtc(),
+      keyId: keyId,
       version: version,
       buildNumber: AppUpdateService.parseBuildNumber(value['buildNumber']),
       minimumAndroidSdk: AppUpdateService.parsePositiveInt(value['minSdk']),
@@ -333,6 +373,7 @@ class AppUpdateService {
   static const _metadataBoxName = 'app_update_state';
   static const _assetTokens = ['arm64-v8a', 'armeabi-v7a', 'x86_64'];
   static const _manifestAssetName = 'hydrabox-update.json';
+  static const _manifestSignatureAssetName = 'hydrabox-update.json.sig';
   Future<AppUpdateCheckResult>? _checkInFlight;
 
   /// Automatic updates stay fail-closed until a HydraBox-controlled release
@@ -417,22 +458,16 @@ class AppUpdateService {
     try {
       final release = await _fetchLatestRelease();
       final manifest = await _fetchReleaseManifest(release['assets']);
-      var assets = _parseAssets(release['assets']);
-      if (manifest != null) {
-        assets = assets
-            .map((asset) {
-              final metadata = manifest.assets[asset.name];
-              return metadata == null
-                  ? asset
-                  : asset.copyWith(
-                      sizeBytes: metadata.sizeBytes > 0
-                          ? metadata.sizeBytes
-                          : asset.sizeBytes,
-                      digestSha256: metadata.sha256,
-                    );
-            })
-            .toList(growable: false);
-      }
+      final assets = _parseAssets(release['assets'])
+          .where((asset) => manifest.assets.containsKey(asset.name))
+          .map((asset) {
+            final metadata = manifest.assets[asset.name]!;
+            return asset.copyWith(
+              sizeBytes: metadata.sizeBytes,
+              digestSha256: metadata.sha256,
+            );
+          })
+          .toList(growable: false);
       final supportedAbis = await _supportedAbis();
       final asset = selectAssetForAbis(assets, supportedAbis);
       if (asset == null) {
@@ -449,21 +484,22 @@ class AppUpdateService {
       if (version.isEmpty) {
         throw const FormatException('Release tag does not contain a version.');
       }
+      if (version != manifest.version) {
+        throw const FormatException(
+          'Release tag does not match the signed update manifest.',
+        );
+      }
       final info = AppUpdateInfo(
-        version: manifest?.version ?? version,
-        buildNumber:
-            manifest?.buildNumber ??
-            extractBuildNumber('$tagName\n$title\n$body\n${asset.name}'),
+        version: manifest.version,
+        buildNumber: manifest.buildNumber,
         tagName: tagName,
         title: title.isNotEmpty ? title : 'v$version',
         body: body,
         htmlUrl: release['html_url']?.toString().trim() ?? '',
-        publishedAt: DateTime.tryParse(
-          release['published_at']?.toString() ?? '',
-        ),
+        publishedAt: manifest.publishedAt,
         asset: asset,
-        minimumAndroidSdk: manifest?.minimumAndroidSdk,
-        packageName: manifest?.packageName,
+        minimumAndroidSdk: manifest.minimumAndroidSdk,
+        packageName: manifest.packageName,
       );
       final remoteIsNewer = isRemoteVersionNewer(
         info.version,
@@ -689,41 +725,78 @@ class AppUpdateService {
     }
   }
 
-  Future<AppUpdateManifest?> _fetchReleaseManifest(Object? rawAssets) async {
-    if (rawAssets is! Iterable) return null;
+  Future<AppUpdateManifest> _fetchReleaseManifest(Object? rawAssets) async {
+    if (rawAssets is! Iterable) {
+      throw const FormatException('GitHub release assets are unavailable.');
+    }
     Map? manifestAsset;
+    Map? signatureAsset;
     for (final raw in rawAssets) {
       if (raw is Map && raw['name']?.toString() == _manifestAssetName) {
         manifestAsset = raw;
-        break;
+      } else if (raw is Map &&
+          raw['name']?.toString() == _manifestSignatureAssetName) {
+        signatureAsset = raw;
       }
     }
-    final url = Uri.tryParse(
+    final manifestUrl = Uri.tryParse(
       manifestAsset?['browser_download_url']?.toString().trim() ?? '',
     );
-    if (url == null || !url.hasScheme) return null;
+    final signatureUrl = Uri.tryParse(
+      signatureAsset?['browser_download_url']?.toString().trim() ?? '',
+    );
+    if (manifestUrl == null ||
+        signatureUrl == null ||
+        manifestUrl.scheme != 'https' ||
+        signatureUrl.scheme != 'https') {
+      throw const FormatException(
+        'Signed update manifest assets are unavailable.',
+      );
+    }
     final client = HttpClient();
     try {
       client.connectionTimeout = const Duration(seconds: 12);
-      final request = await client
-          .getUrl(url)
-          .timeout(const Duration(seconds: 15));
-      request.headers.set('Accept', 'application/json');
-      request.headers.set('User-Agent', 'HydraBox-Android-Updater');
-      final response = await request.close().timeout(
-        const Duration(seconds: 20),
-      );
-      if (response.statusCode != HttpStatus.ok) return null;
-      final bytes = await response.fold<List<int>>(<int>[], (all, chunk) {
-        if (all.length + chunk.length > 256 * 1024) {
-          throw const FormatException('Update manifest is too large.');
+      Future<Uint8List> download(Uri url, int maximumBytes) async {
+        final request = await client
+            .getUrl(url)
+            .timeout(const Duration(seconds: 15));
+        request.maxRedirects = 4;
+        request.headers.set('Accept', 'application/octet-stream');
+        request.headers.set('User-Agent', 'HydraBox-Android-Updater');
+        final response = await request.close().timeout(
+          const Duration(seconds: 20),
+        );
+        if (response.statusCode != HttpStatus.ok ||
+            response.redirects.any(
+              (redirect) => redirect.location.scheme != 'https',
+            )) {
+          throw HttpException(
+            'GitHub returned an invalid signed-manifest response.',
+          );
         }
-        return all..addAll(chunk);
-      });
-      return AppUpdateManifest.fromJson(jsonDecode(utf8.decode(bytes)));
-    } catch (error) {
-      AppLogStore.warning('updates', 'Update manifest unavailable: $error');
-      return null;
+        final bytes = await response.fold<List<int>>(<int>[], (all, chunk) {
+          if (all.length + chunk.length > maximumBytes) {
+            throw const FormatException('Update manifest asset is too large.');
+          }
+          return all..addAll(chunk);
+        });
+        return Uint8List.fromList(bytes);
+      }
+
+      final manifestBytes = await download(manifestUrl, 256 * 1024);
+      final signatureBytes = await download(signatureUrl, 64);
+      if (signatureBytes.length != 64) {
+        throw const FormatException('Update manifest signature is invalid.');
+      }
+      final verifiedSequence = await SingboxRuntime.instance
+          .verifyAppUpdateManifest(manifestBytes, signatureBytes);
+      final manifest = AppUpdateManifest.fromJson(
+        jsonDecode(utf8.decode(manifestBytes, allowMalformed: false)),
+      );
+      if (manifest == null || manifest.releaseSequence != verifiedSequence) {
+        throw const FormatException('Signed update manifest is invalid.');
+      }
+      return manifest;
     } finally {
       client.close(force: true);
     }

@@ -126,6 +126,12 @@ void main() {
     test('parses release manifest compatibility and integrity metadata', () {
       final sha256 = List.filled(32, 'ab').join();
       final manifest = AppUpdateManifest.fromJson({
+        'schemaVersion': 1,
+        'distributionId': 'io.hydrabox.client',
+        'releaseSequence': 42,
+        'sourceCommit': List.filled(40, 'a').join(),
+        'publishedAt': '2026-08-14T12:00:00Z',
+        'keyId': 'hydrabox-update-1',
         'version': 'v0.2.1+5',
         'buildNumber': 5,
         'minSdk': 24,
@@ -141,6 +147,7 @@ void main() {
 
       expect(manifest, isNotNull);
       expect(manifest!.version, '0.2.1');
+      expect(manifest.releaseSequence, 42);
       expect(manifest.buildNumber, 5);
       expect(manifest.minimumAndroidSdk, 24);
       expect(manifest.packageName, 'io.hydrabox.client');
@@ -155,6 +162,12 @@ void main() {
       expect(AppUpdateManifest.fromJson(null), isNull);
       expect(
         AppUpdateManifest.fromJson({
+          'schemaVersion': 1,
+          'distributionId': 'io.hydrabox.client',
+          'releaseSequence': 42,
+          'sourceCommit': List.filled(40, 'a').join(),
+          'publishedAt': '2026-08-14T12:00:00Z',
+          'keyId': 'hydrabox-update-1',
           'version': '0.2.1',
           'packageName': '',
           'assets': const [],
@@ -163,6 +176,12 @@ void main() {
       );
       expect(
         AppUpdateManifest.fromJson({
+          'schemaVersion': 1,
+          'distributionId': 'io.hydrabox.client',
+          'releaseSequence': 42,
+          'sourceCommit': List.filled(40, 'a').join(),
+          'publishedAt': '2026-08-14T12:00:00Z',
+          'keyId': 'hydrabox-update-1',
           'version': '',
           'packageName': 'io.hydrabox.client',
           'assets': const [],

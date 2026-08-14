@@ -407,6 +407,9 @@ abstract class SingboxHostApi {
   bool installDownloadedApk();
 
   @async
+  int verifyAppUpdateManifest(Uint8List manifest, Uint8List signature);
+
+  @async
   DownloadedApkInspectionMessage inspectDownloadedApk(String path);
 
   @async

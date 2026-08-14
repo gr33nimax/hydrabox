@@ -43,6 +43,7 @@ import io.hydrabox.client.singbox.RuntimeEventConsumer
 import io.hydrabox.client.runtime.CoreRuntimeClient
 import io.hydrabox.client.runtime.CoreRuntimeService
 import io.hydrabox.client.runtime.proto.CoreRuntimeProtocol
+import io.hydrabox.client.update.AppUpdateManifestVerifier
 import io.hydrabox.client.generated.FlutterError as PigeonFlutterError
 import io.hydrabox.client.generated.NetworkInterfaceStateMessage
 import io.hydrabox.client.generated.PreconnectUrlTestRequestMessage
@@ -1900,6 +1901,25 @@ class MainActivity : FlutterFragmentActivity() {
                 override fun installDownloadedApk(callback: (Result<Boolean>) -> Unit) {
                     runCatching { installDownloadedApk(boolResult(callback)) }
                         .onFailure { callback(errorResult("install_apk_failed", it.message)) }
+                }
+
+                override fun verifyAppUpdateManifest(
+                    manifest: ByteArray,
+                    signature: ByteArray,
+                    callback: (Result<Long>) -> Unit,
+                ) {
+                    ioExecutor.execute {
+                        runCatching {
+                            AppUpdateManifestVerifier(applicationContext)
+                                .verifyAndRecord(manifest, signature)
+                        }.onSuccess { releaseSequence ->
+                            mainHandler.post { callback(Result.success(releaseSequence)) }
+                        }.onFailure { error ->
+                            mainHandler.post {
+                                callback(errorResult("app_update_manifest_untrusted", error.message))
+                            }
+                        }
+                    }
                 }
 
                 override fun inspectDownloadedApk(

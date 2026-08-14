@@ -14,6 +14,11 @@ void main() {
     expect(workflow, contains(r'hydrabox-v${RELEASE_VERSION}-armeabi-v7a.apk'));
     expect(workflow, contains(r'hydrabox-v${RELEASE_VERSION}-x86_64.apk'));
     expect(workflow, contains('"packageName": "io.hydrabox.client"'));
+    expect(workflow, contains('"distributionId": "io.hydrabox.client"'));
+    expect(workflow, contains('"releaseSequence": int(release_sequence)'));
+    expect(workflow, contains('hydrabox-update.json.sig'));
+    expect(workflow, contains('scripts/sign_update_manifest.go'));
+    expect(workflow, contains('HYDRABOX_UPDATE_ED25519_PRIVATE_KEY'));
     expect(workflow, contains('python3 -B scripts/fetch_libbox.py'));
     expect(workflow, contains('python3 -B scripts/verify_libbox.py'));
     expect(workflow, contains('flutter gen-l10n'));
