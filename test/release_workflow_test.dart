@@ -48,6 +48,7 @@ void main() {
     expect(workflow, contains(':app:lintDebug'));
     expect(workflow, contains(':app:assembleDebug'));
     expect(workflow, contains(':app:assembleDebugAndroidTest'));
+    expect(workflow, contains('build/app/outputs/apk/debug/*.apk'));
     expect(workflow, contains('Build debug-signed release-mode test APK'));
     expect(workflow, contains('HYDRABOX_ALLOW_DEBUG_RELEASE_SIGNING'));
     expect(workflow, contains('Upload test APK'));
