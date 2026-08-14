@@ -2057,6 +2057,31 @@ class SingboxHostApi {
     return pigeonVar_replyValue! as int;
   }
 
+  Future<String> recordIncident(
+    String category,
+    String code,
+    String safePayload,
+  ) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.hydrabox.SingboxHostApi.recordIncident$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[category, code, safePayload],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as String;
+  }
+
   Future<DownloadedApkInspectionMessage> inspectDownloadedApk(
     String path,
   ) async {

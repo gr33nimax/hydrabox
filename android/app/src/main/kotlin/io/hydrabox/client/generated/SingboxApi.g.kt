@@ -1295,6 +1295,7 @@ interface SingboxHostApi {
   fun openApkInstallSettings(callback: (Result<Boolean>) -> Unit)
   fun installDownloadedApk(callback: (Result<Boolean>) -> Unit)
   fun verifyAppUpdateManifest(manifest: ByteArray, signature: ByteArray, callback: (Result<Long>) -> Unit)
+  fun recordIncident(category: String, code: String, safePayload: String, callback: (Result<String>) -> Unit)
   fun inspectDownloadedApk(path: String, callback: (Result<DownloadedApkInspectionMessage>) -> Unit)
   fun fetchUrlOnUnderlyingNetwork(request: UnderlyingHttpRequestMessage, callback: (Result<UnderlyingHttpResponseMessage>) -> Unit)
   fun resolveHostOnUnderlyingNetwork(host: String, callback: (Result<List<String?>>) -> Unit)
@@ -1946,6 +1947,28 @@ interface SingboxHostApi {
             val manifestArg = args[0] as ByteArray
             val signatureArg = args[1] as ByteArray
             api.verifyAppUpdateManifest(manifestArg, signatureArg) { result: Result<Long> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(SingboxApiPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(SingboxApiPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.hydrabox.SingboxHostApi.recordIncident$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val categoryArg = args[0] as String
+            val codeArg = args[1] as String
+            val safePayloadArg = args[2] as String
+            api.recordIncident(categoryArg, codeArg, safePayloadArg) { result: Result<String> ->
               val error = result.exceptionOrNull()
               if (error != null) {
                 reply.reply(SingboxApiPigeonUtils.wrapError(error))
