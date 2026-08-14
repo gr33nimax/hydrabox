@@ -91,7 +91,7 @@ class CoreRuntimeClient(context: Context) {
         }
     }
 
-    private val connection = object : ServiceConnection {
+    private val connection: ServiceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             val connected = ICoreRuntimeService.Stub.asInterface(binder)
             val pending: List<PendingServiceCall>
