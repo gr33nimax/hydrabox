@@ -103,6 +103,95 @@ class PreconnectUrlTestResultMessage {
   String errorCode;
 }
 
+class CoreBundleSlotMessage {
+  CoreBundleSlotMessage({
+    required this.releaseSequence,
+    required this.version,
+    required this.abi,
+    required this.sha256,
+  });
+
+  int releaseSequence;
+  String version;
+  String abi;
+  String sha256;
+}
+
+class CoreManagerStateMessage {
+  CoreManagerStateMessage({
+    required this.embeddedVersion,
+    this.active,
+    this.previous,
+    this.candidate,
+    required this.trustedKeyRingAvailable,
+    required this.usingEmbeddedFallback,
+    required this.runtimeDisconnected,
+  });
+
+  String embeddedVersion;
+  CoreBundleSlotMessage? active;
+  CoreBundleSlotMessage? previous;
+  CoreBundleSlotMessage? candidate;
+  bool trustedKeyRingAvailable;
+  bool usingEmbeddedFallback;
+  bool runtimeDisconnected;
+}
+
+class CheckedCoreReleaseMessage {
+  CheckedCoreReleaseMessage({
+    required this.releaseId,
+    required this.releaseSequence,
+    required this.version,
+    required this.publishedAt,
+    required this.coreApiMajor,
+    required this.coreApiMinor,
+    required this.artifactSizeBytes,
+  });
+
+  int releaseId;
+  int releaseSequence;
+  String version;
+  String publishedAt;
+  int coreApiMajor;
+  int coreApiMinor;
+  int artifactSizeBytes;
+}
+
+class CoreCandidateProbeMessage {
+  CoreCandidateProbeMessage({
+    required this.healthy,
+    required this.candidate,
+    required this.validatedFixtureCount,
+    this.errorCode,
+  });
+
+  bool healthy;
+  CoreBundleSlotMessage candidate;
+  int validatedFixtureCount;
+  String? errorCode;
+}
+
+@HostApi()
+abstract class CoreManagerHostApi {
+  @async
+  CoreManagerStateMessage getState();
+
+  @async
+  CheckedCoreReleaseMessage checkLatest();
+
+  @async
+  CoreBundleSlotMessage downloadChecked();
+
+  @async
+  CoreCandidateProbeMessage probeCandidate();
+
+  @async
+  CoreManagerStateMessage activateCandidate();
+
+  @async
+  CoreManagerStateMessage rollback();
+}
+
 @HostApi()
 abstract class SingboxHostApi {
   @async
