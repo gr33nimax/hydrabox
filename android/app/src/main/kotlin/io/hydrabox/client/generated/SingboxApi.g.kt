@@ -727,6 +727,270 @@ data class InstalledAppMessage (
     return result
   }
 }
+
+/** Generated class from Pigeon that represents data sent in messages. */
+data class NotificationPresentationMessage (
+  val detailed: Boolean,
+  val trafficDisplayMode: String,
+  val title: String,
+  val latencyMillis: Long? = null,
+  val groupTag: String,
+  val targetOutboundTag: String,
+  val priorityOutboundTag: String,
+  val excludeOutboundTag: String,
+  val url: String,
+  val timeoutMillis: Long,
+  val concurrency: Long,
+  val deadlineMillis: Long,
+  val connectedText: String,
+  val checkingText: String,
+  val unavailableText: String,
+  val refreshLabel: String,
+  val stopLabel: String
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): NotificationPresentationMessage {
+      val detailed = pigeonVar_list[0] as Boolean
+      val trafficDisplayMode = pigeonVar_list[1] as String
+      val title = pigeonVar_list[2] as String
+      val latencyMillis = pigeonVar_list[3] as Long?
+      val groupTag = pigeonVar_list[4] as String
+      val targetOutboundTag = pigeonVar_list[5] as String
+      val priorityOutboundTag = pigeonVar_list[6] as String
+      val excludeOutboundTag = pigeonVar_list[7] as String
+      val url = pigeonVar_list[8] as String
+      val timeoutMillis = pigeonVar_list[9] as Long
+      val concurrency = pigeonVar_list[10] as Long
+      val deadlineMillis = pigeonVar_list[11] as Long
+      val connectedText = pigeonVar_list[12] as String
+      val checkingText = pigeonVar_list[13] as String
+      val unavailableText = pigeonVar_list[14] as String
+      val refreshLabel = pigeonVar_list[15] as String
+      val stopLabel = pigeonVar_list[16] as String
+      return NotificationPresentationMessage(detailed, trafficDisplayMode, title, latencyMillis, groupTag, targetOutboundTag, priorityOutboundTag, excludeOutboundTag, url, timeoutMillis, concurrency, deadlineMillis, connectedText, checkingText, unavailableText, refreshLabel, stopLabel)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      detailed,
+      trafficDisplayMode,
+      title,
+      latencyMillis,
+      groupTag,
+      targetOutboundTag,
+      priorityOutboundTag,
+      excludeOutboundTag,
+      url,
+      timeoutMillis,
+      concurrency,
+      deadlineMillis,
+      connectedText,
+      checkingText,
+      unavailableText,
+      refreshLabel,
+      stopLabel,
+    )
+  }
+  override fun equals(other: Any?): Boolean {
+    if (other == null || other.javaClass != javaClass) {
+      return false
+    }
+    if (this === other) {
+      return true
+    }
+    val other = other as NotificationPresentationMessage
+    return SingboxApiPigeonUtils.deepEquals(this.detailed, other.detailed) && SingboxApiPigeonUtils.deepEquals(this.trafficDisplayMode, other.trafficDisplayMode) && SingboxApiPigeonUtils.deepEquals(this.title, other.title) && SingboxApiPigeonUtils.deepEquals(this.latencyMillis, other.latencyMillis) && SingboxApiPigeonUtils.deepEquals(this.groupTag, other.groupTag) && SingboxApiPigeonUtils.deepEquals(this.targetOutboundTag, other.targetOutboundTag) && SingboxApiPigeonUtils.deepEquals(this.priorityOutboundTag, other.priorityOutboundTag) && SingboxApiPigeonUtils.deepEquals(this.excludeOutboundTag, other.excludeOutboundTag) && SingboxApiPigeonUtils.deepEquals(this.url, other.url) && SingboxApiPigeonUtils.deepEquals(this.timeoutMillis, other.timeoutMillis) && SingboxApiPigeonUtils.deepEquals(this.concurrency, other.concurrency) && SingboxApiPigeonUtils.deepEquals(this.deadlineMillis, other.deadlineMillis) && SingboxApiPigeonUtils.deepEquals(this.connectedText, other.connectedText) && SingboxApiPigeonUtils.deepEquals(this.checkingText, other.checkingText) && SingboxApiPigeonUtils.deepEquals(this.unavailableText, other.unavailableText) && SingboxApiPigeonUtils.deepEquals(this.refreshLabel, other.refreshLabel) && SingboxApiPigeonUtils.deepEquals(this.stopLabel, other.stopLabel)
+  }
+
+  override fun hashCode(): Int {
+    var result = javaClass.hashCode()
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.detailed)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.trafficDisplayMode)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.title)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.latencyMillis)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.groupTag)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.targetOutboundTag)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.priorityOutboundTag)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.excludeOutboundTag)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.url)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.timeoutMillis)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.concurrency)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.deadlineMillis)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.connectedText)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.checkingText)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.unavailableText)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.refreshLabel)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.stopLabel)
+    return result
+  }
+}
+
+/** Generated class from Pigeon that represents data sent in messages. */
+data class DownloadedApkInspectionMessage (
+  val valid: Boolean,
+  val packageName: String,
+  val installedPackageName: String,
+  val versionName: String,
+  val versionCode: Long,
+  val minSdk: Long,
+  val targetSdk: Long,
+  val deviceSdk: Long,
+  val signingCertificateSha256: List<String?>,
+  val installedCertificateSha256: List<String?>
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): DownloadedApkInspectionMessage {
+      val valid = pigeonVar_list[0] as Boolean
+      val packageName = pigeonVar_list[1] as String
+      val installedPackageName = pigeonVar_list[2] as String
+      val versionName = pigeonVar_list[3] as String
+      val versionCode = pigeonVar_list[4] as Long
+      val minSdk = pigeonVar_list[5] as Long
+      val targetSdk = pigeonVar_list[6] as Long
+      val deviceSdk = pigeonVar_list[7] as Long
+      val signingCertificateSha256 = pigeonVar_list[8] as List<String?>
+      val installedCertificateSha256 = pigeonVar_list[9] as List<String?>
+      return DownloadedApkInspectionMessage(valid, packageName, installedPackageName, versionName, versionCode, minSdk, targetSdk, deviceSdk, signingCertificateSha256, installedCertificateSha256)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      valid,
+      packageName,
+      installedPackageName,
+      versionName,
+      versionCode,
+      minSdk,
+      targetSdk,
+      deviceSdk,
+      signingCertificateSha256,
+      installedCertificateSha256,
+    )
+  }
+  override fun equals(other: Any?): Boolean {
+    if (other == null || other.javaClass != javaClass) {
+      return false
+    }
+    if (this === other) {
+      return true
+    }
+    val other = other as DownloadedApkInspectionMessage
+    return SingboxApiPigeonUtils.deepEquals(this.valid, other.valid) && SingboxApiPigeonUtils.deepEquals(this.packageName, other.packageName) && SingboxApiPigeonUtils.deepEquals(this.installedPackageName, other.installedPackageName) && SingboxApiPigeonUtils.deepEquals(this.versionName, other.versionName) && SingboxApiPigeonUtils.deepEquals(this.versionCode, other.versionCode) && SingboxApiPigeonUtils.deepEquals(this.minSdk, other.minSdk) && SingboxApiPigeonUtils.deepEquals(this.targetSdk, other.targetSdk) && SingboxApiPigeonUtils.deepEquals(this.deviceSdk, other.deviceSdk) && SingboxApiPigeonUtils.deepEquals(this.signingCertificateSha256, other.signingCertificateSha256) && SingboxApiPigeonUtils.deepEquals(this.installedCertificateSha256, other.installedCertificateSha256)
+  }
+
+  override fun hashCode(): Int {
+    var result = javaClass.hashCode()
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.valid)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.packageName)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.installedPackageName)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.versionName)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.versionCode)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.minSdk)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.targetSdk)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.deviceSdk)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.signingCertificateSha256)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.installedCertificateSha256)
+    return result
+  }
+}
+
+/** Generated class from Pigeon that represents data sent in messages. */
+data class UnderlyingHttpRequestMessage (
+  val url: String,
+  val headers: Map<String?, String?>,
+  val maxBytes: Long,
+  val timeoutMillis: Long
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): UnderlyingHttpRequestMessage {
+      val url = pigeonVar_list[0] as String
+      val headers = pigeonVar_list[1] as Map<String?, String?>
+      val maxBytes = pigeonVar_list[2] as Long
+      val timeoutMillis = pigeonVar_list[3] as Long
+      return UnderlyingHttpRequestMessage(url, headers, maxBytes, timeoutMillis)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      url,
+      headers,
+      maxBytes,
+      timeoutMillis,
+    )
+  }
+  override fun equals(other: Any?): Boolean {
+    if (other == null || other.javaClass != javaClass) {
+      return false
+    }
+    if (this === other) {
+      return true
+    }
+    val other = other as UnderlyingHttpRequestMessage
+    return SingboxApiPigeonUtils.deepEquals(this.url, other.url) && SingboxApiPigeonUtils.deepEquals(this.headers, other.headers) && SingboxApiPigeonUtils.deepEquals(this.maxBytes, other.maxBytes) && SingboxApiPigeonUtils.deepEquals(this.timeoutMillis, other.timeoutMillis)
+  }
+
+  override fun hashCode(): Int {
+    var result = javaClass.hashCode()
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.url)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.headers)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.maxBytes)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.timeoutMillis)
+    return result
+  }
+}
+
+/** Generated class from Pigeon that represents data sent in messages. */
+data class UnderlyingHttpResponseMessage (
+  val statusCode: Long,
+  val body: String,
+  val headers: Map<String?, String?>,
+  val finalUrl: String,
+  val network: String
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): UnderlyingHttpResponseMessage {
+      val statusCode = pigeonVar_list[0] as Long
+      val body = pigeonVar_list[1] as String
+      val headers = pigeonVar_list[2] as Map<String?, String?>
+      val finalUrl = pigeonVar_list[3] as String
+      val network = pigeonVar_list[4] as String
+      return UnderlyingHttpResponseMessage(statusCode, body, headers, finalUrl, network)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      statusCode,
+      body,
+      headers,
+      finalUrl,
+      network,
+    )
+  }
+  override fun equals(other: Any?): Boolean {
+    if (other == null || other.javaClass != javaClass) {
+      return false
+    }
+    if (this === other) {
+      return true
+    }
+    val other = other as UnderlyingHttpResponseMessage
+    return SingboxApiPigeonUtils.deepEquals(this.statusCode, other.statusCode) && SingboxApiPigeonUtils.deepEquals(this.body, other.body) && SingboxApiPigeonUtils.deepEquals(this.headers, other.headers) && SingboxApiPigeonUtils.deepEquals(this.finalUrl, other.finalUrl) && SingboxApiPigeonUtils.deepEquals(this.network, other.network)
+  }
+
+  override fun hashCode(): Int {
+    var result = javaClass.hashCode()
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.statusCode)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.body)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.headers)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.finalUrl)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.network)
+    return result
+  }
+}
 private open class SingboxApiPigeonCodec : StandardMessageCodec() {
   override fun readValueOfType(type: Byte, buffer: ByteBuffer): Any? {
     return when (type) {
@@ -780,6 +1044,26 @@ private open class SingboxApiPigeonCodec : StandardMessageCodec() {
           InstalledAppMessage.fromList(it)
         }
       }
+      139.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          NotificationPresentationMessage.fromList(it)
+        }
+      }
+      140.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          DownloadedApkInspectionMessage.fromList(it)
+        }
+      }
+      141.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          UnderlyingHttpRequestMessage.fromList(it)
+        }
+      }
+      142.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          UnderlyingHttpResponseMessage.fromList(it)
+        }
+      }
       else -> super.readValueOfType(type, buffer)
     }
   }
@@ -823,6 +1107,22 @@ private open class SingboxApiPigeonCodec : StandardMessageCodec() {
       }
       is InstalledAppMessage -> {
         stream.write(138)
+        writeValue(stream, value.toList())
+      }
+      is NotificationPresentationMessage -> {
+        stream.write(139)
+        writeValue(stream, value.toList())
+      }
+      is DownloadedApkInspectionMessage -> {
+        stream.write(140)
+        writeValue(stream, value.toList())
+      }
+      is UnderlyingHttpRequestMessage -> {
+        stream.write(141)
+        writeValue(stream, value.toList())
+      }
+      is UnderlyingHttpResponseMessage -> {
+        stream.write(142)
         writeValue(stream, value.toList())
       }
       else -> super.writeValue(stream, value)
@@ -972,6 +1272,9 @@ interface SingboxHostApi {
   fun getRuntimeFlags(callback: (Result<Map<String?, Any?>>) -> Unit)
   fun setRuntimeFlags(flags: RuntimeFlagsMessage, callback: (Result<Unit>) -> Unit)
   fun reload(callback: (Result<Unit>) -> Unit)
+  fun setRuntimeUiForeground(foreground: Boolean, callback: (Result<Unit>) -> Unit)
+  fun ensureNotificationPermission(callback: (Result<Boolean>) -> Unit)
+  fun updateVpnNotificationPresentation(presentation: NotificationPresentationMessage, callback: (Result<Unit>) -> Unit)
   fun stop(reason: String, callback: (Result<Unit>) -> Unit)
   fun selectOutbound(groupTag: String, outboundTag: String, callback: (Result<Unit>) -> Unit)
   fun addOutbound(selectorTag: String, outboundJson: String, callback: (Result<Unit>) -> Unit)
@@ -988,6 +1291,12 @@ interface SingboxHostApi {
   fun lookupOutboundExternalInfo(outboundTag: String, callback: (Result<Map<String?, Any?>>) -> Unit)
   fun getNetworkInterfaceState(callback: (Result<NetworkInterfaceStateMessage>) -> Unit)
   fun exportLogs(content: String, suggestedName: String, callback: (Result<String?>) -> Unit)
+  fun canInstallApks(callback: (Result<Boolean>) -> Unit)
+  fun openApkInstallSettings(callback: (Result<Boolean>) -> Unit)
+  fun installDownloadedApk(callback: (Result<Boolean>) -> Unit)
+  fun inspectDownloadedApk(path: String, callback: (Result<DownloadedApkInspectionMessage>) -> Unit)
+  fun fetchUrlOnUnderlyingNetwork(request: UnderlyingHttpRequestMessage, callback: (Result<UnderlyingHttpResponseMessage>) -> Unit)
+  fun resolveHostOnUnderlyingNetwork(host: String, callback: (Result<List<String?>>) -> Unit)
   fun getAndroidId(callback: (Result<String>) -> Unit)
   fun getHydraDeviceId(canonicalOrigin: String, callback: (Result<String>) -> Unit)
   fun getSubscriptionRequestDeviceInfo(callback: (Result<Map<String?, Any?>>) -> Unit)
@@ -1196,6 +1505,62 @@ interface SingboxHostApi {
         if (api != null) {
           channel.setMessageHandler { _, reply ->
             api.reload{ result: Result<Unit> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(SingboxApiPigeonUtils.wrapError(error))
+              } else {
+                reply.reply(SingboxApiPigeonUtils.wrapResult(null))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.hydrabox.SingboxHostApi.setRuntimeUiForeground$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val foregroundArg = args[0] as Boolean
+            api.setRuntimeUiForeground(foregroundArg) { result: Result<Unit> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(SingboxApiPigeonUtils.wrapError(error))
+              } else {
+                reply.reply(SingboxApiPigeonUtils.wrapResult(null))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.hydrabox.SingboxHostApi.ensureNotificationPermission$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { _, reply ->
+            api.ensureNotificationPermission{ result: Result<Boolean> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(SingboxApiPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(SingboxApiPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.hydrabox.SingboxHostApi.updateVpnNotificationPresentation$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val presentationArg = args[0] as NotificationPresentationMessage
+            api.updateVpnNotificationPresentation(presentationArg) { result: Result<Unit> ->
               val error = result.exceptionOrNull()
               if (error != null) {
                 reply.reply(SingboxApiPigeonUtils.wrapError(error))
@@ -1505,6 +1870,120 @@ interface SingboxHostApi {
             val contentArg = args[0] as String
             val suggestedNameArg = args[1] as String
             api.exportLogs(contentArg, suggestedNameArg) { result: Result<String?> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(SingboxApiPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(SingboxApiPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.hydrabox.SingboxHostApi.canInstallApks$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { _, reply ->
+            api.canInstallApks{ result: Result<Boolean> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(SingboxApiPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(SingboxApiPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.hydrabox.SingboxHostApi.openApkInstallSettings$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { _, reply ->
+            api.openApkInstallSettings{ result: Result<Boolean> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(SingboxApiPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(SingboxApiPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.hydrabox.SingboxHostApi.installDownloadedApk$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { _, reply ->
+            api.installDownloadedApk{ result: Result<Boolean> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(SingboxApiPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(SingboxApiPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.hydrabox.SingboxHostApi.inspectDownloadedApk$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val pathArg = args[0] as String
+            api.inspectDownloadedApk(pathArg) { result: Result<DownloadedApkInspectionMessage> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(SingboxApiPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(SingboxApiPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.hydrabox.SingboxHostApi.fetchUrlOnUnderlyingNetwork$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val requestArg = args[0] as UnderlyingHttpRequestMessage
+            api.fetchUrlOnUnderlyingNetwork(requestArg) { result: Result<UnderlyingHttpResponseMessage> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(SingboxApiPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(SingboxApiPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.hydrabox.SingboxHostApi.resolveHostOnUnderlyingNetwork$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val hostArg = args[0] as String
+            api.resolveHostOnUnderlyingNetwork(hostArg) { result: Result<List<String?>> ->
               val error = result.exceptionOrNull()
               if (error != null) {
                 reply.reply(SingboxApiPigeonUtils.wrapError(error))
