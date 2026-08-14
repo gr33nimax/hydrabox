@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package hydrabox.settings.v1;
+
+option java_package = "io.hydrabox.client.storage.proto";
+option java_outer_classname = "AppSettingsProtocol";
+option java_multiple_files = false;
+option optimize_for = LITE_RUNTIME;
+
+message AppSettings {
+  uint32 schema_version = 1;
+  uint64 revision = 2;
+  string theme_mode = 3;
+  string locale = 4;
+  bool wake_lock_enabled = 5;
+  bool network_heartbeat_enabled = 6;
+  uint32 network_heartbeat_interval_seconds = 7;
+  string performance_mode = 8;
+  bool memory_limit_enabled = 9;
+  bool persistent_traffic_enabled = 10;
+  bool reconnect_after_boot = 11;
+  uint64 default_subscription_refresh_millis = 12;
+  bool pending_apply = 13;
+  uint64 applied_revision = 14;
+  bytes pending_config_sha256 = 15;
+}

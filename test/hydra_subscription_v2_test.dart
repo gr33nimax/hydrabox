@@ -5,6 +5,8 @@ import 'package:hydrabox/data/subscription/parsers/hydra_subscription_parser.dar
 import 'package:hydrabox/data/subscription/subscription_parser.dart';
 
 void main() {
+  setUpAll(() => HydraSubscriptionParser.configureClientVersion('0.5.0'));
+
   test('valid v2 subscription is accepted with automatic permissions', () {
     final parsed = SubscriptionParser.parse(jsonEncode(_document()));
 

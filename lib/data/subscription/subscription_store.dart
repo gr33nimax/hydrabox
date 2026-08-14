@@ -1265,7 +1265,10 @@ class SubscriptionStore {
           .validateHydraSubscription(content);
       _requireValidHydraResult(validation);
     }
-    final parsed = await SubscriptionParser.parseInBackground(plaintext);
+    final parsed = await SubscriptionParser.parseInBackground(
+      plaintext,
+      clientVersion: SubscriptionFetcher.currentAppVersion,
+    );
     if (decryptionKey != null && parsed.format.isHydra) {
       encrypted = true;
     }

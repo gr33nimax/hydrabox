@@ -7,6 +7,9 @@ plugins {
     id("com.android.application")
     id("kotlin-android")
     id("androidx.baselineprofile")
+    id("com.google.protobuf")
+    id("com.google.devtools.ksp")
+    id("androidx.room")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
@@ -20,6 +23,12 @@ val allowDebugReleaseSigning =
     System.getenv("HYDRABOX_ALLOW_DEBUG_RELEASE_SIGNING")?.equals("true", ignoreCase = true) == true
 val libboxAar = file("libs/libbox.aar")
 val libboxChecksum = file("libs/libbox.sha256")
+val hydraCoreReleasePublicKeys =
+    providers.gradleProperty("hydracoreReleasePublicKeys")
+        .orElse(System.getenv("HYDRACORE_RELEASE_PUBLIC_KEYS") ?: "")
+        .get()
+val escapedHydraCoreReleasePublicKeys =
+    hydraCoreReleasePublicKeys.replace("\\", "\\\\").replace("\"", "\\\"")
 
 val verifyPinnedLibbox by tasks.registering {
     group = "verification"
@@ -84,6 +93,11 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        buildConfigField(
+            "String",
+            "HYDRACORE_RELEASE_PUBLIC_KEYS",
+            "\"$escapedHydraCoreReleasePublicKeys\"",
+        )
     }
 
     signingConfigs {
@@ -130,6 +144,10 @@ android {
     }
 }
 
+room {
+    schemaDirectory("$projectDir/schemas")
+}
+
 kotlin {
     compilerOptions {
         jvmTarget = JvmTarget.JVM_17
@@ -155,8 +173,29 @@ flutter {
 dependencies {
     implementation(files("libs/libbox.aar"))
     implementation("androidx.profileinstaller:profileinstaller:1.4.1")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.85")
+    implementation("com.google.protobuf:protobuf-javalite:4.35.1")
+    implementation("androidx.room:room-runtime:2.8.4")
+    implementation("androidx.datastore:datastore:1.2.1")
+    implementation("androidx.work:work-runtime-ktx:2.11.2")
+    ksp("androidx.room:room-compiler:2.8.4")
     baselineProfile(project(":benchmark"))
     testImplementation("junit:junit:4.13.2")
+}
+
+protobuf {
+    protoc {
+        artifact = "com.google.protobuf:protoc:4.35.1"
+    }
+    generateProtoTasks {
+        all().configureEach {
+            builtins {
+                create("java") {
+                    option("lite")
+                }
+            }
+        }
+    }
 }
 
 tasks.matching { it.name == "preBuild" }.configureEach {

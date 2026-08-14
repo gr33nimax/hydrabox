@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hydrabox/data/subscription/parsers/clash_parser.dart';
+import 'package:hydrabox/data/subscription/parsers/hydra_subscription_parser.dart';
 import 'package:hydrabox/data/subscription/parsers/link_parser.dart';
 import 'package:hydrabox/data/subscription/parsers/singbox_config_parser.dart';
 import 'package:hydrabox/data/subscription/parsers/sip008_parser.dart';
@@ -11,6 +12,8 @@ import 'package:hydrabox/data/subscription/outbound_schema.dart';
 import 'package:hydrabox/data/subscription/subscription_parser.dart';
 
 void main() {
+  setUpAll(() => HydraSubscriptionParser.configureClientVersion('0.5.0'));
+
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // Link Parser Tests
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

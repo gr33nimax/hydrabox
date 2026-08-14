@@ -2281,4 +2281,18 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get vkCaptchaOpenFailed =>
       'Could not open the VK captcha. The link was copied to the clipboard.';
+
+  @override
+  String get bootstrapStorageRecoveryTitle => 'Storage needs recovery';
+
+  @override
+  String get bootstrapStorageRecoveryMessage =>
+      'HydraBox could not open its durable data. No temporary defaults were substituted. Retry or open Recovery Center after storage becomes available.';
+
+  @override
+  String get bootstrapCoreRecoveryTitle => 'HydraCore needs recovery';
+
+  @override
+  String get bootstrapCoreRecoveryMessage =>
+      'The installed core is missing, damaged, or incompatible. Connections stay disabled until a verified core is restored.';
 }

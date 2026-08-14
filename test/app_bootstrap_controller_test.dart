@@ -38,7 +38,7 @@ void main() {
     expect(durableStoreOpened, isFalse);
   });
 
-  test('failed owned store is closed before fallback is used', () async {
+  test('failed durable storage enters explicit recovery', () async {
     final failingStore = _FailingSettingsStore();
     final controller = AppBootstrapController(
       fallbackClientVersionLabel: '0.3.0',
@@ -53,28 +53,37 @@ void main() {
       loadCoreCapabilities: () async => HydraCoreCapabilities.requiredV2,
     );
 
-    final result = await controller.load();
+    await expectLater(
+      controller.load(),
+      throwsA(
+        isA<AppBootstrapException>().having(
+          (error) => error.stage,
+          'stage',
+          AppBootstrapFailureStage.storageRecovery,
+        ),
+      ),
+    );
 
     expect(failingStore.closed, isTrue);
-    expect(result.store, isA<MemoryAppSettingsStore>());
-    expect(result.ownsStore, isTrue);
-    expect(result.state.vpnInboundEnabled, isTrue);
   });
 
-  test('native metadata failures fall back without blocking startup', () async {
+  test('missing core capabilities fail closed', () async {
     final controller = AppBootstrapController(
       fallbackClientVersionLabel: '0.3.0',
       loadAppVersionInfo: () async => throw StateError('version unavailable'),
       loadCoreCapabilities: () async => throw StateError('core unavailable'),
     );
 
-    final result = await controller.load(
-      providedStore: MemoryAppSettingsStore(),
+    await expectLater(
+      controller.load(providedStore: MemoryAppSettingsStore()),
+      throwsA(
+        isA<AppBootstrapException>().having(
+          (error) => error.stage,
+          'stage',
+          AppBootstrapFailureStage.coreRecovery,
+        ),
+      ),
     );
-
-    expect(result.appVersionInfo.versionName, '0.3.0');
-    expect(result.appVersionInfo.versionCode, 0);
-    expect(result.coreCapabilities, same(HydraCoreCapabilities.requiredV2));
   });
 
   test('disabled rule-set status is deferred until after bootstrap', () async {

@@ -30,6 +30,7 @@ env:
   KEYSTORE_PATH: "android/app/hydrabox-release.jks"
   BUILD_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.build_name || '' }}
   BUILD_NUMBER: ${{ github.event_name == 'workflow_dispatch' && inputs.build_number || '' }}
+  HYDRACORE_RELEASE_PUBLIC_KEYS: ${{ vars.HYDRACORE_RELEASE_PUBLIC_KEYS }}
 
 jobs:
   build-release-apk:
@@ -134,6 +135,10 @@ jobs:
               missing=1
             fi
           done
+          if [ -z "${HYDRACORE_RELEASE_PUBLIC_KEYS}" ]; then
+            echo "::error title=Missing HydraCore key ring::HYDRACORE_RELEASE_PUBLIC_KEYS repository variable is not configured"
+            missing=1
+          fi
           exit "$missing"
 
       - name: Restore Android signing files

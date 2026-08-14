@@ -1,0 +1,670 @@
+package io.hydrabox.client.runtime
+
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
+import com.google.protobuf.ByteString
+import io.hydrabox.client.runtime.proto.CoreRuntimeProtocol
+import io.hydrabox.client.singbox.RuntimeEventConsumer
+import java.security.MessageDigest
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.Executors
+
+class CoreRuntimeException(
+    val code: String,
+    val stage: String,
+    val retryable: Boolean,
+    message: String,
+) : IllegalStateException(message)
+
+/** Main-process proxy for the :core binder. It contains no libbox references. */
+class CoreRuntimeClient(context: Context) {
+    private val appContext = context.applicationContext
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val lock = Any()
+    private val waitingForService = ArrayDeque<(ICoreRuntimeService) -> Unit>()
+    private val resultCallbacks = ConcurrentHashMap<String, (Result<Unit>) -> Unit>()
+    private val probeResultCallbacks =
+        ConcurrentHashMap<String, (Result<CoreRuntimeProtocol.ProbeResult>) -> Unit>()
+    private val eventConsumers = CopyOnWriteArrayList<RuntimeEventConsumer>()
+    private val ipcExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "HydraCoreIpc").apply { isDaemon = true }
+    }
+    private var service: ICoreRuntimeService? = null
+    private var binding = false
+    private var bound = false
+    @Volatile
+    private var latestSnapshot: CoreRuntimeProtocol.RuntimeSnapshot? = null
+    @Volatile
+    private var latestPreconnectSessionId: String? = null
+
+    private val listener = object : ICoreRuntimeListener.Stub() {
+        override fun onEvent(eventBytes: ByteArray?) {
+            val event = runCatching {
+                require(eventBytes != null && eventBytes.isNotEmpty())
+                CoreRuntimeProtocol.RuntimeEvent.parseFrom(eventBytes)
+            }.getOrNull() ?: return
+            if (event.hasSnapshot()) latestSnapshot = event.snapshot
+            if (event.hasCommandResult()) completeCommand(event.commandResult)
+            if (event.hasProbeResult()) {
+                probeResultCallbacks.remove(event.probeResult.sessionId)?.let { completion ->
+                    mainHandler.post { completion(Result.success(event.probeResult)) }
+                }
+            }
+            if (event.hasProbeSession() && event.probeSession.state !=
+                CoreRuntimeProtocol.ProbeSessionState.PROBE_SESSION_STATE_RUNNING
+            ) {
+                probeResultCallbacks.remove(event.probeSession.sessionId)?.let { completion ->
+                    mainHandler.post {
+                        completion(
+                            Result.failure(
+                                CoreRuntimeException(
+                                    "probe.result.unavailable",
+                                    "probe_result",
+                                    true,
+                                    "The probe session finished without a result.",
+                                ),
+                            ),
+                        )
+                    }
+                }
+            }
+            val legacyEvents = event.toLegacyEventMaps()
+            if (legacyEvents.isNotEmpty()) {
+                mainHandler.post {
+                    legacyEvents.forEach { legacyEvent ->
+                        eventConsumers.forEach { consumer -> consumer.success(legacyEvent) }
+                    }
+                }
+            }
+        }
+    }
+
+    private val connection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+            val connected = ICoreRuntimeService.Stub.asInterface(binder)
+            val pending: List<(ICoreRuntimeService) -> Unit>
+            synchronized(lock) {
+                service = connected
+                binding = false
+                bound = true
+                pending = waitingForService.toList()
+                waitingForService.clear()
+            }
+            runCatching { connected.registerListener(listener) }
+                .onFailure { disconnect(it) }
+            pending.forEach { action -> runCatching { action(connected) }.onFailure(::disconnect) }
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            disconnect(CoreRuntimeException("runtime.ipc.disconnected", "ipc", true, "HydraCore process disconnected."))
+        }
+
+        override fun onBindingDied(name: ComponentName?) {
+            disconnect(CoreRuntimeException("runtime.ipc.binding_died", "ipc", true, "HydraCore binding died."))
+            connect()
+        }
+
+        override fun onNullBinding(name: ComponentName?) {
+            disconnect(CoreRuntimeException("runtime.ipc.null_binding", "ipc", false, "HydraCore service refused the binding."))
+        }
+    }
+
+    fun connect() {
+        synchronized(lock) {
+            if (service != null || binding) return
+            binding = true
+        }
+        val accepted = appContext.bindService(
+            Intent(appContext, CoreRuntimeService::class.java),
+            connection,
+            Context.BIND_AUTO_CREATE or Context.BIND_IMPORTANT,
+        )
+        if (!accepted) {
+            disconnect(CoreRuntimeException("runtime.ipc.bind_failed", "ipc", true, "HydraCore service could not be started."))
+        }
+    }
+
+    fun close() {
+        val current = synchronized(lock) {
+            val value = service
+            service = null
+            binding = false
+            value
+        }
+        if (current != null) runCatching { current.unregisterListener(listener) }
+        if (bound) runCatching { appContext.unbindService(connection) }
+        bound = false
+        ipcExecutor.shutdownNow()
+        failPending(CoreRuntimeException("runtime.ipc.closed", "ipc", true, "HydraCore client was closed."))
+    }
+
+    fun registerEventConsumer(consumer: RuntimeEventConsumer) {
+        eventConsumers += consumer
+        latestSnapshot?.let { snapshot ->
+            mainHandler.post {
+                snapshot.toLegacyEventMaps().forEach(consumer::success)
+            }
+        }
+    }
+
+    fun unregisterEventConsumer(consumer: RuntimeEventConsumer) {
+        eventConsumers -= consumer
+    }
+
+    fun start(
+        config: ByteArray,
+        useVpn: Boolean,
+        restartCore: Boolean = false,
+        applyConfig: Boolean = false,
+        callback: (Result<Unit>) -> Unit,
+    ) {
+        val start = CoreRuntimeProtocol.StartRuntime.newBuilder()
+            .setMode(
+                if (useVpn) CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_VPN
+                else CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_PROXY,
+            )
+            .setCompiledConfig(ByteString.copyFrom(config))
+            .setConfigSha256(ByteString.copyFrom(MessageDigest.getInstance("SHA-256").digest(config)))
+            .setRestartCore(restartCore)
+            .setApplyConfig(applyConfig)
+            .build()
+        submit(
+            CoreRuntimeProtocol.RuntimeCommand.newBuilder()
+                .setKind(CoreRuntimeProtocol.CommandKind.COMMAND_KIND_START)
+                .setStart(start),
+            callback,
+        )
+    }
+
+    fun stop(reason: String, callback: (Result<Unit>) -> Unit) {
+        submit(
+            CoreRuntimeProtocol.RuntimeCommand.newBuilder()
+                .setKind(CoreRuntimeProtocol.CommandKind.COMMAND_KIND_STOP)
+                .setStop(CoreRuntimeProtocol.StopRuntime.newBuilder().setReason(reason)),
+            callback,
+        )
+    }
+
+    fun reload(callback: (Result<Unit>) -> Unit) {
+        submit(
+            CoreRuntimeProtocol.RuntimeCommand.newBuilder()
+                .setKind(CoreRuntimeProtocol.CommandKind.COMMAND_KIND_RELOAD)
+                .setReload(CoreRuntimeProtocol.ReloadRuntime.getDefaultInstance()),
+            callback,
+        )
+    }
+
+    fun selectOutbound(groupId: String, outboundId: String, callback: (Result<Unit>) -> Unit) {
+        submit(
+            CoreRuntimeProtocol.RuntimeCommand.newBuilder()
+                .setKind(CoreRuntimeProtocol.CommandKind.COMMAND_KIND_SELECT_OUTBOUND)
+                .setSelectOutbound(
+                    CoreRuntimeProtocol.SelectOutbound.newBuilder()
+                        .setGroupId(groupId)
+                        .setOutboundId(outboundId),
+                ),
+            callback,
+        )
+    }
+
+    fun startProbe(
+        groupId: String,
+        outboundIds: List<String>,
+        url: String,
+        timeoutMillis: Int,
+        concurrency: Int,
+        deadlineMillis: Int,
+        config: ByteArray? = null,
+        callback: (Result<Map<String, Any?>>) -> Unit,
+    ) {
+        val sessionId = UUID.randomUUID().toString()
+        submitProbe(
+            sessionId = sessionId,
+            groupId = groupId,
+            outboundIds = outboundIds,
+            url = url,
+            timeoutMillis = timeoutMillis,
+            concurrency = concurrency,
+            deadlineMillis = deadlineMillis,
+            config = config,
+        ) { result ->
+            callback(
+                result.map {
+                    mapOf(
+                        "id" to sessionId,
+                        "state" to "running",
+                        "startedAt" to System.currentTimeMillis(),
+                        "total" to outboundIds.size,
+                        "completed" to 0,
+                    )
+                },
+            )
+        }
+    }
+
+    fun preconnectProbe(
+        config: ByteArray,
+        groupId: String,
+        outboundId: String,
+        url: String,
+        timeoutMillis: Int,
+        deadlineMillis: Int,
+        callback: (Result<CoreRuntimeProtocol.ProbeResult>) -> Unit,
+    ) {
+        val sessionId = UUID.randomUUID().toString()
+        latestPreconnectSessionId = sessionId
+        probeResultCallbacks[sessionId] = { result ->
+            if (latestPreconnectSessionId == sessionId) latestPreconnectSessionId = null
+            callback(result)
+        }
+        submitProbe(
+            sessionId = sessionId,
+            groupId = groupId,
+            outboundIds = listOf(outboundId),
+            url = url,
+            timeoutMillis = timeoutMillis,
+            concurrency = 1,
+            deadlineMillis = deadlineMillis,
+            config = config,
+        ) { result ->
+            result.onFailure { error ->
+                probeResultCallbacks.remove(sessionId)?.let { completion ->
+                    mainHandler.post { completion(Result.failure(error)) }
+                }
+            }
+        }
+        mainHandler.postDelayed({
+            probeResultCallbacks.remove(sessionId)?.invoke(
+                Result.failure(
+                    CoreRuntimeException(
+                        "probe.result.deadline",
+                        "probe_result",
+                        true,
+                        "The probe result deadline expired.",
+                    ),
+                ),
+            )
+        }, deadlineMillis.coerceIn(timeoutMillis, 120_000).toLong() + 500L)
+    }
+
+    fun cancelPreconnectProbe(callback: (Result<Unit>) -> Unit) {
+        val sessionId = latestPreconnectSessionId
+        if (sessionId == null) {
+            callback(Result.success(Unit))
+            return
+        }
+        cancelProbe(sessionId) { result ->
+            latestPreconnectSessionId = null
+            probeResultCallbacks.remove(sessionId)
+            callback(result.map { Unit })
+        }
+    }
+
+    private fun submitProbe(
+        sessionId: String,
+        groupId: String,
+        outboundIds: List<String>,
+        url: String,
+        timeoutMillis: Int,
+        concurrency: Int,
+        deadlineMillis: Int,
+        config: ByteArray?,
+        callback: (Result<Unit>) -> Unit,
+    ) {
+        val request = CoreRuntimeProtocol.ProbeRequest.newBuilder()
+            .setSchemaVersion(SCHEMA_VERSION)
+            .setSessionId(sessionId)
+            .setGroupId(groupId)
+            .addAllOutboundIds(outboundIds.ifEmpty { listOf(ALL_OUTBOUNDS) })
+            .setUrl(url)
+            .setTimeoutMillis(timeoutMillis.coerceIn(500, 120_000))
+            .setConcurrency(concurrency.coerceIn(1, 32))
+            .setDeadlineAtMillis(System.currentTimeMillis() + deadlineMillis.coerceIn(timeoutMillis, 120_000))
+        if (config != null) {
+            request.setCompiledConfig(ByteString.copyFrom(config))
+            request.setConfigSha256(ByteString.copyFrom(
+                MessageDigest.getInstance("SHA-256").digest(config),
+            ))
+        }
+        submit(
+            CoreRuntimeProtocol.RuntimeCommand.newBuilder()
+                .setKind(CoreRuntimeProtocol.CommandKind.COMMAND_KIND_START_PROBE)
+                .setStartProbe(request),
+            callback,
+        )
+    }
+
+    fun getProbeSession(sessionId: String, callback: (Result<Map<String, Any?>>) -> Unit) {
+        snapshot { result ->
+            callback(
+                result.mapCatching { snapshot ->
+                    val session = snapshot.probeSessionsList.firstOrNull { it.sessionId == sessionId }
+                        ?: throw CoreRuntimeException(
+                            "probe.session.missing",
+                            "probe_session",
+                            false,
+                            "The probe session is unavailable.",
+                        )
+                    mapOf(
+                        "id" to session.sessionId,
+                        "state" to session.state.name,
+                        "startedAt" to session.startedAtMillis,
+                        "completedAt" to session.finishedAtMillis,
+                        "total" to session.requestedCount,
+                        "completed" to session.completedCount,
+                    )
+                },
+            )
+        }
+    }
+
+    fun cancelProbe(sessionId: String, callback: (Result<Map<String, Any?>>) -> Unit) {
+        submit(
+            CoreRuntimeProtocol.RuntimeCommand.newBuilder()
+                .setKind(CoreRuntimeProtocol.CommandKind.COMMAND_KIND_CANCEL_PROBE)
+                .setCancelProbe(CoreRuntimeProtocol.CancelProbe.newBuilder().setSessionId(sessionId)),
+        ) { result ->
+            callback(result.map { mapOf("id" to sessionId, "state" to "cancelled") })
+        }
+    }
+
+    fun snapshot(callback: (Result<CoreRuntimeProtocol.RuntimeSnapshot>) -> Unit) {
+        withService { connected ->
+            runCatching { CoreRuntimeProtocol.RuntimeSnapshot.parseFrom(connected.getSnapshot()) }
+                .onSuccess {
+                    latestSnapshot = it
+                    mainHandler.post { callback(Result.success(it)) }
+                }
+                .onFailure { mainHandler.post { callback(Result.failure(it)) } }
+        }
+    }
+
+    fun contract(callback: (Result<CoreRuntimeProtocol.CoreContract>) -> Unit) {
+        withService { connected ->
+            runCatching { CoreRuntimeProtocol.CoreContract.parseFrom(connected.getContract()) }
+                .onSuccess { mainHandler.post { callback(Result.success(it)) } }
+                .onFailure { mainHandler.post { callback(Result.failure(it)) } }
+        }
+    }
+
+    fun coreString(
+        kind: CoreRuntimeProtocol.CoreUtilityKind,
+        arguments: List<String> = emptyList(),
+        callback: (Result<String>) -> Unit,
+    ) {
+        utility(kind, arguments.map { it.toByteArray(Charsets.UTF_8) }) { result ->
+            callback(result.map { it.toString(Charsets.UTF_8) })
+        }
+    }
+
+    fun checkConfig(config: String, callback: (Result<Unit>) -> Unit) {
+        utility(
+            CoreRuntimeProtocol.CoreUtilityKind.CORE_UTILITY_KIND_CHECK_CONFIG,
+            listOf(config.toByteArray(Charsets.UTF_8)),
+        ) { result -> callback(result.map { Unit }) }
+    }
+
+    fun lookupOutboundExternalInfo(
+        outboundId: String,
+        callback: (Result<Map<String, String>>) -> Unit,
+    ) {
+        utility(
+            CoreRuntimeProtocol.CoreUtilityKind.CORE_UTILITY_KIND_LOOKUP_OUTBOUND_EXTERNAL_INFO,
+            listOf(outboundId.toByteArray(Charsets.UTF_8)),
+        ) { result ->
+            callback(
+                result.mapCatching { payload ->
+                    val value = CoreRuntimeProtocol.OutboundExternalInfo.parseFrom(payload)
+                    mapOf("ip" to value.ipAddress, "countryCode" to value.countryCode)
+                },
+            )
+        }
+    }
+
+    fun updateNotificationPresentation(
+        value: CoreRuntimeProtocol.NotificationPresentation,
+        callback: (Result<Unit>) -> Unit,
+    ) {
+        utility(
+            CoreRuntimeProtocol.CoreUtilityKind.CORE_UTILITY_KIND_UPDATE_NOTIFICATION,
+            listOf(value.toByteArray()),
+        ) { result -> callback(result.map { Unit }) }
+    }
+
+    fun refreshRuntimeFlags(callback: (Result<Unit>) -> Unit = {}) {
+        utility(
+            CoreRuntimeProtocol.CoreUtilityKind.CORE_UTILITY_KIND_REFRESH_RUNTIME_FLAGS,
+            emptyList(),
+        ) { result -> callback(result.map { Unit }) }
+    }
+
+    private fun utility(
+        kind: CoreRuntimeProtocol.CoreUtilityKind,
+        arguments: List<ByteArray>,
+        callback: (Result<ByteArray>) -> Unit,
+    ) {
+        val id = UUID.randomUUID().toString()
+        val request = CoreRuntimeProtocol.CoreUtilityRequest.newBuilder()
+            .setSchemaVersion(SCHEMA_VERSION)
+            .setRequestId(id)
+            .setKind(kind)
+            .addAllArguments(arguments.map { ByteString.copyFrom(it) })
+            .build()
+        withService { connected ->
+            ipcExecutor.execute {
+                val result = runCatching {
+                    val response = CoreRuntimeProtocol.CoreUtilityResponse.parseFrom(
+                        connected.executeUtility(request.toByteArray()),
+                    )
+                    if (response.hasError()) throw response.error.toException()
+                    response.payload.toByteArray()
+                }
+                mainHandler.post { callback(result) }
+            }
+        }
+    }
+
+    private fun submit(
+        builder: CoreRuntimeProtocol.RuntimeCommand.Builder,
+        callback: (Result<Unit>) -> Unit,
+    ) {
+        val id = UUID.randomUUID().toString()
+        val command = builder
+            .setSchemaVersion(SCHEMA_VERSION)
+            .setCommandId(id)
+            .setIssuedAtMillis(System.currentTimeMillis())
+            .build()
+        resultCallbacks[id] = callback
+        mainHandler.postDelayed({
+            resultCallbacks.remove(id)?.invoke(
+                Result.failure(
+                    CoreRuntimeException(
+                        "runtime.command.deadline",
+                        "command_result",
+                        true,
+                        "HydraCore did not return a command result.",
+                    ),
+                ),
+            )
+        }, COMMAND_RESULT_DEADLINE_MILLIS)
+        withService { connected ->
+            val receiptResult = runCatching {
+                CoreRuntimeProtocol.CommandReceipt.parseFrom(connected.submit(command.toByteArray()))
+            }
+            receiptResult.onSuccess { receipt ->
+                if (receipt.status != CoreRuntimeProtocol.ReceiptStatus.RECEIPT_STATUS_ACCEPTED) {
+                    resultCallbacks.remove(id)?.let { completion ->
+                        mainHandler.post { completion(Result.failure(receipt.rejection.toException())) }
+                    }
+                }
+            }.onFailure { error ->
+                resultCallbacks.remove(id)?.let { completion ->
+                    mainHandler.post { completion(Result.failure(error)) }
+                }
+            }
+        }
+    }
+
+    private fun withService(action: (ICoreRuntimeService) -> Unit) {
+        val connected = synchronized(lock) {
+            service?.also { return@synchronized it }
+            waitingForService += action
+            null
+        }
+        if (connected != null) action(connected) else connect()
+    }
+
+    private fun completeCommand(result: CoreRuntimeProtocol.CommandResult) {
+        val callback = resultCallbacks.remove(result.commandId) ?: return
+        mainHandler.post {
+            if (result.outcome == CoreRuntimeProtocol.CommandOutcome.COMMAND_OUTCOME_SUCCEEDED) {
+                callback(Result.success(Unit))
+            } else {
+                callback(Result.failure(result.error.toException()))
+            }
+        }
+    }
+
+    private fun disconnect(error: Throwable) {
+        synchronized(lock) {
+            service = null
+            binding = false
+        }
+        failPending(error)
+        mainHandler.post {
+            eventConsumers.forEach { consumer ->
+                consumer.error("runtime_ipc_disconnected", "HydraCore process disconnected.", null)
+            }
+        }
+    }
+
+    private fun failPending(error: Throwable) {
+        val callbacks = resultCallbacks.values.toList()
+        resultCallbacks.clear()
+        val probeCallbacks = probeResultCallbacks.values.toList()
+        probeResultCallbacks.clear()
+        mainHandler.post {
+            callbacks.forEach { it(Result.failure(error)) }
+            probeCallbacks.forEach { it(Result.failure(error)) }
+        }
+    }
+
+    private fun CoreRuntimeProtocol.CoreError.toException(): CoreRuntimeException =
+        CoreRuntimeException(code, stage, retryable, safeMessage.ifBlank { "HydraCore command failed." })
+
+    private fun CoreRuntimeProtocol.RuntimeEvent.toLegacyEventMaps(): List<Map<String, Any?>> = when {
+        hasSnapshot() -> snapshot.toLegacyEventMaps()
+        hasCommandResult() -> listOf(mapOf(
+            "type" to "commandResult",
+            "commandId" to commandResult.commandId,
+            "outcome" to commandResult.outcome.name,
+            "generation" to commandResult.generation,
+            "errorCode" to commandResult.error.code,
+            "error" to commandResult.error.safeMessage,
+        ))
+        hasProbeSession() -> listOf(mapOf(
+            "type" to "urlTestSession",
+            "sessionId" to probeSession.sessionId,
+            "state" to probeSession.state.name,
+            "completedCount" to probeSession.completedCount,
+            "requestedCount" to probeSession.requestedCount,
+        ))
+        hasProbeResult() -> listOf(mapOf(
+            "type" to "urlTestResult",
+            "sessionId" to probeResult.sessionId,
+            "tag" to probeResult.outboundId,
+            "delay" to probeResult.delayMillis,
+            "time" to probeResult.measuredAtMillis,
+            "errorCode" to probeResult.error.code,
+            "error" to probeResult.error.safeMessage,
+        ))
+        hasLog() -> listOf(mapOf(
+            "type" to "log",
+            "level" to log.level,
+            "message" to log.safeMessage,
+        ))
+        else -> emptyList()
+    }
+
+    private fun CoreRuntimeProtocol.RuntimeSnapshot.toLegacyEventMaps(): List<Map<String, Any?>> =
+        listOf(
+            toLegacyStateMap(),
+            mapOf(
+                "type" to "status",
+                "uplink" to traffic.uplinkBytesPerSecond,
+                "downlink" to traffic.downlinkBytesPerSecond,
+                "uplinkTotal" to traffic.uplinkTotalBytes,
+                "downlinkTotal" to traffic.downlinkTotalBytes,
+                "trafficAvailable" to true,
+            ),
+            mapOf(
+                "type" to "groups",
+                "runtimeGeneration" to generation,
+                "groups" to outboundGroupsList.map { group ->
+                    mapOf(
+                        "tag" to group.groupId,
+                        "selected" to group.selectedOutboundId,
+                        "items" to group.outboundsList.map { item ->
+                            mapOf(
+                                "tag" to item.outboundId,
+                                "delay" to item.delayMillis,
+                                "time" to item.measuredAtMillis,
+                                "status" to item.status,
+                                "errorCode" to item.error.code,
+                                "error" to item.error.safeMessage,
+                            )
+                        },
+                    )
+                },
+            ),
+            mapOf(
+                "type" to "urlTestSessions",
+                "runtimeGeneration" to generation,
+                "sequence" to lastSequence,
+                "reset" to true,
+                "sessions" to probeSessionsList.map { session ->
+                    mapOf(
+                        "id" to session.sessionId,
+                        "state" to session.state.name,
+                        "startedAt" to session.startedAtMillis,
+                        "completedAt" to session.finishedAtMillis,
+                        "total" to session.requestedCount,
+                        "completed" to session.completedCount,
+                    )
+                },
+            ),
+        )
+
+    private fun CoreRuntimeProtocol.RuntimeSnapshot.toLegacyStateMap(): Map<String, Any?> = mapOf(
+        "type" to "state",
+        "running" to (state == CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING),
+        "state" to state.name,
+        "mode" to when (mode) {
+            CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_VPN -> "vpn"
+            CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_PROXY -> "proxy"
+            else -> ""
+        },
+        "runtimeGeneration" to generation,
+        "uplink" to traffic.uplinkBytesPerSecond,
+        "downlink" to traffic.downlinkBytesPerSecond,
+        "uplinkTotal" to traffic.uplinkTotalBytes,
+        "downlinkTotal" to traffic.downlinkTotalBytes,
+        "lastError" to lastError.safeMessage,
+        "errorCode" to lastError.code,
+        "sequence" to lastSequence,
+        "processEpoch" to processEpoch,
+    )
+
+    companion object {
+        private const val SCHEMA_VERSION = 1
+        private const val COMMAND_RESULT_DEADLINE_MILLIS = 30_000L
+        private const val ALL_OUTBOUNDS = "*"
+    }
+}

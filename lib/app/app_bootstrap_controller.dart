@@ -15,6 +15,28 @@ typedef CoreCapabilitiesLoader = Future<HydraCoreCapabilities> Function();
 typedef AdBlockStatusLoader = Future<AdBlockRuleSetStatus> Function();
 typedef RussiaRouteStatusLoader = Future<RussiaRouteDataStatus> Function();
 
+enum AppBootstrapFailureStage { storageRecovery, coreRecovery }
+
+/// A recoverable bootstrap failure that must be surfaced to the user.
+///
+/// Production bootstrap deliberately does not substitute in-memory state or
+/// invented core capabilities. The UI can stay available and offer recovery,
+/// but connect remains fail-closed until this failure is repaired.
+class AppBootstrapException implements Exception {
+  const AppBootstrapException({
+    required this.stage,
+    required this.cause,
+    required this.stackTrace,
+  });
+
+  final AppBootstrapFailureStage stage;
+  final Object cause;
+  final StackTrace stackTrace;
+
+  @override
+  String toString() => 'AppBootstrapException($stage): $cause';
+}
+
 class AppBootstrapResult {
   const AppBootstrapResult({
     required this.store,
@@ -100,8 +122,6 @@ class AppBootstrapController {
     late AppSettingsState state;
     var adBlockStatus = const AdBlockRuleSetStatus.unavailable();
     var russiaRouteDataStatus = const RussiaRouteDataStatus.unavailable();
-    final appVersionInfoFuture = readAppVersionInfo();
-    final coreCapabilitiesFuture = _readCoreCapabilities();
     final usesInMemoryStore = providedStore is MemoryAppSettingsStore;
 
     try {
@@ -129,21 +149,41 @@ class AppBootstrapController {
     } catch (error, stackTrace) {
       AppLogStore.error(
         'bootstrap',
-        'Failed to bootstrap app, using in-memory defaults: '
-            '$error\n$stackTrace',
+        'Durable storage bootstrap failed: $error\n$stackTrace',
       );
       if (providedStore == null && store != null) {
         try {
           await store.close();
         } catch (_) {}
       }
-      store = MemoryAppSettingsStore();
-      ownsStore = providedStore == null;
-      state = _fallbackSettingsState();
+      throw AppBootstrapException(
+        stage: AppBootstrapFailureStage.storageRecovery,
+        cause: error,
+        stackTrace: stackTrace,
+      );
     }
 
+    final appVersionInfoFuture = readAppVersionInfo();
+    final HydraCoreCapabilities coreCapabilities;
+    try {
+      coreCapabilities = await _readCoreCapabilities();
+    } catch (error, stackTrace) {
+      AppLogStore.error(
+        'bootstrap',
+        'HydraCore contract bootstrap failed: $error\n$stackTrace',
+      );
+      if (ownsStore) {
+        try {
+          await store.close();
+        } catch (_) {}
+      }
+      throw AppBootstrapException(
+        stage: AppBootstrapFailureStage.coreRecovery,
+        cause: error,
+        stackTrace: stackTrace,
+      );
+    }
     final appVersionInfo = await appVersionInfoFuture;
-    final coreCapabilities = await coreCapabilitiesFuture;
     final migration = CoreConfigMigration.plan(
       state: state,
       capabilities: coreCapabilities,
@@ -239,63 +279,10 @@ class AppBootstrapController {
   }
 
   Future<HydraCoreCapabilities> _readCoreCapabilities() async {
-    try {
-      return await _loadCoreCapabilities();
-    } catch (error) {
-      AppLogStore.warning(
-        'sing-box',
-        'Failed to read core capabilities, using legacy contract: $error',
-      );
-      return HydraCoreCapabilities.requiredV2;
+    final capabilities = await _loadCoreCapabilities();
+    if (!capabilities.isCompatibleRelease) {
+      throw const FormatException('Installed HydraCore is incompatible');
     }
-  }
-
-  AppSettingsState _fallbackSettingsState() {
-    return const AppSettingsState(
-      onboardingCompleted: false,
-      activeProfileId: '',
-      selectedProxyTag: '',
-      localeCode: 'system',
-      themePreference: AppThemePreference.system,
-      accentColorHex: 'default',
-      hapticEnabled: true,
-      hideServerIp: false,
-      progressiveBlurEnabled: false,
-      performanceMode: AppPerformanceMode.standard,
-      tlsFragmentationMode: TlsFragmentationMode.disabled,
-      vpnInboundEnabled: true,
-      vpnMtu: 1500,
-      vpnStrictRoute: true,
-      vpnTunImplementation: TunImplementationPreference.mixed,
-      proxyInboundEnabled: false,
-      proxyAllowLan: false,
-      proxyMixedListen: '127.0.0.1',
-      proxyMixedPort: 1080,
-      dnsDirectPreset: 'cloudflare',
-      dnsDirectResolver: 'udp://1.1.1.1',
-      dnsProxyPreset: 'cloudflare',
-      dnsProxyResolver: 'https://dns.cloudflare.com/dns-query',
-      dnsPreferIpv6: false,
-      russiaDnsDirectResolver: defaultRussiaDnsDirectResolver,
-      urlTestUrl: defaultUrlTestUrl,
-      urlTestIntervalSeconds: 1800,
-      urlTestTimeoutSeconds: 15,
-      urlTestConcurrency: 8,
-      urlTestUnavailableCheckIntervalSeconds: 120,
-      locationLookupLimit: 2,
-      locationLookupTimeoutSeconds: 5,
-      locationLookupConcurrency: 2,
-      blockLeaks: false,
-      adBlockEnabled: false,
-      useRussiaRouteData: false,
-      bypassLocalNetwork: true,
-      splitRoutingMode: SplitRoutingMode.disabled,
-      splitRoutingPackages: <String>[],
-      singBoxLogLevel: 'warning',
-      experimentalTcpFastOpen: true,
-      experimentalTcpMultiPath: false,
-      experimentalInterruptExistingConnections: true,
-      experimentalUrlTestStrictTolerance: true,
-    );
+    return capabilities;
   }
 }

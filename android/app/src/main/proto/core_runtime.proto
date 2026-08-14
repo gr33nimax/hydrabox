@@ -1,0 +1,372 @@
+syntax = "proto3";
+
+package hydrabox.runtime.v1;
+
+option java_package = "io.hydrabox.client.runtime.proto";
+option java_outer_classname = "CoreRuntimeProtocol";
+option java_multiple_files = false;
+option optimize_for = LITE_RUNTIME;
+
+message SchemaRange {
+  uint32 minimum = 1;
+  uint32 maximum = 2;
+}
+
+message CoreContract {
+  uint32 api_major = 1;
+  uint32 api_minor = 2;
+  string core_version = 3;
+  string process_epoch = 4;
+  SchemaRange runtime_snapshot_schema = 5;
+  SchemaRange runtime_event_schema = 6;
+  SchemaRange config_schema = 7;
+  SchemaRange subscription_schema = 8;
+  repeated string optional_feature_ids = 9;
+  repeated string supported_protocol_ids = 10;
+  bytes capabilities_sha256 = 11;
+}
+
+enum RuntimeState {
+  RUNTIME_STATE_UNSPECIFIED = 0;
+  RUNTIME_STATE_STOPPED = 1;
+  RUNTIME_STATE_PREPARING = 2;
+  RUNTIME_STATE_STARTING = 3;
+  RUNTIME_STATE_RUNNING = 4;
+  RUNTIME_STATE_STOPPING = 5;
+  RUNTIME_STATE_RECOVERING = 6;
+  RUNTIME_STATE_FAILED = 7;
+}
+
+enum RuntimeMode {
+  RUNTIME_MODE_UNSPECIFIED = 0;
+  RUNTIME_MODE_VPN = 1;
+  RUNTIME_MODE_PROXY = 2;
+}
+
+enum CommandKind {
+  COMMAND_KIND_UNSPECIFIED = 0;
+  COMMAND_KIND_START = 1;
+  COMMAND_KIND_STOP = 2;
+  COMMAND_KIND_RELOAD = 3;
+  COMMAND_KIND_SELECT_OUTBOUND = 4;
+  COMMAND_KIND_START_PROBE = 5;
+  COMMAND_KIND_CANCEL_PROBE = 6;
+  COMMAND_KIND_REQUEST_RECOVERY = 7;
+}
+
+message StartRuntime {
+  RuntimeMode mode = 1;
+  bytes compiled_config = 2;
+  bytes config_sha256 = 3;
+  uint64 settings_revision = 4;
+  bool restart_core = 5;
+  bool apply_config = 6;
+}
+
+message StopRuntime { string reason = 1; }
+message ReloadRuntime { bytes expected_config_sha256 = 1; }
+message SelectOutbound { string group_id = 1; string outbound_id = 2; }
+message CancelProbe { string session_id = 1; }
+message RequestRecovery { string reason = 1; }
+
+message RuntimeCommand {
+  uint32 schema_version = 1;
+  string command_id = 2;
+  uint64 issued_at_millis = 3;
+  uint64 expected_generation = 4;
+  CommandKind kind = 5;
+  oneof payload {
+    StartRuntime start = 10;
+    StopRuntime stop = 11;
+    ReloadRuntime reload = 12;
+    SelectOutbound select_outbound = 13;
+    ProbeRequest start_probe = 14;
+    CancelProbe cancel_probe = 15;
+    RequestRecovery request_recovery = 16;
+  }
+}
+
+enum ReceiptStatus {
+  RECEIPT_STATUS_UNSPECIFIED = 0;
+  RECEIPT_STATUS_ACCEPTED = 1;
+  RECEIPT_STATUS_REJECTED = 2;
+}
+
+message CommandReceipt {
+  uint32 schema_version = 1;
+  string command_id = 2;
+  ReceiptStatus status = 3;
+  string process_epoch = 4;
+  uint64 generation = 5;
+  uint64 accepted_at_millis = 6;
+  CoreError rejection = 7;
+}
+
+enum CommandOutcome {
+  COMMAND_OUTCOME_UNSPECIFIED = 0;
+  COMMAND_OUTCOME_SUCCEEDED = 1;
+  COMMAND_OUTCOME_FAILED = 2;
+  COMMAND_OUTCOME_CANCELLED = 3;
+}
+
+message CommandResult {
+  uint32 schema_version = 1;
+  string command_id = 2;
+  CommandOutcome outcome = 3;
+  RuntimeState final_state = 4;
+  uint64 generation = 5;
+  uint64 completed_at_millis = 6;
+  CoreError error = 7;
+}
+
+enum UserAction {
+  USER_ACTION_UNSPECIFIED = 0;
+  USER_ACTION_RETRY = 1;
+  USER_ACTION_REPAIR_CORE = 2;
+  USER_ACTION_SELECT_PROFILE = 3;
+  USER_ACTION_GRANT_PERMISSION = 4;
+  USER_ACTION_ROLLBACK = 5;
+  USER_ACTION_EXPORT_DIAGNOSTICS = 6;
+}
+
+message CoreError {
+  string code = 1;
+  string stage = 2;
+  bool retryable = 3;
+  UserAction user_action = 4;
+  string safe_message = 5;
+  string correlation_id = 6;
+  map<string, string> redacted_diagnostics = 7;
+}
+
+message NetworkSnapshot {
+  bool available = 1;
+  string interface_name = 2;
+  int32 interface_index = 3;
+  uint64 generation = 4;
+  string fingerprint = 5;
+  uint64 updated_at_millis = 6;
+}
+
+message TrafficSnapshot {
+  uint64 uplink_bytes_per_second = 1;
+  uint64 downlink_bytes_per_second = 2;
+  uint64 uplink_total_bytes = 3;
+  uint64 downlink_total_bytes = 4;
+  uint64 sampled_at_millis = 5;
+}
+
+message RuntimeSnapshot {
+  uint32 schema_version = 1;
+  string process_epoch = 2;
+  uint64 generation = 3;
+  uint64 last_sequence = 4;
+  RuntimeState state = 5;
+  RuntimeMode mode = 6;
+  bytes active_config_sha256 = 7;
+  map<string, string> selected_outbound_ids = 8;
+  NetworkSnapshot network = 9;
+  TrafficSnapshot traffic = 10;
+  CoreError last_error = 11;
+  uint64 updated_at_millis = 12;
+  bool healthy = 13;
+  repeated OutboundGroupSnapshot outbound_groups = 14;
+  repeated ProbeSession probe_sessions = 15;
+}
+
+message RuntimeLog {
+  string level = 1;
+  string safe_message = 2;
+  uint64 emitted_at_millis = 3;
+}
+
+message OutboundProbeValue {
+  string outbound_id = 1;
+  uint64 delay_millis = 2;
+  uint64 measured_at_millis = 3;
+  string status = 4;
+  CoreError error = 5;
+}
+
+message OutboundGroupSnapshot {
+  string group_id = 1;
+  string selected_outbound_id = 2;
+  repeated OutboundProbeValue outbounds = 3;
+}
+
+message OutboundGroupsSnapshot { repeated OutboundGroupSnapshot groups = 1; }
+
+message RuntimeEvent {
+  uint32 schema_version = 1;
+  string process_epoch = 2;
+  uint64 sequence = 3;
+  uint64 generation = 4;
+  uint64 emitted_at_millis = 5;
+  oneof payload {
+    RuntimeSnapshot snapshot = 10;
+    CommandResult command_result = 11;
+    ProbeSession probe_session = 12;
+    ProbeResult probe_result = 13;
+    CoreError error = 14;
+    RuntimeLog log = 15;
+    OutboundGroupsSnapshot outbound_groups = 16;
+    NetworkSnapshot network = 17;
+    TrafficSnapshot traffic = 18;
+  }
+}
+
+message CompilePlanRequest {
+  uint32 schema_version = 1;
+  bytes subscription_document = 2;
+  bytes local_policy = 3;
+  string client_version = 4;
+}
+
+message CompiledPlan {
+  uint32 schema_version = 1;
+  bytes config_bytes = 2;
+  bytes sha256 = 3;
+  bytes presentation_projection = 4;
+  repeated string warnings = 5;
+  repeated string required_capability_ids = 6;
+  string apply_policy = 7;
+}
+
+message ProbeRequest {
+  uint32 schema_version = 1;
+  string session_id = 2;
+  repeated string outbound_ids = 3;
+  string url = 4;
+  uint32 timeout_millis = 5;
+  uint32 concurrency = 6;
+  string network_fingerprint = 7;
+  uint64 deadline_at_millis = 8;
+  string group_id = 9;
+  bytes compiled_config = 10;
+  bytes config_sha256 = 11;
+}
+
+enum ProbeSessionState {
+  PROBE_SESSION_STATE_UNSPECIFIED = 0;
+  PROBE_SESSION_STATE_RUNNING = 1;
+  PROBE_SESSION_STATE_COMPLETED = 2;
+  PROBE_SESSION_STATE_PARTIAL = 3;
+  PROBE_SESSION_STATE_CANCELLED = 4;
+  PROBE_SESSION_STATE_TIMED_OUT = 5;
+}
+
+message ProbeSession {
+  string session_id = 1;
+  ProbeSessionState state = 2;
+  uint32 requested_count = 3;
+  uint32 completed_count = 4;
+  uint64 started_at_millis = 5;
+  uint64 finished_at_millis = 6;
+  string network_fingerprint = 7;
+}
+
+message ProbeResult {
+  string session_id = 1;
+  string outbound_id = 2;
+  uint64 delay_millis = 3;
+  uint64 measured_at_millis = 4;
+  string network_fingerprint = 5;
+  CoreError error = 6;
+}
+
+message SubscriptionInspectRequest {
+  uint32 schema_version = 1;
+  bytes document = 2;
+  bytes local_policy = 3;
+  string client_version = 4;
+}
+
+message SubscriptionChange {
+  string stable_outbound_id = 1;
+  string display_name = 2;
+  string change_type = 3;
+}
+
+message SubscriptionPreview {
+  uint32 schema_version = 1;
+  repeated SubscriptionChange changes = 2;
+  repeated string unsupported_items = 3;
+  repeated string permission_changes = 4;
+  repeated string warnings = 5;
+  bytes plan_sha256 = 6;
+}
+
+enum CoreUtilityKind {
+  CORE_UTILITY_KIND_UNSPECIFIED = 0;
+  CORE_UTILITY_KIND_VERSION = 1;
+  CORE_UTILITY_KIND_CAPABILITIES = 2;
+  CORE_UTILITY_KIND_BUILD_INFO = 3;
+  CORE_UTILITY_KIND_VALIDATE_CONFIG = 4;
+  CORE_UTILITY_KIND_VALIDATE_SUBSCRIPTION = 5;
+  CORE_UTILITY_KIND_INSPECT_SUBSCRIPTION = 6;
+  CORE_UTILITY_KIND_OPEN_SUBSCRIPTION_JWE = 7;
+  CORE_UTILITY_KIND_VALIDATE_SUBSCRIPTION_JWE = 8;
+  CORE_UTILITY_KIND_INSPECT_SUBSCRIPTION_JWE = 9;
+  CORE_UTILITY_KIND_CHECK_CONFIG = 10;
+  CORE_UTILITY_KIND_LOOKUP_OUTBOUND_EXTERNAL_INFO = 11;
+  CORE_UTILITY_KIND_UPDATE_NOTIFICATION = 12;
+  CORE_UTILITY_KIND_REFRESH_RUNTIME_FLAGS = 13;
+}
+
+message CoreUtilityRequest {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  CoreUtilityKind kind = 3;
+  repeated bytes arguments = 4;
+}
+
+message CoreUtilityResponse {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  bytes payload = 3;
+  CoreError error = 4;
+}
+
+message OutboundExternalInfo {
+  string outbound_id = 1;
+  string ip_address = 2;
+  string country_code = 3;
+}
+
+message CoreProbeRequest {
+  uint32 schema_version = 1;
+  uint64 release_sequence = 2;
+  bytes artifact_sha256 = 3;
+  repeated bytes validation_fixtures = 4;
+}
+
+message CoreProbeReport {
+  uint32 schema_version = 1;
+  uint64 release_sequence = 2;
+  bytes artifact_sha256 = 3;
+  bool healthy = 4;
+  string loaded_source = 5;
+  CoreContract contract = 6;
+  uint32 validated_fixture_count = 7;
+  CoreError error = 8;
+}
+
+message NotificationPresentation {
+  bool detailed = 1;
+  string traffic_display_mode = 2;
+  string title = 3;
+  optional int64 latency_millis = 4;
+  string group_id = 5;
+  string target_outbound_id = 6;
+  string priority_outbound_id = 7;
+  string excluded_outbound_id = 8;
+  string url = 9;
+  uint32 timeout_millis = 10;
+  uint32 concurrency = 11;
+  uint32 deadline_millis = 12;
+  string connected_text = 13;
+  string checking_text = 14;
+  string unavailable_text = 15;
+  string refresh_label = 16;
+  string stop_label = 17;
+}

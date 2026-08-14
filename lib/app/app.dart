@@ -124,6 +124,8 @@ class _HydraBoxClientState extends State<HydraBoxClient>
   bool _autoRefreshInFlight = false;
   bool _ownsStore = false;
   bool _ready = false;
+  bool _bootstrapInFlight = false;
+  AppBootstrapFailureStage? _bootstrapFailureStage;
   bool _onboardingCompleted = false;
   String _acceptedLegalVersion = '';
   int? _acceptedLegalAtMillis;
@@ -2573,10 +2575,45 @@ class _HydraBoxClientState extends State<HydraBoxClient>
   }
 
   Future<void> _bootstrap() async {
+    if (_bootstrapInFlight) {
+      return;
+    }
+    _bootstrapInFlight = true;
+    if (mounted && _bootstrapFailureStage != null) {
+      setState(() => _bootstrapFailureStage = null);
+    }
     final bootstrapStopwatch = Stopwatch()..start();
-    final bootstrap = await _bootstrapController.load(
-      providedStore: widget.store,
-    );
+    final AppBootstrapResult bootstrap;
+    try {
+      bootstrap = await _bootstrapController.load(providedStore: widget.store);
+    } on AppBootstrapException catch (error) {
+      bootstrapStopwatch.stop();
+      AppLogStore.error(
+        'bootstrap',
+        'Recovery required stage=${error.stage.name}',
+      );
+      if (mounted) {
+        setState(() {
+          _bootstrapInFlight = false;
+          _bootstrapFailureStage = error.stage;
+        });
+      }
+      return;
+    } catch (error, stackTrace) {
+      bootstrapStopwatch.stop();
+      AppLogStore.error(
+        'bootstrap',
+        'Unexpected bootstrap failure: $error\n$stackTrace',
+      );
+      if (mounted) {
+        setState(() {
+          _bootstrapInFlight = false;
+          _bootstrapFailureStage =
+              AppBootstrapFailureStage.storageRecovery;
+        });
+      }
+      return;
+    }
     final criticalBootstrapMs = bootstrapStopwatch.elapsedMilliseconds;
     final store = bootstrap.store;
     final ownsStore = bootstrap.ownsStore;
@@ -2629,6 +2666,8 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       _clientVersionCode = appVersionInfo.updateBuildNumber;
       _clientPackageName = appVersionInfo.packageName;
       _ready = true;
+      _bootstrapInFlight = false;
+      _bootstrapFailureStage = null;
       _onboardingCompleted = state.onboardingCompleted;
       _acceptedLegalVersion = state.acceptedLegalVersion;
       _acceptedLegalAtMillis = state.acceptedLegalAtMillis;
@@ -7503,6 +7542,61 @@ class _HydraBoxClientState extends State<HydraBoxClient>
 
   Widget _buildAppHome(BuildContext context) {
     if (!_ready) {
+      final failureStage = _bootstrapFailureStage;
+      if (failureStage != null) {
+        final l10n = AppLocalizations.of(context);
+        final isStorage =
+            failureStage == AppBootstrapFailureStage.storageRecovery;
+        return Scaffold(
+          key: const ValueKey('bootstrap-recovery'),
+          body: SafeArea(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 460),
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        isStorage
+                            ? Icons.storage_rounded
+                            : Icons.memory_rounded,
+                        size: 52,
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                      const Gap(20),
+                      Text(
+                        isStorage
+                            ? l10n.bootstrapStorageRecoveryTitle
+                            : l10n.bootstrapCoreRecoveryTitle,
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                      const Gap(12),
+                      Text(
+                        isStorage
+                            ? l10n.bootstrapStorageRecoveryMessage
+                            : l10n.bootstrapCoreRecoveryMessage,
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyLarge,
+                      ),
+                      const Gap(24),
+                      FilledButton.icon(
+                        onPressed: _bootstrapInFlight
+                            ? null
+                            : () => unawaited(_bootstrap()),
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: Text(l10n.updatesRetryAction),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      }
       return const Scaffold(
         key: ValueKey('loading'),
         body: Center(child: CircularProgressIndicator()),

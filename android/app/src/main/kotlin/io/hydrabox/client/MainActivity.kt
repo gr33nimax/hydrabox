@@ -32,6 +32,9 @@ import io.hydrabox.client.singbox.HydraBoxProxyService
 import io.hydrabox.client.singbox.HydraBoxVpnPlatformInterface
 import io.hydrabox.client.singbox.HydraBoxVpnService
 import io.hydrabox.client.singbox.SingboxController
+import io.hydrabox.client.singbox.RuntimeEventConsumer
+import io.hydrabox.client.runtime.CoreRuntimeClient
+import io.hydrabox.client.runtime.proto.CoreRuntimeProtocol
 import io.hydrabox.client.generated.FlutterError as PigeonFlutterError
 import io.hydrabox.client.generated.NetworkInterfaceStateMessage
 import io.hydrabox.client.generated.PreconnectUrlTestRequestMessage
@@ -44,7 +47,6 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
-import io.nekohasekai.libbox.Libbox
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -92,6 +94,54 @@ internal fun hasHydraKeyQuery(rawQuery: String?): Boolean =
         decodedName.equals("hydra-key", ignoreCase = true)
     }
 
+private fun CoreRuntimeProtocol.RuntimeSnapshot.toLegacyRuntimeMap(): Map<String?, Any?> = mapOf(
+    "running" to (state == CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING),
+    "state" to state.name,
+    "mode" to when (mode) {
+        CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_VPN -> "vpn"
+        CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_PROXY -> "proxy"
+        else -> ""
+    },
+    "runtimeGeneration" to generation,
+    "uplink" to traffic.uplinkBytesPerSecond,
+    "downlink" to traffic.downlinkBytesPerSecond,
+    "uplinkTotal" to traffic.uplinkTotalBytes,
+    "downlinkTotal" to traffic.downlinkTotalBytes,
+    "lastError" to lastError.safeMessage,
+    "errorCode" to lastError.code,
+    "processEpoch" to processEpoch,
+    "sequence" to lastSequence,
+    "groups" to outboundGroupsList.map { group ->
+        mapOf(
+            "tag" to group.groupId,
+            "selected" to group.selectedOutboundId,
+            "items" to group.outboundsList.map { item ->
+                mapOf(
+                    "tag" to item.outboundId,
+                    "delayMillis" to item.delayMillis,
+                    "delay" to item.delayMillis,
+                    "observedAt" to item.measuredAtMillis,
+                    "time" to item.measuredAtMillis,
+                    "status" to item.status,
+                    "errorCode" to item.error.code,
+                    "errorMessage" to item.error.safeMessage,
+                    "error" to item.error.safeMessage,
+                )
+            },
+        )
+    },
+    "urlTestSessions" to probeSessionsList.map { session ->
+        mapOf(
+            "id" to session.sessionId,
+            "state" to session.state.name,
+            "startedAt" to session.startedAtMillis,
+            "completedAt" to session.finishedAtMillis,
+            "total" to session.requestedCount,
+            "completed" to session.completedCount,
+        )
+    },
+)
+
 class MainActivity : FlutterFragmentActivity() {
     companion object {
         private const val TAG = "HydraBoxMainActivity"
@@ -129,8 +179,8 @@ class MainActivity : FlutterFragmentActivity() {
     private var pendingApkInstallResult: MethodChannel.Result? = null
     private var pendingNotificationPermissionResult: MethodChannel.Result? = null
     private var deepLinkEventSink: EventChannel.EventSink? = null
-    @Volatile
-    private var singboxEventSinkRegistration = 0L
+    private val coreRuntimeClient by lazy { CoreRuntimeClient(applicationContext) }
+    private var singboxEventConsumer: RuntimeEventConsumer? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private val ioExecutor = Executors.newSingleThreadExecutor()
     private val subscriptionNetworkExecutor = Executors.newFixedThreadPool(2)
@@ -244,35 +294,32 @@ class MainActivity : FlutterFragmentActivity() {
         )
     }
 
-    private fun invokeHydraCoreString(name: String, vararg arguments: String): String =
-        runCatching {
-            val method = Libbox::class.java.methods.firstOrNull { candidate ->
-                candidate.parameterCount == arguments.size &&
-                    candidate.name.equals(name, ignoreCase = true)
-            } ?: error("HydraCore API method $name is unavailable")
-            (method.invoke(null, *arguments) as? String)
-                ?: error("HydraCore API method $name returned no JSON")
-        }.onFailure { error ->
-            Log.w(TAG, "HydraCore API call $name failed", error)
-        }.getOrThrow()
-
-    private fun getHydraCoreCapabilities(): String =
-        invokeHydraCoreString("hydraCoreCapabilities")
+    private fun coreUtilityKind(name: String): CoreRuntimeProtocol.CoreUtilityKind = when (name) {
+        "hydraCoreCapabilities" ->
+            CoreRuntimeProtocol.CoreUtilityKind.CORE_UTILITY_KIND_CAPABILITIES
+        "hydraCoreBuildInfo" ->
+            CoreRuntimeProtocol.CoreUtilityKind.CORE_UTILITY_KIND_BUILD_INFO
+        "hydraCoreValidateConfig" ->
+            CoreRuntimeProtocol.CoreUtilityKind.CORE_UTILITY_KIND_VALIDATE_CONFIG
+        "hydraCoreValidateSubscription" ->
+            CoreRuntimeProtocol.CoreUtilityKind.CORE_UTILITY_KIND_VALIDATE_SUBSCRIPTION
+        "hydraCoreInspectSubscription" ->
+            CoreRuntimeProtocol.CoreUtilityKind.CORE_UTILITY_KIND_INSPECT_SUBSCRIPTION
+        "hydraCoreOpenSubscriptionJWE" ->
+            CoreRuntimeProtocol.CoreUtilityKind.CORE_UTILITY_KIND_OPEN_SUBSCRIPTION_JWE
+        "hydraCoreValidateSubscriptionJWE" ->
+            CoreRuntimeProtocol.CoreUtilityKind.CORE_UTILITY_KIND_VALIDATE_SUBSCRIPTION_JWE
+        "hydraCoreInspectSubscriptionJWE" ->
+            CoreRuntimeProtocol.CoreUtilityKind.CORE_UTILITY_KIND_INSPECT_SUBSCRIPTION_JWE
+        else -> throw IllegalArgumentException("Unsupported HydraCore utility operation")
+    }
 
     private fun runHydraCoreApi(
         callback: (Result<String>) -> Unit,
         name: String,
         vararg arguments: String,
     ) {
-        ioExecutor.execute {
-            runCatching { invokeHydraCoreString(name, *arguments) }
-                .onSuccess { value -> mainHandler.post { callback(Result.success(value)) } }
-                .onFailure { error ->
-                    mainHandler.post {
-                        callback(errorResult("hydracore_api_failed", error.message ?: error.toString()))
-                    }
-                }
-        }
+        coreRuntimeClient.coreString(coreUtilityKind(name), arguments.toList(), callback)
     }
 
     private fun runHydraCoreMethodCall(
@@ -280,14 +327,9 @@ class MainActivity : FlutterFragmentActivity() {
         name: String,
         vararg arguments: String,
     ) {
-        ioExecutor.execute {
-            runCatching { invokeHydraCoreString(name, *arguments) }
-                .onSuccess { value -> mainHandler.post { result.success(value) } }
-                .onFailure { error ->
-                    mainHandler.post {
-                        result.error("hydracore_api_failed", error.message, null)
-                    }
-                }
+        coreRuntimeClient.coreString(coreUtilityKind(name), arguments.toList()) { utilityResult ->
+            utilityResult.onSuccess(result::success)
+                .onFailure { error -> result.error("hydracore_api_failed", error.message, null) }
         }
     }
 
@@ -1440,16 +1482,26 @@ class MainActivity : FlutterFragmentActivity() {
                         callback(errorResult("empty_config", "Config is empty"))
                         return
                     }
-                    val result = unitResult(callback)
-                    writeConfigAndDispatch(config, result) {
-                        dispatchStartAfterConfigWrite(useVpn, result)
-                    }
+                    coreRuntimeClient.start(
+                        config = config.toByteArray(Charsets.UTF_8),
+                        useVpn = useVpn,
+                        callback = callback,
+                    )
                 }
 
                 override fun startPrepared(useVpn: Boolean, callback: (Result<Unit>) -> Unit) {
-                    val result = unitResult(callback)
-                    withPreparedConfig(result) {
-                        dispatchStartAfterConfigWrite(useVpn, result)
+                    ioExecutor.execute {
+                        runCatching { HydraBoxApplication.configFile.readBytes() }
+                            .onSuccess { config ->
+                                mainHandler.post {
+                                    coreRuntimeClient.start(config, useVpn, callback = callback)
+                                }
+                            }
+                            .onFailure { error ->
+                                mainHandler.post {
+                                    callback(errorResult("empty_config", error.message))
+                                }
+                            }
                     }
                 }
 
@@ -1463,10 +1515,13 @@ class MainActivity : FlutterFragmentActivity() {
                         callback(errorResult("empty_config", "Config is empty"))
                         return
                     }
-                    val result = unitResult(callback)
-                    writeConfigAndDispatch(config, result) {
-                        dispatchApplyConfigAfterConfigWrite(useVpn, restartCore, result)
-                    }
+                    coreRuntimeClient.start(
+                        config = config.toByteArray(Charsets.UTF_8),
+                        useVpn = useVpn,
+                        restartCore = restartCore,
+                        applyConfig = true,
+                        callback = callback,
+                    )
                 }
 
                 override fun applyPreparedConfig(
@@ -1474,9 +1529,24 @@ class MainActivity : FlutterFragmentActivity() {
                     restartCore: Boolean,
                     callback: (Result<Unit>) -> Unit,
                 ) {
-                    val result = unitResult(callback)
-                    withPreparedConfig(result) {
-                        dispatchApplyConfigAfterConfigWrite(useVpn, restartCore, result)
+                    ioExecutor.execute {
+                        runCatching { HydraBoxApplication.configFile.readBytes() }
+                            .onSuccess { config ->
+                                mainHandler.post {
+                                    coreRuntimeClient.start(
+                                        config = config,
+                                        useVpn = useVpn,
+                                        restartCore = restartCore,
+                                        applyConfig = true,
+                                        callback = callback,
+                                    )
+                                }
+                            }
+                            .onFailure { error ->
+                                mainHandler.post {
+                                    callback(errorResult("empty_config", error.message))
+                                }
+                            }
                     }
                 }
 
@@ -1515,28 +1585,17 @@ class MainActivity : FlutterFragmentActivity() {
                     flags.performanceMode?.let { HydraBoxApplication.performanceMode = it }
                     flags.memoryLimitEnabled?.let { HydraBoxApplication.memoryLimitEnabled = it }
                     if (heartbeatChanged) {
-                        HydraBoxDefaultNetworkMonitor.refreshHeartbeat()
+                        coreRuntimeClient.refreshRuntimeFlags()
                     }
                     callback(Result.success(Unit))
                 }
 
                 override fun reload(callback: (Result<Unit>) -> Unit) {
-                    val serviceClass = when (SingboxController.serviceMode) {
-                        "proxy" -> HydraBoxProxyService::class.java
-                        else -> HydraBoxVpnService::class.java
-                    }
-                    startService(Intent(this@MainActivity, serviceClass).setAction(HydraBoxService.ACTION_RELOAD))
-                    callback(Result.success(Unit))
+                    coreRuntimeClient.reload(callback)
                 }
 
                 override fun stop(reason: String, callback: (Result<Unit>) -> Unit) {
-                    dispatchStopRuntime(reason) { stopped ->
-                        if (stopped) {
-                            callback(Result.success(Unit))
-                        } else {
-                            callback(errorResult("stop_timeout", "Native service stop timed out"))
-                        }
-                    }
+                    coreRuntimeClient.stop(reason, callback)
                 }
 
                 override fun selectOutbound(
@@ -1549,11 +1608,11 @@ class MainActivity : FlutterFragmentActivity() {
                         callback(errorResult("missing_outbound", "Outbound tag is empty"))
                         return
                     }
-                    SingboxController.selectOutbound(groupTag.ifBlank { "select" }, normalizedTag) { selectionResult ->
-                        selectionResult
-                            .onSuccess { callback(Result.success(Unit)) }
-                            .onFailure { callback(errorResult("select_failed", it.message)) }
-                    }
+                    coreRuntimeClient.selectOutbound(
+                        groupTag.ifBlank { "select" },
+                        normalizedTag,
+                        callback,
+                    )
                 }
 
                 override fun addOutbound(
@@ -1565,11 +1624,12 @@ class MainActivity : FlutterFragmentActivity() {
                         callback(errorResult("missing_outbound", "Outbound JSON is empty"))
                         return
                     }
-                    SingboxController.addOutbound(selectorTag.ifBlank { "select" }, outboundJson) { addResult ->
-                        addResult
-                            .onSuccess { callback(Result.success(Unit)) }
-                            .onFailure { callback(errorResult("add_outbound_failed", it.message)) }
-                    }
+                    callback(
+                        errorResult(
+                            "add_outbound_unsupported",
+                            "Rebuild and apply the compiled runtime plan to add an outbound.",
+                        ),
+                    )
                 }
 
                 override fun removeOutbound(
@@ -1582,28 +1642,26 @@ class MainActivity : FlutterFragmentActivity() {
                         callback(errorResult("missing_outbound", "Outbound tag is empty"))
                         return
                     }
-                    SingboxController.removeOutbound(selectorTag.ifBlank { "select" }, normalizedTag) { removeResult ->
-                        removeResult
-                            .onSuccess { callback(Result.success(Unit)) }
-                            .onFailure { callback(errorResult("remove_outbound_failed", it.message)) }
-                    }
+                    callback(
+                        errorResult(
+                            "remove_outbound_unsupported",
+                            "Rebuild and apply the compiled runtime plan to remove an outbound.",
+                        ),
+                    )
                 }
 
                 override fun urlTest(request: UrlTestRequestMessage, callback: (Result<Unit>) -> Unit) {
-                    SingboxController.urlTest(
-                        groupTag = request.groupTag.ifBlank { "select" },
-                        targetOutboundTag = request.targetOutboundTag,
-                        priorityOutboundTag = request.priorityOutboundTag,
-                        excludeOutboundTag = request.excludeOutboundTag,
+                    val targets = request.targetOutboundTag.trim()
+                        .takeIf(String::isNotEmpty)?.let(::listOf).orEmpty()
+                    coreRuntimeClient.startProbe(
+                        groupId = request.groupTag.ifBlank { "select" },
+                        outboundIds = targets,
                         url = request.url,
                         timeoutMillis = request.timeoutMillis.toInt(),
                         concurrency = request.concurrency.toInt(),
                         deadlineMillis = request.deadlineMillis.toInt(),
-                        force = request.force,
-                    ) { urlTestResult ->
-                        urlTestResult
-                            .onSuccess { callback(Result.success(Unit)) }
-                            .onFailure { callback(errorResult("urltest_failed", it.message)) }
+                    ) { result ->
+                        callback(result.map { Unit })
                     }
                 }
 
@@ -1611,52 +1669,42 @@ class MainActivity : FlutterFragmentActivity() {
                     request: UrlTestRequestMessage,
                     callback: (Result<Map<String?, Any?>>) -> Unit,
                 ) {
-                    SingboxController.startManagedUrlTest(
-                        groupTag = request.groupTag.ifBlank { "select" },
-                        targetOutboundTag = request.targetOutboundTag,
-                        priorityOutboundTag = request.priorityOutboundTag,
-                        excludeOutboundTag = request.excludeOutboundTag,
+                    val targets = request.targetOutboundTag.trim()
+                        .takeIf(String::isNotEmpty)?.let(::listOf).orEmpty()
+                    coreRuntimeClient.startProbe(
+                        groupId = request.groupTag.ifBlank { "select" },
+                        outboundIds = targets,
                         url = request.url,
                         timeoutMillis = request.timeoutMillis.toInt(),
                         concurrency = request.concurrency.toInt(),
                         deadlineMillis = request.deadlineMillis.toInt(),
-                        force = request.force,
-                    ) { managedResult ->
-                        managedResult
-                            .onSuccess { callback(Result.success(pigeonMap(it))) }
-                            .onFailure { callback(errorResult("urltest_failed", it.message)) }
-                    }
+                        callback = callback,
+                    )
                 }
 
                 override fun getManagedUrlTestSession(
                     sessionId: String,
                     callback: (Result<Map<String?, Any?>>) -> Unit,
                 ) {
-                    SingboxController.getManagedUrlTestSession(sessionId) { sessionResult ->
-                        sessionResult
-                            .onSuccess { callback(Result.success(pigeonMap(it))) }
-                            .onFailure { callback(errorResult("urltest_session_failed", it.message)) }
-                    }
+                    coreRuntimeClient.getProbeSession(sessionId, callback)
                 }
 
                 override fun cancelManagedUrlTest(
                     sessionId: String,
                     callback: (Result<Map<String?, Any?>>) -> Unit,
                 ) {
-                    SingboxController.cancelManagedUrlTest(sessionId) { sessionResult ->
-                        sessionResult
-                            .onSuccess { callback(Result.success(pigeonMap(it))) }
-                            .onFailure { callback(errorResult("urltest_cancel_failed", it.message)) }
-                    }
+                    coreRuntimeClient.cancelProbe(sessionId, callback)
                 }
 
                 override fun getRuntimeSnapshot(
                     callback: (Result<Map<String?, Any?>>) -> Unit,
                 ) {
-                    SingboxController.getRuntimeSnapshot { snapshotResult ->
-                        snapshotResult
-                            .onSuccess { callback(Result.success(pigeonMap(it))) }
-                            .onFailure { callback(errorResult("runtime_snapshot_failed", it.message)) }
+                    coreRuntimeClient.snapshot { snapshotResult ->
+                        snapshotResult.onSuccess { snapshot ->
+                            callback(Result.success(snapshot.toLegacyRuntimeMap()))
+                        }.onFailure {
+                            callback(errorResult("runtime_snapshot_failed", it.message))
+                        }
                     }
                 }
 
@@ -1664,10 +1712,10 @@ class MainActivity : FlutterFragmentActivity() {
                     request: PreconnectUrlTestRequestMessage,
                     callback: (Result<PreconnectUrlTestResultMessage>) -> Unit,
                 ) {
-                    SingboxController.preconnectUrlTest(
-                        config = request.config,
-                        groupTag = request.groupTag,
-                        targetOutboundTag = request.targetOutboundTag,
+                    coreRuntimeClient.preconnectProbe(
+                        config = request.config.toByteArray(Charsets.UTF_8),
+                        groupId = request.groupTag,
+                        outboundId = request.targetOutboundTag,
                         url = request.url,
                         timeoutMillis = request.timeoutMillis.toInt(),
                         deadlineMillis = request.deadlineMillis.toInt(),
@@ -1676,23 +1724,21 @@ class MainActivity : FlutterFragmentActivity() {
                             callback(
                                 Result.success(
                                     PreconnectUrlTestResultMessage(
-                                        tag = value.tag,
+                                        tag = value.outboundId,
                                         delayMillis = value.delayMillis,
-                                        timeSeconds = value.timeSeconds,
-                                        status = value.status,
-                                        error = value.error,
-                                        errorCode = value.errorCode,
+                                        timeSeconds = value.measuredAtMillis / 1000L,
+                                        status = if (value.delayMillis > 0L) "available" else "unavailable",
+                                        error = value.error.safeMessage,
+                                        errorCode = value.error.code,
                                     ),
                                 ),
                             )
-                        }.onFailure {
-                            callback(errorResult("preconnect_urltest_failed", it.message))
-                        }
+                        }.onFailure { callback(errorResult("preconnect_urltest_failed", it.message)) }
                     }
                 }
 
                 override fun cancelPreconnectUrlTest(callback: (Result<Unit>) -> Unit) {
-                    SingboxController.cancelPreconnectUrlTest("flutter_request", callback)
+                    coreRuntimeClient.cancelPreconnectProbe(callback)
                 }
 
                 override fun removeUrlTestOutbounds(
@@ -1710,15 +1756,22 @@ class MainActivity : FlutterFragmentActivity() {
                         callback(Result.success(Unit))
                         return
                     }
-                    SingboxController.removeUrlTestOutbounds(normalizedGroupTag, normalizedTags) { updateResult ->
-                        updateResult
-                            .onSuccess { callback(Result.success(Unit)) }
-                            .onFailure { callback(errorResult("remove_urltest_outbounds_failed", it.message)) }
-                    }
+                    callback(
+                        errorResult(
+                            "remove_urltest_outbounds_unsupported",
+                            "Rebuild and apply the compiled runtime plan to change probe outbounds.",
+                        ),
+                    )
                 }
 
                 override fun status(callback: (Result<Map<String?, Any?>>) -> Unit) {
-                    callback(Result.success(runtimeStatusMap()))
+                    coreRuntimeClient.snapshot { snapshotResult ->
+                        snapshotResult.onSuccess { snapshot ->
+                            callback(Result.success(snapshot.toLegacyRuntimeMap()))
+                        }.onFailure {
+                            callback(errorResult("runtime_snapshot_failed", it.message))
+                        }
+                    }
                 }
 
                 override fun lookupOutboundExternalInfo(
@@ -1730,7 +1783,7 @@ class MainActivity : FlutterFragmentActivity() {
                         callback(errorResult("lookup_outbound_external_info_failed", "Outbound tag is empty"))
                         return
                     }
-                    SingboxController.lookupOutboundExternalInfo(normalizedTag) { lookupResult ->
+                    coreRuntimeClient.lookupOutboundExternalInfo(normalizedTag) { lookupResult ->
                         lookupResult
                             .onSuccess { callback(Result.success(pigeonMap(it))) }
                             .onFailure { callback(errorResult("lookup_outbound_external_info_failed", it.message)) }
@@ -1740,19 +1793,25 @@ class MainActivity : FlutterFragmentActivity() {
                 override fun getNetworkInterfaceState(
                     callback: (Result<NetworkInterfaceStateMessage>) -> Unit,
                 ) {
-                    val state = HydraBoxDefaultNetworkMonitor.currentInterfaceState("host_api")
-                    callback(
-                        Result.success(
-                            NetworkInterfaceStateMessage(
-                                available = state.available,
-                                interfaceName = state.interfaceName.ifBlank { null },
-                                interfaceIndex = state.interfaceIndex.toLong(),
-                                generation = state.generation,
-                                reason = state.reason,
-                                updatedAtMillis = state.updatedAtMillis,
-                            ),
-                        ),
-                    )
+                    coreRuntimeClient.snapshot { result ->
+                        result.onSuccess { snapshot ->
+                            val network = snapshot.network
+                            callback(
+                                Result.success(
+                                    NetworkInterfaceStateMessage(
+                                        available = network.available,
+                                        interfaceName = network.interfaceName.ifBlank { null },
+                                        interfaceIndex = network.interfaceIndex.toLong(),
+                                        generation = network.generation,
+                                        reason = if (network.available) "core_snapshot" else "unavailable",
+                                        updatedAtMillis = network.updatedAtMillis,
+                                    ),
+                                ),
+                            )
+                        }.onFailure {
+                            callback(errorResult("network_snapshot_failed", it.message))
+                        }
+                    }
                 }
 
                 override fun exportLogs(
@@ -1829,7 +1888,10 @@ class MainActivity : FlutterFragmentActivity() {
                 }
 
                 override fun getCoreVersion(callback: (Result<String>) -> Unit) {
-                    callback(Result.success(Libbox.version()))
+                    coreRuntimeClient.coreString(
+                        CoreRuntimeProtocol.CoreUtilityKind.CORE_UTILITY_KIND_VERSION,
+                        callback = callback,
+                    )
                 }
 
                 override fun getCoreCapabilities(callback: (Result<String>) -> Unit) {
@@ -1902,17 +1964,7 @@ class MainActivity : FlutterFragmentActivity() {
                 }
 
                 override fun checkConfig(config: String, callback: (Result<Unit>) -> Unit) {
-                    ioExecutor.execute {
-                        runCatching { Libbox.checkConfig(config) }
-                            .onSuccess {
-                                mainHandler.post { callback(Result.success(Unit)) }
-                            }
-                            .onFailure { error ->
-                                mainHandler.post {
-                                    callback(errorResult("config_check_failed", error.message ?: error.toString()))
-                                }
-                            }
-                    }
+                    coreRuntimeClient.checkConfig(config, callback)
                 }
 
                 override fun getPerformanceSnapshot(callback: (Result<Map<String?, Any?>>) -> Unit) {
@@ -1949,6 +2001,7 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        coreRuntimeClient.connect()
         setupSingboxHostApi(flutterEngine.dartExecutor.binaryMessenger)
 
         MethodChannel(
@@ -1978,13 +2031,22 @@ class MainActivity : FlutterFragmentActivity() {
                     if (events == null) {
                         return
                     }
-                    singboxEventSinkRegistration = SingboxController.registerEventSink(events)
+                    singboxEventConsumer?.let(coreRuntimeClient::unregisterEventConsumer)
+                    val consumer = object : RuntimeEventConsumer {
+                        override fun success(event: Any?) = events.success(event)
+
+                        override fun error(code: String, message: String?, details: Any?) =
+                            events.error(code, message, details)
+
+                        override fun endOfStream() = events.endOfStream()
+                    }
+                    singboxEventConsumer = consumer
+                    coreRuntimeClient.registerEventConsumer(consumer)
                 }
 
                 override fun onCancel(arguments: Any?) {
-                    val registration = singboxEventSinkRegistration
-                    singboxEventSinkRegistration = 0L
-                    SingboxController.clearEventSink(registration)
+                    singboxEventConsumer?.let(coreRuntimeClient::unregisterEventConsumer)
+                    singboxEventConsumer = null
                 }
             },
         )
@@ -2063,19 +2125,16 @@ class MainActivity : FlutterFragmentActivity() {
                 }
 
                 "getCoreVersion" -> {
-                    result.success(Libbox.version())
+                    coreRuntimeClient.coreString(
+                        CoreRuntimeProtocol.CoreUtilityKind.CORE_UTILITY_KIND_VERSION,
+                    ) { value ->
+                        value.onSuccess(result::success)
+                            .onFailure { result.error("hydracore_api_failed", it.message, null) }
+                    }
                 }
 
                 "getCoreCapabilities" -> {
-                    ioExecutor.execute {
-                        runCatching { getHydraCoreCapabilities() }
-                            .onSuccess { value -> mainHandler.post { result.success(value) } }
-                            .onFailure { error ->
-                                mainHandler.post {
-                                    result.error("hydracore_api_failed", error.message, null)
-                                }
-                            }
-                    }
+                    runHydraCoreMethodCall(result, "hydraCoreCapabilities")
                 }
 
                 "getHydraCoreBuildInfo" -> runHydraCoreMethodCall(
@@ -2125,13 +2184,10 @@ class MainActivity : FlutterFragmentActivity() {
 
                 "checkConfig" -> {
                     val config = call.argument<String>("config").orEmpty()
-                    ioExecutor.execute {
-                        runCatching { Libbox.checkConfig(config) }
-                            .onSuccess { mainHandler.post { result.success(null) } }
+                    coreRuntimeClient.checkConfig(config) { checkResult ->
+                        checkResult.onSuccess { result.success(null) }
                             .onFailure { error ->
-                                mainHandler.post {
-                                    result.error("config_check_failed", error.message, null)
-                                }
+                                result.error("config_check_failed", error.message, null)
                             }
                     }
                 }
@@ -2177,7 +2233,7 @@ class MainActivity : FlutterFragmentActivity() {
                         HydraBoxApplication.memoryLimitEnabled = memoryLimitEnabled
                     }
                     if (heartbeatChanged) {
-                        HydraBoxDefaultNetworkMonitor.refreshHeartbeat()
+                        coreRuntimeClient.refreshRuntimeFlags()
                     }
                     result.success(true)
                 }
@@ -2187,10 +2243,7 @@ class MainActivity : FlutterFragmentActivity() {
                     if (foreground == null) {
                         result.error("missing_foreground", "Foreground state is missing", null)
                     } else {
-                        SingboxController.setUiForeground(
-                            foreground,
-                            singboxEventSinkRegistration,
-                        )
+                        // Runtime event cadence is core-owned in 1.0.
                         result.success(true)
                     }
                 }
@@ -2201,7 +2254,28 @@ class MainActivity : FlutterFragmentActivity() {
 
                 "updateVpnNotificationPresentation" -> {
                     val arguments = call.arguments as? Map<*, *> ?: emptyMap<String, Any?>()
-                    result.success(HydraBoxService.updateNotificationPresentation(arguments))
+                    val value = CoreRuntimeProtocol.NotificationPresentation.newBuilder()
+                        .setDetailed(arguments["detailed"] == true)
+                        .setTrafficDisplayMode(arguments["trafficDisplayMode"]?.toString().orEmpty())
+                        .setTitle(arguments["title"]?.toString().orEmpty())
+                        .setGroupId(arguments["groupTag"]?.toString().orEmpty())
+                        .setTargetOutboundId(arguments["targetOutboundTag"]?.toString().orEmpty())
+                        .setPriorityOutboundId(arguments["priorityOutboundTag"]?.toString().orEmpty())
+                        .setExcludedOutboundId(arguments["excludeOutboundTag"]?.toString().orEmpty())
+                        .setUrl(arguments["url"]?.toString().orEmpty())
+                        .setTimeoutMillis((arguments["timeoutMillis"] as? Number)?.toInt()?.coerceAtLeast(0) ?: 0)
+                        .setConcurrency((arguments["concurrency"] as? Number)?.toInt()?.coerceAtLeast(0) ?: 0)
+                        .setDeadlineMillis((arguments["deadlineMillis"] as? Number)?.toInt()?.coerceAtLeast(0) ?: 0)
+                        .setConnectedText(arguments["connectedText"]?.toString().orEmpty())
+                        .setCheckingText(arguments["checkingText"]?.toString().orEmpty())
+                        .setUnavailableText(arguments["unavailableText"]?.toString().orEmpty())
+                        .setRefreshLabel(arguments["refreshLabel"]?.toString().orEmpty())
+                        .setStopLabel(arguments["stopLabel"]?.toString().orEmpty())
+                    (arguments["latencyMillis"] as? Number)?.toLong()?.let(value::setLatencyMillis)
+                    coreRuntimeClient.updateNotificationPresentation(value.build()) { updateResult ->
+                        updateResult.onSuccess { result.success(true) }
+                            .onFailure { result.error("notification_update_failed", it.message, null) }
+                    }
                 }
 
                 "getPerformanceSnapshot" -> {
@@ -2657,16 +2731,14 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     override fun onStop() {
-        SingboxController.cancelPreconnectUrlTest("activity_stopped")
+        coreRuntimeClient.cancelPreconnectProbe { }
         super.onStop()
     }
 
     override fun onDestroy() {
-        val registration = singboxEventSinkRegistration
-        singboxEventSinkRegistration = 0L
-        if (registration != 0L) {
-            SingboxController.clearEventSink(registration)
-        }
+        singboxEventConsumer?.let(coreRuntimeClient::unregisterEventConsumer)
+        singboxEventConsumer = null
+        coreRuntimeClient.close()
         deepLinkEventSink = null
         super.onDestroy()
     }

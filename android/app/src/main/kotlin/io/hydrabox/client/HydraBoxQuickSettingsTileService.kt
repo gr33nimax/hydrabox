@@ -12,14 +12,12 @@ import android.os.Looper
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import android.widget.Toast
-import io.hydrabox.client.singbox.HydraBoxService
-import io.hydrabox.client.singbox.HydraBoxProxyService
-import io.hydrabox.client.singbox.HydraBoxVpnService
+import io.hydrabox.client.runtime.CoreRuntimeClient
 import io.hydrabox.client.singbox.RuntimeServiceModeResolver
-import io.hydrabox.client.singbox.SingboxController
 import org.json.JSONObject
 
 class HydraBoxQuickSettingsTileService : TileService() {
+    private val coreRuntimeClient by lazy { CoreRuntimeClient(applicationContext) }
     companion object {
         private const val QUICK_TILE_LABEL_FILE = "quick_tile_label.txt"
         private const val TILE_LABEL = "HydraBox"
@@ -35,6 +33,7 @@ class HydraBoxQuickSettingsTileService : TileService() {
 
     override fun onStartListening() {
         super.onStartListening()
+        coreRuntimeClient.connect()
         updateTile()
     }
 
@@ -80,63 +79,36 @@ class HydraBoxQuickSettingsTileService : TileService() {
     }
 
     private fun activeRuntimeMode(): String? = RuntimeServiceModeResolver.activeMode(
-        runningMode = SingboxController.serviceMode.takeIf { SingboxController.running },
+        runningMode = null,
         vpnRecorded = HydraBoxApplication.isRecordedServiceAlive(RuntimeServiceModeResolver.VPN),
         proxyRecorded = HydraBoxApplication.isRecordedServiceAlive(RuntimeServiceModeResolver.PROXY),
     )
 
     private fun stopRuntime(mode: String) {
-        HydraBoxService.requestStopAll("quick_tile_stop")
-        val serviceClass = serviceClass(mode)
-        startService(
-            Intent(this, serviceClass)
-                .setAction(HydraBoxService.ACTION_STOP)
-                .putExtra(HydraBoxService.EXTRA_STOP_REASON, "quick_tile"),
-        )
-        Handler(Looper.getMainLooper()).postDelayed({
-            if (!SingboxController.running) {
-                stopService(Intent(this, HydraBoxVpnService::class.java))
-                stopService(Intent(this, HydraBoxProxyService::class.java))
-                HydraBoxApplication.clearServiceState()
-                HydraBoxApplication.clearRuntimeIntent()
-                requestRefresh(this)
-            }
-        }, 1_200L)
+        coreRuntimeClient.stop("quick_tile") { requestRefresh(this) }
     }
 
     private fun startRuntime(targetMode: String) {
-        val runningMode = SingboxController.serviceMode
-        if (SingboxController.running && runningMode != targetMode) {
-            startService(
-                Intent(this, serviceClass(runningMode)).setAction(HydraBoxService.ACTION_STOP),
-            )
-            SingboxController.awaitStopped { stopped ->
-                if (stopped) {
-                    startRuntimeService(targetMode)
-                } else {
-                    SingboxController.log(
-                        "error",
-                        "quick tile mode switch aborted: $runningMode stop timed out",
-                    )
-                    requestRefresh(this)
-                }
-            }
+        val config = runCatching { HydraBoxApplication.configFile.readBytes() }.getOrNull()
+        if (config == null || config.isEmpty()) {
+            requestRefresh(this)
             return
         }
-        startRuntimeService(targetMode)
-    }
-
-    private fun startRuntimeService(mode: String) {
-        val intent = Intent(this, serviceClass(mode)).setAction(HydraBoxService.ACTION_START)
-        startForegroundService(intent)
-    }
-
-    private fun serviceClass(mode: String): Class<out android.app.Service> =
-        if (mode == RuntimeServiceModeResolver.PROXY) {
-            HydraBoxProxyService::class.java
-        } else {
-            HydraBoxVpnService::class.java
+        coreRuntimeClient.start(
+            config = config,
+            useVpn = targetMode == RuntimeServiceModeResolver.VPN,
+        ) { result ->
+            if (result.isFailure) {
+                Toast.makeText(this, "HydraCore could not start", Toast.LENGTH_SHORT).show()
+            }
+            requestRefresh(this)
         }
+    }
+
+    override fun onDestroy() {
+        coreRuntimeClient.close()
+        super.onDestroy()
+    }
 
     private fun configuredMode(): String? {
         val rawConfig = runCatching { HydraBoxApplication.configFile.readText() }.getOrNull()

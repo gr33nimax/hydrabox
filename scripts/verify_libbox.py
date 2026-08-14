@@ -89,7 +89,7 @@ def normalize_repository(value: str) -> str:
     return normalized.lower()
 
 
-def validate_archives() -> None:
+def validate_archives(*, require_dynamic_loader: bool) -> None:
     try:
         with zipfile.ZipFile(AAR) as archive:
             corrupt_member = archive.testzip()
@@ -114,6 +114,14 @@ def validate_archives() -> None:
                 fail("libbox-sources.jar does not contain generated Java sources")
             if LIBBOX_SOURCE not in archive.namelist():
                 fail("libbox-sources.jar does not contain Libbox.java")
+            if require_dynamic_loader:
+                if "go/Seq.java" not in archive.namelist():
+                    fail("libbox-sources.jar does not contain go/Seq.java")
+                seq_source = archive.read("go/Seq.java").decode("utf-8")
+                if 'HydraNativeLoader.loadLibrary("box")' not in seq_source:
+                    fail("libbox go.Seq does not use HydraNativeLoader")
+                if 'System.loadLibrary("box")' in seq_source:
+                    fail("libbox go.Seq still hardcodes System.loadLibrary")
             libbox_source = archive.read(LIBBOX_SOURCE).decode("utf-8")
             missing_methods = sorted(
                 method
@@ -172,7 +180,11 @@ def main() -> None:
     if sha256(SOURCES) != provenance.sources_sha256:
         fail("libbox-sources.jar does not match provenance")
 
-    validate_archives()
+    validate_archives(
+        require_dynamic_loader=(
+            "hydracore-bundle-manifest-v1.json" in provenance.raw["artifacts"]
+        )
+    )
     print(
         "Verified HydraCore Android distribution: "
         f"{release_tag}, API {android_api}, {len(build_tags)} build tags, "

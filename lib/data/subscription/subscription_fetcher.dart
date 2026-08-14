@@ -45,6 +45,7 @@ class SubscriptionFetcher {
 
   static const fallbackAppVersion = '0.5.0';
   static String _appVersion = fallbackAppVersion;
+  static String get currentAppVersion => _appVersion;
   static String get defaultUserAgent => 'HydraBox/$_appVersion';
   static const _maxSubscriptionResponseBytes = 16 * 1024 * 1024;
   static const _maxRedirects = 5;
@@ -54,6 +55,7 @@ class SubscriptionFetcher {
   static void configureAppVersion(String value) {
     final normalized = value.trim().replaceFirst(RegExp(r'^v'), '');
     _appVersion = normalized.isEmpty ? fallbackAppVersion : normalized;
+    HydraSubscriptionParser.configureClientVersion(_appVersion);
   }
 
   /// Fetches and parses a subscription from [url].
@@ -454,7 +456,10 @@ class SubscriptionFetcher {
       );
     }
 
-    final parsed = await SubscriptionParser.parseInBackground(plaintext);
+    final parsed = await SubscriptionParser.parseInBackground(
+      plaintext,
+      clientVersion: _appVersion,
+    );
     if ((claimsHydra || declaredHydraMediaType != null || encrypted) &&
         !parsed.format.isHydra) {
       throw const FormatException('Hydra response did not produce v2 data');

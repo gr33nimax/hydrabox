@@ -147,16 +147,7 @@ class SingboxRuntime {
     if (!Platform.isAndroid) {
       return fallback();
     }
-    try {
-      return await hostCall();
-    } on MissingPluginException {
-      return fallback();
-    } on PlatformException catch (error) {
-      if (error.code == 'channel-error') {
-        return fallback();
-      }
-      rethrow;
-    }
+    return hostCall();
   }
 
   Future<bool> prepareVpn({required bool requiresVpn}) async {

@@ -2286,4 +2286,20 @@ class AppLocalizationsRu extends AppLocalizations {
   @override
   String get vkCaptchaOpenFailed =>
       'Не удалось открыть капчу VK. Ссылка скопирована в буфер обмена.';
+
+  @override
+  String get bootstrapStorageRecoveryTitle =>
+      'Требуется восстановление хранилища';
+
+  @override
+  String get bootstrapStorageRecoveryMessage =>
+      'HydraBox не смог открыть постоянные данные. Временные настройки не подставлялись. Повторите попытку или откройте Центр восстановления после восстановления доступа к данным.';
+
+  @override
+  String get bootstrapCoreRecoveryTitle =>
+      'Требуется восстановление HydraCore';
+
+  @override
+  String get bootstrapCoreRecoveryMessage =>
+      'Установленное ядро отсутствует, повреждено или несовместимо. Подключения отключены, пока не будет восстановлено проверенное ядро.';
 }

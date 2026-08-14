@@ -201,9 +201,13 @@ class ParsedOutboundGroup {
 class SubscriptionParser {
   SubscriptionParser._();
 
-  static Future<ParseResult> parseInBackground(String content) async {
+  static Future<ParseResult> parseInBackground(
+    String content, {
+    required String clientVersion,
+  }) async {
     final payload = await compute(_parseSubscriptionContent, {
       'content': content,
+      'clientVersion': clientVersion,
     });
     return ParseResult.fromMap(Map<String, dynamic>.from(payload));
   }
@@ -668,5 +672,8 @@ class SubscriptionParser {
 }
 
 Map<String, dynamic> _parseSubscriptionContent(Map<String, dynamic> input) {
+  HydraSubscriptionParser.configureClientVersion(
+    input['clientVersion']?.toString() ?? '',
+  );
   return SubscriptionParser.parse(input['content']?.toString() ?? '').toMap();
 }

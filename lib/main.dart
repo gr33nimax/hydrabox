@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:hydrabox/app/app.dart';
 import 'package:hydrabox/logging/app_log_store.dart';
@@ -25,7 +26,7 @@ Future<void> main() async {
       };
       PlatformDispatcher.instance.onError = (error, stackTrace) {
         _recordFatalError('platform', error, stackTrace);
-        return true;
+        return false;
       };
       await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
       SystemChrome.setSystemUIOverlayStyle(
@@ -36,7 +37,7 @@ Future<void> main() async {
           systemNavigationBarContrastEnforced: false,
         ),
       );
-      runApp(const HydraBoxClient());
+      runApp(const ProviderScope(child: HydraBoxClient()));
     },
     (error, stackTrace) {
       _recordFatalError('zone', error, stackTrace);

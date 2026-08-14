@@ -4058,6 +4058,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Could not open the VK captcha. The link was copied to the clipboard.'**
   String get vkCaptchaOpenFailed;
+
+  /// No description provided for @bootstrapStorageRecoveryTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Storage needs recovery'**
+  String get bootstrapStorageRecoveryTitle;
+
+  /// No description provided for @bootstrapStorageRecoveryMessage.
+  String get bootstrapStorageRecoveryMessage;
+
+  /// No description provided for @bootstrapCoreRecoveryTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'HydraCore needs recovery'**
+  String get bootstrapCoreRecoveryTitle;
+
+  /// No description provided for @bootstrapCoreRecoveryMessage.
+  String get bootstrapCoreRecoveryMessage;
 }
 
 class _AppLocalizationsDelegate

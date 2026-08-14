@@ -44,6 +44,7 @@ dependencies:
   crypto: ^3.0.6
   fluentui_system_icons: ^1.1.229
   flutter_markdown_plus: ^1.0.12
+  flutter_riverpod: ^2.6.1
   flutter_svg: ^2.3.0
   dynamic_color: ^1.7.0
   gap: ^3.0.1

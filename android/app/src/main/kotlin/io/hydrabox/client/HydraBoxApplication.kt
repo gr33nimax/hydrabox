@@ -2,12 +2,10 @@ package io.hydrabox.client
 
 import android.app.Application
 import android.content.Context
-import android.content.pm.ApplicationInfo
 import android.net.ConnectivityManager
 import android.os.Build
+import io.hydrabox.client.core.CoreBundleManager
 import io.hydrabox.client.singbox.HydraBoxDiagnostics
-import io.nekohasekai.libbox.Libbox
-import io.nekohasekai.libbox.SetupOptions
 import java.io.File
 import kotlin.system.exitProcess
 
@@ -15,12 +13,22 @@ class HydraBoxApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         application = this
-        installUncaughtExceptionLogger()
         val processName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             Application.getProcessName()
         } else {
             applicationInfo.processName
         }.orEmpty()
+        val bundleManager = CoreBundleManager(this)
+        when {
+            processName.endsWith(":core_probe") ->
+                bundleManager.configureCandidateLoaderForProbe()
+            processName.endsWith(":core") -> {
+                bundleManager.noteCoreProcessStart()
+                bundleManager.configureNativeLoader()
+            }
+            else -> bundleManager.configureNativeLoader()
+        }
+        installUncaughtExceptionLogger()
         // Legacy native Happ crypt5 used an isolated process:
         // if (!processName.endsWith(":happ_crypto5_isolated")) {
         //     HydraBoxDiagnostics.pruneLegacyRuntimeFiles()
@@ -57,8 +65,6 @@ class HydraBoxApplication : Application() {
         private var uncaughtExceptionLoggerInstalled = false
 
         lateinit var application: HydraBoxApplication
-        @Volatile
-        private var libboxReady: Boolean = false
         val connectivity: ConnectivityManager
             get() = application.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val configFile: File
@@ -146,38 +152,6 @@ class HydraBoxApplication : Application() {
                     }
                 }
                 uncaughtExceptionLoggerInstalled = true
-            }
-        }
-
-        fun ensureLibboxSetup() {
-            if (libboxReady) {
-                return
-            }
-            synchronized(this) {
-                if (libboxReady) {
-                    return
-                }
-                val app = application
-                HydraBoxDiagnostics.log("Application", "ensureLibboxSetup begin pid=${android.os.Process.myPid()}")
-                HydraBoxDiagnostics.log("Application", "ensureLibboxSetup skip Libbox.setLocale")
-                val baseDir = File(app.filesDir, "singbox-base").apply { mkdirs() }
-                val workingDir = File(app.getExternalFilesDir(null) ?: app.filesDir, "singbox-work").apply { mkdirs() }
-                val tempDir = File(app.cacheDir, "singbox-tmp").apply { mkdirs() }
-                val memoryLimitFlag = memoryLimitEnabled
-                val setupOptions = SetupOptions().apply {
-                    basePath = baseDir.absolutePath
-                    workingPath = workingDir.absolutePath
-                    tempPath = tempDir.absolutePath
-                    logMaxLines = if (performanceMode == "performance") 3000 else 800
-                    debug = (app.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
-                }
-                Libbox.setup(setupOptions)
-                Libbox.setMemoryLimit(memoryLimitFlag)
-                libboxReady = true
-                HydraBoxDiagnostics.log(
-                    "Application",
-                    "ensureLibboxSetup done pid=${android.os.Process.myPid()} memoryLimit=${if (memoryLimitFlag) "enabled" else "disabled"}",
-                )
             }
         }
 

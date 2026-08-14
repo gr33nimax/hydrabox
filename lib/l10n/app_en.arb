@@ -961,5 +961,9 @@
   "connectionStageSelectingProxy": "Selecting server",
   "vpnStartTimedOut": "VPN did not start within 15 seconds. Startup was stopped.",
   "vpnStartFailed": "Failed to start VPN.",
-  "vkCaptchaOpenFailed": "Could not open the VK captcha. The link was copied to the clipboard."
+  "vkCaptchaOpenFailed": "Could not open the VK captcha. The link was copied to the clipboard.",
+  "bootstrapStorageRecoveryTitle": "Storage needs recovery",
+  "bootstrapStorageRecoveryMessage": "HydraBox could not open its durable data. No temporary defaults were substituted. Retry or open Recovery Center after storage becomes available.",
+  "bootstrapCoreRecoveryTitle": "HydraCore needs recovery",
+  "bootstrapCoreRecoveryMessage": "The installed core is missing, damaged, or incompatible. Connections stay disabled until a verified core is restored."
 }

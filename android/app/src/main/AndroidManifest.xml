@@ -99,6 +99,7 @@
              Android lint cannot infer that eligibility from BIND_VPN_SERVICE. -->
         <service
             android:name=".singbox.HydraBoxVpnService"
+            android:process=":core"
             android:exported="false"
             android:foregroundServiceType="systemExempted"
             android:permission="android.permission.BIND_VPN_SERVICE"
@@ -111,12 +112,25 @@
 
         <service
             android:name=".singbox.HydraBoxProxyService"
+            android:process=":core"
             android:exported="false"
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="user-initiated local proxy tunnel" />
         </service>
+
+        <service
+            android:name=".runtime.CoreRuntimeService"
+            android:exported="false"
+            android:process=":core"
+            android:stopWithTask="false" />
+
+        <service
+            android:name=".runtime.CoreProbeService"
+            android:exported="false"
+            android:process=":core_probe"
+            android:stopWithTask="true" />
 
         <service
             android:name=".HydraBoxQuickSettingsTileService"

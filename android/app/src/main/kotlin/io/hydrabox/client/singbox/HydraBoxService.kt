@@ -516,7 +516,7 @@ class HydraBoxService(
                 "info",
                 "native_start_marker phase=before_libbox_setup memoryLimit=${HydraBoxApplication.memoryLimitEnabled}",
             )
-            HydraBoxApplication.ensureLibboxSetup()
+            NativeCoreEnvironment.ensureSetup()
             SingboxController.log("info", "native_start_marker phase=after_libbox_setup")
             showForeground("Starting")
             SingboxController.log("info", "native_start_marker phase=foreground_starting")

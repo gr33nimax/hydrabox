@@ -5,7 +5,6 @@ import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import io.hydrabox.client.HydraBoxApplication
-import io.flutter.plugin.common.EventChannel
 import io.nekohasekai.libbox.CommandClient
 import io.nekohasekai.libbox.CommandClientHandler
 import io.nekohasekai.libbox.CommandClientOptions
@@ -90,8 +89,8 @@ object SingboxController {
     private val stopWaiterLock = Any()
     private val stopWaiters = mutableListOf<(Boolean) -> Unit>()
 
-    private val eventSinkRegistry = RuntimeEventSinkRegistry<EventChannel.EventSink>()
-    private val eventSink: EventChannel.EventSink?
+    private val eventSinkRegistry = RuntimeEventSinkRegistry<RuntimeEventConsumer>()
+    private val eventSink: RuntimeEventConsumer?
         get() = eventSinkRegistry.current()
     @Volatile
     private var uiForeground = true
@@ -383,7 +382,7 @@ object SingboxController {
         return sorted.map { it.toEventMap() }
     }
 
-    fun registerEventSink(sink: EventChannel.EventSink): Long {
+    fun registerEventSink(sink: RuntimeEventConsumer): Long {
         val registration = eventSinkRegistry.register(sink)
         // A fresh Flutter subscription is authoritative evidence that a UI
         // engine has been attached. The previous engine may have left this
@@ -787,7 +786,7 @@ object SingboxController {
             ) ?: return@execute
             var client: CommandClient? = null
             try {
-                HydraBoxApplication.ensureLibboxSetup()
+                NativeCoreEnvironment.ensureSetup()
                 Log.i(TAG, "connecting command client epoch=$epoch")
                 HydraBoxDiagnostics.log(TAG, "command_stream_connecting epoch=$epoch")
                 val options = CommandClientOptions().apply {
@@ -1232,7 +1231,7 @@ object SingboxController {
                 check(groupTag.isNotBlank() && targetOutboundTag.isNotBlank()) {
                     "pre-connect URL test requires a selected concrete server"
                 }
-                HydraBoxApplication.ensureLibboxSetup()
+                NativeCoreEnvironment.ensureSetup()
                 val session = Libbox.newStandaloneURLTestSession(
                     HydraBoxProxyPlatformInterface(HydraBoxApplication.application),
                 )

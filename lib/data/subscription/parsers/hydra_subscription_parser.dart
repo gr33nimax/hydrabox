@@ -92,7 +92,16 @@ class HydraSubscriptionParser {
 
   static const apiVersion = 'hydra.io/subscription/v2';
   static const sourceFormat = 'hydra-subscription-v2';
-  static const clientVersion = '0.5.0';
+  static String _clientVersion = '0.0.0';
+
+  /// Configured from Android package metadata during bootstrap.
+  ///
+  /// Keeping the version outside this parser prevents release policy from
+  /// drifting away from the actual APK version.
+  static void configureClientVersion(String value) {
+    final normalized = value.trim().replaceFirst(RegExp(r'^v'), '');
+    _clientVersion = normalized.isEmpty ? '0.0.0' : normalized;
+  }
   static const maxPlaintextBytes = 12 * 1024 * 1024;
 
   static const supportedPermissions = {
@@ -190,7 +199,7 @@ class HydraSubscriptionParser {
     final minimumClientVersion =
         clientRequirements['min_version']?.toString() ?? '';
     if (minimumClientVersion.isNotEmpty &&
-        _compareSemver(clientVersion, minimumClientVersion) < 0) {
+        _compareSemver(_clientVersion, minimumClientVersion) < 0) {
       throw FormatException(
         'Hydra subscription requires HydraBox $minimumClientVersion or newer',
       );
