@@ -73,6 +73,10 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      - name: Install Android 17 preview platform
+        if: matrix.api-level == 37
+        run: sdkmanager --install 'platforms;android-37' --channel=3
+
       - name: Run isolated-runtime instrumentation
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
         with:

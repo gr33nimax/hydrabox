@@ -68,6 +68,10 @@ void main() {
       workflow,
       contains("matrix.api-level == 37 && 'canary' || 'stable'"),
     );
+    expect(
+      workflow,
+      contains("sdkmanager --install 'platforms;android-37' --channel=3"),
+    );
     expect(workflow, contains(':app:connectedDebugAndroidTest'));
     expect(workflow, contains('submodules: recursive'));
     expect(workflow, contains('scripts/fetch_libbox.py'));
