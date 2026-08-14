@@ -74,6 +74,7 @@ import 'package:hydrabox/models/proxy_runtime_visual_state.dart';
 import 'package:hydrabox/models/subscription.dart';
 import 'package:hydrabox/singbox/core_config_migration.dart';
 import 'package:hydrabox/singbox/hydra_proxy_chain_resolver.dart';
+import 'package:hydrabox/singbox/singbox_api.g.dart' as platform_bridge;
 import 'package:hydrabox/singbox/singbox_config_builder.dart';
 import 'package:hydrabox/singbox/singbox_runtime.dart';
 import 'package:hydrabox/theme/demo_app_theme.dart';
@@ -2730,6 +2731,35 @@ class _HydraBoxClientState extends State<HydraBoxClient>
         inboundSettingsMigrated) {
       _saveStateSoon();
     }
+  }
+
+  Future<void> _repairEmbeddedCoreAndBootstrap() async {
+    if (_bootstrapInFlight || !mounted) return;
+    setState(() => _bootstrapInFlight = true);
+    try {
+      await platform_bridge.CoreManagerHostApi()
+          .rollback()
+          .timeout(const Duration(seconds: 20));
+    } catch (error, stackTrace) {
+      AppLogStore.error(
+        'bootstrap',
+        'Embedded HydraCore repair failed: $error\n$stackTrace',
+      );
+      if (mounted) {
+        setState(() => _bootstrapInFlight = false);
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          SnackBar(
+            content: Text(
+              AppLocalizations.of(context).bootstrapCoreRepairFailed,
+            ),
+          ),
+        );
+      }
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _bootstrapInFlight = false);
+    await _bootstrap();
   }
 
   void _scheduleDeferredBootstrapStatuses() {
@@ -7584,9 +7614,21 @@ class _HydraBoxClientState extends State<HydraBoxClient>
                       FilledButton.icon(
                         onPressed: _bootstrapInFlight
                             ? null
-                            : () => unawaited(_bootstrap()),
-                        icon: const Icon(Icons.refresh_rounded),
-                        label: Text(l10n.updatesRetryAction),
+                            : () => unawaited(
+                                isStorage
+                                    ? _bootstrap()
+                                    : _repairEmbeddedCoreAndBootstrap(),
+                              ),
+                        icon: Icon(
+                          isStorage
+                              ? Icons.refresh_rounded
+                              : Icons.settings_backup_restore_rounded,
+                        ),
+                        label: Text(
+                          isStorage
+                              ? l10n.updatesRetryAction
+                              : l10n.bootstrapCoreRepairAction,
+                        ),
                       ),
                     ],
                   ),

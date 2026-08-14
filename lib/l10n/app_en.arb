@@ -966,6 +966,8 @@
   "bootstrapStorageRecoveryMessage": "HydraBox could not open its durable data. No temporary defaults were substituted. Retry or open Recovery Center after storage becomes available.",
   "bootstrapCoreRecoveryTitle": "HydraCore needs recovery",
   "bootstrapCoreRecoveryMessage": "The installed core is missing, damaged, or incompatible. Connections stay disabled until a verified core is restored.",
+  "bootstrapCoreRepairAction": "Restore embedded core",
+  "bootstrapCoreRepairFailed": "The embedded core could not be restarted. Install a newer verified build or export diagnostics.",
   "coreManagerTitle": "Core Manager",
   "coreManagerSubtitle": "HydraCore updates are checked, downloaded, tested, and activated only when you request each step.",
   "coreManagerEmbeddedVersion": "Embedded core",

@@ -254,21 +254,33 @@ class CoreRuntimeService : Service() {
                 CoreRuntimeProtocol.CoreUtilityKind.CORE_UTILITY_KIND_VERSION ->
                     Libbox.version().toByteArray(Charsets.UTF_8)
                 CoreRuntimeProtocol.CoreUtilityKind.CORE_UTILITY_KIND_CAPABILITIES ->
-                    invokeCoreString("hydraCoreCapabilities", request.argumentsList)
+                    invokeCoreString(request.argumentsList) { Libbox.hydraCoreCapabilities() }
                 CoreRuntimeProtocol.CoreUtilityKind.CORE_UTILITY_KIND_BUILD_INFO ->
-                    invokeCoreString("hydraCoreBuildInfo", request.argumentsList)
+                    invokeCoreString(request.argumentsList) { Libbox.hydraCoreBuildInfo() }
                 CoreRuntimeProtocol.CoreUtilityKind.CORE_UTILITY_KIND_VALIDATE_CONFIG ->
-                    invokeCoreString("hydraCoreValidateConfig", request.argumentsList)
+                    invokeCoreString(request.argumentsList, 2) { values ->
+                        Libbox.hydraCoreValidateConfig(values[0], values[1])
+                    }
                 CoreRuntimeProtocol.CoreUtilityKind.CORE_UTILITY_KIND_VALIDATE_SUBSCRIPTION ->
-                    invokeCoreString("hydraCoreValidateSubscription", request.argumentsList)
+                    invokeCoreString(request.argumentsList, 1) { values ->
+                        Libbox.hydraCoreValidateSubscription(values[0])
+                    }
                 CoreRuntimeProtocol.CoreUtilityKind.CORE_UTILITY_KIND_INSPECT_SUBSCRIPTION ->
-                    invokeCoreString("hydraCoreInspectSubscription", request.argumentsList)
+                    invokeCoreString(request.argumentsList, 1) { values ->
+                        Libbox.hydraCoreInspectSubscription(values[0])
+                    }
                 CoreRuntimeProtocol.CoreUtilityKind.CORE_UTILITY_KIND_OPEN_SUBSCRIPTION_JWE ->
-                    invokeCoreString("hydraCoreOpenSubscriptionJWE", request.argumentsList)
+                    invokeCoreString(request.argumentsList, 2) { values ->
+                        Libbox.hydraCoreOpenSubscriptionJWE(values[0], values[1])
+                    }
                 CoreRuntimeProtocol.CoreUtilityKind.CORE_UTILITY_KIND_VALIDATE_SUBSCRIPTION_JWE ->
-                    invokeCoreString("hydraCoreValidateSubscriptionJWE", request.argumentsList)
+                    invokeCoreString(request.argumentsList, 2) { values ->
+                        Libbox.hydraCoreValidateSubscriptionJWE(values[0], values[1])
+                    }
                 CoreRuntimeProtocol.CoreUtilityKind.CORE_UTILITY_KIND_INSPECT_SUBSCRIPTION_JWE ->
-                    invokeCoreString("hydraCoreInspectSubscriptionJWE", request.argumentsList)
+                    invokeCoreString(request.argumentsList, 2) { values ->
+                        Libbox.hydraCoreInspectSubscriptionJWE(values[0], values[1])
+                    }
                 CoreRuntimeProtocol.CoreUtilityKind.CORE_UTILITY_KIND_CHECK_CONFIG -> {
                     require(request.argumentsCount == 1)
                     Libbox.checkConfig(request.getArguments(0).toStringUtf8())
@@ -327,15 +339,14 @@ class CoreRuntimeService : Service() {
         }
     }
 
-    private fun invokeCoreString(name: String, arguments: List<ByteString>): ByteArray {
+    private fun invokeCoreString(
+        arguments: List<ByteString>,
+        expectedCount: Int = 0,
+        operation: (Array<String>) -> String,
+    ): ByteArray {
+        require(arguments.size == expectedCount) { "HydraCore argument count is invalid" }
         val values = arguments.map { it.toStringUtf8() }.toTypedArray()
-        val method = Libbox::class.java.methods.firstOrNull { candidate ->
-            candidate.name.equals(name, ignoreCase = true) &&
-                candidate.parameterCount == values.size
-        } ?: throw IllegalStateException("HydraCore API surface is unavailable")
-        val result = method.invoke(null, *values) as? String
-            ?: throw IllegalStateException("HydraCore returned no payload")
-        return result.toByteArray(Charsets.UTF_8)
+        return operation(values).toByteArray(Charsets.UTF_8)
     }
 
     private fun lookupOutboundExternalInfo(
@@ -825,8 +836,7 @@ class CoreRuntimeService : Service() {
     private fun buildContract(): CoreRuntimeProtocol.CoreContract {
         val version = runCatching { Libbox.version() }.getOrElse { "unavailable" }
         val capabilities = runCatching {
-            val method = Libbox::class.java.methods.first { it.name.equals("hydraCoreCapabilities", true) }
-            (method.invoke(null) as String).toByteArray(Charsets.UTF_8)
+            Libbox.hydraCoreCapabilities().toByteArray(Charsets.UTF_8)
         }.getOrElse { ByteArray(0) }
         require(capabilities.isNotEmpty()) { "HydraCore capabilities are unavailable" }
         val supportedProtocolIds = CoreCapabilityContract.supportedProtocolIds(capabilities)

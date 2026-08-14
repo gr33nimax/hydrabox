@@ -991,7 +991,7 @@ class SingboxRuntime {
       final value = await _withMethodChannelFallback<String?>(
         () => _hostApi.getCoreCapabilities(),
         () => _methods.invokeMethod<String>('getCoreCapabilities'),
-      ).timeout(const Duration(seconds: 2));
+      ).timeout(const Duration(seconds: 15));
       return HydraCoreCapabilities.parseStrict(value);
     } on TimeoutException {
       throw StateError('HydraCore capability handshake timed out.');

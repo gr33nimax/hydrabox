@@ -55,7 +55,7 @@ class CoreProbeService : Service() {
             check(HydraNativeLoader.loadedSource() == "active") {
                 "The candidate library was not selected"
             }
-            val capabilities = invokeCoreString("hydraCoreCapabilities")
+            val capabilities = Libbox.hydraCoreCapabilities().toByteArray(Charsets.UTF_8)
             check(capabilities.isNotEmpty()) { "HydraCore capabilities are unavailable" }
             val supportedProtocolIds = CoreCapabilityContract.supportedProtocolIds(capabilities)
             request.validationFixturesList.forEach { fixture ->
@@ -102,15 +102,6 @@ class CoreProbeService : Service() {
                 "native_probe",
             )
         }
-    }
-
-    private fun invokeCoreString(name: String): ByteArray {
-        val method = Libbox::class.java.methods.firstOrNull {
-            it.name.equals(name, ignoreCase = true) && it.parameterCount == 0
-        } ?: throw IllegalStateException("HydraCore API is unavailable")
-        return ((method.invoke(null) as? String)
-            ?: throw IllegalStateException("HydraCore returned no payload"))
-            .toByteArray(Charsets.UTF_8)
     }
 
     private fun failure(

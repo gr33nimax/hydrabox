@@ -26,14 +26,20 @@ env:
 
 jobs:
   runtime-process:
-    name: Runtime isolation · API ${{ matrix.api-level }}
-    runs-on: ubuntu-latest
+    name: Runtime isolation · API ${{ matrix.api-level }} · ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
       max-parallel: 2
       matrix:
         api-level: [26, 30, 34, 37]
+        arch: [x86_64]
+        runner: [ubuntu-latest]
+        include:
+          - api-level: 34
+            arch: arm64-v8a
+            runner: ubuntu-24.04-arm
 
     steps:
       - name: Checkout pinned sources
@@ -82,7 +88,7 @@ jobs:
         with:
           api-level: ${{ matrix.api-level }}
           channel: ${{ matrix.api-level == 37 && 'canary' || 'stable' }}
-          arch: x86_64
+          arch: ${{ matrix.arch }}
           target: default
           profile: pixel_2
           disable-animations: true
@@ -95,7 +101,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: android-instrumentation-api-${{ matrix.api-level }}
+          name: android-instrumentation-api-${{ matrix.api-level }}-${{ matrix.arch }}
           path: |
             build/app/reports/androidTests/connected/**
             build/app/outputs/androidTest-results/connected/**
