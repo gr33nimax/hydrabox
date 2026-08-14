@@ -21,6 +21,7 @@ concurrency:
 env:
   FLUTTER_VERSION: "3.44.7"
   JAVA_VERSION: "21"
+  HYDRACORE_RELEASE_PUBLIC_KEYS: ${{ vars.HYDRACORE_RELEASE_PUBLIC_KEYS }}
 
 jobs:
   actions:

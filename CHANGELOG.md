@@ -2,10 +2,11 @@
 
 ## Unreleased
 
-- Pinned the intentionally incompatible HydraCore debug.13 / VK parasite wire
+- Pinned the independently loadable, signed HydraCore debug.14 / VK parasite wire
   v5 client: eight independent KCP lanes, pre-KCP admission control, bounded
   relay flow credit and video-class RTP payload type 96. A matching wire-v5 VPS
-  runtime is required.
+  runtime is required. The embedded AAR now delegates native loading to
+  `HydraNativeLoader`, allowing verified core activation and embedded recovery.
 
 ## [0.5.0]
 

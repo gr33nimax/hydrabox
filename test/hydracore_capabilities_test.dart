@@ -11,7 +11,7 @@ void main() {
 
     expect(capabilities.apiVersion, 2);
     expect(capabilities.coreId, 'io.hydrabox.hydracore');
-    expect(capabilities.coreVersion, 'v1.13.16-extended-hydracore.11-debug.13');
+    expect(capabilities.coreVersion, 'v1.13.16-extended-hydracore.11-debug.14');
     expect(capabilities.coreRole, 'client');
     expect(capabilities.supportsCallVkParasite, isTrue);
     expect(capabilities.supportsCallVkParasiteClient, isTrue);
@@ -101,7 +101,7 @@ Map<String, dynamic> _capabilities() => {
   'identity': {
     'core_id': 'io.hydrabox.hydracore',
     'core_name': 'HydraCore',
-    'core_version': 'v1.13.16-extended-hydracore.11-debug.13',
+    'core_version': 'v1.13.16-extended-hydracore.11-debug.14',
     'role': 'client',
   },
   'features': {
