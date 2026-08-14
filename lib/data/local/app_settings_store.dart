@@ -635,7 +635,7 @@ abstract class AppSettingsStore {
       ),
       updateInstallMode: switch (map[_updateInstallModeKey]) {
         'manual' => AppUpdateInstallMode.manual,
-        'auto' => AppUpdateInstallMode.auto,
+        'auto' => AppUpdateInstallMode.manual,
         'ask' => AppUpdateInstallMode.ask,
         _ => AppUpdateInstallMode.ask,
       },

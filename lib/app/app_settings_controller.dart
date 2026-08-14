@@ -207,7 +207,9 @@ class AppSettingsController {
     performanceMode = state.performanceMode;
     memoryLimitEnabled = state.memoryLimitEnabled;
     memoryLimitWarningDismissed = state.memoryLimitWarningDismissed;
-    updateInstallMode = state.updateInstallMode;
+    updateInstallMode = state.updateInstallMode == AppUpdateInstallMode.auto
+        ? AppUpdateInstallMode.manual
+        : state.updateInstallMode;
     tlsFragmentationMode = state.tlsFragmentationMode;
     vpnInboundEnabled = state.vpnInboundEnabled;
     vpnMtu = state.vpnMtu;
@@ -373,10 +375,13 @@ class AppSettingsController {
   }
 
   AppSettingsChange setUpdateInstallMode(AppUpdateInstallMode value) {
-    if (updateInstallMode == value) {
+    final normalized = value == AppUpdateInstallMode.auto
+        ? AppUpdateInstallMode.manual
+        : value;
+    if (updateInstallMode == normalized) {
       return const AppSettingsChange.none();
     }
-    updateInstallMode = value;
+    updateInstallMode = normalized;
     return const AppSettingsChange(changed: true);
   }
 

@@ -147,11 +147,6 @@ class SettingsGeneralPage extends StatelessWidget {
             label: l10n.updatesInstallModeManual,
             subtitle: l10n.updatesInstallModeManualSubtitle,
           ),
-          _RadioItem(
-            value: AppUpdateInstallMode.auto,
-            label: l10n.updatesInstallModeAuto,
-            subtitle: l10n.updatesInstallModeAutoSubtitle,
-          ),
         ],
       ),
     );
@@ -164,7 +159,7 @@ class SettingsGeneralPage extends StatelessWidget {
   ) => switch (mode) {
     AppUpdateInstallMode.ask => l10n.updatesInstallModeAsk,
     AppUpdateInstallMode.manual => l10n.updatesInstallModeManual,
-    AppUpdateInstallMode.auto => l10n.updatesInstallModeAuto,
+    AppUpdateInstallMode.auto => l10n.updatesInstallModeManual,
   };
 
   String _notificationTrafficDisplayModeName(

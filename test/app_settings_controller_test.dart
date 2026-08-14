@@ -172,4 +172,13 @@ void main() {
     expect(change.restartRuntime, isFalse);
     expect(controller.proxySort, 'working');
   });
+
+  test('automatic APK installation is normalized to manual', () {
+    final controller = AppSettingsController();
+
+    final change = controller.setUpdateInstallMode(AppUpdateInstallMode.auto);
+
+    expect(change.changed, isTrue);
+    expect(controller.updateInstallMode, AppUpdateInstallMode.manual);
+  });
 }

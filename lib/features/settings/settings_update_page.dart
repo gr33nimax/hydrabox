@@ -42,8 +42,6 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage>
   late String _currentVersion = widget.currentVersion;
   int _currentVersionCode = 0;
   late AppUpdateInstallMode _installMode = widget.installMode;
-  AppUpdateInfo? _pendingAutoInstallInfo;
-  bool _resumingAutoInstall = false;
 
   @override
   void initState() {
@@ -62,23 +60,6 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(_refreshInstalledVersion());
-      unawaited(_resumePendingAutoInstall());
-    }
-  }
-
-  Future<void> _resumePendingAutoInstall() async {
-    if (_resumingAutoInstall) return;
-    _resumingAutoInstall = true;
-    try {
-      final canInstall = await _refreshInstallPermissionStatus(
-        showFeedback: true,
-      );
-      final pending = _pendingAutoInstallInfo;
-      if (!canInstall || pending == null || !mounted || _downloading) return;
-      _pendingAutoInstallInfo = null;
-      await _download(pending, installAfterDownload: true);
-    } finally {
-      _resumingAutoInstall = false;
     }
   }
 
@@ -137,21 +118,12 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage>
       }
     }
 
-    if (mode == AppUpdateInstallMode.auto) {
-      _pendingAutoInstallInfo = info;
-      final canInstall = await _ensureInstallPermission();
-      if (!canInstall || !mounted) return;
-      _pendingAutoInstallInfo = null;
-    }
-    await _download(
-      info,
-      installAfterDownload: mode == AppUpdateInstallMode.auto,
-    );
+    await _download(info);
   }
 
   Future<_InstallModeDecision?> _showInstallModeSheet() {
     final l10n = AppLocalizations.of(context);
-    var selected = AppUpdateInstallMode.auto;
+    var selected = AppUpdateInstallMode.manual;
     var remember = false;
     return showModalBottomSheet<_InstallModeDecision>(
       context: context,
@@ -203,12 +175,6 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage>
                             title: l10n.updatesInstallMethodManualTitle,
                             subtitle: l10n.updatesInstallMethodManualSubtitle,
                           ),
-                          option(
-                            value: AppUpdateInstallMode.auto,
-                            icon: Icons.install_mobile_rounded,
-                            title: l10n.updatesInstallMethodAutoTitle,
-                            subtitle: l10n.updatesInstallMethodAutoSubtitle,
-                          ),
                         ],
                       ),
                     ),
@@ -240,10 +206,7 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage>
     );
   }
 
-  Future<void> _download(
-    AppUpdateInfo info, {
-    bool installAfterDownload = false,
-  }) async {
+  Future<void> _download(AppUpdateInfo info) async {
     if (_downloading || _checking || _clearingUpdateCache) return;
     setState(() {
       _downloading = true;
@@ -280,9 +243,6 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage>
           downloadedFilePath: filePath,
         );
       });
-      if (installAfterDownload) {
-        await _installDownloaded();
-      }
     } catch (error) {
       if (!mounted) return;
       setState(() {
