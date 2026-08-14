@@ -25,22 +25,10 @@ env:
   JAVA_VERSION: "21"
 
 jobs:
-  runtime-process:
-    name: Runtime isolation · API ${{ matrix.api-level }} · ${{ matrix.arch }}
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      max-parallel: 2
-      matrix:
-        api-level: [26, 30, 34, 37]
-        arch: [x86_64]
-        runner: [ubuntu-latest]
-        include:
-          - api-level: 34
-            arch: arm64-v8a
-            runner: ubuntu-24.04-arm
-
+  build-test-apks:
+    name: Build instrumentation APKs
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout pinned sources
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -72,6 +60,52 @@ jobs:
           flutter gen-l10n
           dart run pigeon --input pigeons/singbox_api.dart
 
+      - name: Build application and instrumentation APKs
+        run: |
+          chmod +x android/gradlew
+          cd android
+          ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace
+
+      - name: Upload instrumentation APKs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: android-instrumentation-apks
+          path: |
+            build/app/outputs/apk/debug/app-debug.apk
+            build/app/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  runtime-process:
+    name: Runtime isolation · API ${{ matrix.api-level }} · ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    needs: build-test-apks
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        api-level: [26, 30, 34, 37]
+        arch: [x86_64]
+        runner: [ubuntu-latest]
+        include:
+          - api-level: 34
+            arch: arm64-v8a
+            runner: ubuntu-24.04-arm
+
+    steps:
+      - name: Set up JDK
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Download instrumentation APKs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: android-instrumentation-apks
+          path: instrumentation-apks
+
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
@@ -81,7 +115,9 @@ jobs:
 
       - name: Install Android 17 preview platform
         if: matrix.api-level == 37
-        run: sdkmanager --install 'platforms;android-37' --channel=3
+        run: >-
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          --install 'platforms;android-37' --channel=3
 
       - name: Run isolated-runtime instrumentation
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
@@ -95,15 +131,26 @@ jobs:
           emulator-options: >-
             -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
             -camera-back none
-          script: chmod +x android/gradlew && cd android && ./gradlew :app:connectedDebugAndroidTest --stacktrace
+          script: |
+            set -euo pipefail
+            app_apk="$(find instrumentation-apks -name app-debug.apk -print -quit)"
+            test_apk="$(find instrumentation-apks -name app-debug-androidTest.apk -print -quit)"
+            test -f "$app_apk"
+            test -f "$test_apk"
+            adb install -r "$app_apk"
+            adb install -r "$test_apk"
+            mkdir -p build/instrumentation
+            report="build/instrumentation/api-${{ matrix.api-level }}-${{ matrix.arch }}.txt"
+            adb shell am instrument -w \
+              io.hydrabox.client.test/androidx.test.runner.AndroidJUnitRunner \
+              | tee "$report"
+            grep -E '^OK \([0-9]+ tests?\)$' "$report"
 
       - name: Upload instrumentation reports
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: android-instrumentation-api-${{ matrix.api-level }}-${{ matrix.arch }}
-          path: |
-            build/app/reports/androidTests/connected/**
-            build/app/outputs/androidTest-results/connected/**
+          path: build/instrumentation/**
           if-no-files-found: warn
           retention-days: 14

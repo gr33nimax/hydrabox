@@ -72,9 +72,10 @@ void main() {
     );
     expect(
       workflow,
-      contains("sdkmanager --install 'platforms;android-37' --channel=3"),
+      contains("--install 'platforms;android-37' --channel=3"),
     );
-    expect(workflow, contains(':app:connectedDebugAndroidTest'));
+    expect(workflow, contains(':app:assembleDebugAndroidTest'));
+    expect(workflow, contains('adb shell am instrument -w'));
     expect(workflow, contains('submodules: recursive'));
     expect(workflow, contains('scripts/fetch_libbox.py'));
     expect(
