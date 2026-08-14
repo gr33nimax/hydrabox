@@ -681,6 +681,52 @@ data class CoreCandidateProbeMessage (
     return result
   }
 }
+
+/** Generated class from Pigeon that represents data sent in messages. */
+data class InstalledAppMessage (
+  val packageName: String,
+  val label: String,
+  val system: Boolean,
+  val launchable: Boolean
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): InstalledAppMessage {
+      val packageName = pigeonVar_list[0] as String
+      val label = pigeonVar_list[1] as String
+      val system = pigeonVar_list[2] as Boolean
+      val launchable = pigeonVar_list[3] as Boolean
+      return InstalledAppMessage(packageName, label, system, launchable)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      packageName,
+      label,
+      system,
+      launchable,
+    )
+  }
+  override fun equals(other: Any?): Boolean {
+    if (other == null || other.javaClass != javaClass) {
+      return false
+    }
+    if (this === other) {
+      return true
+    }
+    val other = other as InstalledAppMessage
+    return SingboxApiPigeonUtils.deepEquals(this.packageName, other.packageName) && SingboxApiPigeonUtils.deepEquals(this.label, other.label) && SingboxApiPigeonUtils.deepEquals(this.system, other.system) && SingboxApiPigeonUtils.deepEquals(this.launchable, other.launchable)
+  }
+
+  override fun hashCode(): Int {
+    var result = javaClass.hashCode()
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.packageName)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.label)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.system)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.launchable)
+    return result
+  }
+}
 private open class SingboxApiPigeonCodec : StandardMessageCodec() {
   override fun readValueOfType(type: Byte, buffer: ByteBuffer): Any? {
     return when (type) {
@@ -729,6 +775,11 @@ private open class SingboxApiPigeonCodec : StandardMessageCodec() {
           CoreCandidateProbeMessage.fromList(it)
         }
       }
+      138.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          InstalledAppMessage.fromList(it)
+        }
+      }
       else -> super.readValueOfType(type, buffer)
     }
   }
@@ -768,6 +819,10 @@ private open class SingboxApiPigeonCodec : StandardMessageCodec() {
       }
       is CoreCandidateProbeMessage -> {
         stream.write(137)
+        writeValue(stream, value.toList())
+      }
+      is InstalledAppMessage -> {
+        stream.write(138)
         writeValue(stream, value.toList())
       }
       else -> super.writeValue(stream, value)
@@ -950,7 +1005,8 @@ interface SingboxHostApi {
   fun checkConfig(config: String, callback: (Result<Unit>) -> Unit)
   fun getPerformanceSnapshot(callback: (Result<Map<String?, Any?>>) -> Unit)
   fun getHappCrypt5Support(callback: (Result<Map<String?, Any?>>) -> Unit)
-  fun getInstalledApps(callback: (Result<List<Map<String?, Any?>?>>) -> Unit)
+  fun getInstalledApps(callback: (Result<List<InstalledAppMessage?>>) -> Unit)
+  fun getInstalledAppIcon(packageName: String, sizePx: Long, callback: (Result<ByteArray?>) -> Unit)
   fun setQuickSettingsTileLabel(label: String, callback: (Result<Unit>) -> Unit)
 
   companion object {
@@ -1791,7 +1847,28 @@ interface SingboxHostApi {
         val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.hydrabox.SingboxHostApi.getInstalledApps$separatedMessageChannelSuffix", codec)
         if (api != null) {
           channel.setMessageHandler { _, reply ->
-            api.getInstalledApps{ result: Result<List<Map<String?, Any?>?>> ->
+            api.getInstalledApps{ result: Result<List<InstalledAppMessage?>> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(SingboxApiPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(SingboxApiPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.hydrabox.SingboxHostApi.getInstalledAppIcon$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val packageNameArg = args[0] as String
+            val sizePxArg = args[1] as Long
+            api.getInstalledAppIcon(packageNameArg, sizePxArg) { result: Result<ByteArray?> ->
               val error = result.exceptionOrNull()
               if (error != null) {
                 reply.reply(SingboxApiPigeonUtils.wrapError(error))

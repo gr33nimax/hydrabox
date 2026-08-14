@@ -733,6 +733,60 @@ class CoreCandidateProbeMessage {
   int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
 }
 
+class InstalledAppMessage {
+  InstalledAppMessage({
+    required this.packageName,
+    required this.label,
+    required this.system,
+    required this.launchable,
+  });
+
+  String packageName;
+
+  String label;
+
+  bool system;
+
+  bool launchable;
+
+  List<Object?> _toList() {
+    return <Object?>[packageName, label, system, launchable];
+  }
+
+  Object encode() {
+    return _toList();
+  }
+
+  static InstalledAppMessage decode(Object result) {
+    result as List<Object?>;
+    return InstalledAppMessage(
+      packageName: result[0]! as String,
+      label: result[1]! as String,
+      system: result[2]! as bool,
+      launchable: result[3]! as bool,
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! InstalledAppMessage || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(packageName, other.packageName) &&
+        _deepEquals(label, other.label) &&
+        _deepEquals(system, other.system) &&
+        _deepEquals(launchable, other.launchable);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+}
+
 class _PigeonCodec extends StandardMessageCodec {
   const _PigeonCodec();
   @override
@@ -767,6 +821,9 @@ class _PigeonCodec extends StandardMessageCodec {
     } else if (value is CoreCandidateProbeMessage) {
       buffer.putUint8(137);
       writeValue(buffer, value.encode());
+    } else if (value is InstalledAppMessage) {
+      buffer.putUint8(138);
+      writeValue(buffer, value.encode());
     } else {
       super.writeValue(buffer, value);
     }
@@ -793,6 +850,8 @@ class _PigeonCodec extends StandardMessageCodec {
         return CheckedCoreReleaseMessage.decode(readValue(buffer)!);
       case 137:
         return CoreCandidateProbeMessage.decode(readValue(buffer)!);
+      case 138:
+        return InstalledAppMessage.decode(readValue(buffer)!);
       default:
         return super.readValueOfType(type, buffer);
     }
@@ -1836,7 +1895,7 @@ class SingboxHostApi {
         .cast<String?, Object?>();
   }
 
-  Future<List<Map<String?, Object?>?>> getInstalledApps() async {
+  Future<List<InstalledAppMessage?>> getInstalledApps() async {
     final pigeonVar_channelName =
         'dev.flutter.pigeon.hydrabox.SingboxHostApi.getInstalledApps$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(
@@ -1853,7 +1912,28 @@ class SingboxHostApi {
       isNullValid: false,
     );
     return (pigeonVar_replyValue! as List<Object?>)
-        .cast<Map<String?, Object?>?>();
+        .cast<InstalledAppMessage?>();
+  }
+
+  Future<Uint8List?> getInstalledAppIcon(String packageName, int sizePx) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.hydrabox.SingboxHostApi.getInstalledAppIcon$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[packageName, sizePx],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
+    return pigeonVar_replyValue as Uint8List?;
   }
 
   Future<void> setQuickSettingsTileLabel(String label) async {
