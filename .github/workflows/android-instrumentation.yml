@@ -133,23 +133,14 @@ jobs:
             -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
             -camera-back none
           script: |
-            set -eu
-            app_apk="$(find instrumentation-apks -name app-debug.apk -print -quit)"
-            test_apk="$(find instrumentation-apks -name app-debug-androidTest.apk -print -quit)"
-            test -f "$app_apk"
-            test -f "$test_apk"
-            adb install -r "$app_apk"
-            adb install -r "$test_apk"
+            test -f "$(find instrumentation-apks -name app-debug.apk -print -quit)"
+            test -f "$(find instrumentation-apks -name app-debug-androidTest.apk -print -quit)"
+            adb install -r "$(find instrumentation-apks -name app-debug.apk -print -quit)"
+            adb install -r "$(find instrumentation-apks -name app-debug-androidTest.apk -print -quit)"
             mkdir -p build/instrumentation
-            report="build/instrumentation/api-${{ matrix.api-level }}-${{ matrix.arch }}.txt"
-            if ! adb shell am instrument -w \
-              io.hydrabox.client.test/androidx.test.runner.AndroidJUnitRunner \
-              >"$report" 2>&1; then
-              cat "$report"
-              exit 1
-            fi
-            cat "$report"
-            grep -E '^OK \([0-9]+ tests?\)$' "$report"
+            adb shell am instrument -w io.hydrabox.client.test/androidx.test.runner.AndroidJUnitRunner >"build/instrumentation/api-${{ matrix.api-level }}-${{ matrix.arch }}.txt" 2>&1 || { cat "build/instrumentation/api-${{ matrix.api-level }}-${{ matrix.arch }}.txt"; exit 1; }
+            cat "build/instrumentation/api-${{ matrix.api-level }}-${{ matrix.arch }}.txt"
+            grep -E '^OK \([0-9]+ tests?\)$' "build/instrumentation/api-${{ matrix.api-level }}-${{ matrix.arch }}.txt"
 
       - name: Upload instrumentation reports
         if: always()
