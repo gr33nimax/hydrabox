@@ -163,9 +163,7 @@ class _CoreManagerBody extends ConsumerWidget {
             ),
             OutlinedButton.icon(
               onPressed:
-                  busy ||
-                      state.active == null ||
-                      !state.recoveryRollbackAllowed
+                  busy || state.active == null || !state.recoveryRollbackAllowed
                   ? null
                   : controller.rollback,
               icon: _operationIcon(state, CoreManagerOperation.rollback),
@@ -187,15 +185,13 @@ class _CoreManagerBody extends ConsumerWidget {
         child: CircularProgressIndicator(strokeWidth: 2),
       );
     }
-    return Icon(
-      switch (operation) {
-        CoreManagerOperation.check => Icons.search_rounded,
-        CoreManagerOperation.download => Icons.download_rounded,
-        CoreManagerOperation.probe => Icons.fact_check_outlined,
-        CoreManagerOperation.activate => Icons.power_settings_new_rounded,
-        CoreManagerOperation.rollback => Icons.settings_backup_restore_rounded,
-      },
-    );
+    return Icon(switch (operation) {
+      CoreManagerOperation.check => Icons.search_rounded,
+      CoreManagerOperation.download => Icons.download_rounded,
+      CoreManagerOperation.probe => Icons.fact_check_outlined,
+      CoreManagerOperation.activate => Icons.power_settings_new_rounded,
+      CoreManagerOperation.rollback => Icons.settings_backup_restore_rounded,
+    });
   }
 }
 
@@ -284,7 +280,9 @@ class _InfoBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final foreground = error ? colors.onErrorContainer : colors.onTertiaryContainer;
+    final foreground = error
+        ? colors.onErrorContainer
+        : colors.onTertiaryContainer;
     return DecoratedBox(
       decoration: BoxDecoration(
         color: error ? colors.errorContainer : colors.tertiaryContainer,

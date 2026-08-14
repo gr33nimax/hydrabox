@@ -524,7 +524,8 @@ data class CoreManagerStateMessage (
   val candidate: CoreBundleSlotMessage? = null,
   val trustedKeyRingAvailable: Boolean,
   val usingEmbeddedFallback: Boolean,
-  val runtimeDisconnected: Boolean
+  val runtimeDisconnected: Boolean,
+  val recoveryRollbackAllowed: Boolean
 )
  {
   companion object {
@@ -536,7 +537,8 @@ data class CoreManagerStateMessage (
       val trustedKeyRingAvailable = pigeonVar_list[4] as Boolean
       val usingEmbeddedFallback = pigeonVar_list[5] as Boolean
       val runtimeDisconnected = pigeonVar_list[6] as Boolean
-      return CoreManagerStateMessage(embeddedVersion, active, previous, candidate, trustedKeyRingAvailable, usingEmbeddedFallback, runtimeDisconnected)
+      val recoveryRollbackAllowed = pigeonVar_list[7] as Boolean
+      return CoreManagerStateMessage(embeddedVersion, active, previous, candidate, trustedKeyRingAvailable, usingEmbeddedFallback, runtimeDisconnected, recoveryRollbackAllowed)
     }
   }
   fun toList(): List<Any?> {
@@ -548,6 +550,7 @@ data class CoreManagerStateMessage (
       trustedKeyRingAvailable,
       usingEmbeddedFallback,
       runtimeDisconnected,
+      recoveryRollbackAllowed,
     )
   }
   override fun equals(other: Any?): Boolean {
@@ -558,7 +561,7 @@ data class CoreManagerStateMessage (
       return true
     }
     val other = other as CoreManagerStateMessage
-    return SingboxApiPigeonUtils.deepEquals(this.embeddedVersion, other.embeddedVersion) && SingboxApiPigeonUtils.deepEquals(this.active, other.active) && SingboxApiPigeonUtils.deepEquals(this.previous, other.previous) && SingboxApiPigeonUtils.deepEquals(this.candidate, other.candidate) && SingboxApiPigeonUtils.deepEquals(this.trustedKeyRingAvailable, other.trustedKeyRingAvailable) && SingboxApiPigeonUtils.deepEquals(this.usingEmbeddedFallback, other.usingEmbeddedFallback) && SingboxApiPigeonUtils.deepEquals(this.runtimeDisconnected, other.runtimeDisconnected)
+    return SingboxApiPigeonUtils.deepEquals(this.embeddedVersion, other.embeddedVersion) && SingboxApiPigeonUtils.deepEquals(this.active, other.active) && SingboxApiPigeonUtils.deepEquals(this.previous, other.previous) && SingboxApiPigeonUtils.deepEquals(this.candidate, other.candidate) && SingboxApiPigeonUtils.deepEquals(this.trustedKeyRingAvailable, other.trustedKeyRingAvailable) && SingboxApiPigeonUtils.deepEquals(this.usingEmbeddedFallback, other.usingEmbeddedFallback) && SingboxApiPigeonUtils.deepEquals(this.runtimeDisconnected, other.runtimeDisconnected) && SingboxApiPigeonUtils.deepEquals(this.recoveryRollbackAllowed, other.recoveryRollbackAllowed)
   }
 
   override fun hashCode(): Int {
@@ -570,6 +573,7 @@ data class CoreManagerStateMessage (
     result = 31 * result + SingboxApiPigeonUtils.deepHash(this.trustedKeyRingAvailable)
     result = 31 * result + SingboxApiPigeonUtils.deepHash(this.usingEmbeddedFallback)
     result = 31 * result + SingboxApiPigeonUtils.deepHash(this.runtimeDisconnected)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.recoveryRollbackAllowed)
     return result
   }
 }

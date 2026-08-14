@@ -4082,6 +4082,120 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'The installed core is missing, damaged, or incompatible. Connections stay disabled until a verified core is restored.'**
   String get bootstrapCoreRecoveryMessage;
+
+  /// No description provided for @coreManagerTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Core Manager'**
+  String get coreManagerTitle;
+
+  /// No description provided for @coreManagerSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'HydraCore updates are checked, downloaded, tested, and activated only when you request each step.'**
+  String get coreManagerSubtitle;
+
+  /// No description provided for @coreManagerEmbeddedVersion.
+  ///
+  /// In en, this message translates to:
+  /// **'Embedded core'**
+  String get coreManagerEmbeddedVersion;
+
+  /// No description provided for @coreManagerActiveVersion.
+  ///
+  /// In en, this message translates to:
+  /// **'Active core'**
+  String get coreManagerActiveVersion;
+
+  /// No description provided for @coreManagerPreviousVersion.
+  ///
+  /// In en, this message translates to:
+  /// **'Previous core'**
+  String get coreManagerPreviousVersion;
+
+  /// No description provided for @coreManagerCandidateVersion.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloaded candidate'**
+  String get coreManagerCandidateVersion;
+
+  /// No description provided for @coreManagerUsingEmbedded.
+  ///
+  /// In en, this message translates to:
+  /// **'HydraBox is using the core embedded in this APK.'**
+  String get coreManagerUsingEmbedded;
+
+  /// No description provided for @coreManagerNoTrustedKeys.
+  ///
+  /// In en, this message translates to:
+  /// **'No trusted HydraCore release key is configured. Downloads are disabled.'**
+  String get coreManagerNoTrustedKeys;
+
+  /// No description provided for @coreManagerDisconnectRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Disconnect VPN or proxy mode before activating or rolling back HydraCore.'**
+  String get coreManagerDisconnectRequired;
+
+  /// No description provided for @coreManagerCheck.
+  ///
+  /// In en, this message translates to:
+  /// **'Check'**
+  String get coreManagerCheck;
+
+  /// No description provided for @coreManagerDownload.
+  ///
+  /// In en, this message translates to:
+  /// **'Download'**
+  String get coreManagerDownload;
+
+  /// No description provided for @coreManagerProbe.
+  ///
+  /// In en, this message translates to:
+  /// **'Test candidate'**
+  String get coreManagerProbe;
+
+  /// No description provided for @coreManagerActivate.
+  ///
+  /// In en, this message translates to:
+  /// **'Activate'**
+  String get coreManagerActivate;
+
+  /// No description provided for @coreManagerRollback.
+  ///
+  /// In en, this message translates to:
+  /// **'Rollback'**
+  String get coreManagerRollback;
+
+  /// No description provided for @coreManagerCheckedRelease.
+  ///
+  /// In en, this message translates to:
+  /// **'Available: {version}, {size}'**
+  String coreManagerCheckedRelease(String version, String size);
+
+  /// No description provided for @coreManagerProbePassed.
+  ///
+  /// In en, this message translates to:
+  /// **'Candidate passed {count} isolated checks.'**
+  String coreManagerProbePassed(int count);
+
+  /// No description provided for @coreManagerProbeFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Candidate failed isolated validation.'**
+  String get coreManagerProbeFailed;
+
+  /// No description provided for @coreManagerOperationFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'HydraCore operation failed ({code}).'**
+  String coreManagerOperationFailed(String code);
+
+  /// No description provided for @coreManagerOpenAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage HydraCore'**
+  String get coreManagerOpenAction;
 }
 
 class _AppLocalizationsDelegate

@@ -190,21 +190,19 @@ class CoreManagerController extends AsyncNotifier<CoreManagerViewState> {
     ),
   );
 
-  Future<void> probeCandidate() => _run(
-    CoreManagerOperation.probe,
-    (current) async {
-      final report = await _api.probeCandidate();
-      return current.copyWith(
-        candidate: _slotFromMessage(report.candidate),
-        probe: CoreCandidateProbeInfo(
-          healthy: report.healthy,
-          validatedFixtureCount: report.validatedFixtureCount,
-          errorCode: report.errorCode,
-        ),
-        clearFailure: true,
-      );
-    },
-  );
+  Future<void> probeCandidate() =>
+      _run(CoreManagerOperation.probe, (current) async {
+        final report = await _api.probeCandidate();
+        return current.copyWith(
+          candidate: _slotFromMessage(report.candidate),
+          probe: CoreCandidateProbeInfo(
+            healthy: report.healthy,
+            validatedFixtureCount: report.validatedFixtureCount,
+            errorCode: report.errorCode,
+          ),
+          clearFailure: true,
+        );
+      });
 
   Future<void> activateCandidate() => _run(
     CoreManagerOperation.activate,
@@ -234,10 +232,7 @@ class CoreManagerController extends AsyncNotifier<CoreManagerViewState> {
       state = AsyncData(updated.copyWith(clearBusy: true, clearFailure: true));
     } on Object catch (error) {
       state = AsyncData(
-        current.copyWith(
-          clearBusy: true,
-          failure: _failure(error),
-        ),
+        current.copyWith(clearBusy: true, failure: _failure(error)),
       );
     }
   }

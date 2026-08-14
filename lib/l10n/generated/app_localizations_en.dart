@@ -2295,4 +2295,71 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get bootstrapCoreRecoveryMessage =>
       'The installed core is missing, damaged, or incompatible. Connections stay disabled until a verified core is restored.';
+
+  @override
+  String get coreManagerTitle => 'Core Manager';
+
+  @override
+  String get coreManagerSubtitle =>
+      'HydraCore updates are checked, downloaded, tested, and activated only when you request each step.';
+
+  @override
+  String get coreManagerEmbeddedVersion => 'Embedded core';
+
+  @override
+  String get coreManagerActiveVersion => 'Active core';
+
+  @override
+  String get coreManagerPreviousVersion => 'Previous core';
+
+  @override
+  String get coreManagerCandidateVersion => 'Downloaded candidate';
+
+  @override
+  String get coreManagerUsingEmbedded =>
+      'HydraBox is using the core embedded in this APK.';
+
+  @override
+  String get coreManagerNoTrustedKeys =>
+      'No trusted HydraCore release key is configured. Downloads are disabled.';
+
+  @override
+  String get coreManagerDisconnectRequired =>
+      'Disconnect VPN or proxy mode before activating or rolling back HydraCore.';
+
+  @override
+  String get coreManagerCheck => 'Check';
+
+  @override
+  String get coreManagerDownload => 'Download';
+
+  @override
+  String get coreManagerProbe => 'Test candidate';
+
+  @override
+  String get coreManagerActivate => 'Activate';
+
+  @override
+  String get coreManagerRollback => 'Rollback';
+
+  @override
+  String coreManagerCheckedRelease(String version, String size) {
+    return 'Available: $version, $size';
+  }
+
+  @override
+  String coreManagerProbePassed(int count) {
+    return 'Candidate passed $count isolated checks.';
+  }
+
+  @override
+  String get coreManagerProbeFailed => 'Candidate failed isolated validation.';
+
+  @override
+  String coreManagerOperationFailed(String code) {
+    return 'HydraCore operation failed ($code).';
+  }
+
+  @override
+  String get coreManagerOpenAction => 'Manage HydraCore';
 }

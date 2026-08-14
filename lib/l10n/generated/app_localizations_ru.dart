@@ -2301,4 +2301,72 @@ class AppLocalizationsRu extends AppLocalizations {
   @override
   String get bootstrapCoreRecoveryMessage =>
       'Установленное ядро отсутствует, повреждено или несовместимо. Подключения отключены, пока не будет восстановлено проверенное ядро.';
+
+  @override
+  String get coreManagerTitle => 'Менеджер ядра';
+
+  @override
+  String get coreManagerSubtitle =>
+      'HydraCore проверяется, скачивается, тестируется и активируется только после отдельного действия пользователя на каждом шаге.';
+
+  @override
+  String get coreManagerEmbeddedVersion => 'Встроенное ядро';
+
+  @override
+  String get coreManagerActiveVersion => 'Активное ядро';
+
+  @override
+  String get coreManagerPreviousVersion => 'Предыдущее ядро';
+
+  @override
+  String get coreManagerCandidateVersion => 'Скачанный кандидат';
+
+  @override
+  String get coreManagerUsingEmbedded =>
+      'HydraBox использует ядро, встроенное в этот APK.';
+
+  @override
+  String get coreManagerNoTrustedKeys =>
+      'В приложении нет доверенного ключа релизов HydraCore. Загрузка отключена.';
+
+  @override
+  String get coreManagerDisconnectRequired =>
+      'Отключите VPN или режим прокси перед активацией или откатом HydraCore.';
+
+  @override
+  String get coreManagerCheck => 'Проверить';
+
+  @override
+  String get coreManagerDownload => 'Скачать';
+
+  @override
+  String get coreManagerProbe => 'Проверить кандидата';
+
+  @override
+  String get coreManagerActivate => 'Активировать';
+
+  @override
+  String get coreManagerRollback => 'Откатить';
+
+  @override
+  String coreManagerCheckedRelease(String version, String size) {
+    return 'Доступно: $version, $size';
+  }
+
+  @override
+  String coreManagerProbePassed(int count) {
+    return 'Кандидат прошёл изолированные проверки: $count.';
+  }
+
+  @override
+  String get coreManagerProbeFailed =>
+      'Кандидат не прошёл изолированную проверку.';
+
+  @override
+  String coreManagerOperationFailed(String code) {
+    return 'Операция HydraCore завершилась ошибкой ($code).';
+  }
+
+  @override
+  String get coreManagerOpenAction => 'Управление HydraCore';
 }

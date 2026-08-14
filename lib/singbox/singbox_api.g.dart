@@ -526,6 +526,7 @@ class CoreManagerStateMessage {
     required this.trustedKeyRingAvailable,
     required this.usingEmbeddedFallback,
     required this.runtimeDisconnected,
+    required this.recoveryRollbackAllowed,
   });
 
   String embeddedVersion;
@@ -542,6 +543,8 @@ class CoreManagerStateMessage {
 
   bool runtimeDisconnected;
 
+  bool recoveryRollbackAllowed;
+
   List<Object?> _toList() {
     return <Object?>[
       embeddedVersion,
@@ -551,6 +554,7 @@ class CoreManagerStateMessage {
       trustedKeyRingAvailable,
       usingEmbeddedFallback,
       runtimeDisconnected,
+      recoveryRollbackAllowed,
     ];
   }
 
@@ -568,6 +572,7 @@ class CoreManagerStateMessage {
       trustedKeyRingAvailable: result[4]! as bool,
       usingEmbeddedFallback: result[5]! as bool,
       runtimeDisconnected: result[6]! as bool,
+      recoveryRollbackAllowed: result[7]! as bool,
     );
   }
 
@@ -586,7 +591,8 @@ class CoreManagerStateMessage {
         _deepEquals(candidate, other.candidate) &&
         _deepEquals(trustedKeyRingAvailable, other.trustedKeyRingAvailable) &&
         _deepEquals(usingEmbeddedFallback, other.usingEmbeddedFallback) &&
-        _deepEquals(runtimeDisconnected, other.runtimeDisconnected);
+        _deepEquals(runtimeDisconnected, other.runtimeDisconnected) &&
+        _deepEquals(recoveryRollbackAllowed, other.recoveryRollbackAllowed);
   }
 
   @override
