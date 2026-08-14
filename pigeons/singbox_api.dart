@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:pigeon/pigeon.dart';
 
 @ConfigurePigeon(
@@ -173,6 +175,20 @@ class CoreCandidateProbeMessage {
   String? errorCode;
 }
 
+class InstalledAppMessage {
+  InstalledAppMessage({
+    required this.packageName,
+    required this.label,
+    required this.system,
+    required this.launchable,
+  });
+
+  String packageName;
+  String label;
+  bool system;
+  bool launchable;
+}
+
 @HostApi()
 abstract class CoreManagerHostApi {
   @async
@@ -328,7 +344,10 @@ abstract class SingboxHostApi {
   Map<String?, Object?> getHappCrypt5Support();
 
   @async
-  List<Map<String?, Object?>?> getInstalledApps();
+  List<InstalledAppMessage?> getInstalledApps();
+
+  @async
+  Uint8List? getInstalledAppIcon(String packageName, int sizePx);
 
   @async
   void setQuickSettingsTileLabel(String label);

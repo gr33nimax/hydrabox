@@ -25,6 +25,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
 import io.hydrabox.client.core.CoreManagerHostApiHandler
 import io.hydrabox.client.generated.CoreManagerHostApi
+import io.hydrabox.client.generated.InstalledAppMessage
 import io.hydrabox.client.singbox.HydraBoxService
 import io.hydrabox.client.singbox.HydraBoxDefaultNetworkMonitor
 import io.hydrabox.client.singbox.HydraBoxDiagnostics
@@ -143,6 +144,13 @@ private fun CoreRuntimeProtocol.RuntimeSnapshot.toLegacyRuntimeMap(): Map<String
             "completed" to session.completedCount,
         )
     },
+)
+
+private data class InstalledAppInfo(
+    val packageName: String,
+    val label: String,
+    val system: Boolean,
+    val launchable: Boolean,
 )
 
 class MainActivity : FlutterFragmentActivity() {
@@ -1359,7 +1367,7 @@ class MainActivity : FlutterFragmentActivity() {
         })
     }
 
-    private fun getInstalledApps(): List<Map<String, Any>> {
+    private fun getInstalledApps(): List<InstalledAppInfo> {
         val packageManager = packageManager
         val installedApps = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             packageManager.getInstalledApplications(
@@ -1414,18 +1422,18 @@ class MainActivity : FlutterFragmentActivity() {
                 val isSystem =
                     (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0 ||
                         (appInfo.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
-                linkedMapOf(
-                    "packageName" to appInfo.packageName,
-                    "label" to if (label.isNotEmpty()) label else appInfo.packageName,
-                    "system" to isSystem,
-                    "launchable" to (appInfo.packageName in launchablePackages),
+                InstalledAppInfo(
+                    packageName = appInfo.packageName,
+                    label = if (label.isNotEmpty()) label else appInfo.packageName,
+                    system = isSystem,
+                    launchable = appInfo.packageName in launchablePackages,
                 )
             }
             .sortedWith(
-                compareByDescending<Map<String, Any>> { it["launchable"] == true }
-                    .thenBy<Map<String, Any>> { it["system"] == true }
-                    .thenBy(String.CASE_INSENSITIVE_ORDER) { it["label"]?.toString().orEmpty() }
-                    .thenBy(String.CASE_INSENSITIVE_ORDER) { it["packageName"]?.toString().orEmpty() },
+                compareByDescending<InstalledAppInfo> { it.launchable }
+                    .thenBy<InstalledAppInfo> { it.system }
+                    .thenBy(String.CASE_INSENSITIVE_ORDER, InstalledAppInfo::label)
+                    .thenBy(String.CASE_INSENSITIVE_ORDER, InstalledAppInfo::packageName),
             )
             .toList()
     }
@@ -1989,12 +1997,23 @@ class MainActivity : FlutterFragmentActivity() {
                     callback(Result.success(pigeonMap(getHappCrypt5Support())))
                 }
 
-                override fun getInstalledApps(callback: (Result<List<Map<String?, Any?>?>>) -> Unit) {
+                override fun getInstalledApps(callback: (Result<List<InstalledAppMessage?>>) -> Unit) {
                     Thread {
                         runCatching { getInstalledApps() }
                             .onSuccess { apps ->
                                 mainHandler.post {
-                                    callback(Result.success(pigeonMapList(apps)))
+                                    callback(
+                                        Result.success(
+                                            apps.map { app ->
+                                                InstalledAppMessage(
+                                                    packageName = app.packageName,
+                                                    label = app.label,
+                                                    system = app.system,
+                                                    launchable = app.launchable,
+                                                )
+                                            },
+                                        ),
+                                    )
                                 }
                             }
                             .onFailure { error ->
@@ -2003,6 +2022,17 @@ class MainActivity : FlutterFragmentActivity() {
                                 }
                             }
                     }.start()
+                }
+
+                override fun getInstalledAppIcon(
+                    packageName: String,
+                    sizePx: Long,
+                    callback: (Result<ByteArray?>) -> Unit,
+                ) {
+                    appIconExecutor.execute {
+                        val icon = getInstalledAppIcon(packageName, sizePx.toInt())
+                        mainHandler.post { callback(Result.success(icon)) }
+                    }
                 }
 
                 override fun setQuickSettingsTileLabel(label: String, callback: (Result<Unit>) -> Unit) {

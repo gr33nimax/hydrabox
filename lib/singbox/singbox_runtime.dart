@@ -1159,14 +1159,18 @@ class SingboxRuntime {
       return const <Map<String, dynamic>>[];
     }
     try {
-      // Pigeon map generics are stricter than Android's runtime payload shape
-      // here: the codec can return _Map<Object?, Object?> and generated Pigeon
-      // code casts it before our normalizer runs. Keep installed-apps on the
-      // legacy MethodChannel until it is migrated to a typed Pigeon DTO.
-      final value = await _methods.invokeListMethod<dynamic>(
-        'getInstalledApps',
-      );
-      return _normalizeMapList(value);
+      final value = await _hostApi.getInstalledApps();
+      return value
+          .whereType<pigeon.InstalledAppMessage>()
+          .map(
+            (app) => <String, dynamic>{
+              'packageName': app.packageName,
+              'label': app.label,
+              'system': app.system,
+              'launchable': app.launchable,
+            },
+          )
+          .toList(growable: false);
     } on MissingPluginException {
       return const <Map<String, dynamic>>[];
     }
@@ -1180,10 +1184,10 @@ class SingboxRuntime {
       return null;
     }
     try {
-      return await _methods.invokeMethod<Uint8List>('getInstalledAppIcon', {
-        'packageName': packageName.trim(),
-        'sizePx': sizePx.clamp(24, 96).toInt(),
-      });
+      return await _hostApi.getInstalledAppIcon(
+        packageName.trim(),
+        sizePx.clamp(24, 96).toInt(),
+      );
     } on MissingPluginException {
       return null;
     } on PlatformException {
