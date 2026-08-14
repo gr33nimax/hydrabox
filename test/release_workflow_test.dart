@@ -72,12 +72,12 @@ void main() {
     expect(provenance['distribution'], {
       'id': 'io.hydrabox.hydracore',
       'name': 'HydraCore',
-      'version': 'v1.13.16-extended-hydracore.11-debug.12',
+      'version': 'v1.13.16-extended-hydracore.11-debug.13',
       'role': 'client',
     });
     expect(
       (provenance['source'] as Map<String, dynamic>)['commit'],
-      '0dac99bdf8f5cf261c90e02115db0e5a2635e10a',
+      'd0d4b1dca77b6c691945999f17d56f223b7d4ea0',
     );
     expect(
       (provenance['upstream'] as Map<String, dynamic>)['commit'],

@@ -662,8 +662,8 @@ class ParsedOutboundSchema {
           }
         }
         final workers = config['workers'];
-        if (workers != null && workers != 4) {
-          return 'call workers must define exactly four VK lanes';
+        if (workers != null && workers != 8) {
+          return 'call workers must define exactly eight VK lanes';
         }
         final workerConnectTimeout = config['worker_connect_timeout'];
         if (workerConnectTimeout != null) {

@@ -1,5 +1,12 @@
 # HydraBox changelog
 
+## Unreleased
+
+- Pinned the intentionally incompatible HydraCore debug.13 / VK parasite wire
+  v5 client: eight independent KCP lanes, pre-KCP admission control, bounded
+  relay flow credit and video-class RTP payload type 96. A matching wire-v5 VPS
+  runtime is required.
+
 ## [0.5.0]
 
 - Replaced the shared VK KCP session with the wire-v4 `vk_parasite`

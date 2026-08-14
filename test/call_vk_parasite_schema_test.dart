@@ -16,7 +16,7 @@ void main() {
     'user': 'alice',
     'password': 'per-user-secret',
     'obfs_password': 'ooooooooooooooooooooooooooooooooooooooooooo',
-    'workers': 4,
+    'workers': 8,
     'worker_connect_timeout': '12s',
   };
 
@@ -26,7 +26,7 @@ void main() {
     expect(sanitized, isNotNull);
     expect(sanitized?['mode'], 'vk_parasite');
     expect(sanitized?['join_links'], hasLength(2));
-    expect(sanitized?['workers'], 4);
+    expect(sanitized?['workers'], 8);
     expect(ParsedOutboundSchema.validate(sanitized!), isNull);
   });
 
@@ -44,7 +44,7 @@ void main() {
 
     expect(
       ParsedOutboundSchema.validate(wrongLaneCount),
-      contains('exactly four'),
+      contains('exactly eight'),
     );
     expect(ParsedOutboundSchema.validate(tooManyLinks), contains('1..4'));
     expect(

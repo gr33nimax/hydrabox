@@ -11,15 +11,17 @@ void main() {
 
     expect(capabilities.apiVersion, 2);
     expect(capabilities.coreId, 'io.hydrabox.hydracore');
-    expect(capabilities.coreVersion, 'v1.13.16-extended-hydracore.11-debug.12');
+    expect(capabilities.coreVersion, 'v1.13.16-extended-hydracore.11-debug.13');
     expect(capabilities.coreRole, 'client');
     expect(capabilities.supportsCallVkParasite, isTrue);
     expect(capabilities.supportsCallVkParasiteClient, isTrue);
     expect(capabilities.supportsCallVkParasiteServer, isFalse);
     expect(capabilities.supportsCallVkTelemetry, isTrue);
-    expect(capabilities.supportsCallVkFourLaneKcp, isTrue);
-    expect(capabilities.callVkParasiteWireMin, 4);
-    expect(capabilities.callVkParasiteWireMax, 4);
+    expect(capabilities.supportsCallVkEightLaneKcp, isTrue);
+    expect(capabilities.supportsCallVkPreKcpAdmission, isTrue);
+    expect(capabilities.supportsCallVkRelayFlowControl, isTrue);
+    expect(capabilities.callVkParasiteWireMin, 5);
+    expect(capabilities.callVkParasiteWireMax, 5);
     expect(capabilities.callModes, {'vk_parasite'});
     expect(capabilities.validationProfiles, {'local', 'remote_v2'});
     expect(capabilities.subscriptionContracts, {2});
@@ -41,7 +43,9 @@ void main() {
       'call_vk_parasite',
       'call_vk_parasite_client',
       'call_vk_telemetry',
-      'call_vk_four_lane_kcp',
+      'call_vk_eight_lane_kcp',
+      'call_vk_pre_kcp_admission',
+      'call_vk_relay_flow_control',
     ]) {
       final document = _capabilities();
       (document['features'] as Map<String, dynamic>)[feature] = false;
@@ -97,7 +101,7 @@ Map<String, dynamic> _capabilities() => {
   'identity': {
     'core_id': 'io.hydrabox.hydracore',
     'core_name': 'HydraCore',
-    'core_version': 'v1.13.16-extended-hydracore.11-debug.12',
+    'core_version': 'v1.13.16-extended-hydracore.11-debug.13',
     'role': 'client',
   },
   'features': {
@@ -120,7 +124,9 @@ Map<String, dynamic> _capabilities() => {
     'call_vk_parasite_client': true,
     'call_vk_parasite_server': false,
     'call_vk_telemetry': true,
-    'call_vk_four_lane_kcp': true,
+    'call_vk_eight_lane_kcp': true,
+    'call_vk_pre_kcp_admission': true,
+    'call_vk_relay_flow_control': true,
     'amnezia_version': 3,
   },
   'protocols': {
@@ -146,7 +152,7 @@ Map<String, dynamic> _capabilities() => {
     'endpoints': ['wireguard'],
     'call_platforms': ['vk'],
     'call_modes': ['vk_parasite'],
-    'call_vk_parasite_wire': {'min': 4, 'max': 4},
+    'call_vk_parasite_wire': {'min': 5, 'max': 5},
   },
   'tun_stacks': ['system', 'gvisor', 'mixed'],
   'xhttp_modes': ['packet-up', 'stream-up', 'stream-one'],
