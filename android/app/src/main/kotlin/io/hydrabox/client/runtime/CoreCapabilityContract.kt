@@ -1,5 +1,6 @@
 package io.hydrabox.client.runtime
 
+import org.json.JSONArray
 import org.json.JSONObject
 
 /** Reduces HydraCore's signed capability document to the typed IPC surface. */
@@ -22,7 +23,12 @@ internal object CoreCapabilityContract {
         val protocols = root.getJSONObject("protocols")
         val supported = linkedSetOf<String>()
         listOf("inbounds", "outbounds", "endpoints").forEach { kind ->
-            val values = protocols.getJSONArray(kind)
+            val advertised = protocols.opt(kind)
+            if (advertised == null || advertised === JSONObject.NULL) return@forEach
+            require(advertised is JSONArray) {
+                "HydraCore protocol registry is not an array"
+            }
+            val values = advertised
             repeat(values.length()) { index ->
                 val raw = values.get(index)
                 require(raw is String) { "HydraCore protocol identifier is not a string" }
