@@ -64,7 +64,10 @@ void main() {
     ).readAsStringSync();
 
     expect(workflow, contains('api-level: [26, 30, 34, 37]'));
-    expect(workflow, contains("matrix.api-level == 37 && 'canary' || 'stable'"));
+    expect(
+      workflow,
+      contains("matrix.api-level == 37 && 'canary' || 'stable'"),
+    );
     expect(workflow, contains(':app:connectedDebugAndroidTest'));
     expect(workflow, contains('submodules: recursive'));
     expect(workflow, contains('scripts/fetch_libbox.py'));
