@@ -2303,6 +2303,13 @@ class AppLocalizationsRu extends AppLocalizations {
       'Установленное ядро отсутствует, повреждено или несовместимо. Подключения отключены, пока не будет восстановлено проверенное ядро.';
 
   @override
+  String get bootstrapCoreRepairAction => 'Восстановить встроенное ядро';
+
+  @override
+  String get bootstrapCoreRepairFailed =>
+      'Не удалось перезапустить встроенное ядро. Установите более новую проверенную сборку или экспортируйте диагностику.';
+
+  @override
   String get coreManagerTitle => 'Менеджер ядра';
 
   @override

@@ -2297,6 +2297,13 @@ class AppLocalizationsEn extends AppLocalizations {
       'The installed core is missing, damaged, or incompatible. Connections stay disabled until a verified core is restored.';
 
   @override
+  String get bootstrapCoreRepairAction => 'Restore embedded core';
+
+  @override
+  String get bootstrapCoreRepairFailed =>
+      'The embedded core could not be restarted. Install a newer verified build or export diagnostics.';
+
+  @override
   String get coreManagerTitle => 'Core Manager';
 
   @override

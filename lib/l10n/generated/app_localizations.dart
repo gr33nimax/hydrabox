@@ -4083,6 +4083,18 @@ abstract class AppLocalizations {
   /// **'The installed core is missing, damaged, or incompatible. Connections stay disabled until a verified core is restored.'**
   String get bootstrapCoreRecoveryMessage;
 
+  /// No description provided for @bootstrapCoreRepairAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Restore embedded core'**
+  String get bootstrapCoreRepairAction;
+
+  /// No description provided for @bootstrapCoreRepairFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The embedded core could not be restarted. Install a newer verified build or export diagnostics.'**
+  String get bootstrapCoreRepairFailed;
+
   /// No description provided for @coreManagerTitle.
   ///
   /// In en, this message translates to:

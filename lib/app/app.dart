@@ -2737,9 +2737,9 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     if (_bootstrapInFlight || !mounted) return;
     setState(() => _bootstrapInFlight = true);
     try {
-      await platform_bridge.CoreManagerHostApi()
-          .rollback()
-          .timeout(const Duration(seconds: 20));
+      await platform_bridge.CoreManagerHostApi().rollback().timeout(
+        const Duration(seconds: 20),
+      );
     } catch (error, stackTrace) {
       AppLogStore.error(
         'bootstrap',
