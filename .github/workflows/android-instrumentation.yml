@@ -86,10 +86,15 @@ jobs:
       fail-fast: false
       max-parallel: 2
       matrix:
-        api-level: [26, 30, 34, 37]
+        api-level: [26, 30, 34]
         arch: [x86_64]
         runner: [ubuntu-latest]
         include:
+          - api-level: 37
+            sdk-level: "37.0"
+            target: google_apis
+            arch: x86_64
+            runner: ubuntu-latest
           - api-level: 34
             arch: arm64-v8a
             runner: ubuntu-24.04-arm
@@ -108,25 +113,21 @@ jobs:
           path: instrumentation-apks
 
       - name: Enable KVM
+        if: matrix.arch == 'x86_64'
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Install Android 17 preview platform
-        if: matrix.api-level == 37
-        run: >-
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          --install 'platforms;android-37' --channel=3
-
       - name: Run isolated-runtime instrumentation
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
         with:
-          api-level: ${{ matrix.api-level }}
+          api-level: ${{ matrix.sdk-level || matrix.api-level }}
+          system-image-api-level: ${{ matrix.sdk-level || matrix.api-level }}
           channel: ${{ matrix.api-level == 37 && 'canary' || 'stable' }}
           arch: ${{ matrix.arch }}
-          target: default
+          target: ${{ matrix.target || 'default' }}
           profile: pixel_2
           disable-animations: true
           emulator-options: >-

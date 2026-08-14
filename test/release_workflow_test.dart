@@ -64,14 +64,17 @@ void main() {
       '.github/workflows/android-instrumentation.yml',
     ).readAsStringSync();
 
-    expect(workflow, contains('api-level: [26, 30, 34, 37]'));
+    expect(workflow, contains('api-level: [26, 30, 34]'));
+    expect(workflow, contains('sdk-level: "37.0"'));
+    expect(workflow, contains('system-image-api-level:'));
+    expect(workflow, contains('target: google_apis'));
     expect(workflow, contains('runner: ubuntu-24.04-arm'));
     expect(workflow, contains('arch: arm64-v8a'));
     expect(
       workflow,
       contains("matrix.api-level == 37 && 'canary' || 'stable'"),
     );
-    expect(workflow, contains("--install 'platforms;android-37' --channel=3"));
+    expect(workflow, contains("if: matrix.arch == 'x86_64'"));
     expect(workflow, contains(':app:assembleDebugAndroidTest'));
     expect(workflow, contains('adb shell am instrument -w'));
     expect(workflow, isNot(contains('set -euo pipefail')));
