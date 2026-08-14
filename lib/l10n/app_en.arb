@@ -965,5 +965,36 @@
   "bootstrapStorageRecoveryTitle": "Storage needs recovery",
   "bootstrapStorageRecoveryMessage": "HydraBox could not open its durable data. No temporary defaults were substituted. Retry or open Recovery Center after storage becomes available.",
   "bootstrapCoreRecoveryTitle": "HydraCore needs recovery",
-  "bootstrapCoreRecoveryMessage": "The installed core is missing, damaged, or incompatible. Connections stay disabled until a verified core is restored."
+  "bootstrapCoreRecoveryMessage": "The installed core is missing, damaged, or incompatible. Connections stay disabled until a verified core is restored.",
+  "coreManagerTitle": "Core Manager",
+  "coreManagerSubtitle": "HydraCore updates are checked, downloaded, tested, and activated only when you request each step.",
+  "coreManagerEmbeddedVersion": "Embedded core",
+  "coreManagerActiveVersion": "Active core",
+  "coreManagerPreviousVersion": "Previous core",
+  "coreManagerCandidateVersion": "Downloaded candidate",
+  "coreManagerUsingEmbedded": "HydraBox is using the core embedded in this APK.",
+  "coreManagerNoTrustedKeys": "No trusted HydraCore release key is configured. Downloads are disabled.",
+  "coreManagerDisconnectRequired": "Disconnect VPN or proxy mode before activating or rolling back HydraCore.",
+  "coreManagerCheck": "Check",
+  "coreManagerDownload": "Download",
+  "coreManagerProbe": "Test candidate",
+  "coreManagerActivate": "Activate",
+  "coreManagerRollback": "Rollback",
+  "coreManagerCheckedRelease": "Available: {version}, {size}",
+  "@coreManagerCheckedRelease": {
+    "placeholders": {
+      "version": {"type": "String"},
+      "size": {"type": "String"}
+    }
+  },
+  "coreManagerProbePassed": "Candidate passed {count} isolated checks.",
+  "@coreManagerProbePassed": {
+    "placeholders": {"count": {"type": "int"}}
+  },
+  "coreManagerProbeFailed": "Candidate failed isolated validation.",
+  "coreManagerOperationFailed": "HydraCore operation failed ({code}).",
+  "@coreManagerOperationFailed": {
+    "placeholders": {"code": {"type": "String"}}
+  },
+  "coreManagerOpenAction": "Manage HydraCore"
 }

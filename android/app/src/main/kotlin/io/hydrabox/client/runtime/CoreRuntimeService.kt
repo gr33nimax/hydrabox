@@ -151,6 +151,7 @@ class CoreRuntimeService : Service() {
         // Candidate activation already required a successful isolated probe.
         // Here we confirm that the real :core process loaded the active bytes,
         // completed native setup/capability handshake, and can emit a snapshot.
+        validatePersistedConfigForHealth()
         buildSnapshot()
         if (HydraNativeLoader.loadedSource() == "active") {
             CoreBundleManager(this).readState().active?.let { active ->
@@ -160,6 +161,16 @@ class CoreRuntimeService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder = binder
+
+    private fun validatePersistedConfigForHealth() {
+        val configFile = HydraBoxApplication.configFile
+        if (!configFile.isFile) return
+        val bytes = configFile.readBytes()
+        require(bytes.isNotEmpty() && bytes.size <= MAX_CONFIG_BYTES) {
+            "Persisted HydraCore config is invalid"
+        }
+        Libbox.checkConfig(bytes.toString(Charsets.UTF_8))
+    }
 
     override fun onDestroy() {
         SingboxController.clearEventSink(controllerRegistration)

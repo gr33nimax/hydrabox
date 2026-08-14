@@ -42,6 +42,7 @@ class CoreCandidateProbeClient(context: Context) {
             .addAllValidationFixtures(validationFixtures.map { ByteString.copyFrom(it) })
             .build()
         val completed = AtomicBoolean(false)
+        val responseReceived = AtomicBoolean(false)
         lateinit var connection: ServiceConnection
         fun complete(result: Result<CoreRuntimeProtocol.CoreProbeReport>) {
             if (!completed.compareAndSet(false, true)) return
@@ -54,14 +55,21 @@ class CoreCandidateProbeClient(context: Context) {
                 val service = ICoreProbeService.Stub.asInterface(binder)
                 executor.execute {
                     val result = runCatching {
+                        val responseBytes = service.runProbe(request.toByteArray())
+                        responseReceived.set(true)
                         val report = CoreRuntimeProtocol.CoreProbeReport.parseFrom(
-                            service.runProbe(request.toByteArray()),
+                            responseBytes,
                         )
-                        check(report.healthy)
                         check(report.releaseSequence == candidate.releaseSequence)
                         check(report.artifactSha256.toByteArray().contentEquals(candidate.sha256.hexToBytes()))
                         check(report.loadedSource == "active")
+                        if (!report.healthy) return@runCatching report
                         check(report.contract.apiMajor == CoreBundleManifest.CORE_API_MAJOR)
+                        check(
+                            report.contract.capabilitiesSha256.toByteArray().contentEquals(
+                                candidate.capabilitiesSha256.hexToBytes(),
+                            ),
+                        )
                         check(report.validatedFixtureCount == validationFixtures.size)
                         manager.markCandidateProbed(candidate.releaseSequence, candidate.sha256)
                         report
@@ -71,6 +79,7 @@ class CoreCandidateProbeClient(context: Context) {
             }
 
             override fun onServiceDisconnected(name: ComponentName?) {
+                if (responseReceived.get()) return
                 complete(Result.failure(IllegalStateException("HydraCore candidate probe crashed")))
             }
 

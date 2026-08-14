@@ -22,6 +22,7 @@ data class InstalledCoreBundle(
     val abi: String,
     val libraryPath: String,
     val sha256: String,
+    val capabilitiesSha256: String,
 )
 
 data class CoreBundleState(
@@ -107,6 +108,7 @@ class CoreBundleManager(
             abi = abi,
             libraryPath = destination.canonicalPath,
             sha256 = artifact.sha256,
+            capabilitiesSha256 = manifest.capabilitiesSha256,
         )
         require(isInstalledFileValid(installed)) { "Staged HydraCore candidate is invalid" }
         val editor = prefs.edit()
@@ -327,10 +329,13 @@ class CoreBundleManager(
         val abi = prefs.getString("${prefix}abi", null).orEmpty()
         val path = prefs.getString("${prefix}path", null).orEmpty()
         val sha = prefs.getString("${prefix}sha256", null).orEmpty()
+        val capabilitiesSha =
+            prefs.getString("${prefix}capabilities_sha256", null).orEmpty()
         if (sequence <= 0L || version.isBlank() || abi.isBlank() ||
-            path.isBlank() || !SHA_PATTERN.matches(sha)
+            path.isBlank() || !SHA_PATTERN.matches(sha) ||
+            !SHA_PATTERN.matches(capabilitiesSha)
         ) return null
-        return InstalledCoreBundle(sequence, version, abi, path, sha)
+        return InstalledCoreBundle(sequence, version, abi, path, sha, capabilitiesSha)
     }
 
     private fun writeSlot(
@@ -343,6 +348,7 @@ class CoreBundleManager(
         editor.putString("${prefix}abi", bundle.abi)
         editor.putString("${prefix}path", bundle.libraryPath)
         editor.putString("${prefix}sha256", bundle.sha256)
+        editor.putString("${prefix}capabilities_sha256", bundle.capabilitiesSha256)
     }
 
     private fun clearSlot(editor: SharedPreferences.Editor, prefix: String) {
@@ -351,6 +357,7 @@ class CoreBundleManager(
         editor.remove("${prefix}abi")
         editor.remove("${prefix}path")
         editor.remove("${prefix}sha256")
+        editor.remove("${prefix}capabilities_sha256")
     }
 
     private fun pruneUnusedVersions() {

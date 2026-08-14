@@ -965,5 +965,36 @@
   "bootstrapStorageRecoveryTitle": "Требуется восстановление хранилища",
   "bootstrapStorageRecoveryMessage": "HydraBox не смог открыть постоянные данные. Временные настройки не подставлялись. Повторите попытку или откройте Центр восстановления после восстановления доступа к данным.",
   "bootstrapCoreRecoveryTitle": "Требуется восстановление HydraCore",
-  "bootstrapCoreRecoveryMessage": "Установленное ядро отсутствует, повреждено или несовместимо. Подключения отключены, пока не будет восстановлено проверенное ядро."
+  "bootstrapCoreRecoveryMessage": "Установленное ядро отсутствует, повреждено или несовместимо. Подключения отключены, пока не будет восстановлено проверенное ядро.",
+  "coreManagerTitle": "Менеджер ядра",
+  "coreManagerSubtitle": "HydraCore проверяется, скачивается, тестируется и активируется только после отдельного действия пользователя на каждом шаге.",
+  "coreManagerEmbeddedVersion": "Встроенное ядро",
+  "coreManagerActiveVersion": "Активное ядро",
+  "coreManagerPreviousVersion": "Предыдущее ядро",
+  "coreManagerCandidateVersion": "Скачанный кандидат",
+  "coreManagerUsingEmbedded": "HydraBox использует ядро, встроенное в этот APK.",
+  "coreManagerNoTrustedKeys": "В приложении нет доверенного ключа релизов HydraCore. Загрузка отключена.",
+  "coreManagerDisconnectRequired": "Отключите VPN или режим прокси перед активацией или откатом HydraCore.",
+  "coreManagerCheck": "Проверить",
+  "coreManagerDownload": "Скачать",
+  "coreManagerProbe": "Проверить кандидата",
+  "coreManagerActivate": "Активировать",
+  "coreManagerRollback": "Откатить",
+  "coreManagerCheckedRelease": "Доступно: {version}, {size}",
+  "@coreManagerCheckedRelease": {
+    "placeholders": {
+      "version": {"type": "String"},
+      "size": {"type": "String"}
+    }
+  },
+  "coreManagerProbePassed": "Кандидат прошёл изолированные проверки: {count}.",
+  "@coreManagerProbePassed": {
+    "placeholders": {"count": {"type": "int"}}
+  },
+  "coreManagerProbeFailed": "Кандидат не прошёл изолированную проверку.",
+  "coreManagerOperationFailed": "Операция HydraCore завершилась ошибкой ({code}).",
+  "@coreManagerOperationFailed": {
+    "placeholders": {"code": {"type": "String"}}
+  },
+  "coreManagerOpenAction": "Управление HydraCore"
 }

@@ -126,6 +126,7 @@ class CoreManagerStateMessage {
     required this.trustedKeyRingAvailable,
     required this.usingEmbeddedFallback,
     required this.runtimeDisconnected,
+    required this.recoveryRollbackAllowed,
   });
 
   String embeddedVersion;
@@ -135,6 +136,7 @@ class CoreManagerStateMessage {
   bool trustedKeyRingAvailable;
   bool usingEmbeddedFallback;
   bool runtimeDisconnected;
+  bool recoveryRollbackAllowed;
 }
 
 class CheckedCoreReleaseMessage {

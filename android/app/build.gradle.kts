@@ -29,6 +29,14 @@ val hydraCoreReleasePublicKeys =
         .get()
 val escapedHydraCoreReleasePublicKeys =
     hydraCoreReleasePublicKeys.replace("\\", "\\\\").replace("\"", "\\\"")
+val embeddedHydraCoreVersionFile =
+    rootProject.file("../hydracore/release/HYDRACORE_VERSION")
+val embeddedHydraCoreVersion =
+    embeddedHydraCoreVersionFile.takeIf { it.isFile }?.readText()?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?: "embedded"
+val escapedEmbeddedHydraCoreVersion =
+    embeddedHydraCoreVersion.replace("\\", "\\\\").replace("\"", "\\\"")
 
 val verifyPinnedLibbox by tasks.registering {
     group = "verification"
@@ -102,6 +110,11 @@ android {
             "String",
             "HYDRACORE_RELEASE_PUBLIC_KEYS",
             "\"$escapedHydraCoreReleasePublicKeys\"",
+        )
+        buildConfigField(
+            "String",
+            "EMBEDDED_HYDRACORE_VERSION",
+            "\"$escapedEmbeddedHydraCoreVersion\"",
         )
     }
 

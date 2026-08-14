@@ -2,7 +2,9 @@ package io.hydrabox.client.runtime
 
 import android.app.Service
 import android.content.Intent
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import com.google.protobuf.ByteString
 import go.HydraNativeLoader
 import io.hydrabox.client.HydraBoxApplication
@@ -14,8 +16,18 @@ import java.security.MessageDigest
 import java.util.UUID
 
 class CoreProbeService : Service() {
+    private val mainHandler = Handler(Looper.getMainLooper())
     private val binder = object : ICoreProbeService.Stub() {
-        override fun runProbe(requestBytes: ByteArray?): ByteArray = probe(requestBytes).toByteArray()
+        override fun runProbe(requestBytes: ByteArray?): ByteArray {
+            val report = probe(requestBytes).toByteArray()
+            // A probe process cannot safely load a different .so later in the same VM.
+            // Terminate after returning the binder payload so every candidate gets a clean process.
+            mainHandler.postDelayed({
+                stopSelf()
+                android.os.Process.killProcess(android.os.Process.myPid())
+            }, PROCESS_EXIT_DELAY_MILLIS)
+            return report
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder = binder
@@ -128,5 +140,6 @@ class CoreProbeService : Service() {
         private const val SHA256_BYTES = 32
         private const val MAX_FIXTURE_BYTES = 256 * 1024
         private const val MAX_PROBE_REQUEST_BYTES = 768 * 1024
+        private const val PROCESS_EXIT_DELAY_MILLIS = 250L
     }
 }

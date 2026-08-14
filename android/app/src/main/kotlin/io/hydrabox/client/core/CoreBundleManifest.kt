@@ -55,6 +55,10 @@ data class CoreBundleManifest(
         private val keyPattern = Regex("^[A-Za-z0-9._-]{1,64}$")
         private val assetPattern = Regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,126}$")
         private val supportedAbis = setOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        private const val RUNTIME_SNAPSHOT_SCHEMA = 1
+        private const val RUNTIME_EVENT_SCHEMA = 1
+        private const val CONFIG_SCHEMA = 1
+        private const val SUBSCRIPTION_SCHEMA = 2
 
         fun parse(rawBytes: ByteArray): CoreBundleManifest {
             require(rawBytes.isNotEmpty() && rawBytes.size <= MAX_MANIFEST_BYTES) {
@@ -77,6 +81,18 @@ data class CoreBundleManifest(
             require(coreApiMajor == CORE_API_MAJOR && coreApiMinor >= 0) {
                 "HydraCore API is incompatible"
             }
+            val runtimeSnapshotSchema = root.schemaRange("runtimeSnapshotSchema")
+            val runtimeEventSchema = root.schemaRange("runtimeEventSchema")
+            val configSchema = root.schemaRange("configSchema")
+            val subscriptionSchema = root.schemaRange("subscriptionSchema")
+            require(
+                runtimeSnapshotSchema.contains(RUNTIME_SNAPSHOT_SCHEMA) &&
+                    runtimeEventSchema.contains(RUNTIME_EVENT_SCHEMA) &&
+                    configSchema.contains(CONFIG_SCHEMA) &&
+                    subscriptionSchema.contains(SUBSCRIPTION_SCHEMA)
+            ) {
+                "HydraCore schema surface is incompatible"
+            }
             return CoreBundleManifest(
                 releaseSequence = releaseSequence,
                 version = root.requiredString("version", versionPattern),
@@ -85,10 +101,10 @@ data class CoreBundleManifest(
                 publishedAt = Instant.parse(root.getString("publishedAt")),
                 coreApiMajor = coreApiMajor,
                 coreApiMinor = coreApiMinor,
-                runtimeSnapshotSchema = root.schemaRange("runtimeSnapshotSchema"),
-                runtimeEventSchema = root.schemaRange("runtimeEventSchema"),
-                configSchema = root.schemaRange("configSchema"),
-                subscriptionSchema = root.schemaRange("subscriptionSchema"),
+                runtimeSnapshotSchema = runtimeSnapshotSchema,
+                runtimeEventSchema = runtimeEventSchema,
+                configSchema = configSchema,
+                subscriptionSchema = subscriptionSchema,
                 capabilitiesSha256 =
                     root.requiredString("capabilitiesSha256", shaPattern).lowercase(),
                 keyId = root.requiredString("keyId", keyPattern),

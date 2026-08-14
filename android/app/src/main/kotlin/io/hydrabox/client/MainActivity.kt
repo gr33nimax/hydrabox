@@ -23,6 +23,8 @@ import android.util.Log
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
+import io.hydrabox.client.core.CoreManagerHostApiHandler
+import io.hydrabox.client.generated.CoreManagerHostApi
 import io.hydrabox.client.singbox.HydraBoxService
 import io.hydrabox.client.singbox.HydraBoxDefaultNetworkMonitor
 import io.hydrabox.client.singbox.HydraBoxDiagnostics
@@ -34,6 +36,7 @@ import io.hydrabox.client.singbox.HydraBoxVpnService
 import io.hydrabox.client.singbox.SingboxController
 import io.hydrabox.client.singbox.RuntimeEventConsumer
 import io.hydrabox.client.runtime.CoreRuntimeClient
+import io.hydrabox.client.runtime.CoreRuntimeService
 import io.hydrabox.client.runtime.proto.CoreRuntimeProtocol
 import io.hydrabox.client.generated.FlutterError as PigeonFlutterError
 import io.hydrabox.client.generated.NetworkInterfaceStateMessage
@@ -147,6 +150,8 @@ class MainActivity : FlutterFragmentActivity() {
         private const val TAG = "HydraBoxMainActivity"
         private const val QUICK_TILE_LABEL_FILE = "quick_tile_label.txt"
         private const val MAX_SUBSCRIPTION_REDIRECTS = 5
+        private const val CORE_PROCESS_EXIT_DEADLINE_MILLIS = 5_000L
+        private const val CORE_PROCESS_EXIT_POLL_MILLIS = 50L
         private val SUBSCRIPTION_REDIRECT_CODES = setOf(301, 302, 303, 307, 308)
         private val SENSITIVE_SUBSCRIPTION_HEADERS = setOf(
             "authorization",
@@ -179,7 +184,13 @@ class MainActivity : FlutterFragmentActivity() {
     private var pendingApkInstallResult: MethodChannel.Result? = null
     private var pendingNotificationPermissionResult: MethodChannel.Result? = null
     private var deepLinkEventSink: EventChannel.EventSink? = null
-    private val coreRuntimeClient by lazy { CoreRuntimeClient(applicationContext) }
+    private var mutableCoreRuntimeClient: CoreRuntimeClient? = null
+    private val coreRuntimeClient: CoreRuntimeClient
+        get() = mutableCoreRuntimeClient
+            ?: CoreRuntimeClient(applicationContext).also { mutableCoreRuntimeClient = it }
+    private var coreManagerHostApiHandler: CoreManagerHostApiHandler? = null
+    @Volatile
+    private var activityDestroyed = false
     private var singboxEventConsumer: RuntimeEventConsumer? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private val ioExecutor = Executors.newSingleThreadExecutor()
@@ -2006,6 +2017,13 @@ class MainActivity : FlutterFragmentActivity() {
         super.configureFlutterEngine(flutterEngine)
         coreRuntimeClient.connect()
         setupSingboxHostApi(flutterEngine.dartExecutor.binaryMessenger)
+        coreManagerHostApiHandler = CoreManagerHostApiHandler(
+            context = applicationContext,
+            runtimeClient = { coreRuntimeClient },
+            cycleCoreProcess = ::cycleCoreProcessForBundleChange,
+        ).also { handler ->
+            CoreManagerHostApi.setUp(flutterEngine.dartExecutor.binaryMessenger, handler)
+        }
 
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
@@ -2739,11 +2757,74 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     override fun onDestroy() {
+        activityDestroyed = true
+        coreManagerHostApiHandler?.close()
+        coreManagerHostApiHandler = null
         singboxEventConsumer?.let(coreRuntimeClient::unregisterEventConsumer)
         singboxEventConsumer = null
         coreRuntimeClient.close()
         deepLinkEventSink = null
         super.onDestroy()
+    }
+
+    private fun cycleCoreProcessForBundleChange(
+        mutation: () -> Unit,
+        callback: (Result<Unit>) -> Unit,
+    ) {
+        val previousClient = coreRuntimeClient
+        singboxEventConsumer?.let(previousClient::unregisterEventConsumer)
+        previousClient.close()
+        ioExecutor.execute {
+            stopService(Intent(applicationContext, CoreRuntimeService::class.java))
+            val mutationResult = runCatching {
+                terminateCoreProcess()
+                mutation()
+            }
+            mainHandler.post {
+                if (activityDestroyed) return@post
+                val replacement = CoreRuntimeClient(applicationContext)
+                mutableCoreRuntimeClient = replacement
+                singboxEventConsumer?.let(replacement::registerEventConsumer)
+                replacement.connect()
+                replacement.contract { handshake ->
+                    callback(
+                        mutationResult.fold(
+                            onSuccess = {
+                                handshake.fold(
+                                    onSuccess = { Result.success(Unit) },
+                                    onFailure = { Result.failure(it) },
+                                )
+                            },
+                            onFailure = { Result.failure(it) },
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    private fun terminateCoreProcess() {
+        val processName = "$packageName:core"
+        val activityManager = getSystemService(ACTIVITY_SERVICE) as ActivityManager
+        requireNotNull(activityManager.runningAppProcesses) {
+            "Android process state is unavailable"
+        }.firstOrNull { it.processName == processName }
+            ?.pid
+            ?.takeIf { it != android.os.Process.myPid() }
+            ?.let(android.os.Process::killProcess)
+        val deadline = SystemClock.elapsedRealtime() + CORE_PROCESS_EXIT_DEADLINE_MILLIS
+        while (SystemClock.elapsedRealtime() < deadline) {
+            val stillAlive = requireNotNull(activityManager.runningAppProcesses) {
+                "Android process state became unavailable"
+            }.any { it.processName == processName }
+            if (!stillAlive) return
+            Thread.sleep(CORE_PROCESS_EXIT_POLL_MILLIS)
+        }
+        check(
+            requireNotNull(activityManager.runningAppProcesses).none {
+                it.processName == processName
+            },
+        ) { "HydraCore process did not stop for version change" }
     }
 
     override fun onResume() {
