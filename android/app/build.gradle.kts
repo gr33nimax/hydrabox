@@ -110,6 +110,7 @@ android {
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 26
         targetSdk = flutter.targetSdkVersion
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         buildConfigField(
@@ -213,6 +214,8 @@ dependencies {
     ksp("androidx.room:room-compiler:2.8.4")
     baselineProfile(project(":benchmark"))
     testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
 }
 
 protobuf {

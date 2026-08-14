@@ -56,6 +56,23 @@ void main() {
     );
   });
 
+  test('Android lifecycle seams run only in the GitHub emulator matrix', () {
+    final workflow = File(
+      '.github/workflows/android-instrumentation.yml',
+    ).readAsStringSync();
+
+    expect(workflow, contains('api-level: [26, 30, 34, 37]'));
+    expect(workflow, contains(':app:connectedDebugAndroidTest'));
+    expect(workflow, contains('submodules: recursive'));
+    expect(workflow, contains('scripts/fetch_libbox.py'));
+    expect(
+      workflow,
+      contains(
+        'reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d',
+      ),
+    );
+  });
+
   test('duplicate automatic HydraCore and test APK workflows are removed', () {
     expect(
       File('.github/workflows/android-test-apk.yml').existsSync(),
