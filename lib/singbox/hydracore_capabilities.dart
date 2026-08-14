@@ -83,7 +83,7 @@ class HydraCoreCapabilities {
   /// Expected release surface used by pure-Dart code and test fakes.
   static const requiredV2 = HydraCoreCapabilities(
     apiVersion: supportedApiVersion,
-    coreVersion: 'v1.13.16-extended-hydracore.11-debug.11',
+    coreVersion: 'v1.13.16-extended-hydracore.11-debug.12',
     outboundProtocols: {
       'socks',
       'http',
