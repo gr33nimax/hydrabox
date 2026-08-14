@@ -25,10 +25,15 @@ class CoreRuntimeException(
 
 /** Main-process proxy for the :core binder. It contains no libbox references. */
 class CoreRuntimeClient(context: Context) {
+    private data class PendingServiceCall(
+        val action: (ICoreRuntimeService) -> Unit,
+        val onFailure: (Throwable) -> Unit,
+    )
+
     private val appContext = context.applicationContext
     private val mainHandler = Handler(Looper.getMainLooper())
     private val lock = Any()
-    private val waitingForService = ArrayDeque<(ICoreRuntimeService) -> Unit>()
+    private val waitingForService = ArrayDeque<PendingServiceCall>()
     private val resultCallbacks = ConcurrentHashMap<String, (Result<Unit>) -> Unit>()
     private val probeResultCallbacks =
         ConcurrentHashMap<String, (Result<CoreRuntimeProtocol.ProbeResult>) -> Unit>()
@@ -89,7 +94,7 @@ class CoreRuntimeClient(context: Context) {
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             val connected = ICoreRuntimeService.Stub.asInterface(binder)
-            val pending: List<(ICoreRuntimeService) -> Unit>
+            val pending: List<PendingServiceCall>
             synchronized(lock) {
                 service = connected
                 binding = false
@@ -99,7 +104,13 @@ class CoreRuntimeClient(context: Context) {
             }
             runCatching { connected.registerListener(listener) }
                 .onFailure { disconnect(it) }
-            pending.forEach { action -> runCatching { action(connected) }.onFailure(::disconnect) }
+            pending.forEach { call ->
+                runCatching { call.action(connected) }
+                    .onFailure { error ->
+                        call.onFailure(error)
+                        disconnect(error)
+                    }
+            }
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -107,11 +118,15 @@ class CoreRuntimeClient(context: Context) {
         }
 
         override fun onBindingDied(name: ComponentName?) {
+            runCatching { appContext.unbindService(connection) }
+            synchronized(lock) { bound = false }
             disconnect(CoreRuntimeException("runtime.ipc.binding_died", "ipc", true, "HydraCore binding died."))
             connect()
         }
 
         override fun onNullBinding(name: ComponentName?) {
+            runCatching { appContext.unbindService(connection) }
+            synchronized(lock) { bound = false }
             disconnect(CoreRuntimeException("runtime.ipc.null_binding", "ipc", false, "HydraCore service refused the binding."))
         }
     }
@@ -128,7 +143,23 @@ class CoreRuntimeClient(context: Context) {
         )
         if (!accepted) {
             disconnect(CoreRuntimeException("runtime.ipc.bind_failed", "ipc", true, "HydraCore service could not be started."))
+            return
         }
+        synchronized(lock) { bound = true }
+        mainHandler.postDelayed({
+            val timedOut = synchronized(lock) { binding && service == null }
+            if (!timedOut) return@postDelayed
+            runCatching { appContext.unbindService(connection) }
+            synchronized(lock) { bound = false }
+            disconnect(
+                CoreRuntimeException(
+                    "runtime.ipc.bind_timeout",
+                    "ipc",
+                    true,
+                    "HydraCore service did not accept the binding in time.",
+                ),
+            )
+        }, SERVICE_BIND_DEADLINE_MILLIS)
     }
 
     fun close() {
@@ -376,7 +407,9 @@ class CoreRuntimeClient(context: Context) {
     }
 
     fun snapshot(callback: (Result<CoreRuntimeProtocol.RuntimeSnapshot>) -> Unit) {
-        withService { connected ->
+        withService(
+            onFailure = { error -> mainHandler.post { callback(Result.failure(error)) } },
+        ) { connected ->
             runCatching { CoreRuntimeProtocol.RuntimeSnapshot.parseFrom(connected.getSnapshot()) }
                 .onSuccess {
                     latestSnapshot = it
@@ -387,7 +420,9 @@ class CoreRuntimeClient(context: Context) {
     }
 
     fun contract(callback: (Result<CoreRuntimeProtocol.CoreContract>) -> Unit) {
-        withService { connected ->
+        withService(
+            onFailure = { error -> mainHandler.post { callback(Result.failure(error)) } },
+        ) { connected ->
             runCatching { CoreRuntimeProtocol.CoreContract.parseFrom(connected.getContract()) }
                 .onSuccess { mainHandler.post { callback(Result.success(it)) } }
                 .onFailure { mainHandler.post { callback(Result.failure(it)) } }
@@ -457,7 +492,9 @@ class CoreRuntimeClient(context: Context) {
             .setKind(kind)
             .addAllArguments(arguments.map { ByteString.copyFrom(it) })
             .build()
-        withService { connected ->
+        withService(
+            onFailure = { error -> mainHandler.post { callback(Result.failure(error)) } },
+        ) { connected ->
             ipcExecutor.execute {
                 val result = runCatching {
                     val response = CoreRuntimeProtocol.CoreUtilityResponse.parseFrom(
@@ -494,7 +531,7 @@ class CoreRuntimeClient(context: Context) {
                 ),
             )
         }, COMMAND_RESULT_DEADLINE_MILLIS)
-        withService { connected ->
+        withService(onFailure = { }) { connected ->
             val receiptResult = runCatching {
                 CoreRuntimeProtocol.CommandReceipt.parseFrom(connected.submit(command.toByteArray()))
             }
@@ -512,10 +549,13 @@ class CoreRuntimeClient(context: Context) {
         }
     }
 
-    private fun withService(action: (ICoreRuntimeService) -> Unit) {
+    private fun withService(
+        onFailure: (Throwable) -> Unit,
+        action: (ICoreRuntimeService) -> Unit,
+    ) {
         val connected = synchronized(lock) {
             service?.also { return@synchronized it }
-            waitingForService += action
+            waitingForService += PendingServiceCall(action, onFailure)
             null
         }
         if (connected != null) action(connected) else connect()
@@ -533,10 +573,14 @@ class CoreRuntimeClient(context: Context) {
     }
 
     private fun disconnect(error: Throwable) {
-        synchronized(lock) {
+        val pending = synchronized(lock) {
+            val values = waitingForService.toList()
+            waitingForService.clear()
             service = null
             binding = false
+            values
         }
+        pending.forEach { call -> mainHandler.post { call.onFailure(error) } }
         failPending(error)
         mainHandler.post {
             eventConsumers.forEach { consumer ->
@@ -665,6 +709,7 @@ class CoreRuntimeClient(context: Context) {
     companion object {
         private const val SCHEMA_VERSION = 1
         private const val COMMAND_RESULT_DEADLINE_MILLIS = 30_000L
+        private const val SERVICE_BIND_DEADLINE_MILLIS = 10_000L
         private const val ALL_OUTBOUNDS = "*"
     }
 }

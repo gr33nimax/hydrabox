@@ -48,6 +48,18 @@ FORBIDDEN = {
     ),
     "removed JWE key name": re.compile(r"hbx-key", re.IGNORECASE),
 }
+MAIN_PROCESS_ENTRYPOINTS = (
+    ROOT / "android" / "app" / "src" / "main" / "kotlin"
+    / "io" / "hydrabox" / "client" / "MainActivity.kt",
+    ROOT / "android" / "app" / "src" / "main" / "kotlin"
+    / "io" / "hydrabox" / "client" / "HydraBoxApplication.kt",
+    ROOT / "android" / "app" / "src" / "main" / "kotlin"
+    / "io" / "hydrabox" / "client" / "HydraBoxQuickSettingsTileService.kt",
+)
+CORE_PROCESS_ROOT = (
+    ROOT / "android" / "app" / "src" / "main" / "kotlin"
+    / "io" / "hydrabox" / "client" / "runtime"
+)
 
 
 def fail(message: str) -> NoReturn:
@@ -104,9 +116,44 @@ def verify_required_contract() -> None:
         fail("Android namespace and application ID must use io.hydrabox.client")
 
 
+def verify_android_process_isolation() -> None:
+    direct_libbox = re.compile(r"^\s*import\s+io\.nekohasekai\.libbox", re.MULTILINE)
+    for path in MAIN_PROCESS_ENTRYPOINTS:
+        content = path.read_text(encoding="utf-8")
+        if direct_libbox.search(content):
+            fail(
+                f"{path.relative_to(ROOT)} imports libbox in the Android UI process"
+            )
+
+    core_forbidden = re.compile(
+        r"^\s*import\s+(?:androidx\.room|io\.flutter|io\.hydrabox\.client\.storage)",
+        re.MULTILINE,
+    )
+    for path in CORE_PROCESS_ROOT.glob("*.kt"):
+        content = path.read_text(encoding="utf-8")
+        if core_forbidden.search(content):
+            fail(
+                f"{path.relative_to(ROOT)} crosses the isolated core/storage boundary"
+            )
+
+    manifest = (
+        ROOT / "android" / "app" / "src" / "main" / "AndroidManifest.xml"
+    ).read_text(encoding="utf-8")
+    required_process_bindings = (
+        'android:name=".runtime.CoreRuntimeService"',
+        'android:name=".runtime.CoreProbeService"',
+        'android:process=":core"',
+        'android:process=":core_probe"',
+    )
+    missing = [value for value in required_process_bindings if value not in manifest]
+    if missing:
+        fail(f"Android core process isolation markers are missing: {missing!r}")
+
+
 def main() -> None:
     verify_removed_boundaries()
     verify_required_contract()
+    verify_android_process_isolation()
     print("Verified HydraBox client boundaries and Hydra Subscription v2 markers")
 
 
