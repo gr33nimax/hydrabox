@@ -62,18 +62,23 @@ class CoreProcessIsolationInstrumentedTest {
         val contract = CoreRuntimeProtocol.CoreContract.parseFrom(service.contract)
         assertEquals(1, contract.apiMajor)
         assertTrue(
+            "runtime snapshot schema 1 is not supported",
             contract.runtimeSnapshotSchema.minimum <= 1 &&
                 contract.runtimeSnapshotSchema.maximum >= 1,
         )
         assertTrue(
+            "runtime event schema 1 is not supported",
             contract.runtimeEventSchema.minimum <= 1 &&
                 contract.runtimeEventSchema.maximum >= 1,
         )
-        assertTrue(contract.supportedProtocolIdsList.isNotEmpty())
+        assertTrue(
+            "HydraCore protocol registry was not projected into CoreContract",
+            contract.supportedProtocolIdsList.isNotEmpty(),
+        )
 
         val snapshot = CoreRuntimeProtocol.RuntimeSnapshot.parseFrom(service.getSnapshot())
-        assertTrue(snapshot.lastSequence >= 0L)
-        assertTrue(snapshot.processEpoch.isNotBlank())
+        assertTrue("snapshot sequence must be non-negative", snapshot.lastSequence >= 0L)
+        assertTrue("snapshot process epoch is blank", snapshot.processEpoch.isNotBlank())
 
         val expectedProcess = "${context.packageName}:core"
         val coreProcess = context.getSystemService(ActivityManager::class.java)
@@ -97,6 +102,6 @@ class CoreProcessIsolationInstrumentedTest {
             packageManager.getServiceInfo(component, 0)
         }
         assertEquals("${context.packageName}$suffix", info.processName)
-        assertTrue(!info.exported)
+        assertTrue("$component must not be exported", !info.exported)
     }
 }

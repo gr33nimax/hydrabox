@@ -92,7 +92,7 @@ jobs:
         with:
           name: android-instrumentation-api-${{ matrix.api-level }}
           path: |
-            android/app/build/reports/androidTests/connected/**
-            android/app/build/outputs/androidTest-results/connected/**
+            build/app/reports/androidTests/connected/**
+            build/app/outputs/androidTest-results/connected/**
           if-no-files-found: warn
           retention-days: 14

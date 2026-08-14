@@ -57,6 +57,7 @@ class CoreProbeService : Service() {
             }
             val capabilities = invokeCoreString("hydraCoreCapabilities")
             check(capabilities.isNotEmpty()) { "HydraCore capabilities are unavailable" }
+            val supportedProtocolIds = CoreCapabilityContract.supportedProtocolIds(capabilities)
             request.validationFixturesList.forEach { fixture ->
                 Libbox.checkConfig(fixture.toStringUtf8())
             }
@@ -79,6 +80,7 @@ class CoreProbeService : Service() {
                 .setSubscriptionSchema(
                     CoreRuntimeProtocol.SchemaRange.newBuilder().setMinimum(2).setMaximum(2),
                 )
+                .addAllSupportedProtocolIds(supportedProtocolIds)
                 .setCapabilitiesSha256(
                     ByteString.copyFrom(MessageDigest.getInstance("SHA-256").digest(capabilities)),
                 )

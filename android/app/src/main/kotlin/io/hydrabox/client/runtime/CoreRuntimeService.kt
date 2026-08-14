@@ -829,6 +829,7 @@ class CoreRuntimeService : Service() {
             (method.invoke(null) as String).toByteArray(Charsets.UTF_8)
         }.getOrElse { ByteArray(0) }
         require(capabilities.isNotEmpty()) { "HydraCore capabilities are unavailable" }
+        val supportedProtocolIds = CoreCapabilityContract.supportedProtocolIds(capabilities)
         val schema = CoreRuntimeProtocol.SchemaRange.newBuilder().setMinimum(1).setMaximum(1).build()
         return CoreRuntimeProtocol.CoreContract.newBuilder()
             .setApiMajor(CORE_API_MAJOR)
@@ -844,6 +845,7 @@ class CoreRuntimeService : Service() {
             .addOptionalFeatureIds("runtime.snapshot.sequence")
             .addOptionalFeatureIds("runtime.command.receipt_result")
             .addOptionalFeatureIds("probe.managed")
+            .addAllSupportedProtocolIds(supportedProtocolIds)
             .setCapabilitiesSha256(
                 ByteString.copyFrom(MessageDigest.getInstance("SHA-256").digest(capabilities)),
             )

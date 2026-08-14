@@ -93,9 +93,12 @@ class DomainCrypto(context: Context) {
     }
 
     private fun wrapDataKey(raw: ByteArray, wrappingKey: SecretKey): ByteArray {
-        val nonce = ByteArray(GCM_NONCE_BYTES).also(random::nextBytes)
         val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.ENCRYPT_MODE, wrappingKey, GCMParameterSpec(GCM_TAG_BITS, nonce))
+        // Android Keystore keys with randomized encryption enabled must generate
+        // their own IV. Supplying one is rejected on API 23+.
+        cipher.init(Cipher.ENCRYPT_MODE, wrappingKey)
+        val nonce = requireNotNull(cipher.iv) { "Android Keystore returned no GCM nonce" }
+        require(nonce.size == GCM_NONCE_BYTES) { "Android Keystore returned an invalid GCM nonce" }
         cipher.updateAAD(DATA_KEY_AAD)
         val ciphertext = cipher.doFinal(raw)
         return ByteBuffer.allocate(HEADER_BYTES + nonce.size + ciphertext.size)
