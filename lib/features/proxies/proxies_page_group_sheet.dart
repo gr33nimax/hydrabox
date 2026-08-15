@@ -9,6 +9,7 @@ class _GroupOutboundsSheet extends StatelessWidget {
     this.runtimeStates,
     required this.routeAnimation,
     required this.onSelected,
+    this.onTargetUrlTest,
     this.outboundForTag,
     required this.initialSort,
     this.onSortChanged,
@@ -21,6 +22,7 @@ class _GroupOutboundsSheet extends StatelessWidget {
   final ProxyRuntimeVisualStore? runtimeStates;
   final Animation<double> routeAnimation;
   final ValueChanged<String> onSelected;
+  final Future<void> Function(String tag)? onTargetUrlTest;
   final Outbound? Function(String tag)? outboundForTag;
   final ProxySort initialSort;
   final ValueChanged<ProxySort>? onSortChanged;
@@ -35,6 +37,7 @@ class _GroupOutboundsSheet extends StatelessWidget {
       runtimeStates: runtimeStates,
       routeAnimation: routeAnimation,
       onSelected: onSelected,
+      onTargetUrlTest: onTargetUrlTest,
       outboundForTag: outboundForTag,
       initialSort: initialSort,
       onSortChanged: onSortChanged,
@@ -51,6 +54,7 @@ class _GroupOutboundsSheetBody extends StatefulWidget {
     this.runtimeStates,
     required this.routeAnimation,
     required this.onSelected,
+    this.onTargetUrlTest,
     this.outboundForTag,
     required this.initialSort,
     this.onSortChanged,
@@ -63,6 +67,7 @@ class _GroupOutboundsSheetBody extends StatefulWidget {
   final ProxyRuntimeVisualStore? runtimeStates;
   final Animation<double> routeAnimation;
   final ValueChanged<String> onSelected;
+  final Future<void> Function(String tag)? onTargetUrlTest;
   final Outbound? Function(String tag)? outboundForTag;
   final ProxySort initialSort;
   final ValueChanged<ProxySort>? onSortChanged;
@@ -215,6 +220,9 @@ class _GroupOutboundsSheetBodyState extends State<_GroupOutboundsSheetBody> {
         showGroupHandle: showGroupHandle,
         animate: false,
         onTap: onTap,
+        onLatencyTap: widget.onTargetUrlTest == null || proxy.isGroup
+            ? null
+            : () => unawaited(widget.onTargetUrlTest!(proxy.tag)),
         onLongPress: onLongPress,
       );
     }

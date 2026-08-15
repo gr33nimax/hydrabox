@@ -195,6 +195,41 @@ class ProxyRuntimeController {
     return null;
   }
 
+  /// Resolves the virtual Lowest row from standalone probe measurements.
+  /// Managed URLTest events already carry the native group's selected field;
+  /// isolated per-profile probes do not, so the client must project the same
+  /// deterministic choice from their terminal results.
+  bool recomputeLowestSelection(Iterable<String> candidateTags) {
+    String? bestTag;
+    int? bestDelay;
+    for (final rawTag in candidateTags) {
+      final tag = rawTag.trim();
+      if (tag.isEmpty ||
+          unavailableLatencyTags.contains(tag) ||
+          invalidatedLatencyTags.contains(tag) ||
+          latencyErrors.containsKey(tag)) {
+        continue;
+      }
+      final delay = runtimeLatencies[tag];
+      if (delay == null || delay <= 0) continue;
+      if (bestDelay == null || delay < bestDelay) {
+        bestTag = tag;
+        bestDelay = delay;
+      }
+    }
+
+    final previousTag = runtimeLowestSelections[lowestProxyTag];
+    final changed = previousTag != bestTag || lowestLatency != bestDelay;
+    if (bestTag == null) {
+      runtimeLowestSelections.remove(lowestProxyTag);
+    } else {
+      runtimeLowestSelections[lowestProxyTag] = bestTag;
+    }
+    runtimeLowestOutboundTag = bestTag;
+    lowestLatency = bestDelay;
+    return changed;
+  }
+
   ProxyRuntimeGroupUpdateResult applyGroupUpdates(
     ProxyRuntimeGroupUpdateInput input,
   ) {

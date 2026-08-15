@@ -302,6 +302,7 @@ class ProxiesPage extends StatefulWidget {
     required this.progressiveBlurEnabled,
     required this.onSelected,
     required this.onUrlTest,
+    this.onTargetUrlTest,
     this.outboundForTag,
     this.loadProxyChainTargetSources,
     this.loadProxyChainTargetsForSource,
@@ -341,6 +342,7 @@ class ProxiesPage extends StatefulWidget {
   final bool progressiveBlurEnabled;
   final ValueChanged<String> onSelected;
   final Future<void> Function() onUrlTest;
+  final Future<void> Function(String tag)? onTargetUrlTest;
   final Outbound? Function(String tag)? outboundForTag;
   final Future<List<AppProfileSummary>> Function()? loadProxyChainTargetSources;
   final Future<List<AppProxySummary>> Function(String subscriptionId)?
@@ -700,6 +702,7 @@ class _ProxiesPageState extends State<ProxiesPage> {
                 runtimeStates: widget.runtimeStates,
                 routeAnimation: animation,
                 onSelected: widget.onSelected,
+                onTargetUrlTest: widget.onTargetUrlTest,
                 outboundForTag: widget.outboundForTag,
                 initialSort: _sort,
                 onSortChanged: (value) {
@@ -1085,6 +1088,9 @@ class _ProxiesPageState extends State<ProxiesPage> {
           highlighted: proxy.highlighted,
           animate: !widget.embedded,
           onTap: () => widget.onSelected(proxy.tag),
+          onLatencyTap: proxy.isGroup || widget.onTargetUrlTest == null
+              ? null
+              : () => unawaited(widget.onTargetUrlTest!(proxy.tag)),
           onLongPress: proxy.isGroup
               ? null
               : _isProxyChain(proxy)

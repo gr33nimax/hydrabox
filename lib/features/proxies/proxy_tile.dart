@@ -14,6 +14,7 @@ class ProxyTile extends StatelessWidget {
     this.animate = true,
     this.runtimeState,
     this.onOpenGroup,
+    this.onLatencyTap,
     this.onLongPress,
   });
 
@@ -28,6 +29,7 @@ class ProxyTile extends StatelessWidget {
   final ProxyRuntimeVisualState? runtimeState;
   final VoidCallback onTap;
   final ValueChanged<Rect>? onOpenGroup;
+  final VoidCallback? onLatencyTap;
   final VoidCallback? onLongPress;
 
   @override
@@ -158,7 +160,25 @@ class ProxyTile extends StatelessWidget {
           SizedBox(
             width: selecting ? 104 : 72,
             child: !groupHandleVisible
-                ? latencyLabel
+                ? onLatencyTap == null
+                      ? latencyLabel
+                      : Tooltip(
+                          message: l10n.refreshLatency,
+                          child: Semantics(
+                            button: true,
+                            label: l10n.refreshLatency,
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: onLatencyTap,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                child: latencyLabel,
+                              ),
+                            ),
+                          ),
+                        )
                 : GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: onOpenGroup == null

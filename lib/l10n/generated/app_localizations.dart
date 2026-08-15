@@ -473,8 +473,8 @@ abstract class AppLocalizations {
   /// No description provided for @legalGateSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Starting with version {version}, please read and accept the Terms and Privacy Policy to continue.'**
-  String legalGateSubtitle(String version);
+  /// **'To continue, please read and accept the Terms and Privacy Policy.'**
+  String get legalGateSubtitle;
 
   /// No description provided for @legalAcceptAction.
   ///

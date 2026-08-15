@@ -61,6 +61,7 @@ class ProxiesPresentationCallbacks {
     required this.changeSort,
     required this.selectProxy,
     required this.runUrlTest,
+    this.runTargetUrlTest,
     required this.refreshActiveProxyIp,
     required this.outboundForTag,
     required this.loadProxyChainTargetSources,
@@ -76,6 +77,7 @@ class ProxiesPresentationCallbacks {
   final ValueChanged<ProxySort> changeSort;
   final ValueChanged<String> selectProxy;
   final Future<void> Function() runUrlTest;
+  final Future<void> Function(String tag)? runTargetUrlTest;
   final VoidCallback refreshActiveProxyIp;
   final Outbound? Function(String tag) outboundForTag;
   final Future<List<AppProfileSummary>> Function() loadProxyChainTargetSources;
@@ -122,6 +124,7 @@ class ProxiesPresentationBuilder {
       progressiveBlurEnabled: data.progressiveBlurEnabled,
       onSelected: callbacks.selectProxy,
       onUrlTest: callbacks.runUrlTest,
+      onTargetUrlTest: callbacks.runTargetUrlTest,
       onActiveProxyIpRefresh: callbacks.refreshActiveProxyIp,
       outboundForTag: callbacks.outboundForTag,
       loadProxyChainTargetSources: callbacks.loadProxyChainTargetSources,
@@ -164,6 +167,7 @@ class ProxiesPresentationBuilder {
       progressiveBlurEnabled: data.progressiveBlurEnabled,
       onSelected: callbacks.selectProxy,
       onUrlTest: callbacks.runUrlTest,
+      onTargetUrlTest: callbacks.runTargetUrlTest,
       onActiveProxyIpRefresh: callbacks.refreshActiveProxyIp,
       outboundForTag: callbacks.outboundForTag,
       loadProxyChainTargetSources: callbacks.loadProxyChainTargetSources,

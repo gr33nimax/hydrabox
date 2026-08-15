@@ -75,12 +75,7 @@
   "legalTermsSummary": "Правила ответственного использования и ограничения ответственности.",
   "legalPrivacySummary": "Что HydraBox хранит локально и какие данные не собирает.",
   "legalGateTitle": "Перед использованием HydraBox",
-  "legalGateSubtitle": "Начиная с версии {version}, нужно прочитать и принять соглашение и политику конфиденциальности.",
-  "@legalGateSubtitle": {
-    "placeholders": {
-      "version": { "type": "String" }
-    }
-  },
+  "legalGateSubtitle": "Чтобы продолжить, прочитайте и примите соглашение и политику конфиденциальности.",
   "legalAcceptAction": "Принять и продолжить",
   "legalAcceptHint": "Откройте оба документа, чтобы продолжить.",
   "legalDocumentReadAction": "Прочитал",

@@ -74,17 +74,16 @@ void main() {
     ).readAsStringSync();
 
     expect(workflow, contains('api-level: [26, 30, 34]'));
-    expect(workflow, contains('sdk-level: "37.0"'));
+    expect(workflow, isNot(contains('api-level: 37')));
+    expect(workflow, isNot(contains('37.0')));
     expect(workflow, contains('system-image-api-level:'));
-    expect(workflow, contains('target: google_apis'));
+    expect(workflow, contains('channel: stable'));
+    expect(workflow, contains('target: default'));
     expect(workflow, contains('runner: ubuntu-latest'));
     expect(workflow, contains('arch: x86_64'));
     expect(workflow, contains('disk-size: 8G'));
     expect(workflow, contains('disable-linux-hw-accel:'));
-    expect(
-      workflow,
-      contains("matrix.api-level == 37 && 'canary' || 'stable'"),
-    );
+    expect(workflow, isNot(contains('channel: canary')));
     expect(workflow, contains("if: matrix.arch == 'x86_64'"));
     expect(workflow, contains('flutter build apk --debug --split-per-abi'));
     expect(workflow, contains('app-x86_64-debug.apk'));

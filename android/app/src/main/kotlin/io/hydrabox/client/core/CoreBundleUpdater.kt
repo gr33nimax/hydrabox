@@ -3,6 +3,7 @@ package io.hydrabox.client.core
 import android.content.Context
 import android.util.AtomicFile
 import io.hydrabox.client.BuildConfig
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -38,10 +39,14 @@ class CoreBundleUpdater(
     /** Called only from the user's Check action. */
     fun checkLatest(): CheckedCoreRelease {
         check(verifier.hasTrustedKeys()) { "No trusted HydraCore release key is installed" }
-        val release = readJson(api("releases/latest"), MAX_RELEASE_JSON_BYTES)
-        require(!release.optBoolean("draft", true) && !release.optBoolean("prerelease", true)) {
-            "GitHub did not return a stable HydraCore release"
-        }
+        val releases = readJsonArray(
+            api("releases", "per_page=$RELEASE_PAGE_SIZE"),
+            MAX_RELEASES_JSON_BYTES,
+        )
+        val release = selectCoreBundleRelease(
+            releases,
+            requiredAssets = setOf(MANIFEST_ASSET, SIGNATURE_ASSET),
+        )
         val releaseId = release.getLong("id")
         require(releaseId > 0L) { "HydraCore GitHub release id is invalid" }
         val manifestAssetId = assetId(release, MANIFEST_ASSET)
@@ -174,6 +179,9 @@ class CoreBundleUpdater(
     private fun readJson(url: URL, maximumBytes: Int): JSONObject =
         JSONObject(request(url, maximumBytes, "application/vnd.github+json").toString(Charsets.UTF_8))
 
+    private fun readJsonArray(url: URL, maximumBytes: Int): JSONArray =
+        JSONArray(request(url, maximumBytes, "application/vnd.github+json").toString(Charsets.UTF_8))
+
     private fun request(initialUrl: URL, maximumBytes: Int, accept: String): ByteArray {
         require(maximumBytes in 1..MAX_ARTIFACT_DOWNLOAD_BYTES)
         var current = initialUrl
@@ -281,8 +289,8 @@ class CoreBundleUpdater(
         throw IllegalStateException("HydraCore request did not complete")
     }
 
-    private fun api(path: String): URL =
-        URI("https", "api.github.com", "/repos/$FIXED_REPOSITORY/$path", null).toURL()
+    private fun api(path: String, query: String? = null): URL =
+        URI("https", "api.github.com", "/repos/$FIXED_REPOSITORY/$path", query, null).toURL()
 
     companion object {
         private const val FIXED_REPOSITORY = "gr33nimax/hydracore"
@@ -291,10 +299,39 @@ class CoreBundleUpdater(
         private const val GITHUB_API_VERSION = "2022-11-28"
         private const val ED25519_SIGNATURE_BYTES = 64
         private const val MAX_RELEASE_JSON_BYTES = 512 * 1024
+        private const val MAX_RELEASES_JSON_BYTES = 2 * 1024 * 1024
+        private const val RELEASE_PAGE_SIZE = 30
         private const val MAX_ARTIFACT_DOWNLOAD_BYTES = 256 * 1024 * 1024
         private const val CONNECT_TIMEOUT_MILLIS = 15_000
         private const val READ_TIMEOUT_MILLIS = 60_000
         private const val MAX_REDIRECTS = 5
         private val REDIRECT_CODES = setOf(301, 302, 303, 307, 308)
     }
+}
+
+/**
+ * GitHub's `releases/latest` endpoint excludes prereleases. HydraCore bundle
+ * releases can intentionally be prereleases while the embedded client core is
+ * being qualified, so select the newest published release that actually
+ * carries the signed update surface instead of following GitHub's stable tag.
+ */
+internal fun selectCoreBundleRelease(
+    releases: JSONArray,
+    requiredAssets: Set<String>,
+): JSONObject {
+    require(requiredAssets.isNotEmpty()) { "HydraCore bundle asset set is empty" }
+    for (index in 0 until releases.length()) {
+        val release = releases.optJSONObject(index) ?: continue
+        if (release.optBoolean("draft", true) || release.optLong("id", 0L) <= 0L) continue
+        val assets = release.optJSONArray("assets") ?: continue
+        val present = buildSet {
+            for (assetIndex in 0 until assets.length()) {
+                val asset = assets.optJSONObject(assetIndex) ?: continue
+                if (asset.optLong("id", 0L) <= 0L || asset.optLong("size", 0L) <= 0L) continue
+                asset.optString("name").takeIf(String::isNotBlank)?.let(::add)
+            }
+        }
+        if (present.containsAll(requiredAssets)) return release
+    }
+    throw IllegalStateException("No published HydraCore bundle release is available")
 }

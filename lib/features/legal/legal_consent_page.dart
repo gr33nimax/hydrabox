@@ -6,11 +6,9 @@ import 'package:hydrabox/widgets/hydrabox_logo_badge.dart';
 class LegalConsentPage extends StatefulWidget {
   const LegalConsentPage({
     super.key,
-    required this.requiredVersion,
     required this.onAccept,
   });
 
-  final String requiredVersion;
   final VoidCallback onAccept;
 
   @override
@@ -115,7 +113,7 @@ class _LegalConsentPageState extends State<LegalConsentPage>
                   ),
                   const Gap(10),
                   Text(
-                    l10n.legalGateSubtitle(widget.requiredVersion),
+                    l10n.legalGateSubtitle,
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: cs.onSurfaceVariant,

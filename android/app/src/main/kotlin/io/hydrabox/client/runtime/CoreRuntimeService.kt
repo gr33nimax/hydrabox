@@ -38,6 +38,21 @@ private object CoreProcessIdentity {
     val generation = AtomicLong(0L)
 }
 
+internal enum class ProbeExecutionMode {
+    EPHEMERAL,
+    MANAGED,
+    REJECT_MISSING_PLAN,
+}
+
+internal fun selectProbeExecutionMode(
+    runtimeRunning: Boolean,
+    compiledConfigBytes: Int,
+): ProbeExecutionMode = when {
+    compiledConfigBytes > 0 -> ProbeExecutionMode.EPHEMERAL
+    runtimeRunning -> ProbeExecutionMode.MANAGED
+    else -> ProbeExecutionMode.REJECT_MISSING_PLAN
+}
+
 /**
  * Sole binder owner of native runtime state. The UI process only exchanges
  * versioned protobuf bytes with this service and never initializes libbox.
@@ -670,9 +685,26 @@ class CoreRuntimeService : Service() {
             commandFailed(command.commandId, "probe.request.invalid", "probe", "The probe request is invalid.", false)
             return
         }
-        if (!SingboxController.running) {
-            startEphemeralProbe(command, request)
-            return
+        // A compiled config means the caller requested an isolated probe plan.
+        // It may describe a profile that is intentionally absent from the
+        // active runtime, so never discard it merely because a VPN is running.
+        // Requests without a plan continue to use the managed core session.
+        when (selectProbeExecutionMode(SingboxController.running, request.compiledConfig.size())) {
+            ProbeExecutionMode.EPHEMERAL -> {
+                startEphemeralProbe(command, request)
+                return
+            }
+            ProbeExecutionMode.REJECT_MISSING_PLAN -> {
+                commandFailed(
+                    command.commandId,
+                    "probe.ephemeral.missing_plan",
+                    "probe_bootstrap",
+                    "A disconnected probe requires a compiled configuration.",
+                    false,
+                )
+                return
+            }
+            ProbeExecutionMode.MANAGED -> Unit
         }
         SingboxController.startManagedUrlTest(
             groupTag = request.groupId,

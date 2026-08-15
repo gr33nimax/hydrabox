@@ -92,12 +92,6 @@ jobs:
         api-level: [26, 30, 34]
         arch: [x86_64]
         runner: [ubuntu-latest]
-        include:
-          - api-level: 37
-            sdk-level: "37.0"
-            target: google_apis
-            arch: x86_64
-            runner: ubuntu-latest
 
     steps:
       - name: Checkout instrumentation runner
@@ -126,11 +120,11 @@ jobs:
       - name: Run isolated-runtime instrumentation
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
         with:
-          api-level: ${{ matrix.sdk-level || matrix.api-level }}
-          system-image-api-level: ${{ matrix.sdk-level || matrix.api-level }}
-          channel: ${{ matrix.api-level == 37 && 'canary' || 'stable' }}
+          api-level: ${{ matrix.api-level }}
+          system-image-api-level: ${{ matrix.api-level }}
+          channel: stable
           arch: ${{ matrix.arch }}
-          target: ${{ matrix.target || 'default' }}
+          target: default
           profile: pixel_2
           disk-size: 8G
           disable-animations: true

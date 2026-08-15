@@ -205,9 +205,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get legalGateTitle => 'Before using HydraBox';
 
   @override
-  String legalGateSubtitle(String version) {
-    return 'Starting with version $version, please read and accept the Terms and Privacy Policy to continue.';
-  }
+  String get legalGateSubtitle =>
+      'To continue, please read and accept the Terms and Privacy Policy.';
 
   @override
   String get legalAcceptAction => 'Accept and continue';

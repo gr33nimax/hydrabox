@@ -75,12 +75,7 @@
   "legalTermsSummary": "Rules for responsible use and project disclaimers.",
   "legalPrivacySummary": "What HydraBox stores locally and what it does not collect.",
   "legalGateTitle": "Before using HydraBox",
-  "legalGateSubtitle": "Starting with version {version}, please read and accept the Terms and Privacy Policy to continue.",
-  "@legalGateSubtitle": {
-    "placeholders": {
-      "version": { "type": "String" }
-    }
-  },
+  "legalGateSubtitle": "To continue, please read and accept the Terms and Privacy Policy.",
   "legalAcceptAction": "Accept and continue",
   "legalAcceptHint": "Open both documents to enable continue.",
   "legalDocumentReadAction": "I have read it",

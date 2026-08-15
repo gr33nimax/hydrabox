@@ -216,6 +216,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
   bool _universalUrlTestInFlight = false;
   int _universalUrlTestGeneration = 0;
   final Set<String> _universalUrlTestPendingTags = <String>{};
+  final Set<String> _universalUrlTestCompletedTags = <String>{};
   CoreConfigMigrationResult? _pendingCoreConfigMigration;
   final GroupUrlTestScheduler _groupUrlTestScheduler = GroupUrlTestScheduler();
   final RuntimeStartupUrlTestGate _runtimeStartupUrlTestGate =
@@ -5272,7 +5273,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
   }
 
   Future<void> _runUrlTest({bool haptic = true}) async {
-    if (!_connected || !_foregroundLifecycleActive) {
+    if (!_foregroundLifecycleActive) {
       return;
     }
     if (_urlTestInFlight) {
@@ -5302,7 +5303,6 @@ class _HydraBoxClientState extends State<HydraBoxClient>
   }) async {
     final subscription = _activeSubscription;
     if (subscription == null ||
-        !_connected ||
         !_foregroundLifecycleActive ||
         _runtimeTransitionInProgress ||
         _urlTestInFlight) {
@@ -5345,6 +5345,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     _universalUrlTestPendingTags
       ..clear()
       ..addAll(targets.map((target) => target.runtimeTag));
+    _universalUrlTestCompletedTags.clear();
     if (mounted) {
       setState(_applyRuntimeStateToDerivedCaches);
     }
@@ -5425,8 +5426,13 @@ class _HydraBoxClientState extends State<HydraBoxClient>
           break;
         }
         terminalResults++;
-        _applyUniversalLatencyResult(target.runtimeTag, result);
         _universalUrlTestPendingTags.remove(target.runtimeTag);
+        _universalUrlTestCompletedTags.add(target.runtimeTag);
+        _applyUniversalLatencyResult(
+          target.runtimeTag,
+          result,
+          updateLowest: normalizedTarget.isEmpty,
+        );
         if (mounted) {
           setState(_applyRuntimeStateToDerivedCaches);
         }
@@ -5452,15 +5458,15 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     return mounted &&
         generation == _universalUrlTestGeneration &&
         _universalUrlTestInFlight &&
-        _connected &&
         !_runtimeTransitionInProgress &&
         _activeSubscription?.id == subscriptionId;
   }
 
   void _applyUniversalLatencyResult(
     String targetRuntimeTag,
-    PreconnectUrlTestResult result,
-  ) {
+    PreconnectUrlTestResult result, {
+    required bool updateLowest,
+  }) {
     final activeSubscription = _activeSubscription;
     if (activeSubscription == null) {
       return;
@@ -5501,7 +5507,9 @@ class _HydraBoxClientState extends State<HydraBoxClient>
         visibleGroupProxyCacheMissingChild: _visibleGroupProxyCacheMissingChild,
       ),
     );
-    if (!applied.changed) {
+    final lowestChanged = updateLowest &&
+        _proxyRuntime.recomputeLowestSelection(_universalUrlTestCompletedTags);
+    if (!applied.changed && !lowestChanged) {
       return;
     }
     _publishProxyRuntimeVisualStatesForTags(<String>{tag});
@@ -5519,6 +5527,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     _universalUrlTestGeneration++;
     _universalUrlTestInFlight = false;
     _universalUrlTestPendingTags.clear();
+    _universalUrlTestCompletedTags.clear();
     AppLogStore.info('latency', 'universal URLTest cancelled reason=$reason');
     unawaited(SingboxRuntime.instance.cancelPreconnectUrlTest());
   }
@@ -5552,6 +5561,32 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     if (!accepted) {
       await _runFullLatencyTest(reason: 'manual_active_fallback');
     }
+  }
+
+  Future<void> _runTargetProxyUrlTest(
+    String rawTag, {
+    bool haptic = true,
+  }) async {
+    final tag = rawTag.trim();
+    if (tag.isEmpty || !_foregroundLifecycleActive) return;
+    if (isLowestProxyTag(tag)) {
+      await _runUrlTest(haptic: haptic);
+      return;
+    }
+    if (_urlTestInFlight) {
+      AppLogStore.debug(
+        'latency',
+        'targeted URLTest skipped: native session is still producing results',
+      );
+      return;
+    }
+    if (haptic) {
+      _haptic();
+    }
+    await _runUniversalUrlTests(
+      reason: 'manual_target',
+      targetRuntimeTag: tag,
+    );
   }
 
   Future<void> _handleRuntimeLifecycleTimeout(
@@ -7552,6 +7587,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
         changeSort: _setProxySort,
         selectProxy: _selectProxy,
         runUrlTest: _runUrlTest,
+        runTargetUrlTest: _runTargetProxyUrlTest,
         refreshActiveProxyIp: _refreshActiveProxyIp,
         outboundForTag: _outboundForProxyTag,
         loadProxyChainTargetSources: _loadProxyChainTargetSources,
@@ -7713,7 +7749,6 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       return _onboardingCompleted
           ? LegalConsentPage(
               key: const ValueKey('legal-consent'),
-              requiredVersion: _requiredLegalVersion,
               onAccept: _acceptLegalDocuments,
             )
           : WelcomePage(

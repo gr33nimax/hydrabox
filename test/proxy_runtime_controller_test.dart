@@ -444,6 +444,50 @@ void main() {
     expect(result.shouldClearRuntimeProxySelectionGuard, isFalse);
   });
 
+  test('standalone probe results resolve the virtual lowest proxy', () {
+    final controller = ProxyRuntimeController();
+    addTearDown(controller.dispose);
+    controller.runtimeLatencies.addAll({
+      'vless-1': 203,
+      'anytls-1': 172,
+      'wireguard-1': 239,
+    });
+
+    final changed = controller.recomputeLowestSelection(const [
+      'vless-1',
+      'anytls-1',
+      'wireguard-1',
+    ]);
+
+    expect(changed, isTrue);
+    expect(controller.runtimeLowestSelections['lowest'], 'anytls-1');
+    expect(controller.runtimeLowestOutboundTag, 'anytls-1');
+    expect(controller.lowestLatency, 172);
+  });
+
+  test('lowest ignores failed and invalidated probe candidates', () {
+    final controller = ProxyRuntimeController();
+    addTearDown(controller.dispose);
+    controller.runtimeLatencies.addAll({'failed': 10, 'fresh': 90});
+    controller.unavailableLatencyTags.add('failed');
+
+    controller.recomputeLowestSelection(const ['failed', 'fresh']);
+
+    expect(controller.runtimeLowestSelections['lowest'], 'fresh');
+    expect(controller.lowestLatency, 90);
+  });
+
+  test('lowest only considers candidates from the current full probe', () {
+    final controller = ProxyRuntimeController();
+    addTearDown(controller.dispose);
+    controller.runtimeLatencies.addAll({'stale': 10, 'fresh': 90});
+
+    controller.recomputeLowestSelection(const ['fresh']);
+
+    expect(controller.runtimeLowestSelections['lowest'], 'fresh');
+    expect(controller.lowestLatency, 90);
+  });
+
   test('network change hides stale latency until fresh telemetry arrives', () {
     final controller = ProxyRuntimeController();
     addTearDown(controller.dispose);

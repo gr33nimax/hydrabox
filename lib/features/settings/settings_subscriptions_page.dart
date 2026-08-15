@@ -10,6 +10,17 @@ import 'package:hydrabox/models/subscription.dart';
 import 'package:hydrabox/singbox/singbox_runtime.dart';
 import 'package:hydrabox/widgets/progressive_blur_scaffold.dart';
 
+const int urlTestIntervalSettingsMinSeconds = 30;
+const int urlTestIntervalSettingsMaxSeconds = 3600;
+
+int normalizeUrlTestIntervalSecondsForSettings(int? value) =>
+    (value ?? 900)
+        .clamp(
+          urlTestIntervalSettingsMinSeconds,
+          urlTestIntervalSettingsMaxSeconds,
+        )
+        .toInt();
+
 class SettingsSubscriptionsPage extends StatefulWidget {
   const SettingsSubscriptionsPage({
     super.key,
@@ -57,15 +68,19 @@ class _SettingsSubscriptionsPageState extends State<SettingsSubscriptionsPage> {
     _urlController = TextEditingController(
       text: widget.currentConfig.url ?? '',
     );
-    _intervalSeconds = widget.currentConfig.intervalSeconds ?? 900;
-    _timeoutSeconds = widget.currentConfig.timeoutSeconds ?? 10;
+    _intervalSeconds = normalizeUrlTestIntervalSecondsForSettings(
+      widget.currentConfig.intervalSeconds,
+    );
+    _timeoutSeconds = (widget.currentConfig.timeoutSeconds ?? 10)
+        .clamp(1, 60)
+        .toInt();
     _concurrency = (widget.currentConfig.concurrency ?? 4).clamp(1, 8);
     _unavailableCheckIntervalSeconds =
         (widget.currentConfig.unavailableCheckIntervalSeconds ?? 120)
             .clamp(120, 3600)
             .toInt();
     _locationLookupLimit = widget.currentLocationLookupLimit
-        .clamp(0, 50)
+        .clamp(0, 30)
         .toInt();
     _locationLookupTimeoutSeconds = widget.currentLocationLookupTimeoutSeconds
         .clamp(2, 30)
@@ -293,9 +308,9 @@ class _SettingsSubscriptionsPageState extends State<SettingsSubscriptionsPage> {
                     ),
                     child: Slider(
                       value: _intervalSeconds.toDouble(),
-                      min: 30,
-                      max: 600,
-                      divisions: 19,
+                      min: urlTestIntervalSettingsMinSeconds.toDouble(),
+                      max: urlTestIntervalSettingsMaxSeconds.toDouble(),
+                      divisions: 119,
                       label: '$resolvedInterval сек.',
                       onChanged: (value) {
                         setState(() {
@@ -317,7 +332,7 @@ class _SettingsSubscriptionsPageState extends State<SettingsSubscriptionsPage> {
                         ),
                         const Spacer(),
                         Text(
-                          '600 с',
+                          '3600 с',
                           style: theme.textTheme.labelSmall?.copyWith(
                             color: cs.onSurfaceVariant,
                           ),

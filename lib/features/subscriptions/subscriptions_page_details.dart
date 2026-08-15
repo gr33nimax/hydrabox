@@ -388,15 +388,6 @@ class _SubscriptionDetailsPageState extends State<_SubscriptionDetailsPage> {
     return '${trimmed.substring(0, 32)}...';
   }
 
-  String _safeSubscriptionUrl(String value) {
-    final uri = Uri.tryParse(value);
-    if (uri == null || !HydraSubscriptionUri.hasKeyFragment(uri)) {
-      return value;
-    }
-    return '${HydraSubscriptionUri.withoutSecretFragment(uri)}'
-        '#hydra-key=<redacted>';
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -709,9 +700,7 @@ class _SubscriptionDetailsPageState extends State<_SubscriptionDetailsPage> {
                             FilledButton.tonal(
                               onPressed: () async {
                                 _haptic();
-                                await SensitiveClipboard.copy(
-                                  _safeSubscriptionUrl(subscription.url),
-                                );
+                                await SensitiveClipboard.copy(subscription.url);
                               },
                               style: FilledButton.styleFrom(
                                 padding: const EdgeInsets.symmetric(
@@ -745,7 +734,7 @@ class _SubscriptionDetailsPageState extends State<_SubscriptionDetailsPage> {
                             )
                           else
                             SelectableText(
-                              _safeSubscriptionUrl(subscription.url),
+                              subscription.url,
                               style: theme.textTheme.bodyMedium,
                             ),
                           if (happCryptoLink != null &&

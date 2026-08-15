@@ -476,6 +476,35 @@ void main() {
     },
   );
 
+  testWidgets('proxy latency can be refreshed without selecting it', (
+    tester,
+  ) async {
+    var selected = false;
+    var latencyRefreshes = 0;
+    final proxy = _proxy('vless-1', 'VLESS', latency: 42);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        supportedLocales: AppLocalizations.supportedLocales,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        home: Scaffold(
+          body: ProxyTile(
+            proxy: proxy,
+            selected: false,
+            onTap: () => selected = true,
+            onLatencyTap: () => latencyRefreshes++,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('42 ms'));
+    await tester.pump();
+
+    expect(latencyRefreshes, 1);
+    expect(selected, isFalse);
+  });
+
   testWidgets('large proxy list exposes every server through lazy scrolling', (
     tester,
   ) async {
