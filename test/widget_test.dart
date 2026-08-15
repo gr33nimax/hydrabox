@@ -1077,9 +1077,7 @@ void main() {
     );
     expect(find.byIcon(Icons.network_ping_rounded), findsNothing);
 
-    await tester.tap(
-      find.byKey(const ValueKey('preconnect-urltest-action')),
-    );
+    await tester.tap(find.byKey(const ValueKey('preconnect-urltest-action')));
     await tester.pump();
     expect(requests, 1);
   });

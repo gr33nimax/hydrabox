@@ -65,9 +65,9 @@ class _CoreManagerBody extends ConsumerWidget {
       children: [
         Text(
           l10n.coreManagerChannelTitle,
-          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.w700,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
         ),
         const Gap(8),
         SegmentedButton<CoreReleaseChannel>(
@@ -84,9 +84,8 @@ class _CoreManagerBody extends ConsumerWidget {
           selected: <CoreReleaseChannel>{state.releaseChannel},
           onSelectionChanged: busy
               ? null
-              : (selection) => controller.selectReleaseChannel(
-                  selection.single,
-                ),
+              : (selection) =>
+                    controller.selectReleaseChannel(selection.single),
         ),
         const Gap(16),
         _CoreVersionsCard(state: state),
