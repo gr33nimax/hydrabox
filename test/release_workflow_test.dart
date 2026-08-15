@@ -112,10 +112,7 @@ void main() {
       runner,
       contains('platform_bridge_result name=getCoreCapabilities success=true'),
     );
-    expect(
-      runner,
-      contains('hydrabox_bootstrap_ready api=2 role=client'),
-    );
+    expect(runner, contains('hydrabox_bootstrap_ready api=2 role=client'));
     expect(
       workflow,
       contains(
