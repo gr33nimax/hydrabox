@@ -24,6 +24,20 @@
         android:allowBackup="false"
         android:fullBackupContent="false"
         android:dataExtractionRules="@xml/data_extraction_rules">
+        <!-- HydraBoxApplication supplies the WorkManager configuration. Keep
+             AndroidX Startup for other libraries, but remove WorkManager's
+             eager initializer so WorkManager.getInstance(Context) uses it. -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+        </provider>
+
         <!-- Required for release-like Macrobenchmark traces without making the app debuggable. -->
         <profileable android:shell="true" />
         <activity

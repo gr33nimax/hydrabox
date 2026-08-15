@@ -125,8 +125,13 @@ void main() {
     final application = File(
       'android/app/src/main/kotlin/io/hydrabox/client/HydraBoxApplication.kt',
     ).readAsStringSync();
+    final manifest = File(
+      'android/app/src/main/AndroidManifest.xml',
+    ).readAsStringSync();
     expect(application, contains('Configuration.Provider'));
     expect(application, contains('workManagerConfiguration'));
+    expect(manifest, contains('androidx.work.WorkManagerInitializer'));
+    expect(manifest, contains('tools:node="remove"'));
   });
 
   test('duplicate automatic HydraCore and test APK workflows are removed', () {
