@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - ".github/workflows/android-instrumentation.yml"
+      - ".github/scripts/run-android-instrumentation.sh"
       - "android/**"
       - "hydracore"
       - "pigeons/**"
@@ -97,6 +98,9 @@ jobs:
             runner: ubuntu-latest
 
     steps:
+      - name: Checkout instrumentation runner
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
       - name: Set up JDK
         uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
         with:
@@ -134,38 +138,7 @@ jobs:
             -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
             -camera-back none
           script: |
-            app_apk="$(find instrumentation-apks -name app-debug.apk -print -quit)"
-            test_apk="$(find instrumentation-apks -name app-debug-androidTest.apk -print -quit)"
-            test -f "$app_apk"
-            test -f "$test_apk"
-            adb wait-for-device
-            package_service_ready=false
-            for attempt in 1 2 3 4 5 6; do
-              if adb shell service check package | grep -q 'found'; then
-                package_service_ready=true
-                break
-              fi
-              sleep 5
-            done
-            test "$package_service_ready" = true
-            install_apk() {
-              apk="$1"
-              for attempt in 1 2 3; do
-                if adb install -r "$apk"; then
-                  return 0
-                fi
-                if [ "$attempt" -eq 3 ]; then
-                  return 1
-                fi
-                adb wait-for-device
-                sleep $((attempt * 5))
-              done
-            }
-            install_apk "$app_apk"
-            install_apk "$test_apk"
-            mkdir -p build/instrumentation
-            adb logcat -c || true
-            set +e; adb shell am instrument -w io.hydrabox.client.test/androidx.test.runner.AndroidJUnitRunner >"build/instrumentation/api-${{ matrix.api-level }}-${{ matrix.arch }}.txt" 2>&1; status=$?; adb logcat -d -v threadtime >"build/instrumentation/api-${{ matrix.api-level }}-${{ matrix.arch }}-logcat.txt" 2>&1; set -e; cat "build/instrumentation/api-${{ matrix.api-level }}-${{ matrix.arch }}.txt"; if [ "$status" -ne 0 ]; then grep -E 'HydraCore|HydraBox|AndroidRuntime|FATAL EXCEPTION|UnsatisfiedLinkError|linker' "build/instrumentation/api-${{ matrix.api-level }}-${{ matrix.arch }}-logcat.txt" || true; exit "$status"; fi; grep -E '^OK \([0-9]+ tests?\)$' "build/instrumentation/api-${{ matrix.api-level }}-${{ matrix.arch }}.txt"
+            bash .github/scripts/run-android-instrumentation.sh "${{ matrix.api-level }}" "${{ matrix.arch }}"
 
       - name: Upload instrumentation reports
         if: always()
