@@ -5507,7 +5507,8 @@ class _HydraBoxClientState extends State<HydraBoxClient>
         visibleGroupProxyCacheMissingChild: _visibleGroupProxyCacheMissingChild,
       ),
     );
-    final lowestChanged = updateLowest &&
+    final lowestChanged =
+        updateLowest &&
         _proxyRuntime.recomputeLowestSelection(_universalUrlTestCompletedTags);
     if (!applied.changed && !lowestChanged) {
       return;
@@ -5583,10 +5584,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     if (haptic) {
       _haptic();
     }
-    await _runUniversalUrlTests(
-      reason: 'manual_target',
-      targetRuntimeTag: tag,
-    );
+    await _runUniversalUrlTests(reason: 'manual_target', targetRuntimeTag: tag);
   }
 
   Future<void> _handleRuntimeLifecycleTimeout(

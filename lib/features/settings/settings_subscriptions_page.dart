@@ -13,13 +13,9 @@ import 'package:hydrabox/widgets/progressive_blur_scaffold.dart';
 const int urlTestIntervalSettingsMinSeconds = 30;
 const int urlTestIntervalSettingsMaxSeconds = 3600;
 
-int normalizeUrlTestIntervalSecondsForSettings(int? value) =>
-    (value ?? 900)
-        .clamp(
-          urlTestIntervalSettingsMinSeconds,
-          urlTestIntervalSettingsMaxSeconds,
-        )
-        .toInt();
+int normalizeUrlTestIntervalSecondsForSettings(int? value) => (value ?? 900)
+    .clamp(urlTestIntervalSettingsMinSeconds, urlTestIntervalSettingsMaxSeconds)
+    .toInt();
 
 class SettingsSubscriptionsPage extends StatefulWidget {
   const SettingsSubscriptionsPage({

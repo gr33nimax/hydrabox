@@ -4,10 +4,7 @@ import 'package:hydrabox/l10n/generated/app_localizations.dart';
 import 'package:hydrabox/widgets/hydrabox_logo_badge.dart';
 
 class LegalConsentPage extends StatefulWidget {
-  const LegalConsentPage({
-    super.key,
-    required this.onAccept,
-  });
+  const LegalConsentPage({super.key, required this.onAccept});
 
   final VoidCallback onAccept;
 
