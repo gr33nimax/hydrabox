@@ -280,9 +280,7 @@ class CoreManagerController extends AsyncNotifier<CoreManagerViewState> {
           ),
         );
       } on Object {
-        state = AsyncData(
-          current.copyWith(clearBusy: true, failure: failure),
-        );
+        state = AsyncData(current.copyWith(clearBusy: true, failure: failure));
       }
     }
   }

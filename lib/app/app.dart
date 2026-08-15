@@ -5552,9 +5552,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
         ?.runtimeTag
         .trim();
     final lowestChanged = updateLowest
-        ? _proxyRuntime.recomputeLowestSelection(
-            _universalUrlTestCompletedTags,
-          )
+        ? _proxyRuntime.recomputeLowestSelection(_universalUrlTestCompletedTags)
         : isLowestProxyTag(_selectedProxyTag) &&
               selectedProfileRuntimeTag == tag &&
               _proxyRuntime.projectSelectedLowestLatency(tag);
