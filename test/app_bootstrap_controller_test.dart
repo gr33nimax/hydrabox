@@ -74,16 +74,38 @@ void main() {
       loadCoreCapabilities: () async => throw StateError('core unavailable'),
     );
 
-    await expectLater(
-      controller.load(providedStore: MemoryAppSettingsStore()),
-      throwsA(
-        isA<AppBootstrapException>().having(
-          (error) => error.stage,
-          'stage',
-          AppBootstrapFailureStage.coreRecovery,
-        ),
+    try {
+      await controller.load(providedStore: MemoryAppSettingsStore());
+      fail('bootstrap should have required core recovery');
+    } on AppBootstrapException catch (error) {
+      expect(error.stage, AppBootstrapFailureStage.coreRecovery);
+      expect(error.code, 'core.bootstrap.failed');
+      expect(error.safeMessage, isNotEmpty);
+    }
+  });
+
+  test('typed core startup failure remains visible to recovery UI', () async {
+    final controller = AppBootstrapController(
+      fallbackClientVersionLabel: '0.3.0',
+      loadCoreCapabilities: () async => throw const HydraCoreHandshakeException(
+        code: 'core.startup.native_setup',
+        stage: 'native_setup',
+        retryable: false,
+        safeMessage: 'HydraCore could not initialize its native runtime.',
       ),
     );
+
+    try {
+      await controller.load(providedStore: MemoryAppSettingsStore());
+      fail('bootstrap should have required core recovery');
+    } on AppBootstrapException catch (error) {
+      expect(error.stage, AppBootstrapFailureStage.coreRecovery);
+      expect(error.code, 'core.startup.native_setup');
+      expect(
+        error.safeMessage,
+        'HydraCore could not initialize its native runtime.',
+      );
+    }
   });
 
   test('disabled rule-set status is deferred until after bootstrap', () async {

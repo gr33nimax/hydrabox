@@ -9,7 +9,10 @@ void main() {
       '.github/workflows/android-release.yml',
     ).readAsStringSync();
 
-    expect(workflow, contains(r'hydrabox-v${RELEASE_VERSION}-universal.apk'));
+    expect(
+      workflow,
+      isNot(contains(r'hydrabox-v${RELEASE_VERSION}-universal.apk')),
+    );
     expect(workflow, contains(r'hydrabox-v${RELEASE_VERSION}-arm64-v8a.apk'));
     expect(workflow, contains(r'hydrabox-v${RELEASE_VERSION}-armeabi-v7a.apk'));
     expect(workflow, contains(r'hydrabox-v${RELEASE_VERSION}-x86_64.apk'));
@@ -19,6 +22,8 @@ void main() {
     expect(workflow, contains('hydrabox-update.json.sig'));
     expect(workflow, contains('scripts/sign_update_manifest.go'));
     expect(workflow, contains('HYDRABOX_UPDATE_ED25519_PRIVATE_KEY'));
+    expect(workflow, contains('ARM64 APK size regression'));
+    expect(workflow, contains('Signing identity mismatch'));
     expect(workflow, contains('python3 -B scripts/fetch_libbox.py'));
     expect(workflow, contains('python3 -B scripts/verify_libbox.py'));
     expect(workflow, contains('flutter gen-l10n'));
@@ -70,6 +75,7 @@ void main() {
     expect(workflow, contains('target: google_apis'));
     expect(workflow, contains('runner: ubuntu-24.04-arm'));
     expect(workflow, contains('arch: arm64-v8a'));
+    expect(workflow, contains('disable-linux-hw-accel:'));
     expect(
       workflow,
       contains("matrix.api-level == 37 && 'canary' || 'stable'"),
@@ -144,7 +150,7 @@ void main() {
       multiLine: true,
     ).firstMatch(pubspec)!.group(1)!;
 
-    expect(version, '0.5.0');
+    expect(version, '1.0.0');
     expect(
       File('lib/app/app.dart').readAsStringSync(),
       contains("_fallbackClientVersionLabel = '$version'"),

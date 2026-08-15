@@ -20,6 +20,7 @@ import io.hydrabox.client.singbox.RuntimeEventConsumer
 import io.hydrabox.client.singbox.SingboxController
 import io.hydrabox.client.singbox.NativeCoreEnvironment
 import io.hydrabox.client.singbox.HydraBoxDefaultNetworkMonitor
+import io.hydrabox.client.singbox.HydraBoxDiagnostics
 import io.nekohasekai.libbox.Libbox
 import java.io.FileOutputStream
 import java.security.MessageDigest
@@ -121,55 +122,113 @@ class CoreRuntimeService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        NativeCoreEnvironment.ensureSetup()
-        coreContract = buildContract()
-        controllerRegistration = SingboxController.registerEventSink(
-            object : RuntimeEventConsumer {
-                override fun success(event: Any?) {
-                    // The legacy controller still produces maps internally. No map crosses
-                    // the binder boundary: clients receive a typed authoritative snapshot.
-                    handleControllerEvent(event)
-                }
+        val startupFailure = CoreStartupFailureStore(this)
+        try {
+            startupFailure.markStage("native_setup", HydraNativeLoader.loadedSource())
+            NativeCoreEnvironment.ensureSetup()
 
-                override fun error(code: String, message: String?, details: Any?) {
-                    failRuntime(
-                        commandId = "",
-                        code = "runtime.controller.event",
-                        stage = "runtime_event",
-                        safeMessage = "HydraCore reported a runtime event failure.",
-                        retryable = true,
-                    )
-                }
+            startupFailure.markStage("contract", HydraNativeLoader.loadedSource())
+            coreContract = buildContract()
 
-                override fun endOfStream() {
-                    refreshFromController()
-                    emit(snapshotEvent())
+            startupFailure.markStage("controller", HydraNativeLoader.loadedSource())
+            controllerRegistration = SingboxController.registerEventSink(
+                object : RuntimeEventConsumer {
+                    override fun success(event: Any?) {
+                        // The legacy controller still produces maps internally. No map crosses
+                        // the binder boundary: clients receive a typed authoritative snapshot.
+                        handleControllerEvent(event)
+                    }
+
+                    override fun error(code: String, message: String?, details: Any?) {
+                        failRuntime(
+                            commandId = "",
+                            code = "runtime.controller.event",
+                            stage = "runtime_event",
+                            safeMessage = "HydraCore reported a runtime event failure.",
+                            retryable = true,
+                        )
+                    }
+
+                    override fun endOfStream() {
+                        refreshFromController()
+                        emit(snapshotEvent())
+                    }
+                },
+            )
+            refreshFromController()
+
+            // A stale 0.x or interrupted-write config is a configuration recovery,
+            // not a broken native core. Keep the binder alive and quarantine the
+            // invalid private file so the UI can compile a clean plan.
+            startupFailure.markStage("config_recovery", HydraNativeLoader.loadedSource())
+            recoverInvalidPersistedConfig()
+
+            startupFailure.markStage("snapshot", HydraNativeLoader.loadedSource())
+            buildSnapshot()
+            if (HydraNativeLoader.loadedSource() == "active") {
+                CoreBundleManager(this).readState().active?.let { active ->
+                    CoreBundleManager(this).markHealthy(active.releaseSequence)
                 }
-            },
-        )
-        refreshFromController()
-        // Candidate activation already required a successful isolated probe.
-        // Here we confirm that the real :core process loaded the active bytes,
-        // completed native setup/capability handshake, and can emit a snapshot.
-        validatePersistedConfigForHealth()
-        buildSnapshot()
-        if (HydraNativeLoader.loadedSource() == "active") {
-            CoreBundleManager(this).readState().active?.let { active ->
-                CoreBundleManager(this).markHealthy(active.releaseSequence)
             }
+            startupFailure.clear()
+        } catch (error: Throwable) {
+            HydraBoxDiagnostics.log(
+                "CoreRuntimeService",
+                "startup failed source=${HydraNativeLoader.loadedSource()}",
+                error,
+            )
+            throw error
         }
     }
 
     override fun onBind(intent: Intent?): IBinder = binder
 
-    private fun validatePersistedConfigForHealth() {
+    private fun recoverInvalidPersistedConfig() {
         val configFile = HydraBoxApplication.configFile
         if (!configFile.isFile) return
-        val bytes = configFile.readBytes()
-        require(bytes.isNotEmpty() && bytes.size <= MAX_CONFIG_BYTES) {
-            "Persisted HydraCore config is invalid"
+        val validation = runCatching {
+            val bytes = configFile.readBytes()
+            require(bytes.isNotEmpty() && bytes.size <= MAX_CONFIG_BYTES) {
+                "Persisted HydraCore config is invalid"
+            }
+            Libbox.checkConfig(bytes.toString(Charsets.UTF_8))
         }
-        Libbox.checkConfig(bytes.toString(Charsets.UTF_8))
+        if (validation.isSuccess) return
+
+        val recoveryDir = java.io.File(filesDir, "core-config-recovery").apply {
+            require(mkdirs() || isDirectory)
+        }
+        val recovered = java.io.File(
+            recoveryDir,
+            "singbox-config-${System.currentTimeMillis()}.invalid.json",
+        )
+        require(configFile.renameTo(recovered)) {
+            "Invalid HydraCore config could not be quarantined"
+        }
+        recovered.setReadable(false, false)
+        recovered.setWritable(false, false)
+        recovered.setReadable(true, true)
+        recovered.setWritable(true, true)
+        recoveryDir.listFiles()
+            .orEmpty()
+            .filter { it.isFile && it.name.endsWith(".invalid.json") }
+            .sortedByDescending { it.lastModified() }
+            .drop(MAX_RECOVERED_CONFIGS)
+            .forEach { it.delete() }
+
+        val error = coreError(
+            code = "runtime.config.quarantined",
+            stage = "config_validation",
+            safeMessage = "The previous runtime configuration was invalid and has been quarantined.",
+            retryable = false,
+            correlationId = UUID.randomUUID().toString(),
+            userAction = CoreRuntimeProtocol.UserAction.USER_ACTION_SELECT_PROFILE,
+        )
+        synchronized(snapshotLock) { lastError = error }
+        HydraBoxDiagnostics.log(
+            "CoreRuntimeService",
+            "invalid persisted config quarantined",
+        )
     }
 
     override fun onDestroy() {
@@ -1149,12 +1208,13 @@ class CoreRuntimeService : Service() {
         safeMessage: String,
         retryable: Boolean,
         correlationId: String,
+        userAction: CoreRuntimeProtocol.UserAction? = null,
     ): CoreRuntimeProtocol.CoreError = CoreRuntimeProtocol.CoreError.newBuilder()
         .setCode(code)
         .setStage(stage)
         .setRetryable(retryable)
         .setUserAction(
-            if (retryable) CoreRuntimeProtocol.UserAction.USER_ACTION_RETRY
+            userAction ?: if (retryable) CoreRuntimeProtocol.UserAction.USER_ACTION_RETRY
             else CoreRuntimeProtocol.UserAction.USER_ACTION_EXPORT_DIAGNOSTICS,
         )
         .setSafeMessage(safeMessage)
@@ -1188,6 +1248,7 @@ class CoreRuntimeService : Service() {
         private const val STATE_POLL_MILLIS = 100L
         private const val UTILITY_DEADLINE_MILLIS = 10_000L
         private const val ALL_OUTBOUNDS = "*"
+        private const val MAX_RECOVERED_CONFIGS = 2
         private val COMMAND_ID_PATTERN = Regex("^[A-Za-z0-9._:-]{1,128}$")
     }
 }

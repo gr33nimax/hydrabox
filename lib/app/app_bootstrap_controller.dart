@@ -33,6 +33,26 @@ class AppBootstrapException implements Exception {
   final Object cause;
   final StackTrace stackTrace;
 
+  String get code {
+    final value = cause;
+    if (value is HydraCoreHandshakeException) return value.code;
+    if (stage == AppBootstrapFailureStage.coreRecovery &&
+        value is FormatException) {
+      return 'core.contract.invalid';
+    }
+    return stage == AppBootstrapFailureStage.storageRecovery
+        ? 'storage.bootstrap.failed'
+        : 'core.bootstrap.failed';
+  }
+
+  String get safeMessage {
+    final value = cause;
+    if (value is HydraCoreHandshakeException) return value.safeMessage;
+    return stage == AppBootstrapFailureStage.storageRecovery
+        ? 'Persistent application storage could not be opened.'
+        : 'HydraCore did not provide a compatible runtime contract.';
+  }
+
   @override
   String toString() => 'AppBootstrapException($stage): $cause';
 }

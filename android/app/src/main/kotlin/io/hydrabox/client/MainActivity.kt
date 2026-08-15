@@ -41,6 +41,7 @@ import io.hydrabox.client.singbox.HydraBoxVpnService
 import io.hydrabox.client.singbox.SingboxController
 import io.hydrabox.client.singbox.RuntimeEventConsumer
 import io.hydrabox.client.runtime.CoreRuntimeClient
+import io.hydrabox.client.runtime.CoreRuntimeException
 import io.hydrabox.client.runtime.CoreRuntimeService
 import io.hydrabox.client.runtime.proto.CoreRuntimeProtocol
 import io.hydrabox.client.storage.DomainCrypto
@@ -348,7 +349,30 @@ class MainActivity : FlutterFragmentActivity() {
         name: String,
         vararg arguments: String,
     ) {
-        coreRuntimeClient.coreString(coreUtilityKind(name), arguments.toList(), callback)
+        coreRuntimeClient.coreString(coreUtilityKind(name), arguments.toList()) { result ->
+            callback(
+                result.fold(
+                    onSuccess = { Result.success(it) },
+                    onFailure = { error ->
+                        val coreError = error as? CoreRuntimeException
+                        if (coreError == null) {
+                            Result.failure(error)
+                        } else {
+                            Result.failure(
+                                PigeonFlutterError(
+                                    code = coreError.code,
+                                    message = coreError.message,
+                                    details = mapOf(
+                                        "stage" to coreError.stage,
+                                        "retryable" to coreError.retryable,
+                                    ),
+                                ),
+                            )
+                        }
+                    },
+                ),
+            )
+        }
     }
 
     private fun runHydraCoreMethodCall(

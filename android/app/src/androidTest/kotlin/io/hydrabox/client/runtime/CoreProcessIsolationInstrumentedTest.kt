@@ -10,11 +10,14 @@ import android.os.IBinder
 import android.os.Process
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import io.hydrabox.client.core.CoreBundleManager
 import io.hydrabox.client.runtime.proto.CoreRuntimeProtocol
+import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -30,6 +33,7 @@ class CoreProcessIsolationInstrumentedTest {
     fun unbind() {
         connection?.let { runCatching { context.unbindService(it) } }
         connection = null
+        context.stopService(Intent(context, CoreRuntimeService::class.java))
     }
 
     @Test
@@ -87,6 +91,67 @@ class CoreProcessIsolationInstrumentedTest {
             .firstOrNull { it.processName == expectedProcess }
         assertNotNull("dedicated core process is not visible", coreProcess)
         assertNotEquals(Process.myPid(), coreProcess!!.pid)
+    }
+
+    @Test
+    fun invalidPersistedConfigIsQuarantinedWithoutBlockingEmbeddedCore() {
+        assertTrue(CoreBundleManager(context).readState().usingEmbeddedFallback)
+        val config = File(context.filesDir, "singbox-config.json")
+        val recoveryDir = File(context.filesDir, "core-config-recovery")
+        config.delete()
+        recoveryDir.deleteRecursively()
+        config.writeText("{not-valid-json")
+
+        val connected = CountDownLatch(1)
+        var remote: ICoreRuntimeService? = null
+        val serviceConnection = object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName, binder: IBinder) {
+                remote = ICoreRuntimeService.Stub.asInterface(binder)
+                connected.countDown()
+            }
+
+            override fun onServiceDisconnected(name: ComponentName) = Unit
+        }
+        connection = serviceConnection
+        assertTrue(
+            context.bindService(
+                Intent(context, CoreRuntimeService::class.java),
+                serviceConnection,
+                Context.BIND_AUTO_CREATE,
+            ),
+        )
+        assertTrue("core service did not recover from invalid config", connected.await(20, TimeUnit.SECONDS))
+
+        val service = remote!!
+        val contract = CoreRuntimeProtocol.CoreContract.parseFrom(service.contract)
+        assertEquals(1, contract.apiMajor)
+        val snapshot = CoreRuntimeProtocol.RuntimeSnapshot.parseFrom(service.getSnapshot())
+        assertTrue(snapshot.hasLastError())
+        assertEquals("runtime.config.quarantined", snapshot.lastError.code)
+        assertFalse("invalid config remained active", config.exists())
+        assertTrue(
+            "quarantined config was not retained privately",
+            recoveryDir.listFiles().orEmpty().any { it.name.endsWith(".invalid.json") },
+        )
+    }
+
+    @Test
+    fun startupFailureMarkerKeepsOnlySafeTypedMetadata() {
+        val store = CoreStartupFailureStore(context)
+        store.clear()
+        store.markStage(
+            stage = "native_setup",
+            loadedSource = "embedded",
+            nowMillis = 1_000L,
+        )
+
+        val marker = store.readFresh(nowMillis = 1_100L, maxAgeMillis = 1_000L)
+        assertNotNull(marker)
+        assertEquals("core.startup.native_setup", marker!!.code)
+        assertEquals("native_setup", marker.stage)
+        assertEquals("embedded", marker.loadedSource)
+        assertTrue(marker.safeMessage.isNotBlank())
+        store.clear()
     }
 
     private fun assertServiceProcess(serviceClass: Class<*>, suffix: String) {

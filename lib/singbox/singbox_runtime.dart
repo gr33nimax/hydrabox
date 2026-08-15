@@ -41,7 +41,7 @@ class AppVersionInfo {
 
   String get displayVersion {
     final normalized = versionName.trim();
-    return normalized.isEmpty ? '0.5.0' : normalized;
+    return normalized.isEmpty ? '1.0.0' : normalized;
   }
 
   int get updateBuildNumber => normalizeSplitApkVersionCode(versionCode);
@@ -54,6 +54,23 @@ class AppVersionInfo {
     }
     return value;
   }
+}
+
+class HydraCoreHandshakeException implements Exception {
+  const HydraCoreHandshakeException({
+    required this.code,
+    required this.stage,
+    required this.retryable,
+    required this.safeMessage,
+  });
+
+  final String code;
+  final String stage;
+  final bool retryable;
+  final String safeMessage;
+
+  @override
+  String toString() => '$code ($stage): $safeMessage';
 }
 
 class NetworkInterfaceSnapshot {
@@ -998,7 +1015,19 @@ class SingboxRuntime {
     } on MissingPluginException {
       throw UnsupportedError('HydraCore platform bridge is unavailable.');
     } on PlatformException catch (error) {
-      throw StateError('HydraCore capability handshake failed: ${error.code}');
+      final details = error.details is Map
+          ? Map<Object?, Object?>.from(error.details as Map)
+          : const <Object?, Object?>{};
+      throw HydraCoreHandshakeException(
+        code: error.code.trim().isEmpty ? 'core.handshake.failed' : error.code,
+        stage: details['stage']?.toString().trim().isNotEmpty == true
+            ? details['stage'].toString().trim()
+            : 'capability_handshake',
+        retryable: details['retryable'] == true,
+        safeMessage: error.message?.trim().isNotEmpty == true
+            ? error.message!.trim()
+            : 'HydraCore capability handshake failed.',
+      );
     }
   }
 

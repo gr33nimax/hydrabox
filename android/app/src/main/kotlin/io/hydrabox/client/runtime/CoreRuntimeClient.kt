@@ -573,6 +573,10 @@ class CoreRuntimeClient(context: Context) {
     }
 
     private fun disconnect(error: Throwable) {
+        val reportedError = CoreStartupFailureStore(appContext)
+            .readFresh()
+            ?.toException()
+            ?: error
         val pending = synchronized(lock) {
             val values = waitingForService.toList()
             waitingForService.clear()
@@ -580,11 +584,16 @@ class CoreRuntimeClient(context: Context) {
             binding = false
             values
         }
-        pending.forEach { call -> mainHandler.post { call.onFailure(error) } }
-        failPending(error)
+        pending.forEach { call -> mainHandler.post { call.onFailure(reportedError) } }
+        failPending(reportedError)
         mainHandler.post {
             eventConsumers.forEach { consumer ->
-                consumer.error("runtime_ipc_disconnected", "HydraCore process disconnected.", null)
+                val coreError = reportedError as? CoreRuntimeException
+                consumer.error(
+                    coreError?.code ?: "runtime_ipc_disconnected",
+                    coreError?.message ?: "HydraCore process disconnected.",
+                    coreError?.stage,
+                )
             }
         }
     }

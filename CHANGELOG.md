@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## [1.0.0]
+
+- Isolated HydraCore in the dedicated `:core` process and retained a verified
+  APK-embedded core for offline startup and recovery.
+- Added signed, manually activated HydraCore bundles with isolated probing and
+  automatic rollback to the previous or embedded core.
+- Fixed bootstrap recovery so an invalid persisted runtime configuration is
+  quarantined instead of crashing the core process indefinitely.
+- Added typed startup failure codes and retained redacted native diagnostics for
+  actionable recovery on real devices.
+- Switched distributable Android artifacts to signed, non-debuggable per-ABI
+  release APKs with an explicit ARM64 size and certificate gate.
 - Pinned the independently loadable, signed HydraCore debug.14 / VK parasite wire
   v5 client: eight independent KCP lanes, pre-KCP admission control, bounded
   relay flow credit and video-class RTP payload type 96. A matching wire-v5 VPS

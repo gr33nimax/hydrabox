@@ -33,6 +33,7 @@ env:
   BUILD_NUMBER: ${{ github.event_name == 'workflow_dispatch' && inputs.build_number || '' }}
   HYDRACORE_RELEASE_PUBLIC_KEYS: ${{ vars.HYDRACORE_RELEASE_PUBLIC_KEYS }}
   HYDRABOX_UPDATE_RELEASE_PUBLIC_KEYS: ${{ vars.HYDRABOX_UPDATE_RELEASE_PUBLIC_KEYS }}
+  ANDROID_SIGNING_CERT_SHA256: ${{ vars.ANDROID_SIGNING_CERT_SHA256 }}
 
 jobs:
   build-release-apk:
@@ -156,6 +157,10 @@ jobs:
             echo "::error title=Missing secret::HYDRABOX_UPDATE_ED25519_PRIVATE_KEY is not configured"
             missing=1
           fi
+          if [ -z "${ANDROID_SIGNING_CERT_SHA256}" ]; then
+            echo "::error title=Missing signing certificate pin::ANDROID_SIGNING_CERT_SHA256 repository variable is not configured"
+            missing=1
+          fi
           exit "$missing"
 
       - name: Restore Android signing files
@@ -253,7 +258,7 @@ jobs:
           HAPP_CRYPTO_TESTS: ${{ inputs.include_private_happ_assets && 'true' || 'false' }}
         run: flutter test
 
-      - name: Build obfuscated universal and ABI APKs
+      - name: Build obfuscated ABI APKs
         shell: bash
         run: |
           mkdir -p build/release-apks
@@ -283,10 +288,6 @@ jobs:
             common_args+=(--build-number "${BUILD_NUMBER}")
           fi
 
-          flutter build apk "${common_args[@]}"
-          cp build/app/outputs/flutter-apk/app-release.apk \
-            "build/release-apks/hydrabox-v${RELEASE_VERSION}-universal.apk"
-
           flutter build apk "${common_args[@]}" --split-per-abi
           cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
             "build/release-apks/hydrabox-v${RELEASE_VERSION}-arm64-v8a.apk"
@@ -298,13 +299,66 @@ jobs:
       - name: List APK outputs
         run: ls -lah build/release-apks/*.apk
 
+      - name: Verify release APK identity, ABI isolation, and size
+        shell: bash
+        run: |
+          set -euo pipefail
+          arm64="build/release-apks/hydrabox-v${RELEASE_VERSION}-arm64-v8a.apk"
+          test -s "$arm64"
+          max_arm64_bytes=$((96 * 1024 * 1024))
+          actual_arm64_bytes="$(stat -c%s "$arm64")"
+          if [ "$actual_arm64_bytes" -gt "$max_arm64_bytes" ]; then
+            echo "::error title=ARM64 APK size regression::${actual_arm64_bytes} bytes exceeds ${max_arm64_bytes}"
+            exit 1
+          fi
+
+          for spec in \
+            "arm64-v8a:arm64-v8a" \
+            "armeabi-v7a:armeabi-v7a" \
+            "x86_64:x86_64"; do
+            file_token="${spec%%:*}"
+            expected_abi="${spec#*:}"
+            apk="build/release-apks/hydrabox-v${RELEASE_VERSION}-${file_token}.apk"
+            test -s "$apk"
+            mapfile -t packaged_abis < <(
+              unzip -Z1 "$apk" \
+                | sed -n 's#^lib/\([^/]*\)/libbox\.so$#\1#p' \
+                | sort -u
+            )
+            if [ "${#packaged_abis[@]}" -ne 1 ] || [ "${packaged_abis[0]}" != "$expected_abi" ]; then
+              echo "::error title=ABI packaging failure::${apk} contains libbox ABIs: ${packaged_abis[*]:-none}"
+              exit 1
+            fi
+          done
+
+          analyzer="${ANDROID_HOME}/cmdline-tools/latest/bin/apkanalyzer"
+          apksigner="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)"
+          test -x "$analyzer"
+          test -x "$apksigner"
+          if [ "$($analyzer manifest debuggable "$arm64")" != "false" ]; then
+            echo "::error title=Debuggable release::ARM64 release APK is debuggable"
+            exit 1
+          fi
+          "$apksigner" verify --verbose --print-certs "$arm64"
+          actual_cert="$($apksigner verify --print-certs "$arm64" 2>&1 \
+            | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' \
+            | head -1 \
+            | tr '[:lower:]' '[:upper:]')"
+          expected_cert="$(printf '%s' "$ANDROID_SIGNING_CERT_SHA256" \
+            | tr -d ':[:space:]' \
+            | tr '[:lower:]' '[:upper:]')"
+          if [ -z "$actual_cert" ] || [ "$actual_cert" != "$expected_cert" ]; then
+            echo "::error title=Signing identity mismatch::release certificate does not match the pinned publisher identity"
+            exit 1
+          fi
+
       - name: Generate updater manifest
         shell: bash
         env:
           HYDRABOX_UPDATE_KEY_ID: ${{ vars.HYDRABOX_UPDATE_KEY_ID }}
           HYDRABOX_UPDATE_ED25519_PRIVATE_KEY: ${{ secrets.HYDRABOX_UPDATE_ED25519_PRIVATE_KEY }}
         run: |
-          apk="build/release-apks/hydrabox-v${RELEASE_VERSION}-universal.apk"
+          apk="build/release-apks/hydrabox-v${RELEASE_VERSION}-arm64-v8a.apk"
           analyzer="${ANDROID_HOME}/cmdline-tools/latest/bin/apkanalyzer"
           if [ ! -x "$analyzer" ]; then
             analyzer="$(command -v apkanalyzer || true)"
@@ -399,7 +453,6 @@ jobs:
           Dart obfuscation is enabled. Debug symbols are attached as a separate workflow artifact.
 
           Assets:
-          - hydrabox-v${RELEASE_VERSION}-universal.apk
           - hydrabox-v${RELEASE_VERSION}-arm64-v8a.apk
           - hydrabox-v${RELEASE_VERSION}-armeabi-v7a.apk
           - hydrabox-v${RELEASE_VERSION}-x86_64.apk

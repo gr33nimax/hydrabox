@@ -92,7 +92,7 @@ class HydraBoxClient extends StatefulWidget {
 
 class _HydraBoxClientState extends State<HydraBoxClient>
     with WidgetsBindingObserver {
-  static const _fallbackClientVersionLabel = '0.5.0';
+  static const _fallbackClientVersionLabel = '1.0.0';
   static const _requiredLegalVersion = '0.3.0';
   static final RegExp _quickTileCountryCodePattern = RegExp(r'^[A-Z]{2}$');
   static const _lowestProxyTag = lowestProxyTag;
@@ -127,6 +127,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
   bool _ready = false;
   bool _bootstrapInFlight = false;
   AppBootstrapFailureStage? _bootstrapFailureStage;
+  String? _bootstrapFailureCode;
   bool _onboardingCompleted = false;
   String _acceptedLegalVersion = '';
   int? _acceptedLegalAtMillis;
@@ -2581,7 +2582,10 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     }
     _bootstrapInFlight = true;
     if (mounted && _bootstrapFailureStage != null) {
-      setState(() => _bootstrapFailureStage = null);
+      setState(() {
+        _bootstrapFailureStage = null;
+        _bootstrapFailureCode = null;
+      });
     }
     final bootstrapStopwatch = Stopwatch()..start();
     final AppBootstrapResult bootstrap;
@@ -2597,6 +2601,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
         setState(() {
           _bootstrapInFlight = false;
           _bootstrapFailureStage = error.stage;
+          _bootstrapFailureCode = error.code;
         });
       }
       return;
@@ -2610,6 +2615,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
         setState(() {
           _bootstrapInFlight = false;
           _bootstrapFailureStage = AppBootstrapFailureStage.storageRecovery;
+          _bootstrapFailureCode = 'bootstrap.unexpected';
         });
       }
       return;
@@ -2668,6 +2674,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       _ready = true;
       _bootstrapInFlight = false;
       _bootstrapFailureStage = null;
+      _bootstrapFailureCode = null;
       _onboardingCompleted = state.onboardingCompleted;
       _acceptedLegalVersion = state.acceptedLegalVersion;
       _acceptedLegalAtMillis = state.acceptedLegalAtMillis;
@@ -7610,6 +7617,41 @@ class _HydraBoxClientState extends State<HydraBoxClient>
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.bodyLarge,
                       ),
+                      if (!isStorage && _bootstrapFailureCode != null) ...[
+                        const Gap(16),
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .errorContainer
+                                .withValues(alpha: 0.35),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                            child: Column(
+                              children: [
+                                SelectableText(
+                                  _bootstrapFailureCode!,
+                                  textAlign: TextAlign.center,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .labelMedium
+                                      ?.copyWith(
+                                        fontFamily: 'monospace',
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onErrorContainer,
+                                      ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                       const Gap(24),
                       FilledButton.icon(
                         onPressed: _bootstrapInFlight
