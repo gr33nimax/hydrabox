@@ -7621,9 +7621,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
                         const Gap(16),
                         DecoratedBox(
                           decoration: BoxDecoration(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .errorContainer
+                            color: Theme.of(context).colorScheme.errorContainer
                                 .withValues(alpha: 0.35),
                             borderRadius: BorderRadius.circular(16),
                           ),
@@ -7637,14 +7635,12 @@ class _HydraBoxClientState extends State<HydraBoxClient>
                                 SelectableText(
                                   _bootstrapFailureCode!,
                                   textAlign: TextAlign.center,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .labelMedium
+                                  style: Theme.of(context).textTheme.labelMedium
                                       ?.copyWith(
                                         fontFamily: 'monospace',
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .onErrorContainer,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onErrorContainer,
                                       ),
                                 ),
                               ],
