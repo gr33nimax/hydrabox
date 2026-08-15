@@ -107,7 +107,7 @@ void main() {
     final runner = File(
       '.github/scripts/run-android-instrumentation.sh',
     ).readAsStringSync();
-    expect(runner, contains('app-$arch-release.apk'));
+    expect(runner, contains(r'app-$arch-release.apk'));
     expect(runner, contains('build/instrumentation'));
     expect(runner, contains('adb shell am instrument -w'));
     expect(runner, contains('io.hydrabox.client/.MainActivity'));
