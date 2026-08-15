@@ -65,15 +65,17 @@ jobs:
       - name: Build application and instrumentation APKs
         run: |
           chmod +x android/gradlew
+          flutter build apk --debug --split-per-abi
           cd android
-          ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace
+          ./gradlew :app:assembleDebugAndroidTest --stacktrace
 
       - name: Upload instrumentation APKs
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: android-instrumentation-test-only-do-not-install
           path: |
-            build/app/outputs/apk/debug/app-debug.apk
+            build/app/outputs/flutter-apk/app-x86_64-debug.apk
+            build/app/outputs/flutter-apk/app-arm64-v8a-debug.apk
             build/app/outputs/apk/androidTest/debug/app-debug-androidTest.apk
           if-no-files-found: error
           retention-days: 14
@@ -164,7 +166,7 @@ jobs:
       - name: Verify ARM64 Flutter and HydraCore binaries
         shell: bash
         run: |
-          app_apk="$(find instrumentation-apks -name app-debug.apk -print -quit)"
+          app_apk="$(find instrumentation-apks -name app-arm64-v8a-debug.apk -print -quit)"
           test -f "$app_apk"
           unzip -Z1 "$app_apk" | grep -Fx 'lib/arm64-v8a/libflutter.so'
           unzip -Z1 "$app_apk" | grep -Fx 'lib/arm64-v8a/libbox.so'

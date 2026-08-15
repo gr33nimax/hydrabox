@@ -86,6 +86,9 @@ void main() {
       contains("matrix.api-level == 37 && 'canary' || 'stable'"),
     );
     expect(workflow, contains("if: matrix.arch == 'x86_64'"));
+    expect(workflow, contains('flutter build apk --debug --split-per-abi'));
+    expect(workflow, contains('app-x86_64-debug.apk'));
+    expect(workflow, contains('app-arm64-v8a-debug.apk'));
     expect(workflow, contains(':app:assembleDebugAndroidTest'));
     expect(
       workflow,
