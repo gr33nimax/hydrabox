@@ -80,7 +80,7 @@ void main() {
     expect(workflow, contains('channel: stable'));
     expect(workflow, contains('target: default'));
     expect(workflow, contains('runner: [ubuntu-latest]'));
-    expect(workflow, contains('arch: x86_64'));
+    expect(workflow, contains('arch: [x86_64]'));
     expect(workflow, contains('disk-size: 8G'));
     expect(workflow, contains('disable-linux-hw-accel:'));
     expect(workflow, isNot(contains('channel: canary')));
