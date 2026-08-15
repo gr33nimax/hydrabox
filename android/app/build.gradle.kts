@@ -221,7 +221,7 @@ dependencies {
     // Package test-runner runtime dependencies explicitly because R8 removes
     // them from the production APK when the app itself does not reference them.
     androidTestImplementation("org.jetbrains.kotlin:kotlin-stdlib:2.2.20")
-    androidTestImplementation("androidx.tracing:tracing:1.3.0")
+    androidTestImplementation("androidx.tracing:tracing:1.2.0")
 }
 
 protobuf {
