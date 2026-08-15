@@ -108,25 +108,29 @@ void main() {
     }
   });
 
-  test('missing Pigeon handler is bridge recovery, not core corruption', () async {
-    final controller = AppBootstrapController(
-      fallbackClientVersionLabel: '1.0.0',
-      loadCoreCapabilities: () async => throw const HydraCoreHandshakeException(
-        code: 'channel-error',
-        stage: 'capability_handshake',
-        retryable: false,
-        safeMessage: 'Unable to establish the Android platform channel.',
-      ),
-    );
+  test(
+    'missing Pigeon handler is bridge recovery, not core corruption',
+    () async {
+      final controller = AppBootstrapController(
+        fallbackClientVersionLabel: '1.0.0',
+        loadCoreCapabilities: () async =>
+            throw const HydraCoreHandshakeException(
+              code: 'channel-error',
+              stage: 'capability_handshake',
+              retryable: false,
+              safeMessage: 'Unable to establish the Android platform channel.',
+            ),
+      );
 
-    try {
-      await controller.load(providedStore: MemoryAppSettingsStore());
-      fail('bootstrap should have required platform bridge recovery');
-    } on AppBootstrapException catch (error) {
-      expect(error.stage, AppBootstrapFailureStage.platformBridgeRecovery);
-      expect(error.code, 'channel-error');
-    }
-  });
+      try {
+        await controller.load(providedStore: MemoryAppSettingsStore());
+        fail('bootstrap should have required platform bridge recovery');
+      } on AppBootstrapException catch (error) {
+        expect(error.stage, AppBootstrapFailureStage.platformBridgeRecovery);
+        expect(error.code, 'channel-error');
+      }
+    },
+  );
 
   test('disabled rule-set status is deferred until after bootstrap', () async {
     var adBlockRequests = 0;

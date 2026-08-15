@@ -809,7 +809,7 @@ abstract class AppLocalizations {
   /// No description provided for @updatesInstallModeAskSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'HydraBox will ask whether to download manually or install automatically.'**
+  /// **'HydraBox will ask before opening the verified GitHub release.'**
   String get updatesInstallModeAskSubtitle;
 
   /// No description provided for @updatesInstallModeManual.
@@ -821,7 +821,7 @@ abstract class AppLocalizations {
   /// No description provided for @updatesInstallModeManualSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'The client downloads the APK and shows an install button.'**
+  /// **'The verified GitHub release opens in your browser for manual installation.'**
   String get updatesInstallModeManualSubtitle;
 
   /// No description provided for @updatesInstallModeAuto.
@@ -839,19 +839,19 @@ abstract class AppLocalizations {
   /// No description provided for @updatesInstallMethodTitle.
   ///
   /// In en, this message translates to:
-  /// **'How should this update be installed?'**
+  /// **'Open the verified release?'**
   String get updatesInstallMethodTitle;
 
   /// No description provided for @updatesInstallMethodManualTitle.
   ///
   /// In en, this message translates to:
-  /// **'Download manually'**
+  /// **'Open GitHub release'**
   String get updatesInstallMethodManualTitle;
 
   /// No description provided for @updatesInstallMethodManualSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'The APK is saved in the update cache. You can install it later.'**
+  /// **'Download and install the signed ABI-specific APK using your browser and Android installer.'**
   String get updatesInstallMethodManualSubtitle;
 
   /// No description provided for @updatesInstallMethodAutoTitle.
