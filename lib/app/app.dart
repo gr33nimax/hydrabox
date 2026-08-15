@@ -2593,6 +2593,9 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       bootstrap = await _bootstrapController.load(providedStore: widget.store);
     } on AppBootstrapException catch (error) {
       bootstrapStopwatch.stop();
+      debugPrint(
+        'hydrabox_bootstrap_failed stage=${error.stage.name} code=${error.code}',
+      );
       AppLogStore.error(
         'bootstrap',
         'Recovery required stage=${error.stage.name}',
@@ -2607,6 +2610,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       return;
     } catch (error, stackTrace) {
       bootstrapStopwatch.stop();
+      debugPrint('hydrabox_bootstrap_failed stage=unexpected');
       AppLogStore.error(
         'bootstrap',
         'Unexpected bootstrap failure: $error\n$stackTrace',
@@ -2694,6 +2698,14 @@ class _HydraBoxClientState extends State<HydraBoxClient>
         normalized.activeSubscriptionId,
         clearProxyCache: true,
       );
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _ready && _bootstrapFailureStage == null) {
+        debugPrint(
+          'hydrabox_bootstrap_ready api=${coreCapabilities.apiVersion} '
+          'role=${coreCapabilities.coreRole}',
+        );
+      }
     });
     if (!useInMemoryBootstrap) {
       _scheduleDeferredBootstrapStatuses();

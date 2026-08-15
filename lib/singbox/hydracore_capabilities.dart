@@ -214,7 +214,15 @@ class HydraCoreCapabilities {
       ),
       amneziaVersion: _requiredInt(features, 'amnezia_version'),
       tunStacks: _requiredStringSet(root, 'tun_stacks'),
-      inboundProtocols: _requiredStringSet(protocols, 'inbounds'),
+      inboundProtocols: _requiredStringSet(
+        protocols,
+        'inbounds',
+        // HydraCore v1.13.16-extended-hydracore.11-debug.14 was built with
+        // append([]string(nil), emptySlice...), which JSON-encodes the empty
+        // client inbound list as null. Treat only this present-null list as
+        // empty; an absent field still fails closed.
+        allowPresentNullAsEmpty: true,
+      ),
       outboundProtocols: _requiredStringSet(protocols, 'outbounds'),
       endpointProtocols: _requiredStringSet(protocols, 'endpoints'),
       callPlatforms: _requiredStringSet(protocols, 'call_platforms'),
@@ -422,8 +430,12 @@ Set<String> _requiredStringSet(
   Map<String, Object?> value,
   String key, {
   bool lowerCase = true,
+  bool allowPresentNullAsEmpty = false,
 }) {
   final item = value[key];
+  if (allowPresentNullAsEmpty && value.containsKey(key) && item == null) {
+    return const <String>{};
+  }
   if (item is! List || item.any((entry) => entry is! String)) {
     throw FormatException('Missing HydraCore string list: $key');
   }

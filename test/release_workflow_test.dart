@@ -113,11 +113,23 @@ void main() {
       contains('platform_bridge_result name=getCoreCapabilities success=true'),
     );
     expect(
+      runner,
+      contains('hydrabox_bootstrap_ready api=2 role=client'),
+    );
+    expect(
       workflow,
       contains(
         'reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d',
       ),
     );
+  });
+
+  test('application supplies WorkManager configuration before scheduling', () {
+    final application = File(
+      'android/app/src/main/kotlin/io/hydrabox/client/HydraBoxApplication.kt',
+    ).readAsStringSync();
+    expect(application, contains('Configuration.Provider'));
+    expect(application, contains('workManagerConfiguration'));
   });
 
   test('duplicate automatic HydraCore and test APK workflows are removed', () {

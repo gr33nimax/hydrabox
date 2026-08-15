@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hydrabox/singbox/hydracore_capabilities.dart';
@@ -32,6 +33,22 @@ void main() {
     expect(capabilities.retainedUrlTestSessions, 64);
     expect(capabilities.isCompatibleRelease, isTrue);
   });
+
+  test(
+    'parses the exact capability document published with the embedded core',
+    () {
+      final capabilities = HydraCoreCapabilities.parseStrict(
+        File(
+          'test/fixtures/hydracore_client_capabilities_v1.13.16-extended-hydracore.11-debug.14.json',
+        ).readAsStringSync(),
+      );
+
+      expect(capabilities.coreRole, 'client');
+      expect(capabilities.inboundProtocols, isEmpty);
+      expect(capabilities.outboundProtocols, contains('call'));
+      expect(capabilities.isCompatibleRelease, isTrue);
+    },
+  );
 
   test('missing runtime and subscription features fail closed', () {
     for (final feature in <String>[
@@ -73,6 +90,13 @@ void main() {
     final missingRuntime = _capabilities()..remove('runtime');
     expect(
       () => HydraCoreCapabilities.parseStrict(jsonEncode(missingRuntime)),
+      throwsFormatException,
+    );
+
+    final missingInbounds = _capabilities();
+    (missingInbounds['protocols'] as Map<String, dynamic>).remove('inbounds');
+    expect(
+      () => HydraCoreCapabilities.parseStrict(jsonEncode(missingInbounds)),
       throwsFormatException,
     );
 

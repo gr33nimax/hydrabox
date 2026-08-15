@@ -86,11 +86,12 @@ for _ in $(seq 1 45); do
   if grep -q 'platform_bridge_ready name=core_manager' "$logcat_file" \
     && grep -q 'platform_bridge_ready name=singbox' "$logcat_file" \
     && grep -q 'startup_healthy source=' "$logcat_file" \
-    && grep -q 'platform_bridge_result name=getCoreCapabilities success=true' "$logcat_file"; then
+    && grep -q 'platform_bridge_result name=getCoreCapabilities success=true' "$logcat_file" \
+    && grep -q 'hydrabox_bootstrap_ready api=2 role=client' "$logcat_file"; then
     bridge_ready=true
     break
   fi
-  if grep -Eq 'FATAL EXCEPTION|UnsatisfiedLinkError|startup_failed source=' "$logcat_file"; then
+  if grep -Eq 'FATAL EXCEPTION|UnsatisfiedLinkError|startup_failed source=|hydrabox_bootstrap_failed' "$logcat_file"; then
     break
   fi
   sleep 2
@@ -100,9 +101,9 @@ if [[ "$bridge_ready" != true ]]; then
   adb shell uiautomator dump /sdcard/hydrabox-window.xml >/dev/null 2>&1 || true
   adb pull /sdcard/hydrabox-window.xml "$ui_file" >/dev/null 2>&1 || true
   grep -E \
-    'HydraCore|HydraBox|platform_bridge|AndroidRuntime|FATAL EXCEPTION|UnsatisfiedLinkError|startup_' \
+    'HydraCore|HydraBox|hydrabox_bootstrap|platform_bridge|AndroidRuntime|FATAL EXCEPTION|UnsatisfiedLinkError|startup_' \
     "$logcat_file" | tee -a "$bridge_file" || true
   exit 1
 fi
 
-grep -E 'platform_bridge_|startup_healthy' "$logcat_file" | tee -a "$bridge_file"
+grep -E 'hydrabox_bootstrap_ready|platform_bridge_|startup_healthy' "$logcat_file" | tee -a "$bridge_file"

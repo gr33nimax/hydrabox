@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import android.net.ConnectivityManager
 import android.util.AtomicFile
+import androidx.work.Configuration
 import io.hydrabox.client.background.SubscriptionRefreshScheduler
 import io.hydrabox.client.core.CoreBundleManager
 import io.hydrabox.client.platform.AndroidProcessIdentity
@@ -12,7 +13,10 @@ import java.io.File
 import java.io.FileOutputStream
 import kotlin.system.exitProcess
 
-class HydraBoxApplication : Application() {
+class HydraBoxApplication : Application(), Configuration.Provider {
+    override val workManagerConfiguration: Configuration
+        get() = Configuration.Builder().build()
+
     override fun onCreate() {
         super.onCreate()
         application = this
