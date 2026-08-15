@@ -17,15 +17,15 @@ class HydraBoxApplication : Application() {
         super.onCreate()
         application = this
         val processName = AndroidProcessIdentity.current(this)
-        val bundleManager = CoreBundleManager(this)
         when {
-            processName.endsWith(":core_probe") ->
-                bundleManager.configureCandidateLoaderForProbe()
+            processName.endsWith(":core_probe") -> {
+                CoreBundleManager(this).configureCandidateLoaderForProbe()
+            }
             processName.endsWith(":core") -> {
+                val bundleManager = CoreBundleManager(this)
                 bundleManager.noteCoreProcessStart()
                 bundleManager.configureNativeLoader()
             }
-            else -> bundleManager.configureNativeLoader()
         }
         if (processName == packageName) {
             SubscriptionRefreshScheduler.ensureScheduled(this)

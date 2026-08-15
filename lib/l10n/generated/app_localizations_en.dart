@@ -361,6 +361,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get updatesOpeningInstaller => 'Opening the system installer…';
 
   @override
+  String get updatesOpeningRelease => 'Opening the verified GitHub release…';
+
+  @override
+  String get updatesReleaseOpenFailed =>
+      'Could not open the verified GitHub release in the browser.';
+
+  @override
   String get updatesInstallPermissionHint =>
       'Allow APK installs for HydraBox, then tap “Install APK” again.';
 
@@ -386,14 +393,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get updatesInstallModeAskSubtitle =>
-      'HydraBox will ask whether to download manually or install automatically.';
+      'HydraBox will ask before opening the verified GitHub release.';
 
   @override
   String get updatesInstallModeManual => 'Manual';
 
   @override
   String get updatesInstallModeManualSubtitle =>
-      'The client downloads the APK and shows an install button.';
+      'The verified GitHub release opens in your browser for manual installation.';
 
   @override
   String get updatesInstallModeAuto => 'Automatic';
@@ -403,15 +410,14 @@ class AppLocalizationsEn extends AppLocalizations {
       'The client downloads the APK and opens the Android installer.';
 
   @override
-  String get updatesInstallMethodTitle =>
-      'How should this update be installed?';
+  String get updatesInstallMethodTitle => 'Open the verified release?';
 
   @override
-  String get updatesInstallMethodManualTitle => 'Download manually';
+  String get updatesInstallMethodManualTitle => 'Open GitHub release';
 
   @override
   String get updatesInstallMethodManualSubtitle =>
-      'The APK is saved in the update cache. You can install it later.';
+      'Download and install the signed ABI-specific APK using your browser and Android installer.';
 
   @override
   String get updatesInstallMethodAutoTitle => 'Download and install';
@@ -2288,6 +2294,16 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get bootstrapStorageRecoveryMessage =>
       'HydraBox could not open its durable data. No temporary defaults were substituted. Retry or open Recovery Center after storage becomes available.';
+
+  @override
+  String get bootstrapBridgeRecoveryTitle => 'Android bridge is not ready';
+
+  @override
+  String get bootstrapBridgeRecoveryMessage =>
+      'HydraBox could not reach its Android control plane. This does not mean that HydraCore is missing. Retry platform initialization; connections remain disabled until the handshake succeeds.';
+
+  @override
+  String get bootstrapBridgeRetryAction => 'Retry platform initialization';
 
   @override
   String get bootstrapCoreRecoveryTitle => 'HydraCore needs recovery';

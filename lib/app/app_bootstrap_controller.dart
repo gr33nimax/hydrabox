@@ -15,7 +15,11 @@ typedef CoreCapabilitiesLoader = Future<HydraCoreCapabilities> Function();
 typedef AdBlockStatusLoader = Future<AdBlockRuleSetStatus> Function();
 typedef RussiaRouteStatusLoader = Future<RussiaRouteDataStatus> Function();
 
-enum AppBootstrapFailureStage { storageRecovery, coreRecovery }
+enum AppBootstrapFailureStage {
+  storageRecovery,
+  platformBridgeRecovery,
+  coreRecovery,
+}
 
 /// A recoverable bootstrap failure that must be surfaced to the user.
 ///
@@ -40,17 +44,25 @@ class AppBootstrapException implements Exception {
         value is FormatException) {
       return 'core.contract.invalid';
     }
-    return stage == AppBootstrapFailureStage.storageRecovery
-        ? 'storage.bootstrap.failed'
-        : 'core.bootstrap.failed';
+    return switch (stage) {
+      AppBootstrapFailureStage.storageRecovery => 'storage.bootstrap.failed',
+      AppBootstrapFailureStage.platformBridgeRecovery =>
+        'platform.bridge.unavailable',
+      AppBootstrapFailureStage.coreRecovery => 'core.bootstrap.failed',
+    };
   }
 
   String get safeMessage {
     final value = cause;
     if (value is HydraCoreHandshakeException) return value.safeMessage;
-    return stage == AppBootstrapFailureStage.storageRecovery
-        ? 'Persistent application storage could not be opened.'
-        : 'HydraCore did not provide a compatible runtime contract.';
+    return switch (stage) {
+      AppBootstrapFailureStage.storageRecovery =>
+        'Persistent application storage could not be opened.',
+      AppBootstrapFailureStage.platformBridgeRecovery =>
+        'The Android platform bridge is not ready.',
+      AppBootstrapFailureStage.coreRecovery =>
+        'HydraCore did not provide a compatible runtime contract.',
+    };
   }
 
   @override
@@ -198,7 +210,9 @@ class AppBootstrapController {
         } catch (_) {}
       }
       throw AppBootstrapException(
-        stage: AppBootstrapFailureStage.coreRecovery,
+        stage: _isPlatformBridgeFailure(error)
+            ? AppBootstrapFailureStage.platformBridgeRecovery
+            : AppBootstrapFailureStage.coreRecovery,
         cause: error,
         stackTrace: stackTrace,
       );
@@ -240,6 +254,16 @@ class AppBootstrapController {
       pendingCoreConfigMigration: pendingCoreConfigMigration,
       usesInMemoryStore: usesInMemoryStore,
     );
+  }
+
+  static bool _isPlatformBridgeFailure(Object error) {
+    if (error is! HydraCoreHandshakeException) return false;
+    return const <String>{
+      'channel-error',
+      'missing-plugin',
+      'platform.bridge.unavailable',
+      'runtime.ipc.bind_exception',
+    }.contains(error.code);
   }
 
   /// Reads status data that is useful for settings UI but not needed to draw

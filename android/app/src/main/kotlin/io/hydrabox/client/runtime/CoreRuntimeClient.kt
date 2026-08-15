@@ -136,11 +136,23 @@ class CoreRuntimeClient(context: Context) {
             if (service != null || binding) return
             binding = true
         }
-        val accepted = appContext.bindService(
-            Intent(appContext, CoreRuntimeService::class.java),
-            connection,
-            Context.BIND_AUTO_CREATE or Context.BIND_IMPORTANT,
-        )
+        val accepted = runCatching {
+            appContext.bindService(
+                Intent(appContext, CoreRuntimeService::class.java),
+                connection,
+                Context.BIND_AUTO_CREATE or Context.BIND_IMPORTANT,
+            )
+        }.getOrElse {
+            disconnect(
+                CoreRuntimeException(
+                    "runtime.ipc.bind_exception",
+                    "ipc_bind",
+                    true,
+                    "HydraCore service binding failed before the runtime started.",
+                ),
+            )
+            return
+        }
         if (!accepted) {
             disconnect(CoreRuntimeException("runtime.ipc.bind_failed", "ipc", true, "HydraCore service could not be started."))
             return

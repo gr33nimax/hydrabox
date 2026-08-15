@@ -362,6 +362,13 @@ class AppLocalizationsRu extends AppLocalizations {
   String get updatesOpeningInstaller => 'Открываем системный установщик…';
 
   @override
+  String get updatesOpeningRelease => 'Открываем проверенный релиз GitHub…';
+
+  @override
+  String get updatesReleaseOpenFailed =>
+      'Не удалось открыть проверенный релиз GitHub в браузере.';
+
+  @override
   String get updatesInstallPermissionHint =>
       'Разрешите установку APK для HydraBox, затем нажмите «Установить APK» ещё раз.';
 
@@ -387,14 +394,14 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get updatesInstallModeAskSubtitle =>
-      'Перед скачиванием HydraBox предложит ручную или автоматическую установку.';
+      'HydraBox спросит перед открытием проверенного релиза GitHub.';
 
   @override
   String get updatesInstallModeManual => 'Вручную';
 
   @override
   String get updatesInstallModeManualSubtitle =>
-      'Клиент скачает APK и покажет кнопку установки.';
+      'Проверенный релиз GitHub откроется в браузере для ручной установки.';
 
   @override
   String get updatesInstallModeAuto => 'Автоматически';
@@ -404,14 +411,14 @@ class AppLocalizationsRu extends AppLocalizations {
       'Клиент скачает APK и сразу откроет системный установщик.';
 
   @override
-  String get updatesInstallMethodTitle => 'Как установить обновление?';
+  String get updatesInstallMethodTitle => 'Открыть проверенный релиз?';
 
   @override
-  String get updatesInstallMethodManualTitle => 'Скачать вручную';
+  String get updatesInstallMethodManualTitle => 'Открыть релиз GitHub';
 
   @override
   String get updatesInstallMethodManualSubtitle =>
-      'APK сохранится в кэше обновлений. Установку можно запустить позже.';
+      'Скачайте и установите подписанный APK для своего ABI через браузер и системный установщик Android.';
 
   @override
   String get updatesInstallMethodAutoTitle => 'Скачать и установить';
@@ -2294,6 +2301,16 @@ class AppLocalizationsRu extends AppLocalizations {
   @override
   String get bootstrapStorageRecoveryMessage =>
       'HydraBox не смог открыть постоянные данные. Временные настройки не подставлялись. Повторите попытку или откройте Центр восстановления после восстановления доступа к данным.';
+
+  @override
+  String get bootstrapBridgeRecoveryTitle => 'Android-мост не готов';
+
+  @override
+  String get bootstrapBridgeRecoveryMessage =>
+      'HydraBox не смог связаться с управляющим Android-слоем. Это не означает, что HydraCore отсутствует. Повторите инициализацию платформы; подключения останутся выключенными до успешного подтверждения.';
+
+  @override
+  String get bootstrapBridgeRetryAction => 'Повторить инициализацию';
 
   @override
   String get bootstrapCoreRecoveryTitle => 'Требуется восстановление HydraCore';

@@ -11,6 +11,7 @@ import 'package:hydrabox/l10n/generated/app_localizations.dart';
 import 'package:hydrabox/singbox/singbox_runtime.dart';
 import 'package:hydrabox/widgets/progressive_blur_scaffold.dart';
 import 'package:hydrabox/widgets/release_notes_card.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class SettingsUpdatePage extends StatefulWidget {
   const SettingsUpdatePage({
@@ -36,7 +37,6 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage>
   bool _downloading = false;
   bool _installing = false;
   bool _clearingUpdateCache = false;
-  bool? _canInstallApks;
   AppUpdateVerificationResult? _verification;
   String? _downloadedFilePath;
   late String _currentVersion = widget.currentVersion;
@@ -118,7 +118,7 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage>
       }
     }
 
-    await _download(info);
+    await _openRelease(info);
   }
 
   Future<_InstallModeDecision?> _showInstallModeSheet() {
@@ -206,111 +206,42 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage>
     );
   }
 
-  Future<void> _download(AppUpdateInfo info) async {
-    if (_downloading || _checking || _clearingUpdateCache) return;
-    setState(() {
-      _downloading = true;
-      _verification = null;
-      _downloadProgress = const AppUpdateDownloadProgress(
-        downloadedBytes: 0,
-        totalBytes: 0,
-        bytesPerSecond: 0,
-        done: false,
-      );
-    });
-    try {
-      await AppUpdateService.instance.downloadUpdate(
-        info,
-        onProgress: (progress) {
-          if (!mounted) return;
-          setState(() => _downloadProgress = progress);
-        },
-      );
-      if (!mounted) return;
-      final filePath = _downloadProgress?.filePath;
-      final verification = filePath == null
-          ? null
-          : await AppUpdateService.instance.verifyDownloadedApk(info, filePath);
-      if (!mounted) return;
+  Future<void> _openRelease(AppUpdateInfo info) async {
+    if (_installing || _checking || _clearingUpdateCache) return;
+    final uri = Uri.tryParse(info.htmlUrl);
+    if (uri == null || uri.scheme != 'https' || uri.host != 'github.com') {
       setState(() {
-        _downloading = false;
-        _downloadedFilePath = filePath;
-        _verification = verification;
-        _result = AppUpdateCheckResult(
-          status: AppUpdateStatus.downloaded,
-          checkedAt: DateTime.now(),
-          info: info,
-          downloadedFilePath: filePath,
-        );
-      });
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _downloading = false;
         _result = AppUpdateCheckResult(
           status: AppUpdateStatus.error,
           checkedAt: DateTime.now(),
           info: info,
-          error: error.toString(),
-        );
-      });
-    }
-  }
-
-  Future<void> _installDownloaded() async {
-    if (_checking || _downloading || _installing || _clearingUpdateCache) {
-      return;
-    }
-    final path = _cachedInstallerPath ?? '';
-    if (path.isEmpty) {
-      setState(() {
-        _result = AppUpdateCheckResult(
-          status: AppUpdateStatus.error,
-          checkedAt: DateTime.now(),
-          info: _result?.info,
-          error: AppLocalizations.of(context).updatesDownloadedFileMissing,
-        );
-      });
-      return;
-    }
-    await _refreshDownloadedVerification();
-    if (!mounted) return;
-    if (_verification?.ok == false) {
-      setState(() {
-        _result = AppUpdateCheckResult(
-          status: AppUpdateStatus.error,
-          checkedAt: DateTime.now(),
-          info: _result?.info,
-          error: _verification?.error,
-          downloadedFilePath: path,
+          error: AppLocalizations.of(context).updatesReleaseOpenFailed,
         );
       });
       return;
     }
     setState(() => _installing = true);
     try {
-      final canInstall = await _ensureInstallPermission();
-      if (!canInstall) {
-        setState(() => _installing = false);
-        return;
-      }
-      await SingboxRuntime.instance.installDownloadedApk();
-    } catch (error) {
+      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!opened) throw StateError('release page was not opened');
+    } catch (_) {
       if (!mounted) return;
       setState(() {
         _result = AppUpdateCheckResult(
           status: AppUpdateStatus.error,
           checkedAt: DateTime.now(),
-          info: _result?.info,
-          error: error.toString(),
-          downloadedFilePath: path,
+          info: info,
+          error: AppLocalizations.of(context).updatesReleaseOpenFailed,
         );
       });
     } finally {
-      if (mounted) {
-        setState(() => _installing = false);
-      }
+      if (mounted) setState(() => _installing = false);
     }
+  }
+
+  Future<void> _installDownloaded() async {
+    final info = _result?.info;
+    if (info != null) await _openRelease(info);
   }
 
   Future<void> _refreshDownloadedVerification() async {
@@ -326,50 +257,6 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage>
     );
     if (!mounted) return;
     setState(() => _verification = verification);
-  }
-
-  Future<bool> _refreshInstallPermissionStatus({
-    bool showFeedback = false,
-  }) async {
-    final canInstall = await SingboxRuntime.instance.canInstallApks();
-    if (!mounted) return canInstall;
-    final previous = _canInstallApks;
-    setState(() => _canInstallApks = canInstall);
-    if (showFeedback && previous == false && canInstall) {
-      AppNotice.show(
-        context,
-        AppLocalizations.of(context).updatesInstallPermissionGranted,
-        tone: AppNoticeTone.success,
-      );
-    }
-    return canInstall;
-  }
-
-  Future<bool> _ensureInstallPermission() async {
-    final canInstall = await _refreshInstallPermissionStatus();
-    if (canInstall || !mounted) return canInstall;
-    final l10n = AppLocalizations.of(context);
-    final openSettings = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(l10n.updatesInstallPermissionTitle),
-        content: Text(l10n.updatesInstallPermissionMessage),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text(l10n.cancel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: Text(l10n.updatesInstallPermissionOpen),
-          ),
-        ],
-      ),
-    );
-    if (openSettings == true) {
-      await SingboxRuntime.instance.openApkInstallSettings();
-    }
-    return false;
   }
 
   String? get _cachedInstallerPath {
@@ -608,7 +495,7 @@ class _UpdateActionButton extends StatelessWidget {
     }
     if (downloading || installing) {
       return Text(
-        installing ? l10n.updatesOpeningInstaller : l10n.updatesDownloadWarning,
+        installing ? l10n.updatesOpeningRelease : l10n.updatesDownloadWarning,
         textAlign: TextAlign.center,
         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
           color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -619,9 +506,9 @@ class _UpdateActionButton extends StatelessWidget {
       return FilledButton.icon(
         onPressed: checking ? null : onInstall,
         style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(56)),
-        icon: const Icon(Icons.install_mobile_rounded),
+        icon: const Icon(Icons.open_in_new_rounded),
         label: Text(
-          l10n.updatesInstallAction,
+          l10n.updatesOpenAction,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -632,7 +519,7 @@ class _UpdateActionButton extends StatelessWidget {
         onPressed: checking ? null : onDownload,
         style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(56)),
         child: Text(
-          l10n.updatesDownloadAction,
+          l10n.updatesOpenAction,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),

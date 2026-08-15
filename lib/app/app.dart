@@ -2743,17 +2743,18 @@ class _HydraBoxClientState extends State<HydraBoxClient>
   Future<void> _repairEmbeddedCoreAndBootstrap() async {
     if (_bootstrapInFlight || !mounted) return;
     setState(() => _bootstrapInFlight = true);
+    var repaired = false;
     try {
       await platform_bridge.CoreManagerHostApi().rollback().timeout(
         const Duration(seconds: 20),
       );
+      repaired = true;
     } catch (error, stackTrace) {
       AppLogStore.error(
         'bootstrap',
         'Embedded HydraCore repair failed: $error\n$stackTrace',
       );
       if (mounted) {
-        setState(() => _bootstrapInFlight = false);
         ScaffoldMessenger.maybeOf(context)?.showSnackBar(
           SnackBar(
             content: Text(
@@ -2762,11 +2763,12 @@ class _HydraBoxClientState extends State<HydraBoxClient>
           ),
         );
       }
-      return;
+    } finally {
+      if (mounted) {
+        setState(() => _bootstrapInFlight = false);
+      }
     }
-    if (!mounted) return;
-    setState(() => _bootstrapInFlight = false);
-    await _bootstrap();
+    if (repaired && mounted) await _bootstrap();
   }
 
   void _scheduleDeferredBootstrapStatuses() {
@@ -7583,6 +7585,8 @@ class _HydraBoxClientState extends State<HydraBoxClient>
         final l10n = AppLocalizations.of(context);
         final isStorage =
             failureStage == AppBootstrapFailureStage.storageRecovery;
+        final isBridge =
+            failureStage == AppBootstrapFailureStage.platformBridgeRecovery;
         return Scaffold(
           key: const ValueKey('bootstrap-recovery'),
           body: SafeArea(
@@ -7597,6 +7601,8 @@ class _HydraBoxClientState extends State<HydraBoxClient>
                       Icon(
                         isStorage
                             ? Icons.storage_rounded
+                            : isBridge
+                            ? Icons.sync_problem_rounded
                             : Icons.memory_rounded,
                         size: 52,
                         color: Theme.of(context).colorScheme.error,
@@ -7605,6 +7611,8 @@ class _HydraBoxClientState extends State<HydraBoxClient>
                       Text(
                         isStorage
                             ? l10n.bootstrapStorageRecoveryTitle
+                            : isBridge
+                            ? l10n.bootstrapBridgeRecoveryTitle
                             : l10n.bootstrapCoreRecoveryTitle,
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.headlineSmall,
@@ -7613,6 +7621,8 @@ class _HydraBoxClientState extends State<HydraBoxClient>
                       Text(
                         isStorage
                             ? l10n.bootstrapStorageRecoveryMessage
+                            : isBridge
+                            ? l10n.bootstrapBridgeRecoveryMessage
                             : l10n.bootstrapCoreRecoveryMessage,
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.bodyLarge,
@@ -7655,16 +7665,22 @@ class _HydraBoxClientState extends State<HydraBoxClient>
                             : () => unawaited(
                                 isStorage
                                     ? _bootstrap()
+                                    : isBridge
+                                    ? _bootstrap()
                                     : _repairEmbeddedCoreAndBootstrap(),
                               ),
                         icon: Icon(
                           isStorage
                               ? Icons.refresh_rounded
+                              : isBridge
+                              ? Icons.sync_rounded
                               : Icons.settings_backup_restore_rounded,
                         ),
                         label: Text(
                           isStorage
                               ? l10n.updatesRetryAction
+                              : isBridge
+                              ? l10n.bootstrapBridgeRetryAction
                               : l10n.bootstrapCoreRepairAction,
                         ),
                       ),

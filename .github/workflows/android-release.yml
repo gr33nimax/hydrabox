@@ -339,6 +339,34 @@ jobs:
             echo "::error title=Debuggable release::ARM64 release APK is debuggable"
             exit 1
           fi
+          if "$analyzer" manifest permissions "$arm64" \
+            | grep -Fq 'android.permission.REQUEST_INSTALL_PACKAGES'; then
+            echo "::error title=Unsafe installer permission::User APK must not request package installation privileges"
+            exit 1
+          fi
+          python3 - "$arm64" <<'PY'
+          import struct
+          import sys
+          import zipfile
+
+          apk = sys.argv[1]
+          entry = "lib/arm64-v8a/libbox.so"
+          with zipfile.ZipFile(apk) as archive:
+              data = archive.read(entry)
+          if data[:4] != b"\x7fELF" or data[4] != 2 or data[5] != 1:
+              raise SystemExit("ARM64 libbox.so is not a little-endian ELF64 binary")
+          phoff = struct.unpack_from("<Q", data, 32)[0]
+          phentsize = struct.unpack_from("<H", data, 54)[0]
+          phnum = struct.unpack_from("<H", data, 56)[0]
+          alignments = []
+          for index in range(phnum):
+              offset = phoff + index * phentsize
+              if struct.unpack_from("<I", data, offset)[0] == 1:
+                  alignments.append(struct.unpack_from("<Q", data, offset + 48)[0])
+          if not alignments or any(value < 16384 or value % 16384 for value in alignments):
+              raise SystemExit(f"HydraCore PT_LOAD alignment is not 16 KiB compatible: {alignments}")
+          print(f"HydraCore ARM64 PT_LOAD alignments: {alignments}")
+          PY
           "$apksigner" verify --verbose --print-certs "$arm64"
           actual_cert="$($apksigner verify --print-certs "$arm64" 2>&1 \
             | sed -n 's/^.*certificate SHA-256 digest: //p' \
@@ -422,6 +450,14 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Upload user-ready ARM64 APK
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: HydraBox-ARM64-INSTALL-THIS-${{ github.run_number }}
+          path: build/release-apks/*-arm64-v8a.apk
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Upload Dart debug symbols
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -466,12 +502,7 @@ jobs:
               echo "::error title=Published release exists::Refusing to replace ${TAG_NAME}" >&2
               exit 1
             fi
-            release_target="$(jq -r '.targetCommitish' release-state.json)"
-            if [ "$release_target" != "$GITHUB_SHA" ]; then
-              echo "::error title=Release target mismatch::${TAG_NAME} targets ${release_target}, build is ${GITHUB_SHA}" >&2
-              exit 1
-            fi
-            gh release edit "$TAG_NAME" --title "$RELEASE_TITLE" --notes-file "$notes_file"
+            gh release edit "$TAG_NAME" --target "$GITHUB_SHA" --title "$RELEASE_TITLE" --notes-file "$notes_file"
             gh release upload "$TAG_NAME" build/release-apks/*.apk build/release-apks/hydrabox-update.json build/release-apks/hydrabox-update.json.sig --clobber
           else
             gh release create "$TAG_NAME" build/release-apks/*.apk build/release-apks/hydrabox-update.json build/release-apks/hydrabox-update.json.sig \

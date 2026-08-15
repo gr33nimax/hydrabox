@@ -149,11 +149,46 @@ def verify_android_process_isolation() -> None:
     if missing:
         fail(f"Android core process isolation markers are missing: {missing!r}")
 
+    forbidden_permissions = (
+        "android.permission.REQUEST_INSTALL_PACKAGES",
+    )
+    present_permissions = [value for value in forbidden_permissions if value in manifest]
+    if present_permissions:
+        fail(f"Android user package contains unsafe permissions: {present_permissions!r}")
+
+    application = (
+        ROOT / "android" / "app" / "src" / "main" / "kotlin"
+        / "io" / "hydrabox" / "client" / "HydraBoxApplication.kt"
+    ).read_text(encoding="utf-8")
+    if "else -> bundleManager.configureNativeLoader()" in application:
+        fail("Android UI process still configures the HydraCore native loader")
+
+
+def verify_platform_bridge_boot_order() -> None:
+    activity = MAIN_PROCESS_ENTRYPOINTS[0].read_text(encoding="utf-8")
+    configure_start = activity.find("override fun configureFlutterEngine")
+    configure_end = activity.find("MethodChannel(", configure_start)
+    if configure_start < 0 or configure_end < 0:
+        fail("MainActivity Flutter engine bootstrap block is missing")
+    bootstrap = activity[configure_start:configure_end]
+    markers = (
+        "CoreManagerHostApi.setUp(binaryMessenger, handler)",
+        "setupSingboxHostApi(binaryMessenger)",
+        "coreRuntimeClient.connect()",
+    )
+    positions = [bootstrap.find(marker) for marker in markers]
+    if any(position < 0 for position in positions) or positions != sorted(positions):
+        fail(
+            "MainActivity must register Core Manager and Singbox Pigeon APIs "
+            "before binding the isolated HydraCore process"
+        )
+
 
 def main() -> None:
     verify_removed_boundaries()
     verify_required_contract()
     verify_android_process_isolation()
+    verify_platform_bridge_boot_order()
     print("Verified HydraBox client boundaries and Hydra Subscription v2 markers")
 
 

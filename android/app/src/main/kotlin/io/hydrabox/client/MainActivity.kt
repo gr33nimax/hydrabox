@@ -22,7 +22,6 @@ import android.util.AtomicFile
 import android.util.Log
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.content.FileProvider
 import io.hydrabox.client.core.CoreManagerHostApiHandler
 import io.hydrabox.client.generated.CoreManagerHostApi
 import io.hydrabox.client.generated.DownloadedApkInspectionMessage
@@ -199,8 +198,6 @@ class MainActivity : FlutterFragmentActivity() {
     private var pendingPrepareResult: MethodChannel.Result? = null
     private var pendingExportResult: MethodChannel.Result? = null
     private var pendingExportContent: String? = null
-    private var pendingInstallSettingsResult: MethodChannel.Result? = null
-    private var pendingApkInstallResult: MethodChannel.Result? = null
     private var pendingNotificationPermissionResult: MethodChannel.Result? = null
     private var deepLinkEventSink: EventChannel.EventSink? = null
     private var mutableCoreRuntimeClient: CoreRuntimeClient? = null
@@ -227,20 +224,6 @@ class MainActivity : FlutterFragmentActivity() {
     private val exportDocumentLauncher: ActivityResultLauncher<String> =
         registerForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
             completeLogExport(uri)
-        }
-
-    private val installSettingsLauncher: ActivityResultLauncher<Intent> =
-        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-            val result = pendingInstallSettingsResult
-            pendingInstallSettingsResult = null
-            result?.success(canRequestApkInstalls())
-        }
-
-    private val apkInstallLauncher: ActivityResultLauncher<Intent> =
-        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-            val result = pendingApkInstallResult
-            pendingApkInstallResult = null
-            result?.success(true)
         }
 
     private val notificationPermissionLauncher: ActivityResultLauncher<String> =
@@ -386,8 +369,6 @@ class MainActivity : FlutterFragmentActivity() {
         }
     }
 
-    private fun canRequestApkInstalls(): Boolean = packageManager.canRequestPackageInstalls()
-
     private fun notificationsGranted(): Boolean =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
@@ -431,75 +412,6 @@ class MainActivity : FlutterFragmentActivity() {
                 result.error("vpn_permission_launch_failed", error.message, null)
             }
     }
-
-    private fun openApkInstallSettings(result: MethodChannel.Result) {
-        if (pendingInstallSettingsResult != null) {
-            result.error(
-                "install_settings_in_progress",
-                "APK install settings are already open.",
-                null,
-            )
-            return
-        }
-        val intent = Intent(
-            Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-            Uri.parse("package:$packageName"),
-        )
-        pendingInstallSettingsResult = result
-        runCatching { installSettingsLauncher.launch(intent) }
-            .onFailure { error ->
-                pendingInstallSettingsResult = null
-                result.error("open_install_settings_failed", error.message, null)
-            }
-    }
-
-    private fun installDownloadedApk(result: MethodChannel.Result) {
-        val file = UpdateApkLocator.resolveSingleExisting(filesDir)
-        requireTrustedUpdateIdentity(file)
-        if (!canRequestApkInstalls()) {
-            throw IllegalStateException("APK install permission is not granted.")
-        }
-        check(pendingApkInstallResult == null) { "An APK installation is already active." }
-        val uri = FileProvider.getUriForFile(
-            this,
-            "$packageName.fileprovider",
-            file,
-        )
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/vnd.android.package-archive")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
-        }
-        pendingApkInstallResult = result
-        runCatching { apkInstallLauncher.launch(intent) }
-            .onFailure { error ->
-                pendingApkInstallResult = null
-                throw error
-            }
-    }
-
-    private fun requireTrustedUpdateIdentity(file: File) {
-        val inspection = inspectDownloadedApk(file.absolutePath)
-        require(inspection["valid"] == true) { "Android could not read the update APK." }
-        require(inspection["packageName"] == packageName) {
-            "Update APK package does not match HydraBox."
-        }
-        val archiveCertificates = digestSet(inspection["signingCertificateSha256"])
-        val installedCertificates = digestSet(inspection["installedCertificateSha256"])
-        require(
-            archiveCertificates.isNotEmpty() &&
-                installedCertificates.isNotEmpty() &&
-                archiveCertificates.any(installedCertificates::contains),
-        ) { "Update APK signature does not match installed HydraBox." }
-    }
-
-    private fun digestSet(value: Any?): Set<String> =
-        (value as? Iterable<*>)
-            ?.mapNotNull { digest ->
-                digest?.toString()?.trim()?.lowercase()?.takeIf(String::isNotEmpty)
-            }
-            ?.toSet()
-            .orEmpty()
 
     private fun launchLogExport(
         content: String,
@@ -1920,16 +1832,25 @@ class MainActivity : FlutterFragmentActivity() {
                 }
 
                 override fun canInstallApks(callback: (Result<Boolean>) -> Unit) {
-                    callback(Result.success(canRequestApkInstalls()))
+                    callback(Result.success(false))
                 }
 
                 override fun openApkInstallSettings(callback: (Result<Boolean>) -> Unit) {
-                    openApkInstallSettings(boolResult(callback))
+                    callback(
+                        errorResult(
+                            "apk.install.external_only",
+                            "HydraBox updates are installed from the verified GitHub release.",
+                        ),
+                    )
                 }
 
                 override fun installDownloadedApk(callback: (Result<Boolean>) -> Unit) {
-                    runCatching { installDownloadedApk(boolResult(callback)) }
-                        .onFailure { callback(errorResult("install_apk_failed", it.message)) }
+                    callback(
+                        errorResult(
+                            "apk.install.external_only",
+                            "HydraBox updates are installed from the verified GitHub release.",
+                        ),
+                    )
                 }
 
                 override fun verifyAppUpdateManifest(
@@ -2158,7 +2079,17 @@ class MainActivity : FlutterFragmentActivity() {
                 }
 
                 override fun getCoreCapabilities(callback: (Result<String>) -> Unit) {
-                    runHydraCoreApi(callback, "hydraCoreCapabilities")
+                    Log.i(TAG, "platform_bridge_call name=getCoreCapabilities")
+                    runHydraCoreApi(
+                        { result ->
+                            Log.i(
+                                TAG,
+                                "platform_bridge_result name=getCoreCapabilities success=${result.isSuccess}",
+                            )
+                            callback(result)
+                        },
+                        "hydraCoreCapabilities",
+                    )
                 }
 
                 override fun getHydraCoreBuildInfo(callback: (Result<String>) -> Unit) {
@@ -2286,15 +2217,27 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        coreRuntimeClient.connect()
-        setupSingboxHostApi(flutterEngine.dartExecutor.binaryMessenger)
+        val binaryMessenger = flutterEngine.dartExecutor.binaryMessenger
+
+        // Core recovery is the emergency control plane. Register it before the
+        // runtime API and before attempting to bind :core so a failed native
+        // process can never make its own repair action unreachable.
         coreManagerHostApiHandler = CoreManagerHostApiHandler(
             context = applicationContext,
             runtimeClient = { coreRuntimeClient },
             cycleCoreProcess = ::cycleCoreProcessForBundleChange,
         ).also { handler ->
-            CoreManagerHostApi.setUp(flutterEngine.dartExecutor.binaryMessenger, handler)
+            CoreManagerHostApi.setUp(binaryMessenger, handler)
         }
+        Log.i(TAG, "platform_bridge_ready name=core_manager")
+
+        setupSingboxHostApi(binaryMessenger)
+        Log.i(TAG, "platform_bridge_ready name=singbox")
+
+        // Binding is deliberately last. bindService() may fail synchronously
+        // on OEM builds or when security software blocks the service process;
+        // platform and recovery APIs must remain usable in either case.
+        coreRuntimeClient.connect()
 
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
@@ -2922,22 +2865,20 @@ class MainActivity : FlutterFragmentActivity() {
     private fun terminateCoreProcess() {
         val processName = "$packageName:core"
         val activityManager = getSystemService(ACTIVITY_SERVICE) as ActivityManager
-        requireNotNull(activityManager.runningAppProcesses) {
-            "Android process state is unavailable"
-        }.firstOrNull { it.processName == processName }
+        activityManager.runningAppProcesses.orEmpty()
+            .firstOrNull { it.processName == processName }
             ?.pid
             ?.takeIf { it != android.os.Process.myPid() }
             ?.let(android.os.Process::killProcess)
         val deadline = SystemClock.elapsedRealtime() + CORE_PROCESS_EXIT_DEADLINE_MILLIS
         while (SystemClock.elapsedRealtime() < deadline) {
-            val stillAlive = requireNotNull(activityManager.runningAppProcesses) {
-                "Android process state became unavailable"
-            }.any { it.processName == processName }
+            val stillAlive = activityManager.runningAppProcesses.orEmpty()
+                .any { it.processName == processName }
             if (!stillAlive) return
             Thread.sleep(CORE_PROCESS_EXIT_POLL_MILLIS)
         }
         check(
-            requireNotNull(activityManager.runningAppProcesses).none {
+            activityManager.runningAppProcesses.orEmpty().none {
                 it.processName == processName
             },
         ) { "HydraCore process did not stop for version change" }

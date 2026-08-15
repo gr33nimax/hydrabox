@@ -752,6 +752,18 @@ abstract class AppLocalizations {
   /// **'Opening the system installer…'**
   String get updatesOpeningInstaller;
 
+  /// No description provided for @updatesOpeningRelease.
+  ///
+  /// In en, this message translates to:
+  /// **'Opening the verified GitHub release…'**
+  String get updatesOpeningRelease;
+
+  /// No description provided for @updatesReleaseOpenFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not open the verified GitHub release in the browser.'**
+  String get updatesReleaseOpenFailed;
+
   /// No description provided for @updatesInstallPermissionHint.
   ///
   /// In en, this message translates to:
@@ -4070,6 +4082,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'HydraBox could not open its durable data. No temporary defaults were substituted. Retry or open Recovery Center after storage becomes available.'**
   String get bootstrapStorageRecoveryMessage;
+
+  /// No description provided for @bootstrapBridgeRecoveryTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Android bridge is not ready'**
+  String get bootstrapBridgeRecoveryTitle;
+
+  /// No description provided for @bootstrapBridgeRecoveryMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'HydraBox could not reach its Android control plane. This does not mean that HydraCore is missing. Retry platform initialization; connections remain disabled until the handshake succeeds.'**
+  String get bootstrapBridgeRecoveryMessage;
+
+  /// No description provided for @bootstrapBridgeRetryAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry platform initialization'**
+  String get bootstrapBridgeRetryAction;
 
   /// No description provided for @bootstrapCoreRecoveryTitle.
   ///

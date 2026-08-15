@@ -23,6 +23,9 @@ void main() {
     expect(workflow, contains('scripts/sign_update_manifest.go'));
     expect(workflow, contains('HYDRABOX_UPDATE_ED25519_PRIVATE_KEY'));
     expect(workflow, contains('ARM64 APK size regression'));
+    expect(workflow, contains('Unsafe installer permission'));
+    expect(workflow, contains('REQUEST_INSTALL_PACKAGES'));
+    expect(workflow, contains('HydraCore PT_LOAD alignment'));
     expect(workflow, contains('Signing identity mismatch'));
     expect(workflow, contains('python3 -B scripts/fetch_libbox.py'));
     expect(workflow, contains('python3 -B scripts/verify_libbox.py'));
@@ -33,6 +36,7 @@ void main() {
     );
     expect(workflow, contains('--draft'));
     expect(workflow, contains(r'--target "$GITHUB_SHA"'));
+    expect(workflow, contains('HydraBox-ARM64-INSTALL-THIS-'));
   });
 
   test('client CI generates and verifies everything on GitHub', () {
@@ -73,8 +77,8 @@ void main() {
     expect(workflow, contains('sdk-level: "37.0"'));
     expect(workflow, contains('system-image-api-level:'));
     expect(workflow, contains('target: google_apis'));
-    expect(workflow, contains('runner: macos-15'));
-    expect(workflow, contains('arch: arm64-v8a'));
+    expect(workflow, contains('runner: ubuntu-latest'));
+    expect(workflow, contains('arch: x86_64'));
     expect(workflow, contains('disk-size: 8G'));
     expect(workflow, contains('disable-linux-hw-accel:'));
     expect(
@@ -83,14 +87,28 @@ void main() {
     );
     expect(workflow, contains("if: matrix.arch == 'x86_64'"));
     expect(workflow, contains(':app:assembleDebugAndroidTest'));
-    expect(workflow, contains('adb shell am instrument -w'));
+    expect(
+      workflow,
+      contains('android-instrumentation-test-only-do-not-install'),
+    );
     expect(workflow, isNot(contains('set -euo pipefail')));
-    expect(workflow, isNot(contains(r'app_apk=')));
     expect(workflow, isNot(contains(r'test_apk=')));
     expect(workflow, contains('build/instrumentation/api-'));
     expect(workflow, contains('submodules: recursive'));
     expect(workflow, contains('scripts/fetch_libbox.py'));
     expect(workflow, contains('HYDRACORE_RELEASE_PUBLIC_KEYS'));
+    final runner = File(
+      '.github/scripts/run-android-instrumentation.sh',
+    ).readAsStringSync();
+    expect(runner, contains('adb shell am instrument -w'));
+    expect(runner, contains('io.hydrabox.client/.MainActivity'));
+    expect(runner, contains('platform_bridge_ready name=core_manager'));
+    expect(runner, contains('platform_bridge_ready name=singbox'));
+    expect(runner, contains('startup_healthy source='));
+    expect(
+      runner,
+      contains('platform_bridge_result name=getCoreCapabilities success=true'),
+    );
     expect(
       workflow,
       contains(

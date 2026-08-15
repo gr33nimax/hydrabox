@@ -7,6 +7,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.RemoteCallbackList
 import android.util.AtomicFile
+import android.util.Log
 import com.google.protobuf.ByteString
 import com.google.protobuf.InvalidProtocolBufferException
 import go.HydraNativeLoader
@@ -171,7 +172,12 @@ class CoreRuntimeService : Service() {
                 }
             }
             startupFailure.clear()
+            Log.i(
+                TAG,
+                "startup_healthy source=${HydraNativeLoader.loadedSource()} api=${coreContract.apiMajor}.${coreContract.apiMinor}",
+            )
         } catch (error: Throwable) {
+            Log.e(TAG, "startup_failed source=${HydraNativeLoader.loadedSource()}", error)
             HydraBoxDiagnostics.log(
                 "CoreRuntimeService",
                 "startup failed source=${HydraNativeLoader.loadedSource()}",
@@ -1237,6 +1243,7 @@ class CoreRuntimeService : Service() {
     }
 
     companion object {
+        private const val TAG = "HydraCoreRuntime"
         private const val SCHEMA_VERSION = 1
         private const val CORE_API_MAJOR = 1
         private const val CORE_API_MINOR = 0

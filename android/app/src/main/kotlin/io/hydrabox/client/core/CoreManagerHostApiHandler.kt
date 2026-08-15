@@ -151,6 +151,12 @@ class CoreManagerHostApiHandler(
         allowUnreachableRecovery: Boolean = false,
         action: () -> Unit,
     ) {
+        // Repair must not wait for a binder handshake with the process being
+        // repaired. A dead :core process is already safely disconnected.
+        if (allowUnreachableRecovery && canRecoverUnreachableRuntime()) {
+            action()
+            return
+        }
         runtimeClient().snapshot snapshot@ { result ->
             val snapshot = result.getOrNull()
             val disconnected = snapshot?.state ==
@@ -168,7 +174,7 @@ class CoreManagerHostApiHandler(
     private fun canRecoverUnreachableRuntime(): Boolean {
         if (HydraBoxApplication.isRecordedServiceAlive()) return false
         val activityManager = appContext.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-        val processes = activityManager.runningAppProcesses ?: return false
+        val processes = activityManager.runningAppProcesses.orEmpty()
         return processes.none { it.processName == "${appContext.packageName}:core" }
     }
 
