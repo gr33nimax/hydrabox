@@ -73,8 +73,9 @@ void main() {
     expect(workflow, contains('sdk-level: "37.0"'));
     expect(workflow, contains('system-image-api-level:'));
     expect(workflow, contains('target: google_apis'));
-    expect(workflow, contains('runner: ubuntu-24.04-arm'));
+    expect(workflow, contains('runner: macos-15'));
     expect(workflow, contains('arch: arm64-v8a'));
+    expect(workflow, contains('disk-size: 8G'));
     expect(workflow, contains('disable-linux-hw-accel:'));
     expect(
       workflow,

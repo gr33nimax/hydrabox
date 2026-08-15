@@ -97,7 +97,7 @@ jobs:
             runner: ubuntu-latest
           - api-level: 30
             arch: arm64-v8a
-            runner: ubuntu-24.04-arm
+            runner: macos-15
 
     steps:
       - name: Set up JDK
@@ -129,8 +129,9 @@ jobs:
           arch: ${{ matrix.arch }}
           target: ${{ matrix.target || 'default' }}
           profile: pixel_2
+          disk-size: 8G
           disable-animations: true
-          disable-linux-hw-accel: ${{ matrix.arch == 'arm64-v8a' }}
+          disable-linux-hw-accel: ${{ runner.os == 'Linux' && matrix.arch == 'arm64-v8a' }}
           emulator-boot-timeout: ${{ matrix.arch == 'arm64-v8a' && 1200 || 600 }}
           emulator-options: >-
             -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
@@ -141,7 +142,7 @@ jobs:
             adb install -r "$(find instrumentation-apks -name app-debug.apk -print -quit)"
             adb install -r "$(find instrumentation-apks -name app-debug-androidTest.apk -print -quit)"
             mkdir -p build/instrumentation
-            adb logcat -c
+            adb logcat -c || true
             set +e; adb shell am instrument -w io.hydrabox.client.test/androidx.test.runner.AndroidJUnitRunner >"build/instrumentation/api-${{ matrix.api-level }}-${{ matrix.arch }}.txt" 2>&1; status=$?; adb logcat -d -v threadtime >"build/instrumentation/api-${{ matrix.api-level }}-${{ matrix.arch }}-logcat.txt" 2>&1; set -e; cat "build/instrumentation/api-${{ matrix.api-level }}-${{ matrix.arch }}.txt"; if [ "$status" -ne 0 ]; then grep -E 'HydraCore|HydraBox|AndroidRuntime|FATAL EXCEPTION|UnsatisfiedLinkError|linker' "build/instrumentation/api-${{ matrix.api-level }}-${{ matrix.arch }}-logcat.txt" || true; exit "$status"; fi; grep -E '^OK \([0-9]+ tests?\)$' "build/instrumentation/api-${{ matrix.api-level }}-${{ matrix.arch }}.txt"
 
       - name: Upload instrumentation reports
