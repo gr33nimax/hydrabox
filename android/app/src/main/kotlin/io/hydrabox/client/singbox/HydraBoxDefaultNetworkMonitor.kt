@@ -467,7 +467,7 @@ object HydraBoxDefaultNetworkMonitor {
             )
             if (duplicate && !notifyDuplicate) return
             notifyListeners(currentListeners, "", -1)
-            if (!duplicate) {
+            if (shouldBroadcastNetworkChange(duplicate, targetListener != null)) {
                 SingboxController.emitNetworkChanged(
                     "default_interface_lost",
                     describeCurrentState(),
@@ -498,7 +498,7 @@ object HydraBoxDefaultNetworkMonitor {
             )
             if (duplicate && !notifyDuplicate) return
             notifyListeners(currentListeners, "", -1)
-            if (!duplicate) {
+            if (shouldBroadcastNetworkChange(duplicate, targetListener != null)) {
                 SingboxController.emitNetworkChanged(
                     "default_interface_missing",
                     describeNetwork(effectiveNetwork),
@@ -554,7 +554,7 @@ object HydraBoxDefaultNetworkMonitor {
             return
         }
         notifyListeners(currentListeners, interfaceName, index)
-        if (!duplicate) {
+        if (shouldBroadcastNetworkChange(duplicate, targetListener != null)) {
             SingboxController.emitNetworkChanged(
                 "default_interface",
                 describeNetwork(effectiveNetwork),
@@ -789,3 +789,8 @@ object HydraBoxDefaultNetworkMonitor {
         }
     }
 }
+
+internal fun shouldBroadcastNetworkChange(
+    duplicate: Boolean,
+    targetedInitialization: Boolean,
+): Boolean = !duplicate && !targetedInitialization

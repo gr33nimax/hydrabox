@@ -273,6 +273,60 @@ void main() {
     expect(cache.displayProxy?.tag, resourceBRuntimeTag);
   });
 
+  test('virtual lowest shows its persisted concrete profile and ping', () {
+    final selectedLowest = sameNativeTagSubscription.copyWith(
+      selectedProxyTag: 'lowest',
+      selectedProfileId: 'profile-b',
+    );
+    final cache = buildProxyCache(
+      ProxyCacheBuildInput(
+        subscription: selectedLowest,
+        selectedProxyTag: 'lowest',
+        lowestLatency: 95,
+        runtimeLowestOutboundTag: null,
+        runtimeLowestSelections: const <String, String>{},
+        urlTestInFlight: false,
+        runtimeLatencies: <String, int>{resourceBRuntimeTag: 95},
+        unavailableLatencyTags: const <String>{},
+        latencyErrors: const <String, String>{},
+        runtimeGroupSelections: const <String, String>{},
+        markAllServersRussia: false,
+      ),
+    );
+
+    expect(cache.displayProxy?.tag, 'lowest');
+    expect(cache.displayProxy?.displayName, 'lowest · B');
+    expect(cache.displayProxy?.selectedChildTag, resourceBRuntimeTag);
+    expect(cache.displayProxy?.latency, 95);
+  });
+
+  test('virtual lowest keeps selected profile visible after probe failure', () {
+    final selectedLowest = sameNativeTagSubscription.copyWith(
+      selectedProxyTag: 'lowest',
+      selectedProfileId: 'profile-b',
+    );
+    final cache = buildProxyCache(
+      ProxyCacheBuildInput(
+        subscription: selectedLowest,
+        selectedProxyTag: 'lowest',
+        lowestLatency: null,
+        runtimeLowestOutboundTag: null,
+        runtimeLowestSelections: const <String, String>{},
+        urlTestInFlight: false,
+        runtimeLatencies: const <String, int>{},
+        unavailableLatencyTags: <String>{resourceBRuntimeTag},
+        latencyErrors: <String, String>{resourceBRuntimeTag: 'timeout'},
+        runtimeGroupSelections: const <String, String>{},
+        markAllServersRussia: false,
+      ),
+    );
+
+    expect(cache.displayProxy?.displayName, 'lowest · B');
+    expect(cache.displayProxy?.selectedChildTag, resourceBRuntimeTag);
+    expect(cache.displayProxy?.latency, isNull);
+    expect(cache.displayProxy?.latencyUnavailable, isTrue);
+  });
+
   test(
     'legacy native selection migrates through selected profile identity',
     () {

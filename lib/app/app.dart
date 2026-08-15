@@ -391,7 +391,23 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       _activeSubscription?.markAllServersRussia ?? false;
 
   String? _runtimeLowestOutboundTagFor(String lowestTag) {
-    return _proxyRuntime.runtimeLowestOutboundTagFor(lowestTag);
+    final runtimeSelected = _proxyRuntime.runtimeLowestOutboundTagFor(
+      lowestTag,
+    );
+    if (runtimeSelected != null && runtimeSelected.isNotEmpty) {
+      return runtimeSelected;
+    }
+    final subscription = _activeSubscription;
+    if (!isLowestProxyTag(lowestTag) ||
+        subscription == null ||
+        subscription.resourceConfigs.isEmpty) {
+      return null;
+    }
+    final selectedProfile = subscription.profileForId(
+      subscription.selectedProfileId,
+    );
+    final persistedSelection = selectedProfile?.runtimeTag.trim() ?? '';
+    return persistedSelection.isEmpty ? null : persistedSelection;
   }
 
   String? _activeRuntimeLowestOutboundTag() {
@@ -413,10 +429,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     final effectiveTag = selectedGroup == null
         ? runtimeSelectedTag
         : _runtimeGroupSelections[selectedGroup.tag]?.trim();
-    if (effectiveTag == null ||
-        effectiveTag.isEmpty ||
-        _unavailableLatencyTags.contains(effectiveTag) ||
-        _latencyErrors.containsKey(effectiveTag)) {
+    if (effectiveTag == null || effectiveTag.isEmpty) {
       return null;
     }
     final cached = _activeOutboundByTagLookup[effectiveTag];
@@ -1361,10 +1374,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       final selectedLeafTag = selectedGroupTag == null
           ? selectedTag
           : _runtimeGroupSelections[selectedGroupTag];
-      final selected =
-          selectedLeafTag == null ||
-              _unavailableLatencyTags.contains(selectedLeafTag) ||
-              _latencyErrors.containsKey(selectedLeafTag)
+      final selected = selectedLeafTag == null
           ? null
           : summariesByTag[selectedLeafTag];
       if (selected == null) {
@@ -5917,6 +5927,13 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     final previouslyActive =
         _connected || _runtimeTransitionInProgress || _starting;
     final running = event.running;
+    if (running) {
+      // The service event is the authoritative start acknowledgement.  Cancel
+      // the UI-side watchdog immediately so its slightly later status poll
+      // cannot race this event and surface a false "startup stopped" error
+      // while the VPN is already carrying traffic.
+      _runtimeLifecycle.cancelStartWatchdog();
+    }
     final nativeRuntimeGeneration =
         (event.raw['runtimeGeneration'] as num?)?.toInt() ?? 0;
     _runtimeOperations.updateRuntimeState(

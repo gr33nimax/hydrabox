@@ -849,7 +849,22 @@ String? _runtimeLowestOutboundTagFor(
     return selected;
   }
   if (lowestTag == lowestProxyTag) {
-    return input.runtimeLowestOutboundTag;
+    final runtimeSelected = input.runtimeLowestOutboundTag;
+    if (runtimeSelected != null && runtimeSelected.isNotEmpty) {
+      return runtimeSelected;
+    }
+  }
+  final subscription = input.subscription;
+  if (subscription != null &&
+      isLowestProxyTag(lowestTag) &&
+      subscription.resourceConfigs.isNotEmpty) {
+    final selectedProfile = subscription.profileForId(
+      subscription.selectedProfileId,
+    );
+    final persistedSelection = selectedProfile?.runtimeTag.trim() ?? '';
+    if (persistedSelection.isNotEmpty) {
+      return persistedSelection;
+    }
   }
   return null;
 }
@@ -873,12 +888,7 @@ AppProxySummary? _lowestSelectedSummary(
         final selectedLeafTag = candidate.isGroup
             ? input.runtimeGroupSelections[candidate.tag]?.trim()
             : candidate.tag;
-        if (selectedLeafTag == null ||
-            selectedLeafTag.isEmpty ||
-            input.unavailableLatencyTags.contains(selectedLeafTag) ||
-            input.latencyErrors.containsKey(selectedLeafTag) ||
-            candidate.latencyUnavailable ||
-            candidate.latencyError != null) {
+        if (selectedLeafTag == null || selectedLeafTag.isEmpty) {
           return null;
         }
         return candidate;

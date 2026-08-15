@@ -2,6 +2,8 @@ package io.hydrabox.client.singbox
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -26,5 +28,17 @@ class IdentityListenerRegistryTest {
         assertFalse(registry.contains(first))
         assertTrue(registry.contains(second))
         assertEquals(listOf(second), registry.snapshot())
+    }
+
+    @Test
+    fun `monitor registration clears the exact wrapper received on start`() {
+        val startedWrapper = EqualListener(1)
+        val closeWrapper = EqualListener(1)
+        val registration = DefaultInterfaceMonitorRegistration<EqualListener>()
+
+        assertNull(registration.replace(startedWrapper))
+        assertTrue(startedWrapper !== closeWrapper)
+        assertSame(startedWrapper, registration.clear())
+        assertNull(registration.clear())
     }
 }

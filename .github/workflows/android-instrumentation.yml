@@ -63,9 +63,11 @@ jobs:
           dart run pigeon --input pigeons/singbox_api.dart
 
       - name: Build application and instrumentation APKs
+        env:
+          HYDRABOX_ALLOW_DEBUG_RELEASE_SIGNING: "true"
         run: |
           chmod +x android/gradlew
-          flutter build apk --debug --split-per-abi
+          flutter build apk --release --split-per-abi
           cd android
           ./gradlew :app:assembleDebugAndroidTest --stacktrace
 
@@ -74,8 +76,8 @@ jobs:
         with:
           name: android-instrumentation-test-only-do-not-install
           path: |
-            build/app/outputs/flutter-apk/app-x86_64-debug.apk
-            build/app/outputs/flutter-apk/app-arm64-v8a-debug.apk
+            build/app/outputs/flutter-apk/app-x86_64-release.apk
+            build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
             build/app/outputs/apk/androidTest/debug/app-debug-androidTest.apk
           if-no-files-found: error
           retention-days: 14
@@ -160,7 +162,7 @@ jobs:
       - name: Verify ARM64 Flutter and HydraCore binaries
         shell: bash
         run: |
-          app_apk="$(find instrumentation-apks -name app-arm64-v8a-debug.apk -print -quit)"
+          app_apk="$(find instrumentation-apks -name app-arm64-v8a-release.apk -print -quit)"
           test -f "$app_apk"
           unzip -Z1 "$app_apk" | grep -Fx 'lib/arm64-v8a/libflutter.so'
           unzip -Z1 "$app_apk" | grep -Fx 'lib/arm64-v8a/libbox.so'

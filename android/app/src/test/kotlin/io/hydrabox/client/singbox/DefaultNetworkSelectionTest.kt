@@ -1,7 +1,9 @@
 package io.hydrabox.client.singbox
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DefaultNetworkSelectionTest {
@@ -92,6 +94,28 @@ class DefaultNetworkSelectionTest {
         )
 
         assertNull(selected)
+    }
+
+    @Test
+    fun `targeted monitor initialization is not a network handover`() {
+        assertFalse(
+            shouldBroadcastNetworkChange(
+                duplicate = false,
+                targetedInitialization = true,
+            ),
+        )
+        assertFalse(
+            shouldBroadcastNetworkChange(
+                duplicate = true,
+                targetedInitialization = false,
+            ),
+        )
+        assertTrue(
+            shouldBroadcastNetworkChange(
+                duplicate = false,
+                targetedInitialization = false,
+            ),
+        )
     }
 
     private fun candidate(

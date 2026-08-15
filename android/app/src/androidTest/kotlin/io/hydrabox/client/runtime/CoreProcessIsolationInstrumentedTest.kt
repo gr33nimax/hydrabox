@@ -10,11 +10,15 @@ import android.os.IBinder
 import android.os.Process
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import io.hydrabox.client.core.CoreBundleUpdater
 import io.hydrabox.client.core.CoreBundleManager
+import io.hydrabox.client.core.CoreCandidateProbeClient
+import io.hydrabox.client.core.CoreReleaseChannel
 import io.hydrabox.client.runtime.proto.CoreRuntimeProtocol
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -152,6 +156,48 @@ class CoreProcessIsolationInstrumentedTest {
         assertEquals("embedded", marker.loadedSource)
         assertTrue(marker.safeMessage.isNotBlank())
         store.clear()
+    }
+
+    @Test
+    fun latestDebugBundlePassesTheRealUpdaterAndIsolatedProbe() {
+        // Downloading a roughly 100 MiB candidate on every API level would make
+        // the matrix needlessly slow. API 34 is the single end-to-end updater
+        // gate; API 26 and 30 continue to cover the embedded runtime lifecycle.
+        org.junit.Assume.assumeTrue(android.os.Build.VERSION.SDK_INT == 34)
+
+        val updater = CoreBundleUpdater(context)
+        val checked = updater.checkLatest(CoreReleaseChannel.DEBUG)
+        val candidate = updater.downloadChecked()
+        assertEquals(checked.releaseSequence, candidate.releaseSequence)
+        assertEquals(checked.version, candidate.version)
+
+        val completed = CountDownLatch(1)
+        val probeResult = AtomicReference<Result<CoreRuntimeProtocol.CoreProbeReport>>()
+        CoreCandidateProbeClient(context).probe(emptyList()) { result ->
+            probeResult.set(result)
+            completed.countDown()
+        }
+
+        assertTrue(
+            "HydraCore candidate probe did not finish",
+            completed.await(45, TimeUnit.SECONDS),
+        )
+        val report = probeResult.get().getOrThrow()
+        assertTrue("latest debug HydraCore candidate is unhealthy", report.healthy)
+        assertEquals("candidate", report.loadedSource)
+        assertEquals(checked.releaseSequence, report.releaseSequence)
+        val manager = CoreBundleManager(context)
+        try {
+            val active = manager.activateCandidate(runtimeDisconnected = true)
+            assertEquals(checked.releaseSequence, active.releaseSequence)
+            assertEquals(
+                checked.releaseSequence,
+                manager.readState().active?.releaseSequence,
+            )
+        } finally {
+            manager.restorePreviousOrEmbedded()
+        }
+        assertTrue(manager.readState().usingEmbeddedFallback)
     }
 
     private fun assertServiceProcess(serviceClass: Class<*>, suffix: String) {

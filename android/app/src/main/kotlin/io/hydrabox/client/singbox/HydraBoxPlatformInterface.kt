@@ -44,6 +44,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 abstract class HydraBoxBasePlatformInterface(
     protected val context: Context,
 ) : PlatformInterface {
+    private val defaultInterfaceMonitorRegistration =
+        DefaultInterfaceMonitorRegistration<InterfaceUpdateListener>()
+
     override fun autoDetectInterfaceControl(fd: Int) = Unit
 
     override fun bindInterfaceControl(fd: Int, interfaceName: String) {
@@ -72,8 +75,16 @@ abstract class HydraBoxBasePlatformInterface(
     override fun clearDNSCache() = Unit
 
     override fun closeDefaultInterfaceMonitor(listener: InterfaceUpdateListener?) {
-        if (listener != null) {
-            HydraBoxDefaultNetworkMonitor.removeListener(listener)
+        synchronized(defaultInterfaceMonitorRegistration) {
+            // gomobile may pass a new Java proxy wrapper for the same Go
+            // listener on Close. Remove the exact object registered on Start,
+            // otherwise identity-based listener storage leaks every ephemeral
+            // URLTest runtime.
+            val registered = defaultInterfaceMonitorRegistration.clear()
+            registered?.let(HydraBoxDefaultNetworkMonitor::removeListener)
+            if (listener != null && listener !== registered) {
+                HydraBoxDefaultNetworkMonitor.removeListener(listener)
+            }
         }
     }
 
@@ -174,7 +185,12 @@ abstract class HydraBoxBasePlatformInterface(
     }
 
     override fun startDefaultInterfaceMonitor(listener: InterfaceUpdateListener?) {
-        if (listener != null) {
+        if (listener == null) return
+        synchronized(defaultInterfaceMonitorRegistration) {
+            val previous = defaultInterfaceMonitorRegistration.replace(listener)
+            if (previous != null && previous !== listener) {
+                HydraBoxDefaultNetworkMonitor.removeListener(previous)
+            }
             HydraBoxDefaultNetworkMonitor.addListener(listener)
         }
     }
@@ -539,6 +555,16 @@ class HydraBoxProxyPlatformInterface(
     override fun openTun(options: TunOptions): Int {
         error("TUN is not available in proxy mode")
     }
+}
+
+internal class DefaultInterfaceMonitorRegistration<T : Any> {
+    private var registered: T? = null
+
+    @Synchronized
+    fun replace(listener: T): T? = registered.also { registered = listener }
+
+    @Synchronized
+    fun clear(): T? = registered.also { registered = null }
 }
 
 class SimpleStringIterator(
