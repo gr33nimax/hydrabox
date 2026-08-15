@@ -87,9 +87,13 @@ void main() {
     expect(workflow, contains('disable-linux-hw-accel:'));
     expect(workflow, isNot(contains('channel: canary')));
     expect(workflow, contains("if: matrix.arch == 'x86_64'"));
-    expect(workflow, contains('flutter build apk --debug --split-per-abi'));
-    expect(workflow, contains('app-x86_64-debug.apk'));
-    expect(workflow, contains('app-arm64-v8a-debug.apk'));
+    expect(workflow, contains('flutter build apk --release --split-per-abi'));
+    expect(
+      workflow,
+      isNot(contains('flutter build apk --debug --split-per-abi')),
+    );
+    expect(workflow, contains('app-x86_64-release.apk'));
+    expect(workflow, contains('app-arm64-v8a-release.apk'));
     expect(workflow, contains(':app:assembleDebugAndroidTest'));
     expect(
       workflow,
@@ -103,6 +107,7 @@ void main() {
     final runner = File(
       '.github/scripts/run-android-instrumentation.sh',
     ).readAsStringSync();
+    expect(runner, contains('app-$arch-release.apk'));
     expect(runner, contains('build/instrumentation'));
     expect(runner, contains('adb shell am instrument -w'));
     expect(runner, contains('io.hydrabox.client/.MainActivity'));
