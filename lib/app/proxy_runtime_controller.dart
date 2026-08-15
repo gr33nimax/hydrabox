@@ -230,6 +230,32 @@ class ProxyRuntimeController {
     return changed;
   }
 
+  /// Projects a targeted probe of the concrete profile currently represented
+  /// by Lowest back onto the virtual row. This does not choose a new winner;
+  /// only a complete multi-profile probe may do that.
+  bool projectSelectedLowestLatency(String rawTag) {
+    final tag = rawTag.trim();
+    if (tag.isEmpty ||
+        unavailableLatencyTags.contains(tag) ||
+        invalidatedLatencyTags.contains(tag) ||
+        latencyErrors.containsKey(tag)) {
+      return false;
+    }
+    final delay = runtimeLatencies[tag];
+    if (delay == null || delay <= 0) {
+      return false;
+    }
+    final previousTag = runtimeLowestSelections[lowestProxyTag];
+    final changed =
+        previousTag != tag ||
+        runtimeLowestOutboundTag != tag ||
+        lowestLatency != delay;
+    runtimeLowestSelections[lowestProxyTag] = tag;
+    runtimeLowestOutboundTag = tag;
+    lowestLatency = delay;
+    return changed;
+  }
+
   ProxyRuntimeGroupUpdateResult applyGroupUpdates(
     ProxyRuntimeGroupUpdateInput input,
   ) {

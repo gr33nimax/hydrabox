@@ -1428,6 +1428,31 @@ void main() {
     expect(refreshCount, 1);
   });
 
+  testWidgets('fresh ping wins over a stale network-unavailable snapshot', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        supportedLocales: AppLocalizations.supportedLocales,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        home: Scaffold(
+          body: Center(
+            child: ActiveProxyDelayIndicator(
+              connected: true,
+              networkUnavailable: true,
+              proxy: _proxy('proxy-1', 'proxy 1', latency: 155),
+              onRefresh: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byIcon(FluentIcons.wifi_1_24_regular), findsOneWidget);
+    expect(find.byIcon(Icons.wifi_off_rounded), findsNothing);
+    expect(find.text('155 ms', findRichText: true), findsOneWidget);
+  });
+
   testWidgets('active profile refresh button calls current refresh callback', (
     tester,
   ) async {

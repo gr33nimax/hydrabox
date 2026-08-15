@@ -268,9 +268,22 @@ class CoreManagerController extends AsyncNotifier<CoreManagerViewState> {
       final updated = await action(current);
       state = AsyncData(updated.copyWith(clearBusy: true, clearFailure: true));
     } on Object catch (error) {
-      state = AsyncData(
-        current.copyWith(clearBusy: true, failure: _failure(error)),
-      );
+      final failure = _failure(error);
+      try {
+        final refreshed = _stateFromMessage(await _api.getState());
+        state = AsyncData(
+          refreshed.copyWith(
+            releaseChannel: current.releaseChannel,
+            checkedRelease: current.checkedRelease,
+            probe: current.probe,
+            failure: failure,
+          ),
+        );
+      } on Object {
+        state = AsyncData(
+          current.copyWith(clearBusy: true, failure: failure),
+        );
+      }
     }
   }
 

@@ -217,6 +217,11 @@ dependencies {
     testImplementation("org.json:json:20240303")
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    // The instrumentation APK is installed next to a minified release target.
+    // Package test-runner runtime dependencies explicitly because R8 removes
+    // them from the production APK when the app itself does not reference them.
+    androidTestImplementation("org.jetbrains.kotlin:kotlin-stdlib:2.2.20")
+    androidTestImplementation("androidx.tracing:tracing:1.3.0")
 }
 
 protobuf {

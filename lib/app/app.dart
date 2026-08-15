@@ -3945,6 +3945,21 @@ class _HydraBoxClientState extends State<HydraBoxClient>
           'latency',
           'automatic group URLTest start reason=$reason startup=$startup',
         );
+        if (startup) {
+          final activeTag = _currentResolvedActiveOutboundTag()?.trim() ?? '';
+          if (activeTag.isEmpty) {
+            AppLogStore.warning(
+              'latency',
+              'startup URLTest skipped: active outbound is unresolved',
+            );
+            return Future<bool>.value(false);
+          }
+          return _runUniversalUrlTests(
+            reason: reason,
+            startup: true,
+            targetRuntimeTag: activeTag,
+          );
+        }
         return _runFullLatencyTest(reason: reason, startup: startup);
       },
     );
@@ -5532,9 +5547,17 @@ class _HydraBoxClientState extends State<HydraBoxClient>
         visibleGroupProxyCacheMissingChild: _visibleGroupProxyCacheMissingChild,
       ),
     );
-    final lowestChanged =
-        updateLowest &&
-        _proxyRuntime.recomputeLowestSelection(_universalUrlTestCompletedTags);
+    final selectedProfileRuntimeTag = activeSubscription
+        .profileForId(activeSubscription.selectedProfileId)
+        ?.runtimeTag
+        .trim();
+    final lowestChanged = updateLowest
+        ? _proxyRuntime.recomputeLowestSelection(
+            _universalUrlTestCompletedTags,
+          )
+        : isLowestProxyTag(_selectedProxyTag) &&
+              selectedProfileRuntimeTag == tag &&
+              _proxyRuntime.projectSelectedLowestLatency(tag);
     if (!applied.changed && !lowestChanged) {
       return;
     }

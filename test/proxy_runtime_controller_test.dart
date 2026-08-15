@@ -488,6 +488,36 @@ void main() {
     expect(controller.lowestLatency, 90);
   });
 
+  test('targeted probe projects selected concrete profile onto lowest', () {
+    final controller = ProxyRuntimeController();
+    addTearDown(controller.dispose);
+    controller.runtimeLatencies['anytls-1'] = 155;
+
+    final changed = controller.projectSelectedLowestLatency('anytls-1');
+
+    expect(changed, isTrue);
+    expect(controller.runtimeLowestSelections['lowest'], 'anytls-1');
+    expect(controller.runtimeLowestOutboundTag, 'anytls-1');
+    expect(controller.lowestLatency, 155);
+  });
+
+  test('failed targeted probe cannot replace lowest presentation', () {
+    final controller = ProxyRuntimeController();
+    addTearDown(controller.dispose);
+    controller.runtimeLowestSelections['lowest'] = 'vless-1';
+    controller.runtimeLowestOutboundTag = 'vless-1';
+    controller.lowestLatency = 203;
+    controller.runtimeLatencies['anytls-1'] = 10;
+    controller.unavailableLatencyTags.add('anytls-1');
+
+    final changed = controller.projectSelectedLowestLatency('anytls-1');
+
+    expect(changed, isFalse);
+    expect(controller.runtimeLowestSelections['lowest'], 'vless-1');
+    expect(controller.runtimeLowestOutboundTag, 'vless-1');
+    expect(controller.lowestLatency, 203);
+  });
+
   test('network change hides stale latency until fresh telemetry arrives', () {
     final controller = ProxyRuntimeController();
     addTearDown(controller.dispose);

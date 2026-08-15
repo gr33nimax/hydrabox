@@ -31,12 +31,19 @@ class ActiveProxyDelayIndicator extends StatelessWidget {
     final latencyChecking = proxy?.latencyChecking == true;
     final latencyUnavailable = proxy?.latencyUnavailable == true;
     final latencyUnknown = !latencyUnavailable && latency == null;
-    final showCheckingIndicator = latencyChecking && !networkUnavailable;
+    // A fresh native URLTest is stronger evidence than a stale Android network
+    // snapshot. Keep the tap visibly responsive and show a completed ping even
+    // while the network monitor is still converging after VPN startup.
+    final effectiveNetworkUnavailable =
+        networkUnavailable &&
+        !latencyChecking &&
+        !(latencyFresh && latency != null);
+    final showCheckingIndicator = latencyChecking;
     final hidden = !connected || proxy == null;
-    final color = networkUnavailable
-        ? theme.colorScheme.onSurfaceVariant
-        : latencyChecking
+    final color = latencyChecking
         ? theme.colorScheme.primary
+        : effectiveNetworkUnavailable
+        ? theme.colorScheme.onSurfaceVariant
         : latencyUnavailable
         ? theme.colorScheme.onSurfaceVariant
         : !latencyFresh || latency == null
@@ -46,18 +53,16 @@ class ActiveProxyDelayIndicator extends StatelessWidget {
         : latency < 900
         ? theme.colorScheme.tertiary
         : theme.colorScheme.error;
-    final valueText = networkUnavailable
-        ? '—'
-        : latencyChecking
+    final valueText = latencyChecking
         ? l10n.checkingLatencyShort
+        : effectiveNetworkUnavailable
+        ? '—'
         : latencyUnavailable
         ? '—'
         : latency != null
         ? '$latency'
         : '—';
-    final icon = networkUnavailable
-        ? Icon(Icons.wifi_off_rounded, color: color)
-        : showCheckingIndicator
+    final icon = showCheckingIndicator
         ? SizedBox(
             width: 18,
             height: 18,
@@ -66,13 +71,15 @@ class ActiveProxyDelayIndicator extends StatelessWidget {
               color: theme.colorScheme.primary,
             ),
           )
+        : effectiveNetworkUnavailable
+        ? Icon(Icons.wifi_off_rounded, color: color)
         : latencyUnavailable
         ? Icon(FluentIcons.wifi_warning_24_regular, color: color)
         : !latencyFresh || latencyUnknown
         ? Icon(FluentIcons.history_24_regular, color: color)
         : Icon(FluentIcons.wifi_1_24_regular, color: color);
     final unitText =
-        networkUnavailable ||
+        effectiveNetworkUnavailable ||
             latencyChecking ||
             latencyUnavailable ||
             latency == null
@@ -109,7 +116,7 @@ class ActiveProxyDelayIndicator extends StatelessWidget {
                       switchOutCurve: Curves.easeOutCubic,
                       child: KeyedSubtree(
                         key: ValueKey(
-                          networkUnavailable
+                          effectiveNetworkUnavailable
                               ? 'offline'
                               : showCheckingIndicator
                               ? 'checking'

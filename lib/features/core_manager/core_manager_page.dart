@@ -6,11 +6,42 @@ import 'package:hydrabox/features/settings/settings_ui.dart';
 import 'package:hydrabox/l10n/generated/app_localizations.dart';
 import 'package:hydrabox/widgets/progressive_blur_scaffold.dart';
 
-class CoreManagerPage extends ConsumerWidget {
+class CoreManagerPage extends ConsumerStatefulWidget {
   const CoreManagerPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<CoreManagerPage> createState() => _CoreManagerPageState();
+}
+
+class _CoreManagerPageState extends ConsumerState<CoreManagerPage>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refresh());
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refresh();
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  void _refresh() {
+    if (!mounted) return;
+    ref.read(coreManagerControllerProvider.notifier).refresh();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final asyncState = ref.watch(coreManagerControllerProvider);
     return ProgressiveBlurScaffold(
@@ -168,11 +199,11 @@ class _CoreManagerBody extends ConsumerWidget {
               label: Text(l10n.coreManagerProbe),
             ),
             FilledButton.icon(
+              // Android performs the authoritative runtime-state check at the
+              // moment of activation. A cached Flutter snapshot must not keep
+              // this action disabled after the user disconnects the VPN.
               onPressed:
-                  busy ||
-                      state.candidate == null ||
-                      probe?.healthy != true ||
-                      !state.runtimeDisconnected
+                  busy || state.candidate == null || probe?.healthy != true
                   ? null
                   : controller.activateCandidate,
               icon: _operationIcon(state, CoreManagerOperation.activate),
