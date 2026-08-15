@@ -186,6 +186,9 @@ class ActiveProxyIpController {
       _suppressedUntil.remove(target.key);
     }
     final immediateSnapshot = _immediateSnapshot(target, now);
+    final hasEndpointFallback =
+        target.hasEndpointIp ||
+        (_cachedEndpointIp(target, now)?.isNotEmpty ?? false);
     // Refreshing must never hide a value that is already known. A cached exit
     // IP wins, otherwise the proxy endpoint is shown while the slower outbound
     // lookup continues in the background.
@@ -204,7 +207,7 @@ class ActiveProxyIpController {
     }
 
     if (!target.hasCachedIp &&
-        !target.hasEndpointIp &&
+        !hasEndpointFallback &&
         target.hasEndpointHost &&
         resolveEndpointIp != null) {
       unawaited(

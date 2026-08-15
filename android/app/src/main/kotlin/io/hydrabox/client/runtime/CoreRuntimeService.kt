@@ -172,6 +172,7 @@ class CoreRuntimeService : Service() {
                 },
             )
             refreshFromController()
+            refreshNetworkSnapshotFromMonitor("core_service_start")
 
             // A stale 0.x or interrupted-write config is a configuration recovery,
             // not a broken native core. Keep the binder alive and quarantine the
@@ -604,6 +605,7 @@ class CoreRuntimeService : Service() {
         SingboxController.getRuntimeSnapshot { result ->
             if (generation.get() != commandGeneration) return@getRuntimeSnapshot
             result.onSuccess {
+                refreshNetworkSnapshotFromMonitor("runtime_start_complete")
                 val bundle = CoreBundleManager(this).readState().active
                 if (bundle != null) runCatching { CoreBundleManager(this).markHealthy(bundle.releaseSequence) }
                 commandSucceeded(commandId, CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING)
@@ -992,17 +994,52 @@ class CoreRuntimeService : Service() {
     private fun updateNetworkSnapshot(event: Map<*, *>) {
         val interfaceName = event["interfaceName"]?.toString().orEmpty()
         val generation = (event["networkGeneration"] as? Number)?.toLong()?.coerceAtLeast(0L) ?: 0L
+        writeNetworkSnapshot(
+            available = interfaceName.isNotBlank(),
+            interfaceName = interfaceName,
+            interfaceIndex = (event["interfaceIndex"] as? Number)?.toInt() ?: -1,
+            generation = generation,
+            updatedAtMillis = System.currentTimeMillis(),
+        )
+    }
+
+    private fun refreshNetworkSnapshotFromMonitor(reason: String) {
+        val current = runCatching {
+            HydraBoxDefaultNetworkMonitor.currentInterfaceState(reason)
+        }.onFailure { error ->
+            HydraBoxDiagnostics.log(
+                "CoreRuntimeService",
+                "network snapshot refresh failed reason=$reason",
+                error,
+            )
+        }.getOrNull() ?: return
+        writeNetworkSnapshot(
+            available = current.available,
+            interfaceName = current.interfaceName,
+            interfaceIndex = current.interfaceIndex,
+            generation = current.generation,
+            updatedAtMillis = current.updatedAtMillis,
+        )
+    }
+
+    private fun writeNetworkSnapshot(
+        available: Boolean,
+        interfaceName: String,
+        interfaceIndex: Int,
+        generation: Long,
+        updatedAtMillis: Long,
+    ) {
         val fingerprintBytes = MessageDigest.getInstance("SHA-256").digest(
             "$interfaceName:$generation".toByteArray(Charsets.UTF_8),
         )
         synchronized(snapshotLock) {
             networkSnapshot = CoreRuntimeProtocol.NetworkSnapshot.newBuilder()
-                .setAvailable(interfaceName.isNotBlank())
+                .setAvailable(available)
                 .setInterfaceName(interfaceName)
-                .setInterfaceIndex((event["interfaceIndex"] as? Number)?.toInt() ?: -1)
+                .setInterfaceIndex(interfaceIndex)
                 .setGeneration(generation)
                 .setFingerprint(fingerprintBytes.joinToString("") { "%02x".format(it.toInt() and 0xff) })
-                .setUpdatedAtMillis(System.currentTimeMillis())
+                .setUpdatedAtMillis(updatedAtMillis)
                 .build()
         }
     }

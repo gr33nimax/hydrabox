@@ -108,53 +108,71 @@ internal fun hasHydraKeyQuery(rawQuery: String?): Boolean =
         decodedName.equals("hydra-key", ignoreCase = true)
     }
 
-private fun CoreRuntimeProtocol.RuntimeSnapshot.toLegacyRuntimeMap(): Map<String?, Any?> = mapOf(
-    "running" to (state == CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING),
-    "state" to state.name,
-    "mode" to when (mode) {
-        CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_VPN -> "vpn"
-        CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_PROXY -> "proxy"
-        else -> ""
-    },
-    "runtimeGeneration" to generation,
-    "uplink" to traffic.uplinkBytesPerSecond,
-    "downlink" to traffic.downlinkBytesPerSecond,
-    "uplinkTotal" to traffic.uplinkTotalBytes,
-    "downlinkTotal" to traffic.downlinkTotalBytes,
-    "lastError" to lastError.safeMessage,
-    "errorCode" to lastError.code,
-    "processEpoch" to processEpoch,
-    "sequence" to lastSequence,
-    "groups" to outboundGroupsList.map { group ->
-        mapOf(
-            "tag" to group.groupId,
-            "selected" to group.selectedOutboundId,
-            "items" to group.outboundsList.map { item ->
-                mapOf(
-                    "tag" to item.outboundId,
-                    "delayMillis" to item.delayMillis,
-                    "delay" to item.delayMillis,
-                    "observedAt" to item.measuredAtMillis,
-                    "time" to item.measuredAtMillis,
-                    "status" to item.status,
-                    "errorCode" to item.error.code,
-                    "errorMessage" to item.error.safeMessage,
-                    "error" to item.error.safeMessage,
-                )
-            },
-        )
-    },
-    "urlTestSessions" to probeSessionsList.map { session ->
-        mapOf(
-            "id" to session.sessionId,
-            "state" to session.state.name,
-            "startedAt" to session.startedAtMillis,
-            "completedAt" to session.finishedAtMillis,
-            "total" to session.requestedCount,
-            "completed" to session.completedCount,
-        )
-    },
-)
+internal fun CoreRuntimeProtocol.RuntimeSnapshot.toLegacyRuntimeMap(): Map<String?, Any?> {
+    val running = state == CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING
+    val recoveryPending = when (state) {
+        CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_PREPARING,
+        CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STARTING,
+        CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RECOVERING -> true
+        else -> false
+    }
+    return mapOf(
+        "running" to running,
+        "state" to state.name,
+        "mode" to when (mode) {
+            CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_VPN -> "vpn"
+            CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_PROXY -> "proxy"
+            else -> ""
+        },
+        "runtimeGeneration" to generation,
+        "uplink" to traffic.uplinkBytesPerSecond,
+        "downlink" to traffic.downlinkBytesPerSecond,
+        "uplinkTotal" to traffic.uplinkTotalBytes,
+        "downlinkTotal" to traffic.downlinkTotalBytes,
+        "lastError" to lastError.safeMessage,
+        "errorCode" to lastError.code,
+        "processEpoch" to processEpoch,
+        "sequence" to lastSequence,
+        // The protobuf comes from the process that owns libbox, so a running
+        // state is already stronger evidence than the old process-local
+        // service/owner flags. Keep the compatibility fields for Dart code
+        // that still performs the legacy startup and recovery checks.
+        "recordedServiceAlive" to (running || recoveryPending),
+        "activeRuntimeOwner" to running,
+        "runtimeIntentFresh" to recoveryPending,
+        "nativeRecoveryPending" to recoveryPending,
+        "runtimeSnapshotAuthoritative" to true,
+        "groups" to outboundGroupsList.map { group ->
+            mapOf(
+                "tag" to group.groupId,
+                "selected" to group.selectedOutboundId,
+                "items" to group.outboundsList.map { item ->
+                    mapOf(
+                        "tag" to item.outboundId,
+                        "delayMillis" to item.delayMillis,
+                        "delay" to item.delayMillis,
+                        "observedAt" to item.measuredAtMillis,
+                        "time" to item.measuredAtMillis,
+                        "status" to item.status,
+                        "errorCode" to item.error.code,
+                        "errorMessage" to item.error.safeMessage,
+                        "error" to item.error.safeMessage,
+                    )
+                },
+            )
+        },
+        "urlTestSessions" to probeSessionsList.map { session ->
+            mapOf(
+                "id" to session.sessionId,
+                "state" to session.state.name,
+                "startedAt" to session.startedAtMillis,
+                "completedAt" to session.finishedAtMillis,
+                "total" to session.requestedCount,
+                "completed" to session.completedCount,
+            )
+        },
+    )
+}
 
 private data class InstalledAppInfo(
     val packageName: String,
@@ -1247,6 +1265,9 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     private fun runtimeStatusMap(): Map<String?, Any?> {
+        mutableCoreRuntimeClient?.cachedSnapshot()?.let { snapshot ->
+            return snapshot.toLegacyRuntimeMap()
+        }
         val recordedState = HydraBoxApplication.readServiceState()
         val runtimeIntent = HydraBoxApplication.readRuntimeIntent()
         val recordedServiceAlive = HydraBoxApplication.isRecordedServiceAlive()
@@ -1280,6 +1301,7 @@ class MainActivity : FlutterFragmentActivity() {
             "runtimeIntentUpdatedAtMillis" to runtimeIntent?.updatedAtMillis,
             "runtimeIntentState" to HydraBoxApplication.describeRuntimeIntent(),
             "lastError" to SingboxController.lastRuntimeError,
+            "runtimeSnapshotAuthoritative" to false,
         )
     }
 

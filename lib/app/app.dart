@@ -190,6 +190,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
   bool _derivedCacheBuildQueued = false;
   String? _lastEmptyAfterDropInvalidWarningSubscriptionId;
   ActiveProxyIpSnapshot _activeProxyIp = const ActiveProxyIpSnapshot.idle();
+  bool _externalIpLookupDeferredLogged = false;
   final ProxySelectionController _proxySelection = ProxySelectionController();
   final ActiveProxyIpController _activeProxyIpController =
       ActiveProxyIpController();
@@ -3108,6 +3109,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
   }
 
   void _resetActiveProxyIpState({bool rebuild = true}) {
+    _externalIpLookupDeferredLogged = false;
     _activeProxyIpController.reset(
       onSnapshot: (snapshot) {
         _activeProxyIp = snapshot;
@@ -7005,10 +7007,15 @@ class _HydraBoxClientState extends State<HydraBoxClient>
   }) {
     final externalLookupReady = _runtimeOperations.diagnosticsReady;
     if (!externalLookupReady) {
-      AppLogStore.debug(
-        'proxy',
-        'external IP lookup deferred; resolving endpoint IP first',
-      );
+      if (!_externalIpLookupDeferredLogged) {
+        _externalIpLookupDeferredLogged = true;
+        AppLogStore.debug(
+          'proxy',
+          'external IP lookup deferred; resolving endpoint IP first',
+        );
+      }
+    } else {
+      _externalIpLookupDeferredLogged = false;
     }
     _activeProxyIpController.schedule(
       delay: delay,

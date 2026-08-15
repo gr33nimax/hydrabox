@@ -70,4 +70,17 @@ void main() {
     expect(coordinator.diagnosticsReady, isFalse);
     expect(coordinator.isCurrent(key), isFalse);
   });
+
+  test('identical unavailable snapshots do not churn generations', () {
+    final coordinator = RuntimeOperationCoordinator();
+    coordinator.beginSelection('vless-1');
+    coordinator.updateRuntimeState(running: false, nativeRuntimeGeneration: 0);
+    coordinator.updateNetwork(generation: 0, usable: false);
+    final key = coordinator.currentKey;
+
+    coordinator.updateRuntimeState(running: false, nativeRuntimeGeneration: 0);
+    coordinator.updateNetwork(generation: 0, usable: false);
+
+    expect(coordinator.isCurrent(key), isTrue);
+  });
 }

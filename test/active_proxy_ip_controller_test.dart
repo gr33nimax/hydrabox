@@ -84,6 +84,39 @@ void main() {
     },
   );
 
+  test('cached hostname endpoint is not resolved again', () async {
+    final controller = ActiveProxyIpController();
+    addTearDown(controller.dispose);
+
+    var endpointCalls = 0;
+
+    void schedule() {
+      controller.schedule(
+        delay: Duration.zero,
+        externalLookupReady: false,
+        isConnected: () => true,
+        isForegroundActive: () => true,
+        currentTarget: () => _target(endpointHost: 'proxy.example.com'),
+        networkUsable: (_) async => true,
+        resolveEndpointIp: (_) async {
+          endpointCalls++;
+          return '198.51.100.32';
+        },
+        resolveExternalIp: (_) async => null,
+        persistResult: (_, _) async {},
+        onSnapshot: (_) {},
+      );
+    }
+
+    schedule();
+    await _waitUntil(() => controller.snapshot.hasKnownIp);
+    schedule();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(endpointCalls, 1);
+    expect(controller.snapshot.ip, '198.51.100.32');
+  });
+
   test('late endpoint result cannot overwrite an external IP', () async {
     final controller = ActiveProxyIpController();
     addTearDown(controller.dispose);

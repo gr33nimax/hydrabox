@@ -431,6 +431,9 @@ class CoreRuntimeClient(context: Context) {
         }
     }
 
+    /** Last authoritative snapshot received from or read from the :core process. */
+    fun cachedSnapshot(): CoreRuntimeProtocol.RuntimeSnapshot? = latestSnapshot
+
     fun contract(callback: (Result<CoreRuntimeProtocol.CoreContract>) -> Unit) {
         withService(
             onFailure = { error -> mainHandler.post { callback(Result.failure(error)) } },

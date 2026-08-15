@@ -79,6 +79,7 @@ class RuntimeOperationCoordinator {
     required bool running,
     required int nativeRuntimeGeneration,
   }) {
+    final runningChanged = running != _running;
     _running = running;
     if (nativeRuntimeGeneration > 0 &&
         nativeRuntimeGeneration != _nativeRuntimeGeneration) {
@@ -87,7 +88,7 @@ class RuntimeOperationCoordinator {
       _groupsReady = false;
       invalidateDiagnostics();
     }
-    if (!running) {
+    if (!running && runningChanged) {
       _groupsReady = false;
       invalidateDiagnostics();
     }
@@ -102,11 +103,12 @@ class RuntimeOperationCoordinator {
   }
 
   void updateNetwork({required int generation, required bool usable}) {
-    final changed = generation != _networkGeneration;
+    final generationChanged = generation != _networkGeneration;
+    final usabilityChanged = !_networkStateKnown || usable != _networkUsable;
     _networkGeneration = generation;
     _networkStateKnown = true;
     _networkUsable = usable;
-    if (changed || !usable) {
+    if (generationChanged || usabilityChanged) {
       invalidateDiagnostics();
     }
   }
