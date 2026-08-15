@@ -34,7 +34,7 @@ class _SettingsUpdatePageState extends State<SettingsUpdatePage>
   AppUpdateCheckResult? _result;
   AppUpdateDownloadProgress? _downloadProgress;
   bool _checking = false;
-  bool _downloading = false;
+  static const bool _downloading = false;
   bool _installing = false;
   bool _clearingUpdateCache = false;
   AppUpdateVerificationResult? _verification;
