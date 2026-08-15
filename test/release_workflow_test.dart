@@ -93,13 +93,13 @@ void main() {
     );
     expect(workflow, isNot(contains('set -euo pipefail')));
     expect(workflow, isNot(contains(r'test_apk=')));
-    expect(workflow, contains('build/instrumentation/api-'));
     expect(workflow, contains('submodules: recursive'));
     expect(workflow, contains('scripts/fetch_libbox.py'));
     expect(workflow, contains('HYDRACORE_RELEASE_PUBLIC_KEYS'));
     final runner = File(
       '.github/scripts/run-android-instrumentation.sh',
     ).readAsStringSync();
+    expect(runner, contains('build/instrumentation'));
     expect(runner, contains('adb shell am instrument -w'));
     expect(runner, contains('io.hydrabox.client/.MainActivity'));
     expect(runner, contains('platform_bridge_ready name=core_manager'));
