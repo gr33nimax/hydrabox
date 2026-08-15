@@ -519,6 +519,7 @@ data class CoreBundleSlotMessage (
 /** Generated class from Pigeon that represents data sent in messages. */
 data class CoreManagerStateMessage (
   val embeddedVersion: String,
+  val releaseChannel: String,
   val active: CoreBundleSlotMessage? = null,
   val previous: CoreBundleSlotMessage? = null,
   val candidate: CoreBundleSlotMessage? = null,
@@ -531,19 +532,21 @@ data class CoreManagerStateMessage (
   companion object {
     fun fromList(pigeonVar_list: List<Any?>): CoreManagerStateMessage {
       val embeddedVersion = pigeonVar_list[0] as String
-      val active = pigeonVar_list[1] as CoreBundleSlotMessage?
-      val previous = pigeonVar_list[2] as CoreBundleSlotMessage?
-      val candidate = pigeonVar_list[3] as CoreBundleSlotMessage?
-      val trustedKeyRingAvailable = pigeonVar_list[4] as Boolean
-      val usingEmbeddedFallback = pigeonVar_list[5] as Boolean
-      val runtimeDisconnected = pigeonVar_list[6] as Boolean
-      val recoveryRollbackAllowed = pigeonVar_list[7] as Boolean
-      return CoreManagerStateMessage(embeddedVersion, active, previous, candidate, trustedKeyRingAvailable, usingEmbeddedFallback, runtimeDisconnected, recoveryRollbackAllowed)
+      val releaseChannel = pigeonVar_list[1] as String
+      val active = pigeonVar_list[2] as CoreBundleSlotMessage?
+      val previous = pigeonVar_list[3] as CoreBundleSlotMessage?
+      val candidate = pigeonVar_list[4] as CoreBundleSlotMessage?
+      val trustedKeyRingAvailable = pigeonVar_list[5] as Boolean
+      val usingEmbeddedFallback = pigeonVar_list[6] as Boolean
+      val runtimeDisconnected = pigeonVar_list[7] as Boolean
+      val recoveryRollbackAllowed = pigeonVar_list[8] as Boolean
+      return CoreManagerStateMessage(embeddedVersion, releaseChannel, active, previous, candidate, trustedKeyRingAvailable, usingEmbeddedFallback, runtimeDisconnected, recoveryRollbackAllowed)
     }
   }
   fun toList(): List<Any?> {
     return listOf(
       embeddedVersion,
+      releaseChannel,
       active,
       previous,
       candidate,
@@ -561,12 +564,13 @@ data class CoreManagerStateMessage (
       return true
     }
     val other = other as CoreManagerStateMessage
-    return SingboxApiPigeonUtils.deepEquals(this.embeddedVersion, other.embeddedVersion) && SingboxApiPigeonUtils.deepEquals(this.active, other.active) && SingboxApiPigeonUtils.deepEquals(this.previous, other.previous) && SingboxApiPigeonUtils.deepEquals(this.candidate, other.candidate) && SingboxApiPigeonUtils.deepEquals(this.trustedKeyRingAvailable, other.trustedKeyRingAvailable) && SingboxApiPigeonUtils.deepEquals(this.usingEmbeddedFallback, other.usingEmbeddedFallback) && SingboxApiPigeonUtils.deepEquals(this.runtimeDisconnected, other.runtimeDisconnected) && SingboxApiPigeonUtils.deepEquals(this.recoveryRollbackAllowed, other.recoveryRollbackAllowed)
+    return SingboxApiPigeonUtils.deepEquals(this.embeddedVersion, other.embeddedVersion) && SingboxApiPigeonUtils.deepEquals(this.releaseChannel, other.releaseChannel) && SingboxApiPigeonUtils.deepEquals(this.active, other.active) && SingboxApiPigeonUtils.deepEquals(this.previous, other.previous) && SingboxApiPigeonUtils.deepEquals(this.candidate, other.candidate) && SingboxApiPigeonUtils.deepEquals(this.trustedKeyRingAvailable, other.trustedKeyRingAvailable) && SingboxApiPigeonUtils.deepEquals(this.usingEmbeddedFallback, other.usingEmbeddedFallback) && SingboxApiPigeonUtils.deepEquals(this.runtimeDisconnected, other.runtimeDisconnected) && SingboxApiPigeonUtils.deepEquals(this.recoveryRollbackAllowed, other.recoveryRollbackAllowed)
   }
 
   override fun hashCode(): Int {
     var result = javaClass.hashCode()
     result = 31 * result + SingboxApiPigeonUtils.deepHash(this.embeddedVersion)
+    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.releaseChannel)
     result = 31 * result + SingboxApiPigeonUtils.deepHash(this.active)
     result = 31 * result + SingboxApiPigeonUtils.deepHash(this.previous)
     result = 31 * result + SingboxApiPigeonUtils.deepHash(this.candidate)
@@ -1134,7 +1138,7 @@ private open class SingboxApiPigeonCodec : StandardMessageCodec() {
 /** Generated interface from Pigeon that represents a handler of messages from Flutter. */
 interface CoreManagerHostApi {
   fun getState(callback: (Result<CoreManagerStateMessage>) -> Unit)
-  fun checkLatest(callback: (Result<CheckedCoreReleaseMessage>) -> Unit)
+  fun checkLatest(releaseChannel: String, callback: (Result<CheckedCoreReleaseMessage>) -> Unit)
   fun downloadChecked(callback: (Result<CoreBundleSlotMessage>) -> Unit)
   fun probeCandidate(callback: (Result<CoreCandidateProbeMessage>) -> Unit)
   fun activateCandidate(callback: (Result<CoreManagerStateMessage>) -> Unit)
@@ -1170,8 +1174,10 @@ interface CoreManagerHostApi {
       run {
         val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.hydrabox.CoreManagerHostApi.checkLatest$separatedMessageChannelSuffix", codec)
         if (api != null) {
-          channel.setMessageHandler { _, reply ->
-            api.checkLatest{ result: Result<CheckedCoreReleaseMessage> ->
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val releaseChannelArg = args[0] as String
+            api.checkLatest(releaseChannelArg) { result: Result<CheckedCoreReleaseMessage> ->
               val error = result.exceptionOrNull()
               if (error != null) {
                 reply.reply(SingboxApiPigeonUtils.wrapError(error))

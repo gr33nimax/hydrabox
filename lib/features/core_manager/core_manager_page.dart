@@ -64,13 +64,31 @@ class _CoreManagerBody extends ConsumerWidget {
       ),
       children: [
         Text(
-          l10n.coreManagerSubtitle,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-            height: 1.4,
+          l10n.coreManagerChannelTitle,
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w700,
           ),
         ),
-        const Gap(12),
+        const Gap(8),
+        SegmentedButton<CoreReleaseChannel>(
+          segments: <ButtonSegment<CoreReleaseChannel>>[
+            ButtonSegment<CoreReleaseChannel>(
+              value: CoreReleaseChannel.stable,
+              label: Text(l10n.coreManagerChannelStable),
+            ),
+            ButtonSegment<CoreReleaseChannel>(
+              value: CoreReleaseChannel.debug,
+              label: Text(l10n.coreManagerChannelDebug),
+            ),
+          ],
+          selected: <CoreReleaseChannel>{state.releaseChannel},
+          onSelectionChanged: busy
+              ? null
+              : (selection) => controller.selectReleaseChannel(
+                  selection.single,
+                ),
+        ),
+        const Gap(16),
         _CoreVersionsCard(state: state),
         if (state.usingEmbeddedFallback) ...[
           const Gap(10),

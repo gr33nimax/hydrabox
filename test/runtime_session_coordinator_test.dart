@@ -72,6 +72,7 @@ void main() {
       transitionInProgress: false,
       retryScheduled: true,
       starting: false,
+      previouslyActive: true,
     );
 
     expect(decision.phase, AppConnectionPhase.recovering);
@@ -87,11 +88,26 @@ void main() {
       transitionInProgress: false,
       retryScheduled: false,
       starting: false,
+      previouslyActive: true,
     );
 
     expect(decision.phase, AppConnectionPhase.idle);
     expect(decision.keepConnecting, isFalse);
     expect(decision.clearDisconnectedState, isTrue);
+  });
+
+  test('repeated stopped snapshot preserves disconnected probe state', () {
+    final decision = RuntimeSessionCoordinator().decideStateEvent(
+      running: false,
+      hasError: false,
+      transitionInProgress: false,
+      retryScheduled: false,
+      starting: false,
+      previouslyActive: false,
+    );
+
+    expect(decision.phase, AppConnectionPhase.idle);
+    expect(decision.clearDisconnectedState, isFalse);
   });
 
   test('late successful cancelled start requires native cleanup', () {

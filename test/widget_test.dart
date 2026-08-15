@@ -1050,7 +1050,10 @@ void main() {
     expect(find.text('No subscriptions yet'), findsNothing);
   });
 
-  testWidgets('does not expose server ping while disconnected', (tester) async {
+  testWidgets('exposes standalone server ping while disconnected', (
+    tester,
+  ) async {
+    var requests = 0;
     await tester.pumpWidget(
       MaterialApp(
         supportedLocales: AppLocalizations.supportedLocales,
@@ -1061,16 +1064,24 @@ void main() {
           connected: false,
           progressiveBlurEnabled: false,
           onSelected: (_) {},
-          onUrlTest: () async {},
+          onUrlTest: () async {
+            requests++;
+          },
         ),
       ),
     );
 
     expect(
       find.byKey(const ValueKey('preconnect-urltest-action')),
-      findsNothing,
+      findsOneWidget,
     );
     expect(find.byIcon(Icons.network_ping_rounded), findsNothing);
+
+    await tester.tap(
+      find.byKey(const ValueKey('preconnect-urltest-action')),
+    );
+    await tester.pump();
+    expect(requests, 1);
   });
 
   testWidgets(

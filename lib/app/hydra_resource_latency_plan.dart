@@ -178,6 +178,32 @@ class HydraResourceLatencyPlan {
     return requested;
   }
 
+  /// Keeps the user-visible virtual Lowest choice while moving the isolated
+  /// native resource pointer to the concrete profile that will be compiled.
+  static Subscription retainVirtualSelection({
+    required Subscription subscription,
+    required String requestedRuntimeTag,
+    required String concreteRuntimeTag,
+  }) {
+    final requested = requestedRuntimeTag.trim();
+    if (subscription.resourceConfigs.isEmpty || !isLowestProxyTag(requested)) {
+      return subscription;
+    }
+    final concreteProfile = subscription.profileForRuntimeTag(
+      concreteRuntimeTag,
+    );
+    if (concreteProfile == null) {
+      throw StateError(
+        'Lowest selection has no concrete Hydra profile for '
+        '"${concreteRuntimeTag.trim()}"',
+      );
+    }
+    return subscription.copyWith(
+      selectedProxyTag: requested,
+      selectedProfileId: concreteProfile.id,
+    );
+  }
+
   static SubscriptionProfile? _enabledProfileForId(
     Subscription subscription,
     String profileId,

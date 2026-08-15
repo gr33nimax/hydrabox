@@ -292,22 +292,19 @@ class _ProxySheetHeader extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (connected)
-                          IconButton(
-                            key: const ValueKey('preconnect-urltest-action'),
-                            onPressed: urlTestRunning
-                                ? null
-                                : () => onUrlTest(),
-                            tooltip: l10n.urlTestTitle,
-                            icon: urlTestRunning
-                                ? const SizedBox.square(
-                                    dimension: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(FluentIcons.arrow_sync_24_regular),
-                          ),
+                        IconButton(
+                          key: const ValueKey('preconnect-urltest-action'),
+                          onPressed: urlTestRunning ? null : () => onUrlTest(),
+                          tooltip: l10n.urlTestTitle,
+                          icon: urlTestRunning
+                              ? const SizedBox.square(
+                                  dimension: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(FluentIcons.arrow_sync_24_regular),
+                        ),
                         IconButton(
                           tooltip: l10n.sort,
                           onPressed: () => _showProxySortPicker(

@@ -24,6 +24,16 @@ data class CheckedCoreRelease(
     val artifactSizeBytes: Long,
 )
 
+enum class CoreReleaseChannel(val id: String) {
+    STABLE("stable"),
+    DEBUG("debug");
+
+    companion object {
+        fun parse(value: String): CoreReleaseChannel =
+            entries.firstOrNull { it.id == value.trim().lowercase() } ?: DEBUG
+    }
+}
+
 /** Explicit-only updater. Construction never performs network I/O. */
 class CoreBundleUpdater(
     context: Context,
@@ -35,9 +45,14 @@ class CoreBundleUpdater(
     private val checkedManifest = File(checkDirectory, MANIFEST_ASSET)
     private val checkedSignature = File(checkDirectory, SIGNATURE_ASSET)
     private val checkedReleaseId = File(checkDirectory, "release-id.txt")
+    private val preferences = appContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+
+    fun selectedChannel(): CoreReleaseChannel = CoreReleaseChannel.parse(
+        preferences.getString(RELEASE_CHANNEL, null).orEmpty(),
+    )
 
     /** Called only from the user's Check action. */
-    fun checkLatest(): CheckedCoreRelease {
+    fun checkLatest(channel: CoreReleaseChannel): CheckedCoreRelease {
         check(verifier.hasTrustedKeys()) { "No trusted HydraCore release key is installed" }
         val releases = readJsonArray(
             api("releases", "per_page=$RELEASE_PAGE_SIZE"),
@@ -46,6 +61,7 @@ class CoreBundleUpdater(
         val release = selectCoreBundleRelease(
             releases,
             requiredAssets = setOf(MANIFEST_ASSET, SIGNATURE_ASSET),
+            channel = channel,
         )
         val releaseId = release.getLong("id")
         require(releaseId > 0L) { "HydraCore GitHub release id is invalid" }
@@ -61,6 +77,9 @@ class CoreBundleUpdater(
         // no URL from the signed document is accepted or persisted.
         assetId(release, artifact.assetName)
         persistCheckedRelease(releaseId, manifestBytes, signatureBytes)
+        check(preferences.edit().putString(RELEASE_CHANNEL, channel.id).commit()) {
+            "Cannot persist HydraCore release channel"
+        }
         return CheckedCoreRelease(
             releaseId = releaseId,
             releaseSequence = manifest.releaseSequence,
@@ -294,6 +313,8 @@ class CoreBundleUpdater(
 
     companion object {
         private const val FIXED_REPOSITORY = "gr33nimax/hydracore"
+        private const val PREFERENCES = "hydracore-updater-v1"
+        private const val RELEASE_CHANNEL = "release-channel"
         private const val MANIFEST_ASSET = "hydracore-bundle-manifest-v1.json"
         private const val SIGNATURE_ASSET = "hydracore-bundle-manifest-v1.sig"
         private const val GITHUB_API_VERSION = "2022-11-28"
@@ -318,11 +339,15 @@ class CoreBundleUpdater(
 internal fun selectCoreBundleRelease(
     releases: JSONArray,
     requiredAssets: Set<String>,
+    channel: CoreReleaseChannel,
 ): JSONObject {
     require(requiredAssets.isNotEmpty()) { "HydraCore bundle asset set is empty" }
     for (index in 0 until releases.length()) {
         val release = releases.optJSONObject(index) ?: continue
         if (release.optBoolean("draft", true) || release.optLong("id", 0L) <= 0L) continue
+        val prerelease = release.optBoolean("prerelease", false)
+        if (channel == CoreReleaseChannel.DEBUG && !prerelease) continue
+        if (channel == CoreReleaseChannel.STABLE && prerelease) continue
         val assets = release.optJSONArray("assets") ?: continue
         val present = buildSet {
             for (assetIndex in 0 until assets.length()) {

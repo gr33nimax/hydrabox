@@ -6,6 +6,16 @@ import 'package:hydrabox/singbox/singbox_api.g.dart' as bridge;
 
 enum CoreManagerOperation { check, download, probe, activate, rollback }
 
+enum CoreReleaseChannel {
+  stable,
+  debug;
+
+  static CoreReleaseChannel parse(String value) => switch (value.trim()) {
+    'stable' => CoreReleaseChannel.stable,
+    _ => CoreReleaseChannel.debug,
+  };
+}
+
 class CoreSlotInfo {
   const CoreSlotInfo({
     required this.releaseSequence,
@@ -61,6 +71,7 @@ class CoreManagerViewState {
   const CoreManagerViewState({
     required this.supported,
     required this.embeddedVersion,
+    required this.releaseChannel,
     required this.trustedKeyRingAvailable,
     required this.usingEmbeddedFallback,
     required this.runtimeDisconnected,
@@ -77,6 +88,7 @@ class CoreManagerViewState {
   const CoreManagerViewState.unsupported()
     : supported = false,
       embeddedVersion = '',
+      releaseChannel = CoreReleaseChannel.debug,
       trustedKeyRingAvailable = false,
       usingEmbeddedFallback = true,
       runtimeDisconnected = true,
@@ -91,6 +103,7 @@ class CoreManagerViewState {
 
   final bool supported;
   final String embeddedVersion;
+  final CoreReleaseChannel releaseChannel;
   final CoreSlotInfo? active;
   final CoreSlotInfo? previous;
   final CoreSlotInfo? candidate;
@@ -105,6 +118,7 @@ class CoreManagerViewState {
 
   CoreManagerViewState copyWith({
     String? embeddedVersion,
+    CoreReleaseChannel? releaseChannel,
     CoreSlotInfo? active,
     bool clearActive = false,
     CoreSlotInfo? previous,
@@ -116,6 +130,7 @@ class CoreManagerViewState {
     bool? runtimeDisconnected,
     bool? recoveryRollbackAllowed,
     CheckedCoreReleaseInfo? checkedRelease,
+    bool clearCheckedRelease = false,
     CoreCandidateProbeInfo? probe,
     bool clearProbe = false,
     CoreManagerOperation? busy,
@@ -125,6 +140,7 @@ class CoreManagerViewState {
   }) => CoreManagerViewState(
     supported: supported,
     embeddedVersion: embeddedVersion ?? this.embeddedVersion,
+    releaseChannel: releaseChannel ?? this.releaseChannel,
     active: clearActive ? null : active ?? this.active,
     previous: clearPrevious ? null : previous ?? this.previous,
     candidate: clearCandidate ? null : candidate ?? this.candidate,
@@ -134,7 +150,9 @@ class CoreManagerViewState {
     runtimeDisconnected: runtimeDisconnected ?? this.runtimeDisconnected,
     recoveryRollbackAllowed:
         recoveryRollbackAllowed ?? this.recoveryRollbackAllowed,
-    checkedRelease: checkedRelease ?? this.checkedRelease,
+    checkedRelease: clearCheckedRelease
+        ? null
+        : checkedRelease ?? this.checkedRelease,
     probe: clearProbe ? null : probe ?? this.probe,
     busy: clearBusy ? null : busy ?? this.busy,
     failure: clearFailure ? null : failure ?? this.failure,
@@ -162,6 +180,7 @@ class CoreManagerController extends AsyncNotifier<CoreManagerViewState> {
       final refreshed = _stateFromMessage(await _api.getState());
       state = AsyncData(
         refreshed.copyWith(
+          releaseChannel: current?.releaseChannel,
           checkedRelease: current?.checkedRelease,
           probe: current?.probe,
         ),
@@ -173,10 +192,28 @@ class CoreManagerController extends AsyncNotifier<CoreManagerViewState> {
     }
   }
 
+  void selectReleaseChannel(CoreReleaseChannel channel) {
+    final current = state.valueOrNull;
+    if (current == null ||
+        current.busy != null ||
+        channel == current.releaseChannel) {
+      return;
+    }
+    state = AsyncData(
+      current.copyWith(
+        releaseChannel: channel,
+        clearCheckedRelease: true,
+        clearFailure: true,
+      ),
+    );
+  }
+
   Future<void> checkLatest() => _run(
     CoreManagerOperation.check,
     (current) async => current.copyWith(
-      checkedRelease: _checkedFromMessage(await _api.checkLatest()),
+      checkedRelease: _checkedFromMessage(
+        await _api.checkLatest(current.releaseChannel.name),
+      ),
       clearFailure: true,
     ),
   );
@@ -257,6 +294,7 @@ CoreManagerViewState _stateFromMessage(
 }) => CoreManagerViewState(
   supported: true,
   embeddedVersion: message.embeddedVersion,
+  releaseChannel: CoreReleaseChannel.parse(message.releaseChannel),
   active: _nullableSlotFromMessage(message.active),
   previous: _nullableSlotFromMessage(message.previous),
   candidate: _nullableSlotFromMessage(message.candidate),

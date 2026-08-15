@@ -813,18 +813,17 @@ class _ProxiesPageState extends State<ProxiesPage> {
         surfaceTintColor: Colors.transparent,
         shadowColor: Colors.transparent,
         actions: [
-          if (widget.connected)
-            IconButton(
-              key: const ValueKey('preconnect-urltest-action'),
-              tooltip: l10n.urlTestTitle,
-              onPressed: urlTestRunning ? null : () => widget.onUrlTest(),
-              icon: urlTestRunning
-                  ? const SizedBox.square(
-                      dimension: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(FluentIcons.arrow_sync_24_regular),
-            ),
+          IconButton(
+            key: const ValueKey('preconnect-urltest-action'),
+            tooltip: l10n.urlTestTitle,
+            onPressed: urlTestRunning ? null : () => widget.onUrlTest(),
+            icon: urlTestRunning
+                ? const SizedBox.square(
+                    dimension: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(FluentIcons.arrow_sync_24_regular),
+          ),
           IconButton(
             tooltip: l10n.sort,
             onPressed: () => _showProxySortPicker(

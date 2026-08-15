@@ -32,7 +32,8 @@ public final class HydraNativeLoader {
             String allowedRoot,
             String libraryPath,
             String expectedSha256,
-            String failureMarkerPath) {
+            String failureMarkerPath,
+            String source) {
         if (loaded) {
             throw new IllegalStateException("HydraNativeLoader is already initialized");
         }
@@ -40,7 +41,8 @@ public final class HydraNativeLoader {
                 allowedRoot,
                 libraryPath,
                 expectedSha256,
-                failureMarkerPath);
+                failureMarkerPath,
+                source);
     }
 
     public static void clearCandidate() {
@@ -63,7 +65,7 @@ public final class HydraNativeLoader {
             if (selected != null) {
                 try {
                     loadVerified(selected);
-                    loadedSource = "active";
+                    loadedSource = selected.source;
                     loaded = true;
                     return;
                 } catch (Throwable error) {
@@ -159,19 +161,27 @@ public final class HydraNativeLoader {
         final File library;
         final String expectedSha256;
         final File failureMarker;
+        final String source;
 
-        Candidate(File allowedRoot, File library, String expectedSha256, File failureMarker) {
+        Candidate(
+                File allowedRoot,
+                File library,
+                String expectedSha256,
+                File failureMarker,
+                String source) {
             this.allowedRoot = allowedRoot;
             this.library = library;
             this.expectedSha256 = expectedSha256;
             this.failureMarker = failureMarker;
+            this.source = source;
         }
 
         static Candidate create(
                 String allowedRoot,
                 String libraryPath,
                 String expectedSha256,
-                String failureMarkerPath) {
+                String failureMarkerPath,
+                String source) {
             if (allowedRoot == null || allowedRoot.trim().isEmpty()) {
                 return null;
             }
@@ -184,6 +194,10 @@ public final class HydraNativeLoader {
             if (!digest.matches("^[0-9a-f]{64}$")) {
                 return null;
             }
+            final String normalizedSource = source == null ? "" : source.trim();
+            if (!normalizedSource.equals("active") && !normalizedSource.equals("candidate")) {
+                return null;
+            }
             final File marker = failureMarkerPath == null || failureMarkerPath.trim().isEmpty()
                     ? null
                     : new File(failureMarkerPath);
@@ -191,7 +205,8 @@ public final class HydraNativeLoader {
                     new File(allowedRoot),
                     new File(libraryPath),
                     digest,
-                    marker);
+                    marker,
+                    normalizedSource);
         }
     }
 }

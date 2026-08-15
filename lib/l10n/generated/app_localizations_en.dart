@@ -2326,6 +2326,15 @@ class AppLocalizationsEn extends AppLocalizations {
       'HydraCore updates are checked, downloaded, tested, and activated only when you request each step.';
 
   @override
+  String get coreManagerChannelTitle => 'Core branch';
+
+  @override
+  String get coreManagerChannelStable => 'Stable';
+
+  @override
+  String get coreManagerChannelDebug => 'Debug';
+
+  @override
   String get coreManagerEmbeddedVersion => 'Embedded core';
 
   @override

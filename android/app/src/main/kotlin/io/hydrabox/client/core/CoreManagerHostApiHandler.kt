@@ -60,9 +60,12 @@ class CoreManagerHostApiHandler(
         }
     }
 
-    override fun checkLatest(callback: (Result<CheckedCoreReleaseMessage>) -> Unit) {
+    override fun checkLatest(
+        releaseChannel: String,
+        callback: (Result<CheckedCoreReleaseMessage>) -> Unit,
+    ) {
         execute("core.update.check_failed", "HydraCore update check failed.", callback) {
-            val checked = updater.checkLatest()
+            val checked = updater.checkLatest(CoreReleaseChannel.parse(releaseChannel))
             CheckedCoreReleaseMessage(
                 releaseId = checked.releaseId,
                 releaseSequence = checked.releaseSequence,
@@ -94,8 +97,10 @@ class CoreManagerHostApiHandler(
             val (candidate, fixtures) = prepared
             mainHandler.post {
                 CoreCandidateProbeClient(appContext).probe(fixtures) { result ->
-                    result.onFailure {
-                        callback(failure("core.probe.failed", "HydraCore candidate probe failed."))
+                    result.onFailure { error ->
+                        val code = (error as? CoreCandidateProbeException)?.code
+                            ?: "core.probe.failed"
+                        callback(failure(code, "HydraCore candidate probe failed."))
                     }.onSuccess { report ->
                         callback(
                             Result.success(
@@ -208,6 +213,7 @@ class CoreManagerHostApiHandler(
     ) =
         CoreManagerStateMessage(
             embeddedVersion = BuildConfig.EMBEDDED_HYDRACORE_VERSION,
+            releaseChannel = updater.selectedChannel().id,
             active = active?.toMessage(),
             previous = previous?.toMessage(),
             candidate = candidate?.toMessage(),

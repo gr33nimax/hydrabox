@@ -60,17 +60,34 @@ class CoreCandidateProbeClient(context: Context) {
                         val report = CoreRuntimeProtocol.CoreProbeReport.parseFrom(
                             responseBytes,
                         )
-                        check(report.releaseSequence == candidate.releaseSequence)
-                        check(report.artifactSha256.toByteArray().contentEquals(candidate.sha256.hexToBytes()))
-                        check(report.loadedSource == "active")
+                        requireProbe(
+                            report.releaseSequence == candidate.releaseSequence,
+                            "core.probe.release_mismatch",
+                        )
+                        requireProbe(
+                            report.artifactSha256.toByteArray()
+                                .contentEquals(candidate.sha256.hexToBytes()),
+                            "core.probe.artifact_mismatch",
+                        )
+                        requireProbe(
+                            report.loadedSource == "candidate",
+                            "core.probe.loader_mismatch",
+                        )
                         if (!report.healthy) return@runCatching report
-                        check(report.contract.apiMajor == CoreBundleManifest.CORE_API_MAJOR)
-                        check(
+                        requireProbe(
+                            report.contract.apiMajor == CoreBundleManifest.CORE_API_MAJOR,
+                            "core.probe.api_mismatch",
+                        )
+                        requireProbe(
                             report.contract.capabilitiesSha256.toByteArray().contentEquals(
                                 candidate.capabilitiesSha256.hexToBytes(),
                             ),
+                            "core.probe.capabilities_mismatch",
                         )
-                        check(report.validatedFixtureCount == validationFixtures.size)
+                        requireProbe(
+                            report.validatedFixtureCount == validationFixtures.size,
+                            "core.probe.fixture_mismatch",
+                        )
                         manager.markCandidateProbed(candidate.releaseSequence, candidate.sha256)
                         report
                     }
@@ -112,9 +129,15 @@ class CoreCandidateProbeClient(context: Context) {
         }
     }
 
+    private fun requireProbe(condition: Boolean, code: String) {
+        if (!condition) throw CoreCandidateProbeException(code)
+    }
+
     companion object {
         private const val SCHEMA_VERSION = 1
         private const val MAX_TOTAL_FIXTURE_BYTES = 512 * 1024
         private const val PROBE_DEADLINE_MILLIS = 30_000L
     }
 }
+
+class CoreCandidateProbeException(val code: String) : IllegalStateException(code)

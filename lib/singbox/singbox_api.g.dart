@@ -520,6 +520,7 @@ class CoreBundleSlotMessage {
 class CoreManagerStateMessage {
   CoreManagerStateMessage({
     required this.embeddedVersion,
+    required this.releaseChannel,
     this.active,
     this.previous,
     this.candidate,
@@ -530,6 +531,8 @@ class CoreManagerStateMessage {
   });
 
   String embeddedVersion;
+
+  String releaseChannel;
 
   CoreBundleSlotMessage? active;
 
@@ -548,6 +551,7 @@ class CoreManagerStateMessage {
   List<Object?> _toList() {
     return <Object?>[
       embeddedVersion,
+      releaseChannel,
       active,
       previous,
       candidate,
@@ -566,13 +570,14 @@ class CoreManagerStateMessage {
     result as List<Object?>;
     return CoreManagerStateMessage(
       embeddedVersion: result[0]! as String,
-      active: result[1] as CoreBundleSlotMessage?,
-      previous: result[2] as CoreBundleSlotMessage?,
-      candidate: result[3] as CoreBundleSlotMessage?,
-      trustedKeyRingAvailable: result[4]! as bool,
-      usingEmbeddedFallback: result[5]! as bool,
-      runtimeDisconnected: result[6]! as bool,
-      recoveryRollbackAllowed: result[7]! as bool,
+      releaseChannel: result[1]! as String,
+      active: result[2] as CoreBundleSlotMessage?,
+      previous: result[3] as CoreBundleSlotMessage?,
+      candidate: result[4] as CoreBundleSlotMessage?,
+      trustedKeyRingAvailable: result[5]! as bool,
+      usingEmbeddedFallback: result[6]! as bool,
+      runtimeDisconnected: result[7]! as bool,
+      recoveryRollbackAllowed: result[8]! as bool,
     );
   }
 
@@ -586,6 +591,7 @@ class CoreManagerStateMessage {
       return true;
     }
     return _deepEquals(embeddedVersion, other.embeddedVersion) &&
+        _deepEquals(releaseChannel, other.releaseChannel) &&
         _deepEquals(active, other.active) &&
         _deepEquals(previous, other.previous) &&
         _deepEquals(candidate, other.candidate) &&
@@ -1266,7 +1272,7 @@ class CoreManagerHostApi {
     return pigeonVar_replyValue! as CoreManagerStateMessage;
   }
 
-  Future<CheckedCoreReleaseMessage> checkLatest() async {
+  Future<CheckedCoreReleaseMessage> checkLatest(String releaseChannel) async {
     final pigeonVar_channelName =
         'dev.flutter.pigeon.hydrabox.CoreManagerHostApi.checkLatest$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(
@@ -1274,7 +1280,9 @@ class CoreManagerHostApi {
       pigeonChannelCodec,
       binaryMessenger: pigeonVar_binaryMessenger,
     );
-    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[releaseChannel],
+    );
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
     final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(

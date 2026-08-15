@@ -4137,6 +4137,24 @@ abstract class AppLocalizations {
   /// **'HydraCore updates are checked, downloaded, tested, and activated only when you request each step.'**
   String get coreManagerSubtitle;
 
+  /// No description provided for @coreManagerChannelTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Core branch'**
+  String get coreManagerChannelTitle;
+
+  /// No description provided for @coreManagerChannelStable.
+  ///
+  /// In en, this message translates to:
+  /// **'Stable'**
+  String get coreManagerChannelStable;
+
+  /// No description provided for @coreManagerChannelDebug.
+  ///
+  /// In en, this message translates to:
+  /// **'Debug'**
+  String get coreManagerChannelDebug;
+
   /// No description provided for @coreManagerEmbeddedVersion.
   ///
   /// In en, this message translates to:

@@ -2333,6 +2333,15 @@ class AppLocalizationsRu extends AppLocalizations {
       'HydraCore проверяется, скачивается, тестируется и активируется только после отдельного действия пользователя на каждом шаге.';
 
   @override
+  String get coreManagerChannelTitle => 'Ветка ядра';
+
+  @override
+  String get coreManagerChannelStable => 'Стабильная';
+
+  @override
+  String get coreManagerChannelDebug => 'Отладочная';
+
+  @override
   String get coreManagerEmbeddedVersion => 'Встроенное ядро';
 
   @override

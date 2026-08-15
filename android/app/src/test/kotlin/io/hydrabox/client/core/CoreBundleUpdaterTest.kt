@@ -38,6 +38,7 @@ class CoreBundleUpdaterTest {
                 "hydracore-bundle-manifest-v1.json",
                 "hydracore-bundle-manifest-v1.sig",
             ),
+            CoreReleaseChannel.DEBUG,
         )
 
         assertEquals(14L, selected.getLong("id"))
@@ -67,7 +68,47 @@ class CoreBundleUpdaterTest {
         )
 
         assertThrows(IllegalStateException::class.java) {
-            selectCoreBundleRelease(releases, setOf("manifest", "signature"))
+            selectCoreBundleRelease(
+                releases,
+                setOf("manifest", "signature"),
+                CoreReleaseChannel.DEBUG,
+            )
         }
+    }
+
+    @Test
+    fun `stable channel ignores newer debug bundle`() {
+        val releases = JSONArray(
+            """
+            [
+              {
+                "id": 20,
+                "draft": false,
+                "prerelease": true,
+                "assets": [
+                  {"id": 201, "name": "manifest", "size": 10},
+                  {"id": 202, "name": "signature", "size": 64}
+                ]
+              },
+              {
+                "id": 19,
+                "draft": false,
+                "prerelease": false,
+                "assets": [
+                  {"id": 191, "name": "manifest", "size": 10},
+                  {"id": 192, "name": "signature", "size": 64}
+                ]
+              }
+            ]
+            """.trimIndent(),
+        )
+
+        val selected = selectCoreBundleRelease(
+            releases,
+            setOf("manifest", "signature"),
+            CoreReleaseChannel.STABLE,
+        )
+
+        assertEquals(19L, selected.getLong("id"))
     }
 }

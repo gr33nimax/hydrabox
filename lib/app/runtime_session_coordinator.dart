@@ -93,6 +93,7 @@ class RuntimeSessionCoordinator {
     required bool transitionInProgress,
     required bool retryScheduled,
     required bool starting,
+    required bool previouslyActive,
   }) {
     final keepStateDuringError =
         hasError && (transitionInProgress || retryScheduled || starting);
@@ -112,7 +113,11 @@ class RuntimeSessionCoordinator {
     return RuntimeStateDecision(
       phase: phase,
       keepConnecting: keepConnecting,
-      clearDisconnectedState: !running && !keepConnecting,
+      // Runtime snapshots are level-triggered. A stopped snapshot can be
+      // emitted after an unrelated command (for example an ephemeral probe),
+      // so only tear down runtime-owned presentation state on an actual
+      // active/transitioning -> stopped edge.
+      clearDisconnectedState: !running && !keepConnecting && previouslyActive,
       retryScheduled: phase == AppConnectionPhase.recovering && retryScheduled,
     );
   }

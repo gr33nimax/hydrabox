@@ -3608,19 +3608,32 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     if (activeSubscription == null) {
       return;
     }
-    final tag = HydraResourceLatencyPlan.concreteSelectionTag(
+    final tag = normalizeProxySelectionTag(requestedTag);
+    final concreteTag = HydraResourceLatencyPlan.concreteSelectionTag(
       subscription: activeSubscription,
-      requestedRuntimeTag: requestedTag,
+      requestedRuntimeTag: tag,
       runtimeLatencies: _runtimeLatencies,
     );
+    final virtualLowestSelection =
+        activeSubscription.resourceConfigs.isNotEmpty && isLowestProxyTag(tag);
     late final Subscription updatedSubscription;
     late final bool requiresRuntimeReload;
     try {
-      updatedSubscription = _withSelectedOutbound(activeSubscription, tag);
+      final selectedSubscription = _withSelectedOutbound(
+        activeSubscription,
+        tag,
+      );
+      updatedSubscription = virtualLowestSelection
+          ? HydraResourceLatencyPlan.retainVirtualSelection(
+              subscription: selectedSubscription,
+              requestedRuntimeTag: tag,
+              concreteRuntimeTag: concreteTag,
+            )
+          : selectedSubscription;
       requiresRuntimeReload = HydraResourceLatencyPlan.requiresRuntimeReload(
         subscription: activeSubscription,
         previousRuntimeTag: _selectedProxyTag,
-        nextRuntimeTag: tag,
+        nextRuntimeTag: concreteTag,
       );
     } on StateError catch (error) {
       AppLogStore.warning(
@@ -3646,7 +3659,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
           '${previousProxy == null ? '' : ' (${previousProxy.displayName})'} '
           'to=$tag'
           '${requestedProxy == null ? '' : ' (${requestedProxy.displayName})'} '
-          '${requestedTag == tag ? '' : 'requested=$requestedTag '} '
+          '${concreteTag == tag ? '' : 'resolved=$concreteTag '} '
           'subscription=${activeSubscription.id} '
           'connected=$_connected',
     );
@@ -3654,6 +3667,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     _runtimeOperations.beginSelection(tag);
     _resetActiveProxyIpState(rebuild: false);
     final selectInRuntime =
+        !virtualLowestSelection &&
         !requiresRuntimeReload &&
         _proxySelection.runtimeSelectionUpdatesAllowed(
           connected: _connected,
@@ -3678,6 +3692,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     _publishProxyRuntimeVisualStatesForTags(<String>{
       previousTag,
       tag,
+      concreteTag,
       ?selectedActiveOutboundTag,
     });
     _scheduleVpnNotificationSync();
@@ -5899,6 +5914,8 @@ class _HydraBoxClientState extends State<HydraBoxClient>
   }
 
   void _handleRuntimeStateEvent(RuntimeStateEvent event) {
+    final previouslyActive =
+        _connected || _runtimeTransitionInProgress || _starting;
     final running = event.running;
     final nativeRuntimeGeneration =
         (event.raw['runtimeGeneration'] as num?)?.toInt() ?? 0;
@@ -5915,6 +5932,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       transitionInProgress: _runtimeTransitionInProgress,
       retryScheduled: _invalidOutboundRetryScheduled,
       starting: _starting,
+      previouslyActive: previouslyActive,
     );
     if (!mounted) return;
     var shouldSyncQuickSettingsTile = false;

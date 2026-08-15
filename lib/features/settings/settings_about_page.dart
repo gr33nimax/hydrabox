@@ -203,10 +203,6 @@ class _AboutCoreManagerCard extends StatelessWidget {
             fontWeight: FontWeight.w800,
           ),
         ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Text(l10n.coreManagerSubtitle),
-        ),
         trailing: const Icon(Icons.chevron_right_rounded),
       ),
     );

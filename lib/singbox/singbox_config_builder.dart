@@ -933,6 +933,13 @@ class SingboxConfigBuilder {
     if (subscription == null || subscription.resourceConfigs.isEmpty) {
       return appSelectionTag;
     }
+    if (isLowestProxyTag(appSelectionTag)) {
+      final activeProfile = HydraProxyChainResolver.activeProfile(subscription);
+      final entrypoint = activeProfile?.entrypointTag.trim() ?? '';
+      if (entrypoint.isNotEmpty) {
+        return entrypoint;
+      }
+    }
     return subscription.nativeEntrypointTagForRuntimeTag(appSelectionTag);
   }
 

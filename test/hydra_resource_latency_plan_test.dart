@@ -573,6 +573,27 @@ void main() {
     expect(selected, resourceBRuntimeTag);
   });
 
+  test('Lowest remains selected while its concrete Hydra profile changes', () {
+    final concrete = HydraResourceLatencyPlan.concreteSelectionTag(
+      subscription: sameNativeTagSubscription,
+      requestedRuntimeTag: 'lowest',
+      runtimeLatencies: <String, int>{
+        resourceARuntimeTag: 180,
+        resourceBRuntimeTag: 42,
+      },
+    );
+
+    final selected = HydraResourceLatencyPlan.retainVirtualSelection(
+      subscription: sameNativeTagSubscription,
+      requestedRuntimeTag: 'lowest',
+      concreteRuntimeTag: concrete,
+    );
+
+    expect(selected.selectedProxyTag, 'lowest');
+    expect(selected.selectedProfileId, 'profile-b');
+    expect(selected.activeNativeConfig?['marker'], 'b');
+  });
+
   test('normalization preserves an app-owned proxy chain selection', () {
     final withChain = sameNativeTagSubscription.copyWith(
       selectedProxyTag: 'chain-a',

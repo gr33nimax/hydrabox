@@ -52,7 +52,7 @@ class CoreProbeService : Service() {
         }
         return runCatching {
             NativeCoreEnvironment.ensureSetup()
-            check(HydraNativeLoader.loadedSource() == "active") {
+            check(HydraNativeLoader.loadedSource() == "candidate") {
                 "The candidate library was not selected"
             }
             val capabilities = Libbox.hydraCoreCapabilities().toByteArray(Charsets.UTF_8)

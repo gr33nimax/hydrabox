@@ -58,6 +58,8 @@ void main() {
     expect(workflow, contains(':app:lintDebug'));
     expect(workflow, contains(':app:assembleDebug'));
     expect(workflow, contains(':app:assembleDebugAndroidTest'));
+    expect(workflow, contains('flutter build apk --release --split-per-abi'));
+    expect(workflow, contains('app-arm64-v8a-release.apk'));
     expect(workflow, contains('build/app/outputs/apk/debug/*.apk'));
     expect(workflow, contains('Build debug-signed release-mode test APK'));
     expect(workflow, contains('HYDRABOX_ALLOW_DEBUG_RELEASE_SIGNING'));

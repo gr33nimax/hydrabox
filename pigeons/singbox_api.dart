@@ -120,6 +120,7 @@ class CoreBundleSlotMessage {
 class CoreManagerStateMessage {
   CoreManagerStateMessage({
     required this.embeddedVersion,
+    required this.releaseChannel,
     this.active,
     this.previous,
     this.candidate,
@@ -130,6 +131,7 @@ class CoreManagerStateMessage {
   });
 
   String embeddedVersion;
+  String releaseChannel;
   CoreBundleSlotMessage? active;
   CoreBundleSlotMessage? previous;
   CoreBundleSlotMessage? candidate;
@@ -289,7 +291,7 @@ abstract class CoreManagerHostApi {
   CoreManagerStateMessage getState();
 
   @async
-  CheckedCoreReleaseMessage checkLatest();
+  CheckedCoreReleaseMessage checkLatest(String releaseChannel);
 
   @async
   CoreBundleSlotMessage downloadChecked();

@@ -235,6 +235,7 @@ class CoreBundleManager(
             active.libraryPath,
             active.sha256,
             File(root, LOADER_FAILURE_MARKER).canonicalPath,
+            "active",
         )
     }
 
@@ -246,6 +247,7 @@ class CoreBundleManager(
             candidate.libraryPath,
             candidate.sha256,
             File(root, CANDIDATE_LOADER_FAILURE_MARKER).canonicalPath,
+            "candidate",
         )
     }
 
