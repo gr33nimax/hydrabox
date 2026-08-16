@@ -40,11 +40,11 @@ class HydraCoreCapabilities {
     this.supportsCallVkParasiteClient = true,
     this.supportsCallVkParasiteServer = false,
     this.supportsCallVkTelemetry = true,
-    this.supportsCallVkEightLaneKcp = true,
+    this.supportsCallVkFourLaneKcp = true,
     this.supportsCallVkPreKcpAdmission = true,
     this.supportsCallVkRelayFlowControl = true,
-    this.callVkParasiteWireMin = 5,
-    this.callVkParasiteWireMax = 5,
+    this.callVkParasiteWireMin = 8,
+    this.callVkParasiteWireMax = 8,
     this.amneziaVersion = 3,
     this.tunStacks = const {'system', 'gvisor', 'mixed'},
     this.inboundProtocols = const <String>{},
@@ -85,7 +85,7 @@ class HydraCoreCapabilities {
   /// Expected release surface used by pure-Dart code and test fakes.
   static const requiredV2 = HydraCoreCapabilities(
     apiVersion: supportedApiVersion,
-    coreVersion: 'v1.13.16-extended-hydracore.11-debug.14',
+    coreVersion: 'v1.13.16-extended-hydracore.11-debug.30',
     outboundProtocols: {
       'socks',
       'http',
@@ -192,9 +192,9 @@ class HydraCoreCapabilities {
         'call_vk_parasite_server',
       ),
       supportsCallVkTelemetry: _requiredBool(features, 'call_vk_telemetry'),
-      supportsCallVkEightLaneKcp: _requiredBool(
+      supportsCallVkFourLaneKcp: _requiredBool(
         features,
-        'call_vk_eight_lane_kcp',
+        'call_vk_four_lane_kcp',
       ),
       supportsCallVkPreKcpAdmission: _requiredBool(
         features,
@@ -217,7 +217,7 @@ class HydraCoreCapabilities {
       inboundProtocols: _requiredStringSet(
         protocols,
         'inbounds',
-        // HydraCore v1.13.16-extended-hydracore.11-debug.14 was built with
+        // HydraCore v1.13.16-extended-hydracore.11-debug.30 is built with
         // append([]string(nil), emptySlice...), which JSON-encodes the empty
         // client inbound list as null. Treat only this present-null list as
         // empty; an absent field still fails closed.
@@ -321,7 +321,7 @@ class HydraCoreCapabilities {
   final bool supportsCallVkParasiteClient;
   final bool supportsCallVkParasiteServer;
   final bool supportsCallVkTelemetry;
-  final bool supportsCallVkEightLaneKcp;
+  final bool supportsCallVkFourLaneKcp;
   final bool supportsCallVkPreKcpAdmission;
   final bool supportsCallVkRelayFlowControl;
   final int callVkParasiteWireMin;
@@ -376,12 +376,12 @@ class HydraCoreCapabilities {
       supportsCallVkParasiteClient &&
       !supportsCallVkParasiteServer &&
       supportsCallVkTelemetry &&
-      supportsCallVkEightLaneKcp &&
+      supportsCallVkFourLaneKcp &&
       supportsCallVkPreKcpAdmission &&
       supportsCallVkRelayFlowControl &&
       coreRole == 'client' &&
-      callVkParasiteWireMin == 5 &&
-      callVkParasiteWireMax == 5 &&
+      callVkParasiteWireMin == 8 &&
+      callVkParasiteWireMax == 8 &&
       callPlatforms.length == 1 &&
       callPlatforms.contains('vk') &&
       callModes.length == 1 &&

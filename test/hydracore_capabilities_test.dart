@@ -12,17 +12,17 @@ void main() {
 
     expect(capabilities.apiVersion, 2);
     expect(capabilities.coreId, 'io.hydrabox.hydracore');
-    expect(capabilities.coreVersion, 'v1.13.16-extended-hydracore.11-debug.14');
+    expect(capabilities.coreVersion, 'v1.13.16-extended-hydracore.11-debug.30');
     expect(capabilities.coreRole, 'client');
     expect(capabilities.supportsCallVkParasite, isTrue);
     expect(capabilities.supportsCallVkParasiteClient, isTrue);
     expect(capabilities.supportsCallVkParasiteServer, isFalse);
     expect(capabilities.supportsCallVkTelemetry, isTrue);
-    expect(capabilities.supportsCallVkEightLaneKcp, isTrue);
+    expect(capabilities.supportsCallVkFourLaneKcp, isTrue);
     expect(capabilities.supportsCallVkPreKcpAdmission, isTrue);
     expect(capabilities.supportsCallVkRelayFlowControl, isTrue);
-    expect(capabilities.callVkParasiteWireMin, 5);
-    expect(capabilities.callVkParasiteWireMax, 5);
+    expect(capabilities.callVkParasiteWireMin, 8);
+    expect(capabilities.callVkParasiteWireMax, 8);
     expect(capabilities.callModes, {'vk_parasite'});
     expect(capabilities.validationProfiles, {'local', 'remote_v2'});
     expect(capabilities.subscriptionContracts, {2});
@@ -39,7 +39,7 @@ void main() {
     () {
       final capabilities = HydraCoreCapabilities.parseStrict(
         File(
-          'test/fixtures/hydracore_client_capabilities_v1.13.16-extended-hydracore.11-debug.14.json',
+          'test/fixtures/hydracore_client_capabilities_v1.13.16-extended-hydracore.11-debug.30.json',
         ).readAsStringSync(),
       );
 
@@ -60,7 +60,7 @@ void main() {
       'call_vk_parasite',
       'call_vk_parasite_client',
       'call_vk_telemetry',
-      'call_vk_eight_lane_kcp',
+      'call_vk_four_lane_kcp',
       'call_vk_pre_kcp_admission',
       'call_vk_relay_flow_control',
     ]) {
@@ -125,7 +125,7 @@ Map<String, dynamic> _capabilities() => {
   'identity': {
     'core_id': 'io.hydrabox.hydracore',
     'core_name': 'HydraCore',
-    'core_version': 'v1.13.16-extended-hydracore.11-debug.14',
+    'core_version': 'v1.13.16-extended-hydracore.11-debug.30',
     'role': 'client',
   },
   'features': {
@@ -148,7 +148,8 @@ Map<String, dynamic> _capabilities() => {
     'call_vk_parasite_client': true,
     'call_vk_parasite_server': false,
     'call_vk_telemetry': true,
-    'call_vk_eight_lane_kcp': true,
+    'call_vk_eight_lane_kcp': false,
+    'call_vk_four_lane_kcp': true,
     'call_vk_pre_kcp_admission': true,
     'call_vk_relay_flow_control': true,
     'amnezia_version': 3,
@@ -176,7 +177,7 @@ Map<String, dynamic> _capabilities() => {
     'endpoints': ['wireguard'],
     'call_platforms': ['vk'],
     'call_modes': ['vk_parasite'],
-    'call_vk_parasite_wire': {'min': 5, 'max': 5},
+    'call_vk_parasite_wire': {'min': 8, 'max': 8},
   },
   'tun_stacks': ['system', 'gvisor', 'mixed'],
   'xhttp_modes': ['packet-up', 'stream-up', 'stream-one'],

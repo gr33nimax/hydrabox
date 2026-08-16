@@ -73,7 +73,7 @@ void main() {
     (requirements['core'] as Map<String, dynamic>)['features'] = [
       'call',
       'call_vk_parasite',
-      'call_vk_eight_lane_kcp',
+      'call_vk_four_lane_kcp',
       'call_vk_pre_kcp_admission',
       'call_vk_relay_flow_control',
     ];

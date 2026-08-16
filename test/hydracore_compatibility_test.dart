@@ -17,7 +17,7 @@ void main() {
     expect(capabilities.coreRole, 'client');
     expect(capabilities.supportsCallVkParasiteClient, isTrue);
     expect(capabilities.supportsCallVkParasiteServer, isFalse);
-    expect(capabilities.supportsCallVkEightLaneKcp, isTrue);
+    expect(capabilities.supportsCallVkFourLaneKcp, isTrue);
     expect(capabilities.supportsCallVkPreKcpAdmission, isTrue);
     expect(capabilities.supportsCallVkRelayFlowControl, isTrue);
     expect(capabilities.remoteSafeInboundTypes, isEmpty);

@@ -101,7 +101,7 @@ def verify(producer: Path, expected_commit: str) -> None:
         '"call"',
         '"vk_parasite"',
         '"call_vk_parasite"',
-        '"call_vk_eight_lane_kcp"',
+        '"call_vk_four_lane_kcp"',
         '"call_vk_pre_kcp_admission"',
         '"call_vk_relay_flow_control"',
     ):
@@ -113,14 +113,14 @@ def verify(producer: Path, expected_commit: str) -> None:
     ).read_text(encoding="utf-8")
     for marker in (
         'features.get("call_vk_parasite") is True',
-        'features.get("call_vk_eight_lane_kcp") is True',
+        'features.get("call_vk_four_lane_kcp") is True',
         'features.get("call_vk_pre_kcp_admission") is True',
         'features.get("call_vk_relay_flow_control") is True',
         'identity.get("role") == "vps"',
         'features.get("call_vk_parasite_server") is True',
         'modes == ["vk_parasite"]',
-        'wire.get("min") == 5',
-        'wire.get("max") == 5',
+        'wire.get("min") == 8',
+        'wire.get("max") == 8',
     ):
         if marker not in calls_runtime_source:
             fail(f"HYDRA ULTIMATE Calls runtime is missing capability gate: {marker}")

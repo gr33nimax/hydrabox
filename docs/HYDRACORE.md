@@ -25,7 +25,7 @@ selection state.
 
 The required Calls surface advertises `features.call_vk_parasite`,
 `features.call_vk_four_lane_kcp`, and the sole client mode `vk_parasite` on
-wire v4. A VK parasite outbound carries the VPS endpoint, one to four join
+wire v8. A VK parasite outbound carries the VPS endpoint, one to four join
 links, per-user credentials, and the shared obfuscation password. HydraCore
 always opens exactly four independently recovered KCP lanes; duplicate join
 links are rejected.

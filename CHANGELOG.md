@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Updated the embedded HydraCore client to debug.30 and the exact VK parasite
+  wire-v8 contract with four independently recovered KCP lanes, matching the
+  current VPS runtime.
+
 ## [1.0.0]
 
 - Isolated HydraCore in the dedicated `:core` process and retained a verified
