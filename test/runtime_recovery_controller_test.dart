@@ -133,6 +133,33 @@ void main() {
       expect(ordinaryEmptyValidation.canStart, isFalse);
     },
   );
+
+  test('runtime recovery requires a live native owner', () {
+    expect(
+      nativeRuntimeRecoveryPending(
+        running: false,
+        recordedServiceAlive: false,
+        activeRuntimeOwner: false,
+      ),
+      isFalse,
+    );
+    expect(
+      nativeRuntimeRecoveryPending(
+        running: false,
+        recordedServiceAlive: true,
+        activeRuntimeOwner: false,
+      ),
+      isTrue,
+    );
+    expect(
+      nativeRuntimeRecoveryPending(
+        running: true,
+        recordedServiceAlive: true,
+        activeRuntimeOwner: true,
+      ),
+      isFalse,
+    );
+  });
 }
 
 SingboxConfigBuildResult _buildResult({

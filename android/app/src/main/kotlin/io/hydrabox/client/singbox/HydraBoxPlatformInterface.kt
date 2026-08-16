@@ -180,7 +180,6 @@ abstract class HydraBoxBasePlatformInterface(
     override fun sendNotification(notification: Notification?) {
         if (notification == null) return
         val message = notification.title + ": " + notification.body
-        HydraBoxVkCaptchaSolver.maybeStart(context, message)
         SingboxController.log("info", message)
     }
 

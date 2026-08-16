@@ -47,6 +47,8 @@ class CoreRuntimeClient(context: Context) {
     @Volatile
     private var latestSnapshot: CoreRuntimeProtocol.RuntimeSnapshot? = null
     @Volatile
+    private var latestContract: CoreRuntimeProtocol.CoreContract? = null
+    @Volatile
     private var latestPreconnectSessionId: String? = null
 
     private val listener = object : ICoreRuntimeListener.Stub() {
@@ -418,6 +420,20 @@ class CoreRuntimeClient(context: Context) {
         }
     }
 
+    fun cancelRuntimeChallenge(challengeId: String, callback: (Result<Unit>) -> Unit) {
+        submit(
+            CoreRuntimeProtocol.RuntimeCommand.newBuilder()
+                .setKind(
+                    CoreRuntimeProtocol.CommandKind.COMMAND_KIND_CANCEL_RUNTIME_CHALLENGE,
+                )
+                .setCancelRuntimeChallenge(
+                    CoreRuntimeProtocol.CancelRuntimeChallenge.newBuilder()
+                        .setChallengeId(challengeId),
+                ),
+            callback,
+        )
+    }
+
     fun snapshot(callback: (Result<CoreRuntimeProtocol.RuntimeSnapshot>) -> Unit) {
         withService(
             onFailure = { error -> mainHandler.post { callback(Result.failure(error)) } },
@@ -434,12 +450,19 @@ class CoreRuntimeClient(context: Context) {
     /** Last authoritative snapshot received from or read from the :core process. */
     fun cachedSnapshot(): CoreRuntimeProtocol.RuntimeSnapshot? = latestSnapshot
 
+    fun cachedProcessEpoch(): String =
+        latestSnapshot?.processEpoch?.takeIf { it.isNotBlank() }
+            ?: latestContract?.processEpoch.orEmpty()
+
     fun contract(callback: (Result<CoreRuntimeProtocol.CoreContract>) -> Unit) {
         withService(
             onFailure = { error -> mainHandler.post { callback(Result.failure(error)) } },
         ) { connected ->
             runCatching { CoreRuntimeProtocol.CoreContract.parseFrom(connected.getContract()) }
-                .onSuccess { mainHandler.post { callback(Result.success(it)) } }
+                .onSuccess {
+                    latestContract = it
+                    mainHandler.post { callback(Result.success(it)) }
+                }
                 .onFailure { mainHandler.post { callback(Result.failure(it)) } }
         }
     }
@@ -533,6 +556,9 @@ class CoreRuntimeClient(context: Context) {
             .setCommandId(id)
             .setIssuedAtMillis(System.currentTimeMillis())
             .build()
+        val resultDeadline = if (
+            command.kind == CoreRuntimeProtocol.CommandKind.COMMAND_KIND_START
+        ) START_COMMAND_RESULT_DEADLINE_MILLIS else COMMAND_RESULT_DEADLINE_MILLIS
         resultCallbacks[id] = callback
         mainHandler.postDelayed({
             resultCallbacks.remove(id)?.invoke(
@@ -545,7 +571,7 @@ class CoreRuntimeClient(context: Context) {
                     ),
                 ),
             )
-        }, COMMAND_RESULT_DEADLINE_MILLIS)
+        }, resultDeadline)
         withService(onFailure = { }) { connected ->
             val receiptResult = runCatching {
                 CoreRuntimeProtocol.CommandReceipt.parseFrom(connected.submit(command.toByteArray()))
@@ -658,6 +684,7 @@ class CoreRuntimeClient(context: Context) {
             "level" to log.level,
             "message" to log.safeMessage,
         ))
+        hasTransportHealth() -> listOf(transportHealth.toLegacyTransportHealthMap())
         else -> emptyList()
     }
 
@@ -708,6 +735,43 @@ class CoreRuntimeClient(context: Context) {
                     )
                 },
             ),
+            transportHealth.toLegacyTransportHealthMap(),
+        )
+
+    private fun CoreRuntimeProtocol.TransportHealthSnapshot.toLegacyTransportHealthMap(): Map<String, Any?> =
+        mapOf(
+            "type" to "transportHealth",
+            "applicable" to applicable,
+            "state" to when (state) {
+                CoreRuntimeProtocol.TransportHealthState.TRANSPORT_HEALTH_STATE_STARTING -> "starting"
+                CoreRuntimeProtocol.TransportHealthState.TRANSPORT_HEALTH_STATE_WAITING_USER -> "waiting_user"
+                CoreRuntimeProtocol.TransportHealthState.TRANSPORT_HEALTH_STATE_HEALTHY -> "healthy"
+                CoreRuntimeProtocol.TransportHealthState.TRANSPORT_HEALTH_STATE_DEGRADED -> "degraded"
+                CoreRuntimeProtocol.TransportHealthState.TRANSPORT_HEALTH_STATE_RECOVERING -> "recovering"
+                CoreRuntimeProtocol.TransportHealthState.TRANSPORT_HEALTH_STATE_FAILED -> "failed"
+                else -> ""
+            },
+            "activeLanes" to activeLanes,
+            "totalLanes" to totalLanes,
+            "demand" to demand,
+            "lastProgressAt" to lastProgressAtMillis,
+            "lastAggregateProgressAt" to lastAggregateProgressAtMillis,
+            "lastInboundAt" to lastInboundAtMillis,
+            "observedAt" to observedAtMillis,
+            "failure" to if (hasFailure()) mapOf(
+                "stage" to failure.stage,
+                "kind" to failure.kind,
+                "code" to failure.code,
+                "retryAfterMillis" to failure.retryAfterMillis,
+                "challengeId" to failure.challengeId,
+            ) else null,
+            "challenge" to if (hasChallenge()) mapOf(
+                "id" to challenge.challengeId,
+                "kind" to challenge.kind,
+                "url" to challenge.url,
+                "createdAt" to challenge.createdAtMillis,
+                "expiresAt" to challenge.expiresAtMillis,
+            ) else null,
         )
 
     private fun CoreRuntimeProtocol.RuntimeSnapshot.toLegacyStateMap(): Map<String, Any?> = mapOf(
@@ -731,8 +795,12 @@ class CoreRuntimeClient(context: Context) {
     )
 
     companion object {
-        private const val SCHEMA_VERSION = 1
+        private const val SCHEMA_VERSION = 2
         private const val COMMAND_RESULT_DEADLINE_MILLIS = 30_000L
+        // Binding may consume 10 seconds, followed by 30 seconds of native
+        // startup and a 120-second visible VK challenge. Keep IPC ownership
+        // beyond all bounded phases instead of timing out first.
+        private const val START_COMMAND_RESULT_DEADLINE_MILLIS = 165_000L
         private const val SERVICE_BIND_DEADLINE_MILLIS = 10_000L
         private const val ALL_OUTBOUNDS = "*"
     }

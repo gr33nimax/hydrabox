@@ -124,15 +124,20 @@ class RuntimeSessionCoordinator {
 
   RuntimeSyncDecision decideStatus({
     required bool running,
+    required bool hasError,
     required bool nativeRecoveryPending,
     required bool localTransitionPending,
     required bool retryScheduled,
   }) {
-    final phase = running
-        ? AppConnectionPhase.connected
-        : (nativeRecoveryPending || localTransitionPending
-              ? AppConnectionPhase.recovering
-              : AppConnectionPhase.idle);
+    final transitionPending = localTransitionPending || retryScheduled;
+    final phase = switch ((running, hasError, transitionPending)) {
+      (true, _, _) => AppConnectionPhase.connected,
+      (false, true, false) => AppConnectionPhase.failed,
+      (false, _, true) => AppConnectionPhase.recovering,
+      (false, _, false) when nativeRecoveryPending =>
+        AppConnectionPhase.recovering,
+      _ => AppConnectionPhase.idle,
+    };
     return RuntimeSyncDecision(
       phase: phase,
       retryScheduled: !running && retryScheduled,

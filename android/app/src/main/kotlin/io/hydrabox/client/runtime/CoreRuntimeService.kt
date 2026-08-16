@@ -77,8 +77,16 @@ class CoreRuntimeService : Service() {
     private val managedProbeAliases = linkedMapOf<String, String>()
     private var ephemeralProbeSessionId: String? = null
     private var networkSnapshot = CoreRuntimeProtocol.NetworkSnapshot.getDefaultInstance()
+    private var transportHealth = CoreRuntimeProtocol.TransportHealthSnapshot.getDefaultInstance()
+    @Volatile private var transportHealthRequired = false
     private var controllerRegistration = 0L
     private lateinit var coreContract: CoreRuntimeProtocol.CoreContract
+    private val transportHealthPoll = object : Runnable {
+        override fun run() {
+            refreshTransportHealth(emitIfChanged = true)
+            mainHandler.postDelayed(this, TRANSPORT_HEALTH_POLL_MILLIS)
+        }
+    }
 
     private val binder = object : ICoreRuntimeService.Stub() {
         override fun getContract(): ByteArray = coreContract.toByteArray()
@@ -182,6 +190,7 @@ class CoreRuntimeService : Service() {
 
             startupFailure.markStage("snapshot", HydraNativeLoader.loadedSource())
             buildSnapshot()
+            mainHandler.post(transportHealthPoll)
             if (HydraNativeLoader.loadedSource() == "active") {
                 CoreBundleManager(this).readState().active?.let { active ->
                     CoreBundleManager(this).markHealthy(active.releaseSequence)
@@ -254,6 +263,7 @@ class CoreRuntimeService : Service() {
     }
 
     override fun onDestroy() {
+        mainHandler.removeCallbacks(transportHealthPoll)
         SingboxController.clearEventSink(controllerRegistration)
         listeners.kill()
         commandExecutor.shutdownNow()
@@ -287,6 +297,8 @@ class CoreRuntimeService : Service() {
             CoreRuntimeProtocol.CommandKind.COMMAND_KIND_START_PROBE -> command.hasStartProbe()
             CoreRuntimeProtocol.CommandKind.COMMAND_KIND_CANCEL_PROBE -> command.hasCancelProbe()
             CoreRuntimeProtocol.CommandKind.COMMAND_KIND_REQUEST_RECOVERY -> command.hasRequestRecovery()
+            CoreRuntimeProtocol.CommandKind.COMMAND_KIND_CANCEL_RUNTIME_CHALLENGE ->
+                command.hasCancelRuntimeChallenge()
             else -> false
         }
         return if (payloadMatchesKind) null else {
@@ -303,8 +315,26 @@ class CoreRuntimeService : Service() {
             CoreRuntimeProtocol.CommandKind.COMMAND_KIND_START_PROBE -> startProbe(command)
             CoreRuntimeProtocol.CommandKind.COMMAND_KIND_CANCEL_PROBE -> cancelProbe(command)
             CoreRuntimeProtocol.CommandKind.COMMAND_KIND_REQUEST_RECOVERY -> recover(command)
+            CoreRuntimeProtocol.CommandKind.COMMAND_KIND_CANCEL_RUNTIME_CHALLENGE ->
+                cancelRuntimeChallenge(command)
             else -> Unit
         }
+    }
+
+    private fun cancelRuntimeChallenge(command: CoreRuntimeProtocol.RuntimeCommand) {
+        val challengeId = command.cancelRuntimeChallenge.challengeId
+        if (challengeId.isBlank() || !Libbox.hydraCoreCancelRuntimeChallenge(challengeId)) {
+            commandFailed(
+                command.commandId,
+                "runtime.challenge.missing",
+                "challenge_cancel",
+                "The runtime challenge is no longer active.",
+                false,
+            )
+            return
+        }
+        refreshTransportHealth(emitIfChanged = true)
+        commandSucceeded(command.commandId, state.get())
     }
 
     private fun executeCoreUtility(bytes: ByteArray?): CoreRuntimeProtocol.CoreUtilityResponse {
@@ -481,6 +511,8 @@ class CoreRuntimeService : Service() {
             )
             return
         }
+        transportHealthRequired = TransportHealthBridge.configRequiresHealth(config)
+        refreshTransportHealth(emitIfChanged = false)
         val commandGeneration = generation.incrementAndGet()
         mode.set(request.mode)
         updateState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_PREPARING)
@@ -577,7 +609,13 @@ class CoreRuntimeService : Service() {
             verifyHealthAndCompleteStart(commandId, commandGeneration)
             return
         }
-        if (System.currentTimeMillis() - startedAt >= START_DEADLINE_MILLIS) {
+        refreshTransportHealth(emitIfChanged = true)
+        val waitingForUser = synchronized(snapshotLock) {
+            transportHealth.state ==
+                CoreRuntimeProtocol.TransportHealthState.TRANSPORT_HEALTH_STATE_WAITING_USER
+        }
+        val startDeadline = if (waitingForUser) CHALLENGE_DEADLINE_MILLIS else START_DEADLINE_MILLIS
+        if (System.currentTimeMillis() - startedAt >= startDeadline) {
             commandFailed(
                 commandId,
                 "runtime.start.deadline",
@@ -606,9 +644,11 @@ class CoreRuntimeService : Service() {
             if (generation.get() != commandGeneration) return@getRuntimeSnapshot
             result.onSuccess {
                 refreshNetworkSnapshotFromMonitor("runtime_start_complete")
-                val bundle = CoreBundleManager(this).readState().active
-                if (bundle != null) runCatching { CoreBundleManager(this).markHealthy(bundle.releaseSequence) }
-                commandSucceeded(commandId, CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING)
+                if (transportHealthRequired) {
+                    awaitTransportReady(commandId, commandGeneration, System.currentTimeMillis())
+                } else {
+                    completeHealthyStart(commandId)
+                }
             }.onFailure {
                 commandFailed(
                     commandId,
@@ -619,6 +659,44 @@ class CoreRuntimeService : Service() {
                 )
             }
         }
+    }
+
+    private fun awaitTransportReady(commandId: String, commandGeneration: Long, startedAt: Long) {
+        if (generation.get() != commandGeneration) return
+        refreshTransportHealth(emitIfChanged = true)
+        val health = synchronized(snapshotLock) { transportHealth }
+        if (TransportHealthBridge.isConnected(health)) {
+            completeHealthyStart(commandId)
+            return
+        }
+        val elapsed = System.currentTimeMillis() - startedAt
+        val waitingForUser = health.state ==
+            CoreRuntimeProtocol.TransportHealthState.TRANSPORT_HEALTH_STATE_WAITING_USER
+        val deadline = if (waitingForUser) CHALLENGE_DEADLINE_MILLIS else TRANSPORT_START_DEADLINE_MILLIS
+        if (health.state == CoreRuntimeProtocol.TransportHealthState.TRANSPORT_HEALTH_STATE_FAILED ||
+            elapsed >= deadline
+        ) {
+            commandFailed(
+                commandId,
+                "runtime.transport.unhealthy",
+                "transport_health",
+                "HydraCore did not establish a usable transport.",
+                true,
+            )
+            return
+        }
+        mainHandler.postDelayed(
+            { awaitTransportReady(commandId, commandGeneration, startedAt) },
+            TRANSPORT_HEALTH_POLL_MILLIS,
+        )
+    }
+
+    private fun completeHealthyStart(commandId: String) {
+        val bundle = CoreBundleManager(this).readState().active
+        if (bundle != null) {
+            runCatching { CoreBundleManager(this).markHealthy(bundle.releaseSequence) }
+        }
+        commandSucceeded(commandId, CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING)
     }
 
     private fun stop(command: CoreRuntimeProtocol.RuntimeCommand) {
@@ -632,6 +710,10 @@ class CoreRuntimeService : Service() {
                     stopService(Intent(this, HydraBoxVpnService::class.java))
                     stopService(Intent(this, HydraBoxProxyService::class.java))
                     mode.set(CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_UNSPECIFIED)
+                    transportHealthRequired = false
+                    synchronized(snapshotLock) {
+                        transportHealth = CoreRuntimeProtocol.TransportHealthSnapshot.getDefaultInstance()
+                    }
                     updateState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPED)
                     commandSucceeded(command.commandId, CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPED)
                 } else {
@@ -939,21 +1021,30 @@ class CoreRuntimeService : Service() {
         }.getOrElse { ByteArray(0) }
         require(capabilities.isNotEmpty()) { "HydraCore capabilities are unavailable" }
         val supportedProtocolIds = CoreCapabilityContract.supportedProtocolIds(capabilities)
-        val schema = CoreRuntimeProtocol.SchemaRange.newBuilder().setMinimum(1).setMaximum(1).build()
+        val runtimeSchema = CoreRuntimeProtocol.SchemaRange.newBuilder()
+            .setMinimum(SCHEMA_VERSION)
+            .setMaximum(SCHEMA_VERSION)
+            .build()
+        val configSchema = CoreRuntimeProtocol.SchemaRange.newBuilder()
+            .setMinimum(1)
+            .setMaximum(1)
+            .build()
         return CoreRuntimeProtocol.CoreContract.newBuilder()
             .setApiMajor(CORE_API_MAJOR)
             .setApiMinor(CORE_API_MINOR)
             .setCoreVersion(version)
             .setProcessEpoch(processEpoch)
-            .setRuntimeSnapshotSchema(schema)
-            .setRuntimeEventSchema(schema)
-            .setConfigSchema(schema)
+            .setRuntimeSnapshotSchema(runtimeSchema)
+            .setRuntimeEventSchema(runtimeSchema)
+            .setConfigSchema(configSchema)
             .setSubscriptionSchema(
                 CoreRuntimeProtocol.SchemaRange.newBuilder().setMinimum(2).setMaximum(2),
             )
             .addOptionalFeatureIds("runtime.snapshot.sequence")
             .addOptionalFeatureIds("runtime.command.receipt_result")
             .addOptionalFeatureIds("probe.managed")
+            .addOptionalFeatureIds("transport.health.structured")
+            .addOptionalFeatureIds("runtime.challenge.visible")
             .addAllSupportedProtocolIds(supportedProtocolIds)
             .setCapabilitiesSha256(
                 ByteString.copyFrom(MessageDigest.getInstance("SHA-256").digest(capabilities)),
@@ -1156,8 +1247,49 @@ class CoreRuntimeService : Service() {
         return if (raw in 1..9_999_999_999L) raw * 1000L else raw
     }
 
+    private fun refreshTransportHealth(emitIfChanged: Boolean) {
+        val applicable = transportHealthRequired && state.get() !in setOf(
+            CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPED,
+            CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING,
+        )
+        val parsed = if (!applicable) {
+            CoreRuntimeProtocol.TransportHealthSnapshot.newBuilder()
+                .setApplicable(false)
+                .build()
+        } else {
+            runCatching {
+                TransportHealthBridge.parse(Libbox.hydraCoreTransportState(), true)
+            }.getOrElse {
+                CoreRuntimeProtocol.TransportHealthSnapshot.newBuilder()
+                    .setApplicable(true)
+                    .setState(
+                        CoreRuntimeProtocol.TransportHealthState.TRANSPORT_HEALTH_STATE_FAILED,
+                    )
+                    .setObservedAtMillis(System.currentTimeMillis())
+                    .setFailure(
+                        CoreRuntimeProtocol.TransportFailure.newBuilder()
+                            .setStage("transport_snapshot")
+                            .setKind("runtime")
+                            .setCode("runtime.transport.snapshot"),
+                    )
+                    .build()
+            }
+        }
+        val changed = synchronized(snapshotLock) {
+            if (transportHealth == parsed) false else {
+                transportHealth = parsed
+                true
+            }
+        }
+        if (changed && emitIfChanged) emit(snapshotEvent())
+    }
+
     private fun buildSnapshot(): CoreRuntimeProtocol.RuntimeSnapshot {
         synchronized(snapshotLock) {
+            val effectiveState = TransportHealthBridge.effectiveRuntimeState(
+                state.get(),
+                transportHealth,
+            )
             val traffic = CoreRuntimeProtocol.TrafficSnapshot.newBuilder()
                 .setUplinkBytesPerSecond(SingboxController.uplink)
                 .setDownlinkBytesPerSecond(SingboxController.downlink)
@@ -1170,16 +1302,20 @@ class CoreRuntimeService : Service() {
                 .setProcessEpoch(processEpoch)
                 .setGeneration(generation.get())
                 .setLastSequence(sequence.get())
-                .setState(state.get())
+                .setState(effectiveState)
                 .setMode(mode.get())
                 .setActiveConfigSha256(ByteString.copyFrom(activeConfigSha256))
                 .putAllSelectedOutboundIds(selectedOutbounds)
                 .setTraffic(traffic)
                 .setNetwork(networkSnapshot)
                 .setUpdatedAtMillis(System.currentTimeMillis())
-                .setHealthy(state.get() == CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING)
+                .setHealthy(
+                    effectiveState == CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING &&
+                        TransportHealthBridge.isConnected(transportHealth),
+                )
                 .addAllOutboundGroups(outboundGroups)
                 .addAllProbeSessions(probeSessions)
+                .setTransportHealth(transportHealth)
             lastError?.let(builder::setLastError)
             return builder.build()
         }
@@ -1313,14 +1449,17 @@ class CoreRuntimeService : Service() {
 
     companion object {
         private const val TAG = "HydraCoreRuntime"
-        private const val SCHEMA_VERSION = 1
+        private const val SCHEMA_VERSION = 2
         private const val CORE_API_MAJOR = 1
-        private const val CORE_API_MINOR = 0
+        private const val CORE_API_MINOR = 1
         private const val SHA256_BYTES = 32
         // Binder's transaction buffer is finite and shared by the process.
         private const val MAX_COMMAND_BYTES = 768 * 1024
         private const val MAX_CONFIG_BYTES = 700 * 1024
-        private const val START_DEADLINE_MILLIS = 15_000L
+        private const val START_DEADLINE_MILLIS = 30_000L
+        private const val TRANSPORT_START_DEADLINE_MILLIS = 30_000L
+        private const val CHALLENGE_DEADLINE_MILLIS = 120_000L
+        private const val TRANSPORT_HEALTH_POLL_MILLIS = 250L
         private const val STATE_POLL_MILLIS = 100L
         private const val UTILITY_DEADLINE_MILLIS = 10_000L
         private const val ALL_OUTBOUNDS = "*"

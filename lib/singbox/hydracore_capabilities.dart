@@ -40,11 +40,17 @@ class HydraCoreCapabilities {
     this.supportsCallVkParasiteClient = true,
     this.supportsCallVkParasiteServer = false,
     this.supportsCallVkTelemetry = true,
+    this.supportsCallVkEightLaneKcp = false,
     this.supportsCallVkFourLaneKcp = true,
     this.supportsCallVkPreKcpAdmission = true,
     this.supportsCallVkRelayFlowControl = true,
-    this.callVkParasiteWireMin = 8,
-    this.callVkParasiteWireMax = 8,
+    this.supportsCallVkWorkerHotSwap = true,
+    this.supportsCallVkFlowMigration = true,
+    this.supportsCallVkTurnTcpFallback = true,
+    this.supportsCallVkTransportHealth = true,
+    this.supportsVkAuthChallenges = true,
+    this.callVkParasiteWireMin = 9,
+    this.callVkParasiteWireMax = 9,
     this.amneziaVersion = 3,
     this.tunStacks = const {'system', 'gvisor', 'mixed'},
     this.inboundProtocols = const <String>{},
@@ -71,8 +77,8 @@ class HydraCoreCapabilities {
     this.remoteSafeDnsServerTypes = const <String>{},
     this.remoteSafeProviderTypes = const <String>{},
     this.reservedTagPrefixes = const {'__hydra.'},
-    this.runtimeVersion = 1,
-    this.snapshotSchemaVersion = 1,
+    this.runtimeVersion = 2,
+    this.snapshotSchemaVersion = 2,
     this.minimumEventIntervalMillis = 250,
     this.maximumEventIntervalMillis = 30000,
     this.retainedUrlTestSessions = 64,
@@ -85,7 +91,7 @@ class HydraCoreCapabilities {
   /// Expected release surface used by pure-Dart code and test fakes.
   static const requiredV2 = HydraCoreCapabilities(
     apiVersion: supportedApiVersion,
-    coreVersion: 'v1.13.16-extended-hydracore.11-debug.30',
+    coreVersion: 'v1.13.16-extended-hydracore.11-debug.33',
     outboundProtocols: {
       'socks',
       'http',
@@ -192,6 +198,10 @@ class HydraCoreCapabilities {
         'call_vk_parasite_server',
       ),
       supportsCallVkTelemetry: _requiredBool(features, 'call_vk_telemetry'),
+      supportsCallVkEightLaneKcp: _requiredBool(
+        features,
+        'call_vk_eight_lane_kcp',
+      ),
       supportsCallVkFourLaneKcp: _requiredBool(
         features,
         'call_vk_four_lane_kcp',
@@ -204,6 +214,23 @@ class HydraCoreCapabilities {
         features,
         'call_vk_relay_flow_control',
       ),
+      supportsCallVkWorkerHotSwap: _requiredBool(
+        features,
+        'call_vk_worker_hot_swap',
+      ),
+      supportsCallVkFlowMigration: _requiredBool(
+        features,
+        'call_vk_flow_migration',
+      ),
+      supportsCallVkTurnTcpFallback: _requiredBool(
+        features,
+        'call_vk_turn_tcp_fallback',
+      ),
+      supportsCallVkTransportHealth: _requiredBool(
+        features,
+        'call_vk_transport_health',
+      ),
+      supportsVkAuthChallenges: _requiredBool(features, 'vk_auth_challenges'),
       callVkParasiteWireMin: _requiredInt(
         _requiredMap(protocols, 'call_vk_parasite_wire'),
         'min',
@@ -217,7 +244,7 @@ class HydraCoreCapabilities {
       inboundProtocols: _requiredStringSet(
         protocols,
         'inbounds',
-        // HydraCore v1.13.16-extended-hydracore.11-debug.30 is built with
+        // HydraCore's generated registry uses
         // append([]string(nil), emptySlice...), which JSON-encodes the empty
         // client inbound list as null. Treat only this present-null list as
         // empty; an absent field still fails closed.
@@ -321,9 +348,15 @@ class HydraCoreCapabilities {
   final bool supportsCallVkParasiteClient;
   final bool supportsCallVkParasiteServer;
   final bool supportsCallVkTelemetry;
+  final bool supportsCallVkEightLaneKcp;
   final bool supportsCallVkFourLaneKcp;
   final bool supportsCallVkPreKcpAdmission;
   final bool supportsCallVkRelayFlowControl;
+  final bool supportsCallVkWorkerHotSwap;
+  final bool supportsCallVkFlowMigration;
+  final bool supportsCallVkTurnTcpFallback;
+  final bool supportsCallVkTransportHealth;
+  final bool supportsVkAuthChallenges;
   final int callVkParasiteWireMin;
   final int callVkParasiteWireMax;
   final int amneziaVersion;
@@ -351,7 +384,9 @@ class HydraCoreCapabilities {
   final int retainedUrlTestSessions;
 
   bool get hasVersionedContract =>
-      apiVersion == supportedApiVersion && coreId == hydraCoreId;
+      apiVersion == supportedApiVersion &&
+      coreId == hydraCoreId &&
+      coreName == 'HydraCore';
 
   bool get hasRemoteSafetyManifest =>
       hasVersionedContract &&
@@ -376,12 +411,18 @@ class HydraCoreCapabilities {
       supportsCallVkParasiteClient &&
       !supportsCallVkParasiteServer &&
       supportsCallVkTelemetry &&
+      !supportsCallVkEightLaneKcp &&
       supportsCallVkFourLaneKcp &&
       supportsCallVkPreKcpAdmission &&
       supportsCallVkRelayFlowControl &&
+      supportsCallVkWorkerHotSwap &&
+      supportsCallVkFlowMigration &&
+      supportsCallVkTurnTcpFallback &&
+      supportsCallVkTransportHealth &&
+      supportsVkAuthChallenges &&
       coreRole == 'client' &&
-      callVkParasiteWireMin == 8 &&
-      callVkParasiteWireMax == 8 &&
+      callVkParasiteWireMin == 9 &&
+      callVkParasiteWireMax == 9 &&
       callPlatforms.length == 1 &&
       callPlatforms.contains('vk') &&
       callModes.length == 1 &&
@@ -390,8 +431,8 @@ class HydraCoreCapabilities {
       amneziaVersion >= 3 &&
       subscriptionContracts.contains(2) &&
       validationProfiles.containsAll(const {'local', 'remote_v2'}) &&
-      runtimeVersion == 1 &&
-      snapshotSchemaVersion == 1;
+      runtimeVersion == 2 &&
+      snapshotSchemaVersion == 2;
 
   bool supportsTunStack(String value) =>
       tunStacks.contains(value.trim().toLowerCase());

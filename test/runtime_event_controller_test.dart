@@ -81,42 +81,48 @@ void main() {
     ]);
   });
 
-  test('captcha callbacks only accept the local solver URL', () {
-    final required = <Uri>[];
-    var solved = 0;
+  test('structured transport health exposes only a safe local challenge', () {
+    RuntimeTransportHealthEvent? health;
     final controller = RuntimeEventController(
       events: const Stream.empty(),
       onState: (_) {},
       onStatus: (_) {},
       onNetwork: (_) {},
       onGroups: (_) {},
-      onCaptchaRequired: required.add,
-      onCaptchaSolved: () => solved++,
+      onTransportHealth: (event) => health = event,
       shouldRecordLog: (_) => false,
     );
 
     controller.dispatch({
-      'type': 'nativeLog',
-      'level': 'notice',
-      'message':
-          'outbound/call[call-vk-out]: vk-auth: solve the captcha to continue: '
-          'http://127.0.0.1:35887/session',
-    });
-    controller.dispatch({
-      'type': 'nativeLog',
-      'level': 'notice',
-      'message':
-          'vk-auth: solve the captcha to continue: http://example.com:35887/',
-    });
-    controller.dispatch({
-      'type': 'logs',
-      'logs': [
-        {'level': 2, 'message': 'vk-auth: captcha solved, retrying'},
-      ],
+      'type': 'transportHealth',
+      'applicable': true,
+      'state': 'waiting_user',
+      'activeLanes': 0,
+      'totalLanes': 4,
+      'challenge': {
+        'id': 'challenge-1',
+        'kind': 'captcha',
+        'url': 'http://127.0.0.1:35887/session',
+      },
     });
 
-    expect(required, [Uri.parse('http://127.0.0.1:35887/session')]);
-    expect(solved, 1);
+    expect(health?.state, 'waiting_user');
+    expect(health?.connected, isFalse);
+    expect(health?.challengeId, 'challenge-1');
+    expect(health?.challengeUri, Uri.parse('http://127.0.0.1:35887/session'));
+
+    controller.dispatch({
+      'type': 'transportHealth',
+      'applicable': true,
+      'state': 'waiting_user',
+      'challenge': {
+        'id': 'challenge-2',
+        'url': 'http://example.com:35887/',
+      },
+    });
+
+    expect(health?.challengeId, 'challenge-2');
+    expect(health?.challengeUri, isNull);
   });
 
   test('nativeLog normalizes warn and records through AppLogStore', () {
@@ -168,59 +174,8 @@ void main() {
     expect(entries.single.timestamp, DateTime.fromMillisecondsSinceEpoch(42));
   });
 
-  test('nativeLog reports hard interface dial failures as runtime issues', () {
-    final issues = <String>[];
-    final controller = RuntimeEventController(
-      events: const Stream.empty(),
-      onState: (_) {},
-      onStatus: (_) {},
-      onNetwork: (_) {},
-      onGroups: (_) {},
-      shouldRecordLog: (_) => false,
-      onRuntimeLogIssue: (reason, message) {
-        issues.add('$reason|$message');
-      },
-    );
-
-    controller.dispatch({
-      'type': 'nativeLog',
-      'level': 'error',
-      'message':
-          'connection: open connection using outbound/vless[vless-1]: '
-          'dial ccmni1 (14): dial tcp 203.0.113.1:443: network is unreachable',
-    });
-
-    expect(issues, hasLength(1));
-    expect(issues.single, contains('core_interface_dial_failure'));
-  });
-
-  test('nativeLog ignores remote timeout on a valid interface', () {
-    final issues = <String>[];
-    final controller = RuntimeEventController(
-      events: const Stream.empty(),
-      onState: (_) {},
-      onStatus: (_) {},
-      onNetwork: (_) {},
-      onGroups: (_) {},
-      shouldRecordLog: (_) => false,
-      onRuntimeLogIssue: (reason, message) {
-        issues.add('$reason|$message');
-      },
-    );
-
-    controller.dispatch({
-      'type': 'nativeLog',
-      'level': 'error',
-      'message':
-          'connection: open connection using outbound/vless[vless-1]: '
-          'dial wlan0 (36): dial tcp 203.0.113.1:443: i/o timeout',
-    });
-
-    expect(issues, isEmpty);
-  });
-
-  test('logs batch reports no-interface runtime issues', () {
-    final issues = <String>[];
+  test('log text never drives structured transport recovery', () {
+    final health = <RuntimeTransportHealthEvent>[];
     final controller = RuntimeEventController(
       events: const Stream.empty(),
       onState: (_) {},
@@ -228,9 +183,7 @@ void main() {
       onNetwork: (_) {},
       onGroups: (_) {},
       shouldRecordLog: (_) => true,
-      onRuntimeLogIssue: (reason, message) {
-        issues.add(reason);
-      },
+      onTransportHealth: health.add,
     );
 
     controller.dispatch({
@@ -244,7 +197,7 @@ void main() {
       ],
     });
 
-    expect(issues, ['core_no_usable_interface']);
+    expect(health, isEmpty);
   });
 
   test('start subscribes to stream and dispose cancels subscription', () async {

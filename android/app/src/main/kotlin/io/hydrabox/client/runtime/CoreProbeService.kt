@@ -66,6 +66,10 @@ class CoreProbeService : Service() {
                 HydraBoxProxyPlatformInterface(HydraBoxApplication.application),
             ).close()
             val schema = CoreRuntimeProtocol.SchemaRange.newBuilder()
+                .setMinimum(SCHEMA_VERSION)
+                .setMaximum(SCHEMA_VERSION)
+                .build()
+            val configSchema = CoreRuntimeProtocol.SchemaRange.newBuilder()
                 .setMinimum(1)
                 .setMaximum(1)
                 .build()
@@ -76,7 +80,7 @@ class CoreProbeService : Service() {
                 .setProcessEpoch(UUID.randomUUID().toString())
                 .setRuntimeSnapshotSchema(schema)
                 .setRuntimeEventSchema(schema)
-                .setConfigSchema(schema)
+                .setConfigSchema(configSchema)
                 .setSubscriptionSchema(
                     CoreRuntimeProtocol.SchemaRange.newBuilder().setMinimum(2).setMaximum(2),
                 )
@@ -127,9 +131,9 @@ class CoreProbeService : Service() {
         .build()
 
     companion object {
-        private const val SCHEMA_VERSION = 1
+        private const val SCHEMA_VERSION = 2
         private const val CORE_API_MAJOR = 1
-        private const val CORE_API_MINOR = 0
+        private const val CORE_API_MINOR = 1
         private const val SHA256_BYTES = 32
         private const val MAX_FIXTURE_BYTES = 256 * 1024
         private const val MAX_PROBE_REQUEST_BYTES = 768 * 1024

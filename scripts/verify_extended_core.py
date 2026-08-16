@@ -21,6 +21,8 @@ REQUIRED_SOURCE_MARKERS: dict[str, tuple[str, ...]] = {
         "const hydraCoreAPIVersion = H.APIVersion",
         "func HydraCoreCapabilities() string",
         "return H.CapabilitiesJSON()",
+        "func HydraCoreTransportState() string",
+        "func HydraCoreCancelRuntimeChallenge(id string) bool",
     ),
     "common/hydracore/capabilities.go": (
         "const APIVersion = 2",
@@ -36,6 +38,11 @@ REQUIRED_SOURCE_MARKERS: dict[str, tuple[str, ...]] = {
         'json:"call_vk_four_lane_kcp"',
         'json:"call_vk_pre_kcp_admission"',
         'json:"call_vk_relay_flow_control"',
+        'json:"call_vk_worker_hot_swap"',
+        'json:"call_vk_flow_migration"',
+        'json:"call_vk_turn_tcp_fallback"',
+        'json:"call_vk_transport_health"',
+        'json:"vk_auth_challenges"',
         'json:"call_vk_parasite_wire"',
         '[]int{2}',
         '[]string{"__hydra."}',
@@ -88,13 +95,13 @@ REQUIRED_SOURCE_MARKERS: dict[str, tuple[str, ...]] = {
     "common/hydracore/call_client.go": (
         'distributionRole  = "client"',
         'callModes     = []string{"vk_parasite"}',
-        "callWireMin       = 8",
-        "callWireMax       = 8",
+        "callWireMin       = 9",
+        "callWireMax       = 9",
     ),
     "common/hydracore/call_server.go": (
         'distributionRole  = "vps"',
-        "callWireMin       = 8",
-        "callWireMax       = 8",
+        "callWireMin       = 9",
+        "callWireMax       = 9",
     ),
 }
 

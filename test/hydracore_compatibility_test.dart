@@ -20,6 +20,15 @@ void main() {
     expect(capabilities.supportsCallVkFourLaneKcp, isTrue);
     expect(capabilities.supportsCallVkPreKcpAdmission, isTrue);
     expect(capabilities.supportsCallVkRelayFlowControl, isTrue);
+    expect(capabilities.supportsCallVkWorkerHotSwap, isTrue);
+    expect(capabilities.supportsCallVkFlowMigration, isTrue);
+    expect(capabilities.supportsCallVkTurnTcpFallback, isTrue);
+    expect(capabilities.supportsCallVkTransportHealth, isTrue);
+    expect(capabilities.supportsVkAuthChallenges, isTrue);
+    expect(capabilities.callVkParasiteWireMin, 9);
+    expect(capabilities.callVkParasiteWireMax, 9);
+    expect(capabilities.runtimeVersion, 2);
+    expect(capabilities.snapshotSchemaVersion, 2);
     expect(capabilities.remoteSafeInboundTypes, isEmpty);
     expect(capabilities.remoteSafeOutboundTypes, contains('call'));
     expect(capabilities.remoteSafeEndpointTypes, {'wireguard'});

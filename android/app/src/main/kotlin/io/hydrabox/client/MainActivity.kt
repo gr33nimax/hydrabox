@@ -2853,6 +2853,15 @@ class MainActivity : FlutterFragmentActivity() {
         callback: (Result<Unit>) -> Unit,
     ) {
         val previousClient = coreRuntimeClient
+        val previousProcessEpoch = previousClient.cachedProcessEpoch()
+        if (previousProcessEpoch.isBlank()) {
+            callback(
+                Result.failure(
+                    IllegalStateException("HydraCore process epoch is unavailable before activation"),
+                ),
+            )
+            return
+        }
         singboxEventConsumer?.let(previousClient::unregisterEventConsumer)
         previousClient.close()
         ioExecutor.execute {
@@ -2872,7 +2881,16 @@ class MainActivity : FlutterFragmentActivity() {
                         mutationResult.fold(
                             onSuccess = {
                                 handshake.fold(
-                                    onSuccess = { Result.success(Unit) },
+                                    onSuccess = { contract ->
+                                        runCatching {
+                                            require(contract.processEpoch.isNotBlank()) {
+                                                "HydraCore restart returned no process epoch"
+                                            }
+                                            require(contract.processEpoch != previousProcessEpoch) {
+                                                "HydraCore process epoch did not change"
+                                            }
+                                        }
+                                    },
                                     onFailure = { Result.failure(it) },
                                 )
                             },

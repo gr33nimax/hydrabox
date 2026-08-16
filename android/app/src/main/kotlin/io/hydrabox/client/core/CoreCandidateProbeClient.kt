@@ -134,7 +134,7 @@ class CoreCandidateProbeClient(context: Context) {
     }
 
     companion object {
-        private const val SCHEMA_VERSION = 1
+        private const val SCHEMA_VERSION = 2
         private const val MAX_TOTAL_FIXTURE_BYTES = 512 * 1024
         private const val PROBE_DEADLINE_MILLIS = 30_000L
     }

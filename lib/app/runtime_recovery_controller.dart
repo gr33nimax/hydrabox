@@ -22,6 +22,16 @@ class RuntimeStartupValidation {
   final String? warning;
 }
 
+bool nativeRuntimeRecoveryPending({
+  required bool running,
+  required bool recordedServiceAlive,
+  required bool activeRuntimeOwner,
+}) {
+  if (running) return false;
+  // A fresh intent alone does not prove that the Android service survived.
+  return recordedServiceAlive || activeRuntimeOwner;
+}
+
 /// Owns retry generations and the cached config used by invalid-outbound
 /// recovery.
 ///

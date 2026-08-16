@@ -52,6 +52,7 @@ enum CommandKind {
   COMMAND_KIND_START_PROBE = 5;
   COMMAND_KIND_CANCEL_PROBE = 6;
   COMMAND_KIND_REQUEST_RECOVERY = 7;
+  COMMAND_KIND_CANCEL_RUNTIME_CHALLENGE = 8;
 }
 
 message StartRuntime {
@@ -68,6 +69,7 @@ message ReloadRuntime { bytes expected_config_sha256 = 1; }
 message SelectOutbound { string group_id = 1; string outbound_id = 2; }
 message CancelProbe { string session_id = 1; }
 message RequestRecovery { string reason = 1; }
+message CancelRuntimeChallenge { string challenge_id = 1; }
 
 message RuntimeCommand {
   uint32 schema_version = 1;
@@ -83,6 +85,7 @@ message RuntimeCommand {
     ProbeRequest start_probe = 14;
     CancelProbe cancel_probe = 15;
     RequestRecovery request_recovery = 16;
+    CancelRuntimeChallenge cancel_runtime_challenge = 17;
   }
 }
 
@@ -156,6 +159,46 @@ message TrafficSnapshot {
   uint64 sampled_at_millis = 5;
 }
 
+enum TransportHealthState {
+  TRANSPORT_HEALTH_STATE_UNSPECIFIED = 0;
+  TRANSPORT_HEALTH_STATE_STARTING = 1;
+  TRANSPORT_HEALTH_STATE_WAITING_USER = 2;
+  TRANSPORT_HEALTH_STATE_HEALTHY = 3;
+  TRANSPORT_HEALTH_STATE_DEGRADED = 4;
+  TRANSPORT_HEALTH_STATE_RECOVERING = 5;
+  TRANSPORT_HEALTH_STATE_FAILED = 6;
+}
+
+message TransportFailure {
+  string stage = 1;
+  string kind = 2;
+  string code = 3;
+  uint64 retry_after_millis = 4;
+  string challenge_id = 5;
+}
+
+message RuntimeChallenge {
+  string challenge_id = 1;
+  string kind = 2;
+  string url = 3;
+  uint64 created_at_millis = 4;
+  uint64 expires_at_millis = 5;
+}
+
+message TransportHealthSnapshot {
+  bool applicable = 1;
+  TransportHealthState state = 2;
+  uint32 active_lanes = 3;
+  uint32 total_lanes = 4;
+  bool demand = 5;
+  uint64 last_progress_at_millis = 6;
+  uint64 last_aggregate_progress_at_millis = 7;
+  uint64 last_inbound_at_millis = 8;
+  uint64 observed_at_millis = 9;
+  TransportFailure failure = 10;
+  RuntimeChallenge challenge = 11;
+}
+
 message RuntimeSnapshot {
   uint32 schema_version = 1;
   string process_epoch = 2;
@@ -172,6 +215,7 @@ message RuntimeSnapshot {
   bool healthy = 13;
   repeated OutboundGroupSnapshot outbound_groups = 14;
   repeated ProbeSession probe_sessions = 15;
+  TransportHealthSnapshot transport_health = 16;
 }
 
 message RuntimeLog {
@@ -212,6 +256,7 @@ message RuntimeEvent {
     OutboundGroupsSnapshot outbound_groups = 16;
     NetworkSnapshot network = 17;
     TrafficSnapshot traffic = 18;
+    TransportHealthSnapshot transport_health = 19;
   }
 }
 

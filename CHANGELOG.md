@@ -2,9 +2,12 @@
 
 ## Unreleased
 
-- Updated the embedded HydraCore client to debug.30 and the exact VK parasite
-  wire-v8 contract with four independently recovered KCP lanes, matching the
-  current VPS runtime.
+- Updated the embedded HydraCore client to debug.33 and the incompatible exact
+  VK parasite wire-v9 contract. Runtime schema 2 now carries structured
+  transport health and visible CAPTCHA challenges; Android waits for
+  healthy/degraded transport before reporting connected, performs only
+  validated-network handovers, and leaves lane recovery to HydraCore's staged
+  worker hot swap, flow migration and TURN TCP/TLS fallback.
 
 ## [1.0.0]
 

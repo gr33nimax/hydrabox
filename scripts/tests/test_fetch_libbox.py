@@ -97,11 +97,11 @@ class FetchLibboxTest(unittest.TestCase):
         self.assertEqual(parsed.distribution_role, "client")
         self.assertEqual(
             parsed.release_tag,
-            "v1.13.16-extended-hydracore.11-debug.30",
+            "v1.13.16-extended-hydracore.11-debug.33",
         )
         self.assertEqual(
             parsed.source_commit,
-            "527201d9de515cc6f703fc5c7a11cb6d3f4817ac",
+            "998994e9a5b91ced51f09bfcd4ab52cdcdf5fe43",
         )
         self.assertEqual(
             parsed.upstream_commit,

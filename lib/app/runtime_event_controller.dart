@@ -26,6 +26,30 @@ class RuntimeGroupsEvent {
   final int runtimeGeneration;
 }
 
+class RuntimeTransportHealthEvent {
+  const RuntimeTransportHealthEvent({
+    required this.applicable,
+    required this.state,
+    required this.activeLanes,
+    required this.totalLanes,
+    required this.demand,
+    this.failureCode,
+    this.challengeId,
+    this.challengeUri,
+  });
+
+  final bool applicable;
+  final String state;
+  final int activeLanes;
+  final int totalLanes;
+  final bool demand;
+  final String? failureCode;
+  final String? challengeId;
+  final Uri? challengeUri;
+
+  bool get connected => !applicable || state == 'healthy' || state == 'degraded';
+}
+
 class RuntimeUrlTestSessionsEvent {
   const RuntimeUrlTestSessionsEvent({
     required this.sessions,
@@ -92,9 +116,8 @@ typedef RuntimeGroupsHandler = void Function(RuntimeGroupsEvent event);
 typedef RuntimeUrlTestSessionsHandler =
     void Function(RuntimeUrlTestSessionsEvent event);
 typedef RuntimeLogFilter = bool Function(String level);
-typedef RuntimeLogIssueHandler = void Function(String reason, String message);
-typedef RuntimeCaptchaRequiredHandler = void Function(Uri uri);
-typedef RuntimeCaptchaSolvedHandler = void Function();
+typedef RuntimeTransportHealthHandler =
+    void Function(RuntimeTransportHealthEvent event);
 
 class RuntimeEventController {
   RuntimeEventController({
@@ -105,9 +128,7 @@ class RuntimeEventController {
     required RuntimeGroupsHandler onGroups,
     required RuntimeLogFilter shouldRecordLog,
     RuntimeUrlTestSessionsHandler? onUrlTestSessions,
-    RuntimeCaptchaRequiredHandler? onCaptchaRequired,
-    RuntimeCaptchaSolvedHandler? onCaptchaSolved,
-    RuntimeLogIssueHandler? onRuntimeLogIssue,
+    RuntimeTransportHealthHandler? onTransportHealth,
     DateTime Function()? now,
   }) : _events = events,
        _onState = onState,
@@ -115,20 +136,9 @@ class RuntimeEventController {
        _onNetwork = onNetwork,
        _onGroups = onGroups,
        _onUrlTestSessions = onUrlTestSessions,
-       _onCaptchaRequired = onCaptchaRequired,
-       _onCaptchaSolved = onCaptchaSolved,
+       _onTransportHealth = onTransportHealth,
        _shouldRecordLog = shouldRecordLog,
-       _onRuntimeLogIssue = onRuntimeLogIssue,
        _now = now ?? DateTime.now;
-
-  static final RegExp _interfaceDialFailurePattern = RegExp(
-    r'\bdial\s+(?:ccmni|wlan|rmnet|swlan|eth|usb|ap)\w*\s*\(\d+\).*?\b(?:network is unreachable|no route to host)\b',
-    caseSensitive: false,
-  );
-  static final RegExp _vkCaptchaUrlPattern = RegExp(
-    r'vk-auth:\s*solve the captcha to continue:\s*(http://(?:127\.0\.0\.1|localhost):\d+(?:/\S*)?)',
-    caseSensitive: false,
-  );
 
   final Stream<Map<String, dynamic>> _events;
   final RuntimeStateHandler _onState;
@@ -136,10 +146,8 @@ class RuntimeEventController {
   final RuntimeRawEventHandler _onNetwork;
   final RuntimeGroupsHandler _onGroups;
   final RuntimeUrlTestSessionsHandler? _onUrlTestSessions;
-  final RuntimeCaptchaRequiredHandler? _onCaptchaRequired;
-  final RuntimeCaptchaSolvedHandler? _onCaptchaSolved;
+  final RuntimeTransportHealthHandler? _onTransportHealth;
   final RuntimeLogFilter _shouldRecordLog;
-  final RuntimeLogIssueHandler? _onRuntimeLogIssue;
   final DateTime Function() _now;
 
   StreamSubscription<Map<String, dynamic>>? _subscription;
@@ -192,6 +200,9 @@ class RuntimeEventController {
           ),
         );
         break;
+      case 'transportHealth':
+        _onTransportHealth?.call(_transportHealthEvent(event));
+        break;
       case 'nativeLog':
         _recordNativeLog(event);
         break;
@@ -211,9 +222,6 @@ class RuntimeEventController {
     if (message.isEmpty) {
       return;
     }
-    _emitCaptchaRequiredIfNeeded(message);
-    _emitCaptchaSolvedIfNeeded(message);
-    _emitRuntimeLogIssueIfNeeded(message);
     final normalizedLevel = _normalizeNativeLevel(level);
     final effectiveLevel = AppLogStore.inferLevel(message) ?? normalizedLevel;
     if (!_shouldRecordLog(effectiveLevel)) {
@@ -240,9 +248,6 @@ class RuntimeEventController {
       if (message.isEmpty) {
         continue;
       }
-      _emitCaptchaRequiredIfNeeded(message);
-      _emitCaptchaSolvedIfNeeded(message);
-      _emitRuntimeLogIssueIfNeeded(message);
       final fallbackLevel = _fallbackBatchLogLevel(level);
       final effectiveLevel = AppLogStore.inferLevel(message) ?? fallbackLevel;
       if (!_shouldRecordLog(effectiveLevel)) {
@@ -260,50 +265,36 @@ class RuntimeEventController {
     AppLogStore.appendBatch(batch);
   }
 
-  void _emitRuntimeLogIssueIfNeeded(String message) {
-    final reason = _runtimeLogIssueReason(message);
-    if (reason == null) {
-      return;
-    }
-    _onRuntimeLogIssue?.call(reason, message);
-  }
-
-  void _emitCaptchaRequiredIfNeeded(String message) {
-    final match = _vkCaptchaUrlPattern.firstMatch(message);
-    final rawUri = match?.group(1);
-    if (rawUri == null) {
-      return;
-    }
-    final uri = Uri.tryParse(rawUri);
-    if (uri == null ||
-        uri.scheme != 'http' ||
-        (uri.host != '127.0.0.1' && uri.host != 'localhost') ||
-        !uri.hasPort ||
-        uri.port <= 0) {
-      return;
-    }
-    _onCaptchaRequired?.call(uri);
-  }
-
-  void _emitCaptchaSolvedIfNeeded(String message) {
-    if (message.toLowerCase().contains('vk-auth: captcha solved')) {
-      _onCaptchaSolved?.call();
-    }
-  }
-
-  String? _runtimeLogIssueReason(String message) {
-    final lower = message.toLowerCase();
-    if (lower.contains('no available network interface')) {
-      return 'core_no_available_interface';
-    }
-    if (lower.contains('no usable network interface') ||
-        lower.contains('error=no_interface')) {
-      return 'core_no_usable_interface';
-    }
-    if (_interfaceDialFailurePattern.hasMatch(message)) {
-      return 'core_interface_dial_failure';
-    }
-    return null;
+  RuntimeTransportHealthEvent _transportHealthEvent(
+    Map<String, dynamic> event,
+  ) {
+    final challenge = event['challenge'];
+    final challengeMap = challenge is Map
+        ? Map<String, dynamic>.from(challenge)
+        : const <String, dynamic>{};
+    final rawUri = challengeMap['url']?.toString();
+    final uri = rawUri == null ? null : Uri.tryParse(rawUri);
+    final safeChallengeUri = uri != null &&
+            uri.scheme == 'http' &&
+            (uri.host == '127.0.0.1' || uri.host == 'localhost') &&
+            uri.hasPort &&
+            uri.port > 0
+        ? uri
+        : null;
+    final failure = event['failure'];
+    final failureMap = failure is Map
+        ? Map<String, dynamic>.from(failure)
+        : const <String, dynamic>{};
+    return RuntimeTransportHealthEvent(
+      applicable: event['applicable'] == true,
+      state: event['state']?.toString() ?? '',
+      activeLanes: (event['activeLanes'] as num?)?.toInt() ?? 0,
+      totalLanes: (event['totalLanes'] as num?)?.toInt() ?? 0,
+      demand: event['demand'] == true,
+      failureCode: failureMap['code']?.toString(),
+      challengeId: challengeMap['id']?.toString(),
+      challengeUri: safeChallengeUri,
+    );
   }
 
   String _normalizeNativeLevel(String level) {

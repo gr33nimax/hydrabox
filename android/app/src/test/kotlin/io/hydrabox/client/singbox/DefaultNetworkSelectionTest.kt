@@ -12,7 +12,7 @@ class DefaultNetworkSelectionTest {
         val selected = selectDefaultNetworkCandidate(
             candidates = listOf(
                 candidate("cell", active = true, score = 40),
-                candidate("wifi", validated = true, score = 130),
+                candidate("wifi", validated = true, hasInterface = true, score = 130),
             ),
             current = "cell",
         )
@@ -21,7 +21,7 @@ class DefaultNetworkSelectionTest {
     }
 
     @Test
-    fun `retains current physical interface behind active VPN`() {
+    fun `rejects unvalidated current physical interface behind active VPN`() {
         val selected = selectDefaultNetworkCandidate(
             candidates = listOf(
                 candidate("cell", hasInterface = true, score = 10),
@@ -29,11 +29,11 @@ class DefaultNetworkSelectionTest {
             current = "cell",
         )
 
-        assertEquals("cell", selected?.value)
+        assertNull(selected)
     }
 
     @Test
-    fun `prefers a callback transport over a stale unvalidated interface`() {
+    fun `rejects an unvalidated callback transport`() {
         val selected = selectDefaultNetworkCandidate(
             candidates = listOf(
                 candidate("wifi", hasInterface = true, score = 30),
@@ -43,7 +43,7 @@ class DefaultNetworkSelectionTest {
             preferred = "cell",
         )
 
-        assertEquals("cell", selected?.value)
+        assertNull(selected)
     }
 
     @Test
@@ -74,7 +74,7 @@ class DefaultNetworkSelectionTest {
     }
 
     @Test
-    fun `uses connected physical fallback when current network was lost`() {
+    fun `does not use unvalidated physical fallback when current network was lost`() {
         val selected = selectDefaultNetworkCandidate(
             candidates = listOf(
                 candidate("cell", hasInterface = true, score = 10),
@@ -83,7 +83,7 @@ class DefaultNetworkSelectionTest {
             current = null,
         )
 
-        assertEquals("wifi", selected?.value)
+        assertNull(selected)
     }
 
     @Test

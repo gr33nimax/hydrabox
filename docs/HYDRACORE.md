@@ -23,12 +23,19 @@ is used only while assembling or probing that one isolated resource. Thus two
 resources may both expose an entrypoint named `proxy` without sharing ping or
 selection state.
 
-The required Calls surface advertises `features.call_vk_parasite`,
-`features.call_vk_four_lane_kcp`, and the sole client mode `vk_parasite` on
-wire v8. A VK parasite outbound carries the VPS endpoint, one to four join
-links, per-user credentials, and the shared obfuscation password. HydraCore
-always opens exactly four independently recovered KCP lanes; duplicate join
-links are rejected.
+The required Calls surface advertises `features.call_vk_parasite`, four-lane
+KCP, worker hot swap, flow migration, TURN TCP fallback, structured transport
+health and visible VK auth challenges. The sole client mode is `vk_parasite`
+on exact wire v9. A VK parasite outbound carries the VPS endpoint, one to four
+join links, per-user credentials, and the shared obfuscation password.
+HydraCore always opens exactly four independently recovered KCP lanes;
+duplicate join links and mixed wire generations are rejected.
+
+Runtime schema 2 is authoritative for connection state. HydraBox reports the
+VPN connected only for `healthy` or `degraded`, opens structured CAPTCHA URLs
+visibly, and never infers recovery from native log text. Android handovers are
+debounced for 1.5 seconds and accept only a validated physical interface;
+HydraCore stages the replacement worker without restarting the logical tunnel.
 
 `requested_permissions` is an internal compatibility declaration. HydraCore
 and the client require it to exactly describe the resource authority:

@@ -19,7 +19,6 @@ import 'package:hydrabox/app/group_url_test_scheduler.dart';
 import 'package:hydrabox/app/hydra_resource_latency_plan.dart';
 import 'package:hydrabox/app/hydra_runtime_tag_projection.dart';
 import 'package:hydrabox/app/latency_coordinator.dart';
-import 'package:hydrabox/app/network_recovery_controller.dart';
 import 'package:hydrabox/app/proxy_runtime_controller.dart';
 import 'package:hydrabox/app/proxy_selection_controller.dart';
 import 'package:hydrabox/app/runtime_lifecycle_controller.dart';
@@ -29,7 +28,6 @@ import 'package:hydrabox/app/runtime_event_controller.dart';
 import 'package:hydrabox/app/runtime_intent_controller.dart';
 import 'package:hydrabox/app/runtime_operation_coordinator.dart';
 import 'package:hydrabox/app/runtime_recovery_controller.dart';
-import 'package:hydrabox/app/runtime_recovery_policy.dart';
 import 'package:hydrabox/app/runtime_session_coordinator.dart';
 import 'package:hydrabox/app/singbox_config_coordinator.dart';
 import 'package:hydrabox/app/subscription_coordinator.dart';
@@ -149,11 +147,11 @@ class _HydraBoxClientState extends State<HydraBoxClient>
   bool _notificationPermissionPromptAttempted = false;
   bool _notificationPermissionRequestInFlight = false;
   String _lastVpnNotificationPresentationSignature = '';
-  Uri? _lastVkCaptchaUri;
+  String? _lastVkCaptchaId;
   DateTime? _lastVkCaptchaOpenedAt;
   bool _vkCaptchaLaunchInFlight = false;
+  String? _pendingVkCaptchaId;
   Uri? _pendingVkCaptchaUri;
-  Timer? _vkCaptchaFallbackTimer;
   final AppSettingsController _settings = AppSettingsController();
   int _locationLookupActiveRequests = 0;
   int _locationLookupGeneration = 0;
@@ -206,8 +204,6 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       RuntimeOperationCoordinator();
   final RuntimeRecoveryController _runtimeRecovery =
       RuntimeRecoveryController();
-  final NetworkRecoveryController _networkRecovery =
-      NetworkRecoveryController();
   final RuntimeSessionCoordinator _runtimeSession = RuntimeSessionCoordinator();
   late final RuntimeCommandCoordinator _runtimeCommands;
   late final SingboxConfigCoordinator _configCoordinator;
@@ -659,15 +655,13 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     }
   }
 
-  Future<void> _openVkCaptcha(Uri uri) async {
-    _vkCaptchaFallbackTimer = null;
-    _pendingVkCaptchaUri = null;
+  Future<void> _openVkCaptcha(String challengeId, Uri uri) async {
     if (!mounted || _vkCaptchaLaunchInFlight) {
       return;
     }
     final now = DateTime.now();
     final duplicate =
-        _lastVkCaptchaUri == uri &&
+        _lastVkCaptchaId == challengeId &&
         _lastVkCaptchaOpenedAt != null &&
         now.difference(_lastVkCaptchaOpenedAt!) < const Duration(minutes: 5);
     if (duplicate) {
@@ -682,11 +676,11 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     }
 
     _vkCaptchaLaunchInFlight = true;
-    _lastVkCaptchaUri = uri;
-    _lastVkCaptchaOpenedAt = now;
     try {
       final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
       if (opened) {
+        _lastVkCaptchaId = challengeId;
+        _lastVkCaptchaOpenedAt = now;
         AppLogStore.info('vk-auth', 'opened the VK captcha page');
         return;
       }
@@ -717,139 +711,40 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     }
   }
 
-  void _handleVkCaptchaRequired(Uri uri) {
-    if (_pendingVkCaptchaUri == uri &&
-        _vkCaptchaFallbackTimer?.isActive == true) {
+  void _handleVkCaptchaRequired(String challengeId, Uri uri) {
+    if (_pendingVkCaptchaId == challengeId) {
       return;
     }
-    _vkCaptchaFallbackTimer?.cancel();
+    _pendingVkCaptchaId = challengeId;
     _pendingVkCaptchaUri = uri;
-    if (!Platform.isAndroid) {
-      unawaited(_openVkCaptcha(uri));
-      return;
-    }
-    AppLogStore.info(
-      'vk-auth',
-      'automatic VK captcha attempt started; manual fallback in 12 seconds',
-    );
-    _vkCaptchaFallbackTimer = Timer(
-      const Duration(seconds: 12),
-      () => unawaited(_openVkCaptcha(uri)),
-    );
+    unawaited(_openVkCaptcha(challengeId, uri));
   }
 
   void _handleVkCaptchaSolved() {
-    _vkCaptchaFallbackTimer?.cancel();
-    _vkCaptchaFallbackTimer = null;
+    if (_pendingVkCaptchaId == null) return;
+    _pendingVkCaptchaId = null;
     _pendingVkCaptchaUri = null;
-    AppLogStore.info('vk-auth', 'VK captcha completed automatically');
+    AppLogStore.info('vk-auth', 'VK captcha challenge closed');
   }
 
-  void _handleRuntimeLogIssue(String reason, String message) {
-    if (!mounted ||
-        !_connected ||
-        !_foregroundLifecycleActive ||
-        _runtimeTransitionInProgress) {
-      return;
+  void _handleTransportHealth(RuntimeTransportHealthEvent event) {
+    final challengeId = event.challengeId?.trim();
+    final challengeUri = event.challengeUri;
+    if (challengeId != null &&
+        challengeId.isNotEmpty &&
+        challengeUri != null &&
+        event.state == 'waiting_user') {
+      _handleVkCaptchaRequired(challengeId, challengeUri);
+    } else {
+      _handleVkCaptchaSolved();
     }
-    final now = DateTime.now();
-    final issue = _networkRecovery.registerInterfaceIssue(now);
-    if (!issue.shouldScheduleRecovery) {
-      return;
-    }
-    final shortMessage = message.length > 180
-        ? message.substring(0, 180)
-        : message;
-    AppLogStore.warning(
-      'network',
-      'runtime_interface_issue_detected reason=$reason count=${issue.issueCount} '
-          'selected=$_selectedProxyTag message=$shortMessage',
-    );
-    _scheduleNetworkRecovery(
-      reason: reason,
-      networkGeneration: _networkInterfaceGeneration,
-      forceRestartOnDecision: true,
-    );
-  }
-
-  void _scheduleNetworkRecovery({
-    required String reason,
-    required int networkGeneration,
-    bool forceRestartOnDecision = false,
-  }) {
-    if (!mounted ||
-        !_connected ||
-        !_foregroundLifecycleActive ||
-        _runtimeTransitionInProgress) {
-      return;
-    }
-    _networkRecovery.scheduleDecision(
-      forceRestartOnDecision: forceRestartOnDecision,
-      onReady: (generation) {
-        unawaited(
-          _decideNetworkRecovery(
-            reason: reason,
-            generation: generation,
-            networkGeneration: networkGeneration,
-          ),
-        );
-      },
-    );
-    if (!forceRestartOnDecision) {
-      AppLogStore.debug(
-        'network',
-        'network change observed without forced recovery reason=$reason '
-            'networkGeneration=$networkGeneration',
-      );
-      return;
-    }
-  }
-
-  Future<void> _decideNetworkRecovery({
-    required String reason,
-    required int generation,
-    required int networkGeneration,
-  }) async {
-    if (!mounted ||
-        !_networkRecovery.isCurrentDecision(generation) ||
-        !_connected ||
-        !_foregroundLifecycleActive ||
-        _runtimeTransitionInProgress) {
-      return;
-    }
-    if (!await _networkInterfaceUsable(reason: 'network_recovery_decision')) {
+    if (event.applicable && event.state == 'failed') {
       AppLogStore.warning(
-        'network',
-        'recovery skipped reason=$reason networkGeneration=$networkGeneration '
-            'selected=$_selectedProxyTag error=no_interface',
+        'transport',
+        'structured transport failure code=${event.failureCode ?? 'unknown'} '
+            'lanes=${event.activeLanes}/${event.totalLanes}',
       );
-      return;
     }
-    if (!_networkRecovery.canRestart(DateTime.now())) {
-      AppLogStore.warning(
-        'network',
-        'recovery restart suppressed reason=$reason '
-            'networkGeneration=$networkGeneration selected=$_selectedProxyTag',
-      );
-      return;
-    }
-    _networkRecovery.recordRestart(DateTime.now());
-    _groupUrlTestScheduler.cancel();
-    _latencyCoordinator.cancel();
-    _cancelUniversalUrlTest(reason: 'network_recovery');
-    _runtimeStartupUrlTestGate.markRecoveryRestart(
-      currentGeneration: _runtimeOperations.nativeRuntimeGeneration,
-    );
-    AppLogStore.warning(
-      'network',
-      'recovery_restart reason=$reason '
-          'networkGeneration=$networkGeneration selected=$_selectedProxyTag '
-          'source=runtime_interface_errors',
-    );
-    await _configCoordinator.emitCurrentConfigLogAsync(
-      'network recovery restart ($reason)',
-      restartRuntime: true,
-    );
   }
 
   void _preloadProxyFlags() {
@@ -1895,10 +1790,8 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       onNetwork: _handleRuntimeNetworkEvent,
       onGroups: _applyGroupUpdates,
       onUrlTestSessions: _applyManagedUrlTestSessions,
-      onCaptchaRequired: _handleVkCaptchaRequired,
-      onCaptchaSolved: _handleVkCaptchaSolved,
+      onTransportHealth: _handleTransportHealth,
       shouldRecordLog: _shouldRecordSingBoxLog,
-      onRuntimeLogIssue: _handleRuntimeLogIssue,
     );
     WidgetsBinding.instance.addObserver(this);
     _configureImageCacheForAndroid();
@@ -1936,9 +1829,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     _runtimeRecovery.dispose();
     _locationLookupTimer?.cancel();
     _resumeForegroundSyncTimer?.cancel();
-    _vkCaptchaFallbackTimer?.cancel();
     _groupUrlTestScheduler.dispose();
-    _networkRecovery.dispose();
     _configCoordinator.dispose();
     _runtimeLifecycle.dispose();
     _runtimeCommands.dispose();
@@ -3076,9 +2967,6 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     } else if (transition.transitionFinished) {
       _runtimeOperations.finishRuntimeTransition(running: _connected);
     }
-    if (!_connected) {
-      _networkRecovery.clearInterfaceIssueWindow();
-    }
     if (phase == AppConnectionPhase.connected ||
         phase == AppConnectionPhase.idle ||
         phase == AppConnectionPhase.failed ||
@@ -3137,7 +3025,6 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     _groupUrlTestScheduler.cancel();
     _latencyCoordinator.cancel();
     _cancelUniversalUrlTest(reason: 'background');
-    _networkRecovery.cancelDecision();
     if (_invalidOutboundRetryScheduled && _runtimeDesiredByUser) {
       _runtimeIntent.deferRetryUntilResume();
     }
@@ -3147,6 +3034,11 @@ class _HydraBoxClientState extends State<HydraBoxClient>
   void _resumeForegroundWork() {
     unawaited(_syncRuntimeUiForeground(true));
     _scheduleVpnNotificationSync();
+    final pendingVkCaptchaId = _pendingVkCaptchaId;
+    final pendingVkCaptchaUri = _pendingVkCaptchaUri;
+    if (pendingVkCaptchaId != null && pendingVkCaptchaUri != null) {
+      unawaited(_openVkCaptcha(pendingVkCaptchaId, pendingVkCaptchaUri));
+    }
     if (!mounted || !_ready) {
       return;
     }
@@ -3473,7 +3365,6 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       _latencyErrors.clear();
       _latencyFailureCounts.clear();
       _runtimeStartupUrlTestGate.reset();
-      _networkRecovery.cancelDecision();
       _applyRuntimeStateToDerivedCaches();
     });
     unawaited(_syncQuickSettingsTileLabel());
@@ -6006,7 +5897,6 @@ class _HydraBoxClientState extends State<HydraBoxClient>
         _latencyFailureCounts.clear();
         _groupUrlTestScheduler.cancel();
         _runtimeStartupUrlTestGate.reset();
-        _networkRecovery.cancelDecision();
         _applyRuntimeStateToDerivedCaches();
       }
     });
@@ -6165,13 +6055,8 @@ class _HydraBoxClientState extends State<HydraBoxClient>
         delay: const Duration(seconds: 2),
         forceRefresh: true,
       );
-      _scheduleNetworkRecovery(
-        reason: 'default_interface_changed',
-        networkGeneration: networkGeneration,
-      );
       return;
     }
-    _networkRecovery.cancelDecision();
   }
 
   Future<void> _syncRuntimeState() async {
@@ -6185,13 +6070,15 @@ class _HydraBoxClientState extends State<HydraBoxClient>
             (status['runtimeGeneration'] as num?)?.toInt() ?? 0,
       );
       final recordedServiceAlive = status['recordedServiceAlive'] == true;
-      final runtimeIntentFresh = status['runtimeIntentFresh'] == true;
       final activeRuntimeOwner = status['activeRuntimeOwner'] == true;
+      final runtimeState = status['state']?.toString();
+      final hasRuntimeError =
+          runtimeState == 'RUNTIME_STATE_FAILED' ||
+          status['errorCode']?.toString().trim().isNotEmpty == true;
       final nativeRecoveryPending = nativeRuntimeRecoveryPending(
         running: running,
         recordedServiceAlive: recordedServiceAlive,
         activeRuntimeOwner: activeRuntimeOwner,
-        runtimeIntentFresh: runtimeIntentFresh,
       );
       final localTransitionPending =
           _starting ||
@@ -6199,6 +6086,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
           _runtimeLifecycle.startWatchdogActive;
       final decision = _runtimeSession.decideStatus(
         running: running,
+        hasError: hasRuntimeError,
         nativeRecoveryPending: nativeRecoveryPending,
         localTransitionPending: localTransitionPending,
         retryScheduled: _invalidOutboundRetryScheduled,

@@ -28,6 +28,8 @@ REQUIRED_ANDROID_ABIS = {"armeabi-v7a", "arm64-v8a", "x86", "x86_64"}
 LIBBOX_SOURCE = "io/nekohasekai/libbox/Libbox.java"
 REQUIRED_HYDRACORE_JAVA_METHODS = {
     "hydraCoreCapabilities()",
+    "hydraCoreTransportState()",
+    "hydraCoreCancelRuntimeChallenge(String id)",
     "hydraCoreBuildInfo()",
     "hydraCoreValidateConfig(String configContent, String profile)",
     "hydraCoreValidateSubscription(String content)",

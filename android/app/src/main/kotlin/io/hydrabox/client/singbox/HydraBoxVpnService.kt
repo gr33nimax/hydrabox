@@ -79,18 +79,6 @@ class HydraBoxVpnService : VpnService() {
                 false
             }
         }
-
-        /**
-         * Network callbacks are delivered while Flutter can be paused or its
-         * event sink detached. Keep recovery owned by the VPN foreground
-         * service so Wi-Fi/mobile handovers do not require reopening HydraBox.
-         */
-        fun requestRuntimeRecoveryAfterNetworkChange(reason: String) {
-            val service = currentService ?: return
-            val boxService = runCatching { service.boxService }.getOrNull()
-                ?: return
-            boxService.requestRuntimeRecovery("network_change:$reason")
-        }
     }
 
     private lateinit var boxService: HydraBoxService

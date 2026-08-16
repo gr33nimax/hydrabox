@@ -110,6 +110,30 @@ void main() {
     expect(decision.clearDisconnectedState, isFalse);
   });
 
+  test('authoritative failed snapshot remains failed during status sync', () {
+    final decision = RuntimeSessionCoordinator().decideStatus(
+      running: false,
+      hasError: true,
+      nativeRecoveryPending: false,
+      localTransitionPending: false,
+      retryScheduled: false,
+    );
+
+    expect(decision.phase, AppConnectionPhase.failed);
+  });
+
+  test('local transition can recover from an authoritative error', () {
+    final decision = RuntimeSessionCoordinator().decideStatus(
+      running: false,
+      hasError: true,
+      nativeRecoveryPending: true,
+      localTransitionPending: true,
+      retryScheduled: false,
+    );
+
+    expect(decision.phase, AppConnectionPhase.recovering);
+  });
+
   test('late successful cancelled start requires native cleanup', () {
     final disposition = RuntimeSessionCoordinator().classifyStartResult(
       result: const RuntimeLifecycleResult.success(

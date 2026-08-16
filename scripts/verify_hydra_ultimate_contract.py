@@ -109,21 +109,36 @@ def verify(producer: Path, expected_commit: str) -> None:
             fail(f"HYDRA ULTIMATE producer is missing contract marker: {marker}")
 
     calls_runtime_source = (
-        producer / "hydra" / "services" / "calls_infrastructure.py"
+        producer / "hydra" / "contracts" / "hydracore_calls.py"
     ).read_text(encoding="utf-8")
     for marker in (
-        'features.get("call_vk_parasite") is True',
-        'features.get("call_vk_four_lane_kcp") is True',
-        'features.get("call_vk_pre_kcp_admission") is True',
-        'features.get("call_vk_relay_flow_control") is True',
+        'HYDRACORE_CALLS_WIRE = 9',
+        '"call_vk_parasite"',
+        '"call_vk_four_lane_kcp"',
+        '"call_vk_pre_kcp_admission"',
+        '"call_vk_relay_flow_control"',
+        '"call_vk_worker_hot_swap"',
+        '"call_vk_flow_migration"',
+        '"call_vk_turn_tcp_fallback"',
+        '"call_vk_transport_health"',
         'identity.get("role") == "vps"',
-        'features.get("call_vk_parasite_server") is True',
+        '"call_vk_parasite_server"',
+        'features.get("call_vk_parasite_client") is False',
+        'features.get("call_vk_eight_lane_kcp") is False',
         'modes == ["vk_parasite"]',
-        'wire.get("min") == 8',
-        'wire.get("max") == 8',
+        'wire.get("min") == HYDRACORE_CALLS_WIRE',
+        'wire.get("max") == HYDRACORE_CALLS_WIRE',
     ):
         if marker not in calls_runtime_source:
             fail(f"HYDRA ULTIMATE Calls runtime is missing capability gate: {marker}")
+
+    for relative in (
+        "hydra/services/calls_infrastructure.py",
+        "hydra/services/kernel_infrastructure.py",
+    ):
+        source = (producer / relative).read_text(encoding="utf-8")
+        if "supports_exact_vps_calls" not in source:
+            fail(f"HYDRA ULTIMATE service bypasses the exact Calls gate: {relative}")
 
     print(
         "Verified HYDRA ULTIMATE producer contract: "

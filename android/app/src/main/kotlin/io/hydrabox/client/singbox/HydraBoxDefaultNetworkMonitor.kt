@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicLong
 
 object HydraBoxDefaultNetworkMonitor {
     private const val TAG = "HydraBoxDefaultNetwork"
-    private const val NETWORK_CHANGE_DEBOUNCE_MS = 500L
+    private const val NETWORK_CHANGE_DEBOUNCE_MS = 1_500L
     private val lock = Any()
     private val networkHandlerThread = HandlerThread("HydraBoxNetworkCallback").apply { start() }
     private val networkHandler = Handler(networkHandlerThread.looper)
@@ -311,7 +311,6 @@ object HydraBoxDefaultNetworkMonitor {
         notifyListener(
             immediate = true,
             force = true,
-            recoverRuntime = false,
             notifyDuplicate = true,
             targetListener = newListener,
         )
@@ -340,7 +339,7 @@ object HydraBoxDefaultNetworkMonitor {
         // interface to libbox again. Android emits repeated capability/link
         // callbacks for one Network and every duplicate core notification
         // resets all outbound transports.
-        notifyListener(immediate = true, force = true, recoverRuntime = false)
+        notifyListener(immediate = true, force = true)
     }
 
     private fun updateNetwork(network: Network) {
@@ -394,7 +393,6 @@ object HydraBoxDefaultNetworkMonitor {
     private fun notifyListener(
         immediate: Boolean = false,
         force: Boolean = false,
-        recoverRuntime: Boolean = true,
         notifyDuplicate: Boolean = false,
         targetListener: InterfaceUpdateListener? = null,
     ) {
@@ -410,7 +408,6 @@ object HydraBoxDefaultNetworkMonitor {
                         generation,
                         capturedNetwork,
                         force,
-                        recoverRuntime,
                         notifyDuplicate,
                         targetListener,
                     )
@@ -441,7 +438,6 @@ object HydraBoxDefaultNetworkMonitor {
         generation: Long,
         capturedNetwork: Network?,
         force: Boolean,
-        recoverRuntime: Boolean,
         notifyDuplicate: Boolean,
         targetListener: InterfaceUpdateListener?,
     ) {
@@ -475,11 +471,6 @@ object HydraBoxDefaultNetworkMonitor {
                     -1,
                     notificationGeneration.get(),
                 )
-                if (recoverRuntime) {
-                    HydraBoxVpnService.requestRuntimeRecoveryAfterNetworkChange(
-                        "default_interface_lost",
-                    )
-                }
             }
             return
         }
@@ -506,11 +497,6 @@ object HydraBoxDefaultNetworkMonitor {
                     -1,
                     notificationGeneration.get(),
                 )
-                if (recoverRuntime) {
-                    HydraBoxVpnService.requestRuntimeRecoveryAfterNetworkChange(
-                        "default_interface_missing",
-                    )
-                }
             }
             return
         }
@@ -561,13 +547,6 @@ object HydraBoxDefaultNetworkMonitor {
                 interfaceName,
                 index,
                 notificationGeneration.get(),
-            )
-        }
-        // A different Network/interface key is the handover signal. Repeated
-        // capability callbacks for the same key are not network changes.
-        if (recoverRuntime && !duplicate) {
-            HydraBoxVpnService.requestRuntimeRecoveryAfterNetworkChange(
-                "default_interface:$interfaceName",
             )
         }
     }
@@ -671,9 +650,8 @@ object HydraBoxDefaultNetworkMonitor {
     private fun isSelectableNetwork(network: Network): Boolean {
         val capabilities = HydraBoxApplication.connectivity.getNetworkCapabilities(network) ?: return false
         if (!isBaseUsableNetwork(capabilities)) return false
-        val active = HydraBoxApplication.connectivity.activeNetwork == network
         val validated = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-        return validated || active || hasUsableNetworkInterface(network)
+        return validated && hasUsableNetworkInterface(network)
     }
 
     private fun hasUsableNetworkInterface(network: Network): Boolean {
