@@ -166,7 +166,7 @@ void main() {
     });
     expect(
       (provenance['source'] as Map<String, dynamic>)['commit'],
-      '998994e9a5b91ced51f09bfcd4ab52cdcdf5fe43',
+      '9842e4860d66a3b35f5da805843ecabf4f972946',
     );
     expect(
       (provenance['upstream'] as Map<String, dynamic>)['commit'],
