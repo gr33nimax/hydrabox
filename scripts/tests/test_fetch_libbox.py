@@ -101,7 +101,7 @@ class FetchLibboxTest(unittest.TestCase):
         )
         self.assertEqual(
             parsed.source_commit,
-            "9842e4860d66a3b35f5da805843ecabf4f972946",
+            "9f9ac923f9af266556454f93c46c0281273ece2c",
         )
         self.assertEqual(
             parsed.upstream_commit,
