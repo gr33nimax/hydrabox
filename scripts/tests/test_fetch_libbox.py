@@ -101,7 +101,7 @@ class FetchLibboxTest(unittest.TestCase):
         )
         self.assertEqual(
             parsed.source_commit,
-            "9f9ac923f9af266556454f93c46c0281273ece2c",
+            "7e72c507aca6bb118d3a5c227582f27ab3ee23cd",
         )
         self.assertEqual(
             parsed.upstream_commit,
@@ -109,7 +109,7 @@ class FetchLibboxTest(unittest.TestCase):
         )
         self.assertEqual(
             parsed.sha256,
-            "8ae3e2ac956bcf5627414a2ebf105bf31a79c99e295ea75b1bdf00de4feee955",
+            "0ff9a87a5f3165ddbaca4f67fa0049bac4417cbc8c2a9f177b758697a4bfd040",
         )
 
     def test_downloads_only_the_pinned_release_asset(self) -> None:

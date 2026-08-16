@@ -166,7 +166,7 @@ void main() {
     });
     expect(
       (provenance['source'] as Map<String, dynamic>)['commit'],
-      '9f9ac923f9af266556454f93c46c0281273ece2c',
+      '7e72c507aca6bb118d3a5c227582f27ab3ee23cd',
     );
     expect(
       (provenance['upstream'] as Map<String, dynamic>)['commit'],
@@ -176,12 +176,12 @@ void main() {
     expect(
       (artifacts['hydracore-client-libbox.aar']
           as Map<String, dynamic>)['sha256'],
-      '8ae3e2ac956bcf5627414a2ebf105bf31a79c99e295ea75b1bdf00de4feee955',
+      '0ff9a87a5f3165ddbaca4f67fa0049bac4417cbc8c2a9f177b758697a4bfd040',
     );
     expect(
       (artifacts['hydracore-client-libbox-sources.jar']
           as Map<String, dynamic>)['sha256'],
-      'dce11e88acdc889784f5a12b0923f4734dc16eaeeee25dda3b24dc72ae9837a2',
+      '8ca57fbf682413a416f678d5133165433c83eedb7ff5fb7cf80a7605734ca84d',
     );
   });
 
