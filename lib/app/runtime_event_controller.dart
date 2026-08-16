@@ -47,7 +47,8 @@ class RuntimeTransportHealthEvent {
   final String? challengeId;
   final Uri? challengeUri;
 
-  bool get connected => !applicable || state == 'healthy' || state == 'degraded';
+  bool get connected =>
+      !applicable || state == 'healthy' || state == 'degraded';
 }
 
 class RuntimeUrlTestSessionsEvent {
@@ -274,7 +275,8 @@ class RuntimeEventController {
         : const <String, dynamic>{};
     final rawUri = challengeMap['url']?.toString();
     final uri = rawUri == null ? null : Uri.tryParse(rawUri);
-    final safeChallengeUri = uri != null &&
+    final safeChallengeUri =
+        uri != null &&
             uri.scheme == 'http' &&
             (uri.host == '127.0.0.1' || uri.host == 'localhost') &&
             uri.hasPort &&

@@ -115,10 +115,7 @@ void main() {
       'type': 'transportHealth',
       'applicable': true,
       'state': 'waiting_user',
-      'challenge': {
-        'id': 'challenge-2',
-        'url': 'http://example.com:35887/',
-      },
+      'challenge': {'id': 'challenge-2', 'url': 'http://example.com:35887/'},
     });
 
     expect(health?.challengeId, 'challenge-2');
