@@ -88,13 +88,13 @@ REQUIRED_SOURCE_MARKERS: dict[str, tuple[str, ...]] = {
     "common/hydracore/call_client.go": (
         'distributionRole  = "client"',
         'callModes     = []string{"vk_parasite"}',
-        "callWireMin       = 5",
-        "callWireMax       = 5",
+        "callWireMin       = 8",
+        "callWireMax       = 8",
     ),
     "common/hydracore/call_server.go": (
         'distributionRole  = "vps"',
-        "callWireMin       = 5",
-        "callWireMax       = 5",
+        "callWireMin       = 8",
+        "callWireMax       = 8",
     ),
 }
 
