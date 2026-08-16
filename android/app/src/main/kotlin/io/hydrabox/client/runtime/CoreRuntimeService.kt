@@ -552,8 +552,9 @@ class CoreRuntimeService : Service() {
                             updateState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING)
                             verifyHealthAndCompleteStart(command.commandId, commandGeneration)
                         }.onFailure {
-                            commandFailed(
+                            failStartAndRollback(
                                 command.commandId,
+                                commandGeneration,
                                 "runtime.reload.failed",
                                 "reload",
                                 "HydraCore could not reload the plan.",
@@ -616,8 +617,9 @@ class CoreRuntimeService : Service() {
         }
         val startDeadline = if (waitingForUser) CHALLENGE_DEADLINE_MILLIS else START_DEADLINE_MILLIS
         if (System.currentTimeMillis() - startedAt >= startDeadline) {
-            commandFailed(
+            failStartAndRollback(
                 commandId,
+                commandGeneration,
                 "runtime.start.deadline",
                 "runtime_start",
                 "HydraCore did not reach the running state before the deadline.",
@@ -650,8 +652,9 @@ class CoreRuntimeService : Service() {
                     completeHealthyStart(commandId)
                 }
             }.onFailure {
-                commandFailed(
+                failStartAndRollback(
                     commandId,
+                    commandGeneration,
                     "runtime.start.snapshot",
                     "runtime_snapshot",
                     "HydraCore started but did not provide a valid runtime snapshot.",
@@ -676,8 +679,9 @@ class CoreRuntimeService : Service() {
         if (health.state == CoreRuntimeProtocol.TransportHealthState.TRANSPORT_HEALTH_STATE_FAILED ||
             elapsed >= deadline
         ) {
-            commandFailed(
+            failStartAndRollback(
                 commandId,
+                commandGeneration,
                 "runtime.transport.unhealthy",
                 "transport_health",
                 "HydraCore did not establish a usable transport.",
@@ -699,32 +703,87 @@ class CoreRuntimeService : Service() {
         commandSucceeded(commandId, CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING)
     }
 
+    private fun failStartAndRollback(
+        commandId: String,
+        commandGeneration: Long,
+        code: String,
+        stage: String,
+        safeMessage: String,
+        retryable: Boolean,
+    ) {
+        if (generation.get() != commandGeneration) return
+        updateState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING)
+        shutdownRuntimeServices("failed_start:$code") { stopped ->
+            if (generation.get() != commandGeneration) return@shutdownRuntimeServices
+            if (stopped) {
+                resetStoppedRuntimeState()
+                failRuntime(commandId, code, stage, safeMessage, retryable)
+            } else {
+                failRuntime(
+                    commandId,
+                    "runtime.start.rollback_failed",
+                    "runtime_start_rollback",
+                    "HydraCore could not release the failed VPN runtime.",
+                    true,
+                )
+            }
+        }
+    }
+
+    private fun shutdownRuntimeServices(reason: String, onComplete: (Boolean) -> Unit) {
+        HydraBoxApplication.clearRuntimeIntent()
+        mainHandler.post {
+            HydraBoxService.requestStopAll(reason)
+            // Destroy both possible owners as part of the same transaction. A
+            // failed start must not leave Android's VPN service and its TUN
+            // alive while the runtime is reported as failed.
+            stopService(Intent(this, HydraBoxVpnService::class.java))
+            stopService(Intent(this, HydraBoxProxyService::class.java))
+            awaitRuntimeServicesReleased(System.currentTimeMillis(), onComplete)
+        }
+    }
+
+    private fun awaitRuntimeServicesReleased(startedAt: Long, onComplete: (Boolean) -> Unit) {
+        val stopped = !SingboxController.running && !HydraBoxService.hasActiveRuntimeOwner()
+        if (stopped) {
+            HydraBoxApplication.clearServiceState()
+            onComplete(true)
+            return
+        }
+        if (System.currentTimeMillis() - startedAt >= RUNTIME_SHUTDOWN_DEADLINE_MILLIS) {
+            onComplete(false)
+            return
+        }
+        mainHandler.postDelayed(
+            { awaitRuntimeServicesReleased(startedAt, onComplete) },
+            STATE_POLL_MILLIS,
+        )
+    }
+
+    private fun resetStoppedRuntimeState() {
+        mode.set(CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_UNSPECIFIED)
+        transportHealthRequired = false
+        synchronized(snapshotLock) {
+            transportHealth = CoreRuntimeProtocol.TransportHealthSnapshot.getDefaultInstance()
+        }
+    }
+
     private fun stop(command: CoreRuntimeProtocol.RuntimeCommand) {
         generation.incrementAndGet()
         updateState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING)
-        HydraBoxApplication.clearRuntimeIntent()
-        mainHandler.post {
-            HydraBoxService.requestStopAll(command.stop.reason.ifBlank { "runtime_command" })
-            SingboxController.awaitStopped { stopped ->
-                if (stopped) {
-                    stopService(Intent(this, HydraBoxVpnService::class.java))
-                    stopService(Intent(this, HydraBoxProxyService::class.java))
-                    mode.set(CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_UNSPECIFIED)
-                    transportHealthRequired = false
-                    synchronized(snapshotLock) {
-                        transportHealth = CoreRuntimeProtocol.TransportHealthSnapshot.getDefaultInstance()
-                    }
-                    updateState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPED)
-                    commandSucceeded(command.commandId, CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPED)
-                } else {
-                    commandFailed(
-                        command.commandId,
-                        "runtime.stop.deadline",
-                        "runtime_stop",
-                        "HydraCore did not confirm that it stopped.",
-                        true,
-                    )
-                }
+        shutdownRuntimeServices(command.stop.reason.ifBlank { "runtime_command" }) { stopped ->
+            if (stopped) {
+                resetStoppedRuntimeState()
+                updateState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPED)
+                commandSucceeded(command.commandId, CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPED)
+            } else {
+                commandFailed(
+                    command.commandId,
+                    "runtime.stop.deadline",
+                    "runtime_stop",
+                    "HydraCore did not confirm that it stopped.",
+                    true,
+                )
             }
         }
     }
@@ -1459,6 +1518,7 @@ class CoreRuntimeService : Service() {
         private const val START_DEADLINE_MILLIS = 30_000L
         private const val TRANSPORT_START_DEADLINE_MILLIS = 30_000L
         private const val CHALLENGE_DEADLINE_MILLIS = 120_000L
+        private const val RUNTIME_SHUTDOWN_DEADLINE_MILLIS = 5_000L
         private const val TRANSPORT_HEALTH_POLL_MILLIS = 250L
         private const val STATE_POLL_MILLIS = 100L
         private const val UTILITY_DEADLINE_MILLIS = 10_000L

@@ -5529,6 +5529,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
   Future<void> _handleRuntimeLifecycleTimeout(
     RuntimeLifecycleResult result,
   ) async {
+    await _rollbackFailedRuntimeStart(reason: 'runtime_lifecycle_timeout');
     if (!mounted) {
       return;
     }
@@ -5536,6 +5537,18 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       _setConnectionPhase(AppConnectionPhase.failed);
     });
     _showAppSnackBar(_vpnStartTimedOutMessage);
+  }
+
+  Future<bool> _rollbackFailedRuntimeStart({required String reason}) async {
+    _runtimeIntent.clearRuntimeDesired();
+    final stopped = await _runtimeLifecycle.stopRuntime(reason: reason);
+    if (!stopped) {
+      AppLogStore.error(
+        'runtime',
+        'failed runtime start rollback was not confirmed reason=$reason',
+      );
+    }
+    return stopped;
   }
 
   Future<void> _startRuntimeWithBuild(
@@ -5585,7 +5598,14 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     }
     if (disposition == RuntimeStartDisposition.failed) {
       _clearRuntimeProxySelectionGuard();
-      _runtimeIntent.clearRuntimeDesired();
+      await _rollbackFailedRuntimeStart(
+        reason: result.timedOut
+            ? 'runtime_start_timeout_result'
+            : 'runtime_start_failed_result',
+      );
+      if (!mounted) {
+        return;
+      }
       setState(() {
         _setConnectionPhase(AppConnectionPhase.failed);
       });
