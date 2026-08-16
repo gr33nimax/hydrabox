@@ -13,7 +13,7 @@ parallel workflows. Generated Java sources are retained for API-surface
 inspection.
 
 The required runtime identity is `io.hydrabox.hydracore`, role `client`, public
-API version 2. The pinned debug.33 client runtime exposes exact wire v9, four
+API version 2. The pinned debug.34 client runtime exposes exact wire v9, four
 independent KCP lanes, staged worker hot swap, bounded flow migration, TURN
 TCP/TLS fallback, structured transport health and visible auth challenges; VPS
 code is shipped separately. HydraBox does not use deprecated capability aliases

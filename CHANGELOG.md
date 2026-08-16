@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Updated the embedded HydraCore client to debug.34 so a successful VK parasite
+  connection remains owned by the bridge lifecycle instead of closing as soon
+  as startup returns.
+- Made failed VPN startup transactional: HydraBox now releases the native
+  runtime, service owner and TUN before reporting the failure, with a verified
+  Flutter-side stop as a second cleanup boundary.
 - Updated the embedded HydraCore client to debug.33 and the incompatible exact
   VK parasite wire-v9 contract. Runtime schema 2 now carries structured
   transport health and visible CAPTCHA challenges; Android waits for
