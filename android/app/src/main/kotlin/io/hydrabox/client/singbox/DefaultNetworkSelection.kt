@@ -8,7 +8,11 @@ internal data class DefaultNetworkCandidate<T>(
     val score: Int,
 )
 
-/** Selects only an Android-validated physical network with a usable interface. */
+/**
+ * Selects an Android-validated physical network with a usable interface when available.
+ * Falls back to an unvalidated physical network with a usable interface in restricted
+ * network environments (such as whitelist captive environments where validation probes fail).
+ */
 internal fun <T> selectDefaultNetworkCandidate(
     candidates: List<DefaultNetworkCandidate<T>>,
     current: T?,
@@ -20,9 +24,23 @@ internal fun <T> selectDefaultNetworkCandidate(
     val usableCurrent = candidates.firstOrNull {
         it.value == current && it.isValidated && it.hasUsableInterface
     }
-    return usablePreferred
-        ?: usableCurrent
-        ?: candidates
+    val bestValidated = candidates
         .filter { it.isValidated && it.hasUsableInterface }
         .maxByOrNull { it.score }
+
+    if (usablePreferred != null) return usablePreferred
+    if (usableCurrent != null) return usableCurrent
+    if (bestValidated != null) return bestValidated
+
+    val fallbackPreferred = candidates.firstOrNull {
+        it.value == preferred && it.hasUsableInterface
+    }
+    val fallbackCurrent = candidates.firstOrNull {
+        it.value == current && it.hasUsableInterface
+    }
+    return fallbackPreferred
+        ?: fallbackCurrent
+        ?: candidates
+            .filter { it.hasUsableInterface }
+            .maxByOrNull { it.score }
 }

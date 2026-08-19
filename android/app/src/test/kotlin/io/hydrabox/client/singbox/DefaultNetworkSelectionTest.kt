@@ -21,7 +21,7 @@ class DefaultNetworkSelectionTest {
     }
 
     @Test
-    fun `rejects unvalidated current physical interface behind active VPN`() {
+    fun `falls back to unvalidated current physical interface when no validated network exists`() {
         val selected = selectDefaultNetworkCandidate(
             candidates = listOf(
                 candidate("cell", hasInterface = true, score = 10),
@@ -29,11 +29,11 @@ class DefaultNetworkSelectionTest {
             current = "cell",
         )
 
-        assertNull(selected)
+        assertEquals("cell", selected?.value)
     }
 
     @Test
-    fun `rejects an unvalidated callback transport`() {
+    fun `falls back to unvalidated preferred callback transport when no validated network exists`() {
         val selected = selectDefaultNetworkCandidate(
             candidates = listOf(
                 candidate("wifi", hasInterface = true, score = 30),
@@ -43,7 +43,21 @@ class DefaultNetworkSelectionTest {
             preferred = "cell",
         )
 
-        assertNull(selected)
+        assertEquals("cell", selected?.value)
+    }
+
+    @Test
+    fun `validated candidate takes precedence over unvalidated preferred candidate`() {
+        val selected = selectDefaultNetworkCandidate(
+            candidates = listOf(
+                candidate("wifi", validated = true, hasInterface = true, score = 130),
+                candidate("cell", validated = false, hasInterface = true, score = 110),
+            ),
+            current = "wifi",
+            preferred = "cell",
+        )
+
+        assertEquals("wifi", selected?.value)
     }
 
     @Test
@@ -74,7 +88,7 @@ class DefaultNetworkSelectionTest {
     }
 
     @Test
-    fun `does not use unvalidated physical fallback when current network was lost`() {
+    fun `falls back to highest scoring unvalidated network with usable interface when current is null`() {
         val selected = selectDefaultNetworkCandidate(
             candidates = listOf(
                 candidate("cell", hasInterface = true, score = 10),
@@ -83,7 +97,7 @@ class DefaultNetworkSelectionTest {
             current = null,
         )
 
-        assertNull(selected)
+        assertEquals("wifi", selected?.value)
     }
 
     @Test

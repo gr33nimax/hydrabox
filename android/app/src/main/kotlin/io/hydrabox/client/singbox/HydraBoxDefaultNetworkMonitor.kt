@@ -649,9 +649,7 @@ object HydraBoxDefaultNetworkMonitor {
 
     private fun isSelectableNetwork(network: Network): Boolean {
         val capabilities = HydraBoxApplication.connectivity.getNetworkCapabilities(network) ?: return false
-        if (!isBaseUsableNetwork(capabilities)) return false
-        val validated = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-        return validated && hasUsableNetworkInterface(network)
+        return isBaseUsableNetwork(capabilities) && hasUsableNetworkInterface(network)
     }
 
     private fun hasUsableNetworkInterface(network: Network): Boolean {
