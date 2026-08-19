@@ -197,6 +197,15 @@ void main() {
       throwsFormatException,
     );
   });
+
+  test('accepts min_version with two components like 1.0 or single component 1', () {
+    final document = _document();
+    final requirements = document['requirements'] as Map<String, dynamic>;
+    (requirements['client'] as Map<String, dynamic>)['min_version'] = '0.5';
+
+    final parsed = SubscriptionParser.parse(jsonEncode(document));
+    expect(parsed.format, SubscriptionFormat.hydraV2);
+  });
 }
 
 Map<String, dynamic> _document() => {

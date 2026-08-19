@@ -448,15 +448,15 @@ class HydraSubscriptionParser {
     List<Object> parts(String value) {
       final normalized = value.trim().replaceFirst(RegExp(r'^v'), '');
       final match = RegExp(
-        r'^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$',
+        r'^(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$',
       ).firstMatch(normalized);
       if (match == null) {
         throw FormatException('Invalid semantic version "$value"');
       }
       return <Object>[
         int.parse(match.group(1)!),
-        int.parse(match.group(2)!),
-        int.parse(match.group(3)!),
+        int.parse(match.group(2) ?? '0'),
+        int.parse(match.group(3) ?? '0'),
         match.group(4) ?? '',
       ];
     }
