@@ -12,7 +12,7 @@ void main() {
 
     expect(capabilities.apiVersion, 2);
     expect(capabilities.coreId, 'io.hydrabox.hydracore');
-    expect(capabilities.coreVersion, 'v1.13.16-extended-hydracore.11-debug.34');
+    expect(capabilities.coreVersion, 'v1.13.16-extended-hydracore.11-debug.44');
     expect(capabilities.coreRole, 'client');
     expect(capabilities.supportsCallVkParasite, isTrue);
     expect(capabilities.supportsCallVkParasiteClient, isTrue);
@@ -44,7 +44,7 @@ void main() {
     () {
       final capabilities = HydraCoreCapabilities.parseStrict(
         File(
-          'test/fixtures/hydracore_client_capabilities_v1.13.16-extended-hydracore.11-debug.34.json',
+          'test/fixtures/hydracore_client_capabilities_v1.13.16-extended-hydracore.11-debug.44.json',
         ).readAsStringSync(),
       );
 
@@ -135,7 +135,7 @@ Map<String, dynamic> _capabilities() => {
   'identity': {
     'core_id': 'io.hydrabox.hydracore',
     'core_name': 'HydraCore',
-    'core_version': 'v1.13.16-extended-hydracore.11-debug.34',
+    'core_version': 'v1.13.16-extended-hydracore.11-debug.44',
     'role': 'client',
   },
   'features': {

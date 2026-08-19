@@ -161,12 +161,12 @@ void main() {
     expect(provenance['distribution'], {
       'id': 'io.hydrabox.hydracore',
       'name': 'HydraCore',
-      'version': 'v1.13.16-extended-hydracore.11-debug.34',
+      'version': 'v1.13.16-extended-hydracore.11-debug.44',
       'role': 'client',
     });
     expect(
       (provenance['source'] as Map<String, dynamic>)['commit'],
-      '14cc6e61259493f716fe794cb768771df1a602e4',
+      'c3abeeb300e87d28851a6a763dfc9fd48460348e',
     );
     expect(
       (provenance['upstream'] as Map<String, dynamic>)['commit'],
@@ -176,7 +176,7 @@ void main() {
     expect(
       (artifacts['hydracore-client-libbox.aar']
           as Map<String, dynamic>)['sha256'],
-      'd1ede4375cf9c8bde9c9747b675d44e64032a6885df09a84038188628e1f465a',
+      'd9a8c327eb4ea9a17d155511555c5f7db9fd45105c61b6eec3d365e399a55041',
     );
     expect(
       (artifacts['hydracore-client-libbox-sources.jar']
