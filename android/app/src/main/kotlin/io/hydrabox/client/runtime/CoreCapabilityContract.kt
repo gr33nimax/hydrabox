@@ -8,17 +8,9 @@ internal object CoreCapabilityContract {
     private const val MAX_CAPABILITIES_BYTES = 1024 * 1024
     private const val EXPECTED_CORE_ID = "io.hydrabox.hydracore"
     private const val EXPECTED_CORE_NAME = "HydraCore"
-    private const val EXPECTED_CALL_WIRE = 9
     private val requiredCallFeatures = listOf(
         "call_vk_parasite",
         "call_vk_parasite_client",
-        "call_vk_four_lane_kcp",
-        "call_vk_pre_kcp_admission",
-        "call_vk_relay_flow_control",
-        "call_vk_worker_hot_swap",
-        "call_vk_flow_migration",
-        "call_vk_turn_tcp_fallback",
-        "call_vk_transport_health",
         "vk_auth_challenges",
     )
     private val protocolIdPattern = Regex("^[a-z0-9][a-z0-9._-]{0,63}$")
@@ -44,17 +36,13 @@ internal object CoreCapabilityContract {
             "HydraCore recovery capability contract is incomplete"
         }
         require(
-            !features.getBoolean("call_vk_parasite_server") &&
-                !features.getBoolean("call_vk_eight_lane_kcp"),
+            !features.optBoolean("call_vk_parasite_server", false),
         ) { "HydraCore Calls role is invalid" }
         val protocols = root.getJSONObject("protocols")
         val modes = protocols.getJSONArray("call_modes")
-        val wire = protocols.getJSONObject("call_vk_parasite_wire")
         require(
-            modes.length() == 1 && modes.getString(0) == "vk_parasite" &&
-                wire.getInt("min") == EXPECTED_CALL_WIRE &&
-                wire.getInt("max") == EXPECTED_CALL_WIRE,
-        ) { "HydraCore Calls wire contract is incompatible" }
+            modes.length() == 1 && modes.getString(0) == "vk_parasite",
+        ) { "HydraCore Calls mode contract is incompatible" }
         val runtime = root.getJSONObject("runtime")
         require(
             runtime.getInt("version") == 2 &&

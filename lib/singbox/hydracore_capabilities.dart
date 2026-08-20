@@ -40,17 +40,7 @@ class HydraCoreCapabilities {
     this.supportsCallVkParasiteClient = true,
     this.supportsCallVkParasiteServer = false,
     this.supportsCallVkTelemetry = true,
-    this.supportsCallVkEightLaneKcp = false,
-    this.supportsCallVkFourLaneKcp = true,
-    this.supportsCallVkPreKcpAdmission = true,
-    this.supportsCallVkRelayFlowControl = true,
-    this.supportsCallVkWorkerHotSwap = true,
-    this.supportsCallVkFlowMigration = true,
-    this.supportsCallVkTurnTcpFallback = true,
-    this.supportsCallVkTransportHealth = true,
     this.supportsVkAuthChallenges = true,
-    this.callVkParasiteWireMin = 9,
-    this.callVkParasiteWireMax = 9,
     this.amneziaVersion = 3,
     this.tunStacks = const {'system', 'gvisor', 'mixed'},
     this.inboundProtocols = const <String>{},
@@ -198,47 +188,7 @@ class HydraCoreCapabilities {
         'call_vk_parasite_server',
       ),
       supportsCallVkTelemetry: _requiredBool(features, 'call_vk_telemetry'),
-      supportsCallVkEightLaneKcp: _requiredBool(
-        features,
-        'call_vk_eight_lane_kcp',
-      ),
-      supportsCallVkFourLaneKcp: _requiredBool(
-        features,
-        'call_vk_four_lane_kcp',
-      ),
-      supportsCallVkPreKcpAdmission: _requiredBool(
-        features,
-        'call_vk_pre_kcp_admission',
-      ),
-      supportsCallVkRelayFlowControl: _requiredBool(
-        features,
-        'call_vk_relay_flow_control',
-      ),
-      supportsCallVkWorkerHotSwap: _requiredBool(
-        features,
-        'call_vk_worker_hot_swap',
-      ),
-      supportsCallVkFlowMigration: _requiredBool(
-        features,
-        'call_vk_flow_migration',
-      ),
-      supportsCallVkTurnTcpFallback: _requiredBool(
-        features,
-        'call_vk_turn_tcp_fallback',
-      ),
-      supportsCallVkTransportHealth: _requiredBool(
-        features,
-        'call_vk_transport_health',
-      ),
       supportsVkAuthChallenges: _requiredBool(features, 'vk_auth_challenges'),
-      callVkParasiteWireMin: _requiredInt(
-        _requiredMap(protocols, 'call_vk_parasite_wire'),
-        'min',
-      ),
-      callVkParasiteWireMax: _requiredInt(
-        _requiredMap(protocols, 'call_vk_parasite_wire'),
-        'max',
-      ),
       amneziaVersion: _requiredInt(features, 'amnezia_version'),
       tunStacks: _requiredStringSet(root, 'tun_stacks'),
       inboundProtocols: _requiredStringSet(
@@ -348,17 +298,7 @@ class HydraCoreCapabilities {
   final bool supportsCallVkParasiteClient;
   final bool supportsCallVkParasiteServer;
   final bool supportsCallVkTelemetry;
-  final bool supportsCallVkEightLaneKcp;
-  final bool supportsCallVkFourLaneKcp;
-  final bool supportsCallVkPreKcpAdmission;
-  final bool supportsCallVkRelayFlowControl;
-  final bool supportsCallVkWorkerHotSwap;
-  final bool supportsCallVkFlowMigration;
-  final bool supportsCallVkTurnTcpFallback;
-  final bool supportsCallVkTransportHealth;
   final bool supportsVkAuthChallenges;
-  final int callVkParasiteWireMin;
-  final int callVkParasiteWireMax;
   final int amneziaVersion;
   final Set<String> tunStacks;
   final Set<String> inboundProtocols;
@@ -411,18 +351,8 @@ class HydraCoreCapabilities {
       supportsCallVkParasiteClient &&
       !supportsCallVkParasiteServer &&
       supportsCallVkTelemetry &&
-      !supportsCallVkEightLaneKcp &&
-      supportsCallVkFourLaneKcp &&
-      supportsCallVkPreKcpAdmission &&
-      supportsCallVkRelayFlowControl &&
-      supportsCallVkWorkerHotSwap &&
-      supportsCallVkFlowMigration &&
-      supportsCallVkTurnTcpFallback &&
-      supportsCallVkTransportHealth &&
       supportsVkAuthChallenges &&
       coreRole == 'client' &&
-      callVkParasiteWireMin == 9 &&
-      callVkParasiteWireMax == 9 &&
       callPlatforms.length == 1 &&
       callPlatforms.contains('vk') &&
       callModes.length == 1 &&

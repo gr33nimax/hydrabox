@@ -7,6 +7,15 @@ import org.junit.Test
 
 class CoreBundleUpdaterTest {
     @Test
+    fun `manifest accepts API major one and two but rejects three`() {
+        assertEquals(1, CoreBundleManifest.parse(manifest(1)).coreApiMajor)
+        assertEquals(2, CoreBundleManifest.parse(manifest(2)).coreApiMajor)
+        assertThrows(IllegalArgumentException::class.java) {
+            CoreBundleManifest.parse(manifest(3))
+        }
+    }
+
+    @Test
     fun `selects newest release with signed bundle assets including prerelease`() {
         val releases = JSONArray(
             """
@@ -111,4 +120,32 @@ class CoreBundleUpdaterTest {
 
         assertEquals(19L, selected.getLong("id"))
     }
+
+    private fun manifest(apiMajor: Int): ByteArray =
+        """
+        {
+          "schemaVersion": 1,
+          "distributionId": "io.hydrabox.hydracore",
+          "releaseSequence": 1,
+          "version": "test",
+          "sourceCommit": "0000000000000000000000000000000000000000",
+          "upstreamCommit": "0000000000000000000000000000000000000000",
+          "publishedAt": "2026-08-20T00:00:00Z",
+          "coreApiMajor": $apiMajor,
+          "coreApiMinor": 0,
+          "runtimeSnapshotSchema": {"min": 1, "max": 1},
+          "runtimeEventSchema": {"min": 1, "max": 1},
+          "configSchema": {"min": 1, "max": 1},
+          "subscriptionSchema": {"min": 2, "max": 2},
+          "capabilitiesSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "keyId": "test",
+          "artifacts": [{
+            "abi": "arm64-v8a",
+            "assetName": "libbox.so",
+            "sizeBytes": 1,
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "minSdk": 26
+          }]
+        }
+        """.trimIndent().toByteArray()
 }

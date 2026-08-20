@@ -16,22 +16,32 @@ void main() {
     'user': 'alice',
     'password': 'per-user-secret',
     'obfs_password': 'ooooooooooooooooooooooooooooooooooooooooooo',
-    'workers': 8,
     'worker_connect_timeout': '12s',
   };
 
-  test('retains and validates the VK parasite outbound', () {
+  test('retains and validates the VK parasite outbound and strips workers', () {
     final sanitized = ParsedOutboundSchema.sanitize(valid());
 
     expect(sanitized, isNotNull);
     expect(sanitized?['mode'], 'vk_parasite');
     expect(sanitized?['join_links'], hasLength(2));
-    expect(sanitized?['workers'], 8);
+    expect(sanitized?['workers'], isNull);
     expect(ParsedOutboundSchema.validate(sanitized!), isNull);
   });
 
-  test('rejects incomplete four-lane configurations', () {
-    final wrongLaneCount = valid()..['workers'] = 3;
+  test('accepts legacy 4 or target 16 workers on input and strips from output', () {
+    for (final count in [4, 16]) {
+      final input = valid()..['workers'] = count;
+      expect(ParsedOutboundSchema.validate(input), isNull);
+      final sanitized = ParsedOutboundSchema.sanitize(input);
+      expect(sanitized, isNotNull);
+      expect(sanitized?['workers'], isNull);
+    }
+  });
+
+  test('rejects invalid worker counts and configurations', () {
+    final wrongLaneCount3 = valid()..['workers'] = 3;
+    final wrongLaneCount8 = valid()..['workers'] = 8;
     final tooManyLinks = valid()
       ..['join_links'] = <String>['a', 'b', 'c', 'd', 'e'];
     final duplicateLinks = valid()
@@ -43,8 +53,12 @@ void main() {
     final excessiveTimeout = valid()..['worker_connect_timeout'] = '121s';
 
     expect(
-      ParsedOutboundSchema.validate(wrongLaneCount),
-      contains('exactly eight'),
+      ParsedOutboundSchema.validate(wrongLaneCount3),
+      contains('4 or 16'),
+    );
+    expect(
+      ParsedOutboundSchema.validate(wrongLaneCount8),
+      contains('4 or 16'),
     );
     expect(ParsedOutboundSchema.validate(tooManyLinks), contains('1..4'));
     expect(

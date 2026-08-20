@@ -478,7 +478,6 @@ class ParsedOutboundSchema {
     'user',
     'password',
     'obfs_password',
-    'workers',
     'worker_connect_timeout',
   };
 
@@ -662,8 +661,8 @@ class ParsedOutboundSchema {
           }
         }
         final workers = config['workers'];
-        if (workers != null && workers != 8) {
-          return 'call workers must define exactly eight VK lanes';
+        if (workers != null && workers != 4 && workers != 16) {
+          return 'call workers must be 4 or 16';
         }
         final workerConnectTimeout = config['worker_connect_timeout'];
         if (workerConnectTimeout != null) {

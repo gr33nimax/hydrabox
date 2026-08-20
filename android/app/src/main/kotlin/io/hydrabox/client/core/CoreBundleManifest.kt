@@ -60,6 +60,8 @@ data class CoreBundleManifest(
         private const val CONFIG_SCHEMA = 1
         private const val SUBSCRIPTION_SCHEMA = 2
 
+        fun isSupportedApiMajor(major: Int): Boolean = major == 1 || major == 2
+
         fun parse(rawBytes: ByteArray): CoreBundleManifest {
             require(rawBytes.isNotEmpty() && rawBytes.size <= MAX_MANIFEST_BYTES) {
                 "HydraCore manifest size is invalid"
@@ -78,7 +80,7 @@ data class CoreBundleManifest(
             require(releaseSequence > 0) { "HydraCore releaseSequence must be positive" }
             val coreApiMajor = root.getInt("coreApiMajor")
             val coreApiMinor = root.getInt("coreApiMinor")
-            require(coreApiMajor == CORE_API_MAJOR && coreApiMinor >= 0) {
+            require(isSupportedApiMajor(coreApiMajor) && coreApiMinor >= 0) {
                 "HydraCore API is incompatible"
             }
             val runtimeSnapshotSchema = root.schemaRange("runtimeSnapshotSchema")

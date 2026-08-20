@@ -18,16 +18,7 @@ void main() {
     expect(capabilities.supportsCallVkParasiteClient, isTrue);
     expect(capabilities.supportsCallVkParasiteServer, isFalse);
     expect(capabilities.supportsCallVkTelemetry, isTrue);
-    expect(capabilities.supportsCallVkFourLaneKcp, isTrue);
-    expect(capabilities.supportsCallVkPreKcpAdmission, isTrue);
-    expect(capabilities.supportsCallVkRelayFlowControl, isTrue);
-    expect(capabilities.supportsCallVkWorkerHotSwap, isTrue);
-    expect(capabilities.supportsCallVkFlowMigration, isTrue);
-    expect(capabilities.supportsCallVkTurnTcpFallback, isTrue);
-    expect(capabilities.supportsCallVkTransportHealth, isTrue);
     expect(capabilities.supportsVkAuthChallenges, isTrue);
-    expect(capabilities.callVkParasiteWireMin, 9);
-    expect(capabilities.callVkParasiteWireMax, 9);
     expect(capabilities.callModes, {'vk_parasite'});
     expect(capabilities.validationProfiles, {'local', 'remote_v2'});
     expect(capabilities.subscriptionContracts, {2});
@@ -55,6 +46,26 @@ void main() {
     },
   );
 
+  test('parses reduced capability document without milestone or wire fields', () {
+    final reduced = _capabilities();
+    final features = reduced['features'] as Map<String, dynamic>;
+    features.remove('call_vk_four_lane_kcp');
+    features.remove('call_vk_eight_lane_kcp');
+    features.remove('call_vk_pre_kcp_admission');
+    features.remove('call_vk_relay_flow_control');
+    features.remove('call_vk_worker_hot_swap');
+    features.remove('call_vk_flow_migration');
+    features.remove('call_vk_turn_tcp_fallback');
+    features.remove('call_vk_transport_health');
+    final protocols = reduced['protocols'] as Map<String, dynamic>;
+    protocols.remove('call_vk_parasite_wire');
+
+    final capabilities = HydraCoreCapabilities.parseStrict(jsonEncode(reduced));
+    expect(capabilities.coreRole, 'client');
+    expect(capabilities.supportsCallVkParasite, isTrue);
+    expect(capabilities.isCompatibleRelease, isTrue);
+  });
+
   test('missing runtime and subscription features fail closed', () {
     for (final feature in <String>[
       'runtime_snapshot',
@@ -65,13 +76,6 @@ void main() {
       'call_vk_parasite',
       'call_vk_parasite_client',
       'call_vk_telemetry',
-      'call_vk_four_lane_kcp',
-      'call_vk_pre_kcp_admission',
-      'call_vk_relay_flow_control',
-      'call_vk_worker_hot_swap',
-      'call_vk_flow_migration',
-      'call_vk_turn_tcp_fallback',
-      'call_vk_transport_health',
       'vk_auth_challenges',
     ]) {
       final document = _capabilities();
@@ -114,17 +118,6 @@ void main() {
     (vpsRole['identity'] as Map<String, dynamic>)['role'] = 'vps';
     expect(
       () => HydraCoreCapabilities.parseStrict(jsonEncode(vpsRole)),
-      throwsFormatException,
-    );
-
-    final previousWire = _capabilities();
-    (previousWire['protocols']
-        as Map<String, dynamic>)['call_vk_parasite_wire'] = {
-      'min': 3,
-      'max': 3,
-    };
-    expect(
-      () => HydraCoreCapabilities.parseStrict(jsonEncode(previousWire)),
       throwsFormatException,
     );
   });
