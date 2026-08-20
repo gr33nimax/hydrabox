@@ -75,7 +75,9 @@ class CoreCandidateProbeClient(context: Context) {
                         )
                         if (!report.healthy) return@runCatching report
                         requireProbe(
-                            report.contract.apiMajor == CoreBundleManifest.CORE_API_MAJOR,
+                            CoreBundleManifest.isSupportedApiMajor(
+                                report.contract.apiMajor,
+                            ),
                             "core.probe.api_mismatch",
                         )
                         requireProbe(

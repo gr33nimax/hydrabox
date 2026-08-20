@@ -45,7 +45,6 @@ data class CoreBundleManifest(
     companion object {
         const val SCHEMA_VERSION = 1
         const val DISTRIBUTION_ID = "io.hydrabox.hydracore"
-        const val CORE_API_MAJOR = 1
         const val MAX_MANIFEST_BYTES = 128 * 1024
         const val MAX_ARTIFACT_BYTES = 256L * 1024L * 1024L
 
