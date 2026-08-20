@@ -50,6 +50,7 @@ class SingboxConfigCoordinatorSnapshot {
     required this.adBlockBlockRuleSetPath,
     required this.adBlockAllowRuleSetPath,
     required this.useRussiaRouteData,
+    this.routeExcludeRussiaEnabled = false,
     required this.routeDataAvailable,
     required this.routeDataSourceKind,
     required this.routeDataRelease,
@@ -105,6 +106,7 @@ class SingboxConfigCoordinatorSnapshot {
   final String? adBlockBlockRuleSetPath;
   final String? adBlockAllowRuleSetPath;
   final bool useRussiaRouteData;
+  final bool routeExcludeRussiaEnabled;
   final bool routeDataAvailable;
   final String routeDataSourceKind;
   final String? routeDataRelease;
@@ -755,6 +757,7 @@ class SingboxConfigCoordinator {
       adBlockBlockRuleSetPath: snapshot.adBlockBlockRuleSetPath,
       adBlockAllowRuleSetPath: snapshot.adBlockAllowRuleSetPath,
       useRussiaRouteData: snapshot.useRussiaRouteData,
+      routeExcludeRussiaEnabled: snapshot.routeExcludeRussiaEnabled,
       russiaGeositeRuBlockedPath: snapshot.russiaGeositeRuBlockedPath,
       russiaGeositeRuAvailableOnlyInsidePath:
           snapshot.russiaGeositeRuAvailableOnlyInsidePath,

@@ -97,6 +97,7 @@ class SingboxConfigBuilder {
     this.adBlockBlockRuleSetPath,
     this.adBlockAllowRuleSetPath,
     required this.useRussiaRouteData,
+    this.routeExcludeRussiaEnabled = false,
     this.russiaGeositeRuBlockedPath,
     this.russiaGeositeRuAvailableOnlyInsidePath,
     this.russiaGeositeCategoryRuPath,
@@ -148,6 +149,7 @@ class SingboxConfigBuilder {
   final String? adBlockBlockRuleSetPath;
   final String? adBlockAllowRuleSetPath;
   final bool useRussiaRouteData;
+  final bool routeExcludeRussiaEnabled;
   final String? russiaGeositeRuBlockedPath;
   final String? russiaGeositeRuAvailableOnlyInsidePath;
   final String? russiaGeositeCategoryRuPath;
@@ -425,6 +427,8 @@ class SingboxConfigBuilder {
             'strict_route': vpnStrictRoute,
             'stack': vpnTunImplementation.name,
             'udp_timeout': '2m',
+            if (routeExcludeRussiaEnabled && russiaRouteDataActive)
+              'route_exclude_address_set': ['ru-geoip-ru'],
             if (tunIncludePackages.isNotEmpty)
               'include_package': tunIncludePackages,
             if (tunExcludePackages.isNotEmpty)

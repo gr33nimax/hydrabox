@@ -2817,6 +2817,7 @@ SingboxConfigBuilder _defaultBuilder(
   String dnsProxyResolver = 'https://dns.cloudflare.com/dns-query',
   bool dnsPreferIpv6 = false,
   bool dnsFakeIpEnabled = false,
+  bool routeExcludeRussiaEnabled = false,
   String russiaDnsDirectResolver = defaultRussiaDnsDirectResolver,
   HydraCoreCapabilities capabilities = HydraCoreCapabilities.requiredV2,
   String cacheId = '',
@@ -2850,6 +2851,7 @@ SingboxConfigBuilder _defaultBuilder(
     adBlockBlockRuleSetPath: adBlockBlockRuleSetPath,
     adBlockAllowRuleSetPath: adBlockAllowRuleSetPath,
     useRussiaRouteData: useRussiaRouteData,
+    routeExcludeRussiaEnabled: routeExcludeRussiaEnabled,
     russiaGeositeRuBlockedPath: useRussiaRouteData
         ? _russiaRuleSetPath('geosite-ru-blocked.srs')
         : null,

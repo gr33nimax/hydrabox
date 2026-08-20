@@ -83,6 +83,7 @@ class SingboxConfigBuildInput {
     required this.adBlockBlockRuleSetPath,
     required this.adBlockAllowRuleSetPath,
     required this.useRussiaRouteData,
+    this.routeExcludeRussiaEnabled = false,
     required this.russiaGeositeRuBlockedPath,
     required this.russiaGeositeRuAvailableOnlyInsidePath,
     required this.russiaGeositeCategoryRuPath,
@@ -135,6 +136,7 @@ class SingboxConfigBuildInput {
   final String? adBlockBlockRuleSetPath;
   final String? adBlockAllowRuleSetPath;
   final bool useRussiaRouteData;
+  final bool routeExcludeRussiaEnabled;
   final String? russiaGeositeRuBlockedPath;
   final String? russiaGeositeRuAvailableOnlyInsidePath;
   final String? russiaGeositeCategoryRuPath;
@@ -448,6 +450,7 @@ SingboxConfigBuildResult buildSingboxConfig(SingboxConfigBuildInput input) {
     adBlockBlockRuleSetPath: input.adBlockBlockRuleSetPath,
     adBlockAllowRuleSetPath: input.adBlockAllowRuleSetPath,
     useRussiaRouteData: input.useRussiaRouteData,
+    routeExcludeRussiaEnabled: input.routeExcludeRussiaEnabled,
     russiaGeositeRuBlockedPath: input.russiaGeositeRuBlockedPath,
     russiaGeositeRuAvailableOnlyInsidePath:
         input.russiaGeositeRuAvailableOnlyInsidePath,

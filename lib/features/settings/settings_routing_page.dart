@@ -30,6 +30,8 @@ class SettingsRoutingPage extends StatefulWidget {
     required this.currentAdBlockStatus,
     required this.currentRussiaRouteDataEnabled,
     required this.currentRussiaRouteDataStatus,
+    required this.currentRouteExcludeRussiaEnabled,
+    required this.currentFakeIpEnabled,
     required this.currentBypassLocalNetwork,
     required this.currentVpnInboundEnabled,
     required this.currentSplitRoutingMode,
@@ -41,6 +43,7 @@ class SettingsRoutingPage extends StatefulWidget {
     required this.onDownloadAdBlockRuleSet,
     required this.onDeleteAdBlockRuleSet,
     required this.onRussiaRouteDataEnabledChanged,
+    required this.onRouteExcludeRussiaEnabledChanged,
     required this.onCheckRussiaRouteDataUpdate,
     required this.onInstallRussiaRouteData,
     required this.onDeleteRussiaRouteData,
@@ -54,6 +57,8 @@ class SettingsRoutingPage extends StatefulWidget {
   final AdBlockRuleSetStatus currentAdBlockStatus;
   final bool currentRussiaRouteDataEnabled;
   final RussiaRouteDataStatus currentRussiaRouteDataStatus;
+  final bool currentRouteExcludeRussiaEnabled;
+  final bool currentFakeIpEnabled;
   final bool currentBypassLocalNetwork;
   final bool currentVpnInboundEnabled;
   final SplitRoutingMode currentSplitRoutingMode;
@@ -65,6 +70,7 @@ class SettingsRoutingPage extends StatefulWidget {
   final Future<AdBlockRuleSetStatus> Function() onDownloadAdBlockRuleSet;
   final Future<AdBlockRuleSetStatus> Function() onDeleteAdBlockRuleSet;
   final ValueChanged<bool> onRussiaRouteDataEnabledChanged;
+  final ValueChanged<bool> onRouteExcludeRussiaEnabledChanged;
   final Future<RussiaRouteUpdateCheck> Function() onCheckRussiaRouteDataUpdate;
   final Future<RussiaRouteDataStatus> Function() onInstallRussiaRouteData;
   final Future<RussiaRouteDataStatus> Function() onDeleteRussiaRouteData;
@@ -82,6 +88,7 @@ class _SettingsRoutingPageState extends State<SettingsRoutingPage> {
   late AdBlockRuleSetStatus _adBlockStatus;
   late bool _russiaRouteDataEnabled;
   late RussiaRouteDataStatus _russiaRouteDataStatus;
+  late bool _routeExcludeRussiaEnabled;
   late bool _bypassLocalNetwork;
   late SplitRoutingMode _splitRoutingMode;
   late final TextEditingController _packagesController;
@@ -103,6 +110,7 @@ class _SettingsRoutingPageState extends State<SettingsRoutingPage> {
     _adBlockStatus = widget.currentAdBlockStatus;
     _russiaRouteDataEnabled = widget.currentRussiaRouteDataEnabled;
     _russiaRouteDataStatus = widget.currentRussiaRouteDataStatus;
+    _routeExcludeRussiaEnabled = widget.currentRouteExcludeRussiaEnabled;
     _bypassLocalNetwork = widget.currentBypassLocalNetwork;
     _splitRoutingMode = widget.currentSplitRoutingMode;
     _packagesController = TextEditingController(
@@ -153,6 +161,10 @@ class _SettingsRoutingPageState extends State<SettingsRoutingPage> {
     if (oldWidget.currentRussiaRouteDataEnabled !=
         widget.currentRussiaRouteDataEnabled) {
       _russiaRouteDataEnabled = widget.currentRussiaRouteDataEnabled;
+    }
+    if (oldWidget.currentRouteExcludeRussiaEnabled !=
+        widget.currentRouteExcludeRussiaEnabled) {
+      _routeExcludeRussiaEnabled = widget.currentRouteExcludeRussiaEnabled;
     }
   }
 
@@ -356,8 +368,10 @@ class _SettingsRoutingPageState extends State<SettingsRoutingPage> {
     if (!value) {
       setState(() {
         _russiaRouteDataEnabled = false;
+        _routeExcludeRussiaEnabled = false;
       });
       widget.onRussiaRouteDataEnabledChanged(false);
+      widget.onRouteExcludeRussiaEnabledChanged(false);
       return;
     }
     if (_russiaRouteDataStatus.available) {
@@ -702,6 +716,31 @@ class _SettingsRoutingPageState extends State<SettingsRoutingPage> {
                           ? null
                           : _setRussiaRouteData,
                     ),
+                    if (_russiaRouteDataEnabled) ...[
+                      const Gap(12),
+                      _CompactSwitchRow(
+                        icon: Icons.electric_bolt_rounded,
+                        title: l10n.routeExcludeRussiaTitle,
+                        subtitle: l10n.routeExcludeRussiaSubtitle,
+                        value: _routeExcludeRussiaEnabled,
+                        onChanged: (value) {
+                          setState(() {
+                            _routeExcludeRussiaEnabled = value;
+                          });
+                          widget.onRouteExcludeRussiaEnabledChanged(value);
+                        },
+                      ),
+                      if (_routeExcludeRussiaEnabled &&
+                          widget.currentFakeIpEnabled) ...[
+                        const Gap(8),
+                        Text(
+                          l10n.routeExcludeRussiaFakeIpNotice,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: cs.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ],
                   ],
                 ),
               ),

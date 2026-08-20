@@ -3212,6 +3212,24 @@ abstract class AppLocalizations {
   /// **'Apply the prepared rules to the VPN connection.'**
   String get russiaRoutesEnabledSubtitle;
 
+  /// No description provided for @routeExcludeRussiaTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Direct Russian subnets at TUN level'**
+  String get routeExcludeRussiaTitle;
+
+  /// No description provided for @routeExcludeRussiaSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Excludes Russian IP subnets from TUN routing to save VPN bandwidth and reduce battery usage'**
+  String get routeExcludeRussiaSubtitle;
+
+  /// No description provided for @routeExcludeRussiaFakeIpNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Note: With FakeIP active, apps using domain names still route into TUN for DNS mapping; only direct IP traffic bypasses TUN at interface level.'**
+  String get routeExcludeRussiaFakeIpNotice;
+
   /// No description provided for @russiaRoutesMissingSubtitle.
   ///
   /// In en, this message translates to:

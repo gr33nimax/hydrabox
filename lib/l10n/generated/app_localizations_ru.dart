@@ -1780,6 +1780,18 @@ class AppLocalizationsRu extends AppLocalizations {
       'Применять подготовленные правила к VPN-подключению.';
 
   @override
+  String get routeExcludeRussiaTitle =>
+      'Исключать российские сети на уровне TUN';
+
+  @override
+  String get routeExcludeRussiaSubtitle =>
+      'Исключает IP-диапазоны РФ из маршрутизации TUN для экономии трафика и заряда батареи';
+
+  @override
+  String get routeExcludeRussiaFakeIpNotice =>
+      'Примечание: при включённом FakeIP доменные запросы попадают в TUN для назначения виртуального адреса; напрямую в обход TUN идут прямые подключения по IP.';
+
+  @override
   String get russiaRoutesMissingSubtitle =>
       'Встроенная база доступна без интернета и подключится при включении.';
 

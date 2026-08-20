@@ -88,6 +88,7 @@ class AppSettingsController {
   bool blockLeaks = false;
   bool adBlockEnabled = false;
   bool useRussiaRouteData = false;
+  bool routeExcludeRussiaEnabled = false;
   bool bypassLocalNetwork = true;
   SplitRoutingMode splitRoutingMode = SplitRoutingMode.disabled;
   List<String> splitRoutingPackages = const <String>[];
@@ -177,6 +178,7 @@ class AppSettingsController {
       blockLeaks: blockLeaks,
       adBlockEnabled: adBlockEnabled,
       useRussiaRouteData: useRussiaRouteData,
+      routeExcludeRussiaEnabled: routeExcludeRussiaEnabled,
       bypassLocalNetwork: bypassLocalNetwork,
       splitRoutingMode: splitRoutingMode,
       splitRoutingPackages: splitRoutingPackages,
@@ -254,6 +256,7 @@ class AppSettingsController {
     blockLeaks = state.blockLeaks;
     adBlockEnabled = state.adBlockEnabled;
     useRussiaRouteData = state.useRussiaRouteData;
+    routeExcludeRussiaEnabled = state.routeExcludeRussiaEnabled;
     bypassLocalNetwork = state.bypassLocalNetwork;
     splitRoutingMode = state.splitRoutingMode;
     splitRoutingPackages = List<String>.from(state.splitRoutingPackages);
@@ -759,6 +762,17 @@ class AppSettingsController {
     return const AppSettingsChange(
       changed: true,
       configReason: 'russia route data changed',
+    );
+  }
+
+  AppSettingsChange setRouteExcludeRussiaEnabled(bool value) {
+    if (routeExcludeRussiaEnabled == value) {
+      return const AppSettingsChange.none();
+    }
+    routeExcludeRussiaEnabled = value;
+    return const AppSettingsChange(
+      changed: true,
+      configReason: 'route exclude russia changed',
     );
   }
 

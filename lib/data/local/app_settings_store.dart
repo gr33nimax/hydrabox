@@ -180,6 +180,7 @@ class AppSettingsState {
     required this.blockLeaks,
     required this.adBlockEnabled,
     required this.useRussiaRouteData,
+    this.routeExcludeRussiaEnabled = false,
     required this.bypassLocalNetwork,
     required this.splitRoutingMode,
     required this.splitRoutingPackages,
@@ -239,6 +240,7 @@ class AppSettingsState {
   final bool blockLeaks;
   final bool adBlockEnabled;
   final bool useRussiaRouteData;
+  final bool routeExcludeRussiaEnabled;
   final bool bypassLocalNetwork;
   final SplitRoutingMode splitRoutingMode;
   final List<String> splitRoutingPackages;
@@ -298,6 +300,7 @@ class AppSettingsState {
     bool? blockLeaks,
     bool? adBlockEnabled,
     bool? useRussiaRouteData,
+    bool? routeExcludeRussiaEnabled,
     bool? bypassLocalNetwork,
     SplitRoutingMode? splitRoutingMode,
     List<String>? splitRoutingPackages,
@@ -371,6 +374,8 @@ class AppSettingsState {
       blockLeaks: blockLeaks ?? this.blockLeaks,
       adBlockEnabled: adBlockEnabled ?? this.adBlockEnabled,
       useRussiaRouteData: useRussiaRouteData ?? this.useRussiaRouteData,
+      routeExcludeRussiaEnabled:
+          routeExcludeRussiaEnabled ?? this.routeExcludeRussiaEnabled,
       bypassLocalNetwork: bypassLocalNetwork ?? this.bypassLocalNetwork,
       splitRoutingMode: splitRoutingMode ?? this.splitRoutingMode,
       splitRoutingPackages: splitRoutingPackages ?? this.splitRoutingPackages,
@@ -450,6 +455,7 @@ abstract class AppSettingsStore {
   static const _blockLeaksKey = 'block_leaks';
   static const _adBlockEnabledKey = 'ad_block_enabled';
   static const _useRussiaRouteDataKey = 'use_russia_route_data';
+  static const _routeExcludeRussiaEnabledKey = 'route_exclude_russia_enabled';
   static const _bypassLocalNetworkKey = 'bypass_local_network';
   static const _splitRoutingModeKey = 'split_routing_mode';
   static const _splitRoutingPackagesKey = 'split_routing_packages';
@@ -508,6 +514,7 @@ abstract class AppSettingsStore {
     _blockLeaksKey,
     _adBlockEnabledKey,
     _useRussiaRouteDataKey,
+    _routeExcludeRussiaEnabledKey,
     _bypassLocalNetworkKey,
     _splitRoutingModeKey,
     _splitRoutingPackagesKey,
@@ -757,6 +764,10 @@ abstract class AppSettingsStore {
         _useRussiaRouteDataKey,
         defaultValue: false,
       ),
+      routeExcludeRussiaEnabled: boolValue(
+        _routeExcludeRussiaEnabledKey,
+        defaultValue: false,
+      ),
       bypassLocalNetwork: boolValue(_bypassLocalNetworkKey, defaultValue: true),
       splitRoutingMode: switch (map[_splitRoutingModeKey]) {
         'proxy_selected' => SplitRoutingMode.proxySelected,
@@ -852,6 +863,8 @@ abstract class AppSettingsStore {
       _blockLeaksKey: state.blockLeaks ? '1' : '0',
       _adBlockEnabledKey: state.adBlockEnabled ? '1' : '0',
       _useRussiaRouteDataKey: state.useRussiaRouteData ? '1' : '0',
+      _routeExcludeRussiaEnabledKey:
+          state.routeExcludeRussiaEnabled ? '1' : '0',
       _bypassLocalNetworkKey: state.bypassLocalNetwork ? '1' : '0',
       _splitRoutingModeKey: switch (state.splitRoutingMode) {
         SplitRoutingMode.disabled => 'disabled',
@@ -1067,6 +1080,7 @@ class MemoryAppSettingsStore extends AppSettingsStore {
             blockLeaks: false,
             adBlockEnabled: false,
             useRussiaRouteData: false,
+            routeExcludeRussiaEnabled: false,
             bypassLocalNetwork: true,
             splitRoutingMode: SplitRoutingMode.disabled,
             splitRoutingPackages: <String>[],

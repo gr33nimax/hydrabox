@@ -329,6 +329,9 @@ class _HydraBoxClientState extends State<HydraBoxClient>
   set _adBlockEnabled(bool value) => _settings.adBlockEnabled = value;
   bool get _useRussiaRouteData => _settings.useRussiaRouteData;
   set _useRussiaRouteData(bool value) => _settings.useRussiaRouteData = value;
+  bool get _routeExcludeRussiaEnabled => _settings.routeExcludeRussiaEnabled;
+  set _routeExcludeRussiaEnabled(bool value) =>
+      _settings.routeExcludeRussiaEnabled = value;
   bool get _bypassLocalNetwork => _settings.bypassLocalNetwork;
   SplitRoutingMode get _splitRoutingMode => _splitRoutingTemporarilyDisabled
       ? SplitRoutingMode.disabled
@@ -4985,6 +4988,10 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     _applySettingsChange(() => _settings.setRussiaRouteDataEnabled(value));
   }
 
+  void _setRouteExcludeRussiaEnabled(bool value) {
+    _applySettingsChange(() => _settings.setRouteExcludeRussiaEnabled(value));
+  }
+
   Future<RussiaRouteDataStatus> _installRussiaRouteData() async {
     final hadInstalledData = _russiaRouteDataStatus.available;
     final status = hadInstalledData
@@ -5013,6 +5020,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       setState(() {
         _russiaRouteDataStatus = status;
         _useRussiaRouteData = false;
+        _routeExcludeRussiaEnabled = false;
       });
     }
     unawaited(_persistState());
@@ -5148,6 +5156,8 @@ class _HydraBoxClientState extends State<HydraBoxClient>
             currentAdBlockStatus: _adBlockStatus,
             currentRussiaRouteDataEnabled: _useRussiaRouteData,
             currentRussiaRouteDataStatus: _russiaRouteDataStatus,
+            currentRouteExcludeRussiaEnabled: _routeExcludeRussiaEnabled,
+            currentFakeIpEnabled: _dnsFakeIpEnabled,
             currentBypassLocalNetwork: _bypassLocalNetwork,
             currentVpnInboundEnabled: _vpnInboundEnabled,
             currentSplitRoutingMode: _splitRoutingMode,
@@ -5159,6 +5169,8 @@ class _HydraBoxClientState extends State<HydraBoxClient>
             onDownloadAdBlockRuleSet: _downloadAdBlockRuleSet,
             onDeleteAdBlockRuleSet: _deleteAdBlockRuleSet,
             onRussiaRouteDataEnabledChanged: _setRussiaRouteDataEnabled,
+            onRouteExcludeRussiaEnabledChanged:
+                _setRouteExcludeRussiaEnabled,
             onCheckRussiaRouteDataUpdate: _checkRussiaRouteDataUpdate,
             onInstallRussiaRouteData: _installRussiaRouteData,
             onDeleteRussiaRouteData: _deleteRussiaRouteData,

@@ -1777,6 +1777,17 @@ class AppLocalizationsEn extends AppLocalizations {
       'Apply the prepared rules to the VPN connection.';
 
   @override
+  String get routeExcludeRussiaTitle => 'Direct Russian subnets at TUN level';
+
+  @override
+  String get routeExcludeRussiaSubtitle =>
+      'Excludes Russian IP subnets from TUN routing to save VPN bandwidth and reduce battery usage';
+
+  @override
+  String get routeExcludeRussiaFakeIpNotice =>
+      'Note: With FakeIP active, apps using domain names still route into TUN for DNS mapping; only direct IP traffic bypasses TUN at interface level.';
+
+  @override
   String get russiaRoutesMissingSubtitle =>
       'The bundled database works offline and is connected when enabled.';
 
