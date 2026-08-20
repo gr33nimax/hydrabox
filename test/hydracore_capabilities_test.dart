@@ -46,25 +46,30 @@ void main() {
     },
   );
 
-  test('parses reduced capability document without milestone or wire fields', () {
-    final reduced = _capabilities();
-    final features = reduced['features'] as Map<String, dynamic>;
-    features.remove('call_vk_four_lane_kcp');
-    features.remove('call_vk_eight_lane_kcp');
-    features.remove('call_vk_pre_kcp_admission');
-    features.remove('call_vk_relay_flow_control');
-    features.remove('call_vk_worker_hot_swap');
-    features.remove('call_vk_flow_migration');
-    features.remove('call_vk_turn_tcp_fallback');
-    features.remove('call_vk_transport_health');
-    final protocols = reduced['protocols'] as Map<String, dynamic>;
-    protocols.remove('call_vk_parasite_wire');
+  test(
+    'parses reduced capability document without milestone or wire fields',
+    () {
+      final reduced = _capabilities();
+      final features = reduced['features'] as Map<String, dynamic>;
+      features.remove('call_vk_four_lane_kcp');
+      features.remove('call_vk_eight_lane_kcp');
+      features.remove('call_vk_pre_kcp_admission');
+      features.remove('call_vk_relay_flow_control');
+      features.remove('call_vk_worker_hot_swap');
+      features.remove('call_vk_flow_migration');
+      features.remove('call_vk_turn_tcp_fallback');
+      features.remove('call_vk_transport_health');
+      final protocols = reduced['protocols'] as Map<String, dynamic>;
+      protocols.remove('call_vk_parasite_wire');
 
-    final capabilities = HydraCoreCapabilities.parseStrict(jsonEncode(reduced));
-    expect(capabilities.coreRole, 'client');
-    expect(capabilities.supportsCallVkParasite, isTrue);
-    expect(capabilities.isCompatibleRelease, isTrue);
-  });
+      final capabilities = HydraCoreCapabilities.parseStrict(
+        jsonEncode(reduced),
+      );
+      expect(capabilities.coreRole, 'client');
+      expect(capabilities.supportsCallVkParasite, isTrue);
+      expect(capabilities.isCompatibleRelease, isTrue);
+    },
+  );
 
   test('missing runtime and subscription features fail closed', () {
     for (final feature in <String>[

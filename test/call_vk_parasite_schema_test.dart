@@ -29,15 +29,18 @@ void main() {
     expect(ParsedOutboundSchema.validate(sanitized!), isNull);
   });
 
-  test('accepts legacy 4 or target 16 workers on input and strips from output', () {
-    for (final count in [4, 16]) {
-      final input = valid()..['workers'] = count;
-      expect(ParsedOutboundSchema.validate(input), isNull);
-      final sanitized = ParsedOutboundSchema.sanitize(input);
-      expect(sanitized, isNotNull);
-      expect(sanitized?['workers'], isNull);
-    }
-  });
+  test(
+    'accepts legacy 4 or target 16 workers on input and strips from output',
+    () {
+      for (final count in [4, 16]) {
+        final input = valid()..['workers'] = count;
+        expect(ParsedOutboundSchema.validate(input), isNull);
+        final sanitized = ParsedOutboundSchema.sanitize(input);
+        expect(sanitized, isNotNull);
+        expect(sanitized?['workers'], isNull);
+      }
+    },
+  );
 
   test('rejects invalid worker counts and configurations', () {
     final wrongLaneCount3 = valid()..['workers'] = 3;
@@ -52,14 +55,8 @@ void main() {
     final noSharedObfs = valid()..remove('obfs_password');
     final excessiveTimeout = valid()..['worker_connect_timeout'] = '121s';
 
-    expect(
-      ParsedOutboundSchema.validate(wrongLaneCount3),
-      contains('4 or 16'),
-    );
-    expect(
-      ParsedOutboundSchema.validate(wrongLaneCount8),
-      contains('4 or 16'),
-    );
+    expect(ParsedOutboundSchema.validate(wrongLaneCount3), contains('4 or 16'));
+    expect(ParsedOutboundSchema.validate(wrongLaneCount8), contains('4 or 16'));
     expect(ParsedOutboundSchema.validate(tooManyLinks), contains('1..4'));
     expect(
       ParsedOutboundSchema.validate(duplicateLinks),
