@@ -21,7 +21,7 @@ void main() {
         versionCode: 2012,
       );
 
-      expect(info.displayVersion, '1.0.0');
+      expect(info.displayVersion, '1.0.1');
       expect(info.updateBuildNumber, 12);
     });
   });
