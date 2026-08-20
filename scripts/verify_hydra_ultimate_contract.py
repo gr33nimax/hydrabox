@@ -114,17 +114,24 @@ def verify(producer: Path, expected_commit: str) -> None:
         '"call_vk_parasite"',
         'identity.get("role") == "vps"',
         '"call_vk_parasite_server"',
-        '"vk_parasite" in modes',
     ):
         if marker not in calls_runtime_source:
             fail(f"HYDRA ULTIMATE Calls runtime is missing capability gate: {marker}")
+    if not any(
+        marker in calls_runtime_source
+        for marker in ('modes == ["vk_parasite"]', '"vk_parasite" in modes')
+    ):
+        fail("HYDRA ULTIMATE Calls runtime is missing vk_parasite mode gate")
 
     for relative in (
         "hydra/services/calls_infrastructure.py",
         "hydra/services/kernel_infrastructure.py",
     ):
         source = (producer / relative).read_text(encoding="utf-8")
-        if "supports_vps_calls" not in source:
+        if not any(
+            marker in source
+            for marker in ("supports_exact_vps_calls", "supports_vps_calls")
+        ):
             fail(f"HYDRA ULTIMATE service bypasses the Calls gate: {relative}")
 
     print(
