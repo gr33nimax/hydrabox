@@ -356,6 +356,8 @@ enum CoreUtilityKind {
   CORE_UTILITY_KIND_LOOKUP_OUTBOUND_EXTERNAL_INFO = 11;
   CORE_UTILITY_KIND_UPDATE_NOTIFICATION = 12;
   CORE_UTILITY_KIND_REFRESH_RUNTIME_FLAGS = 13;
+  CORE_UTILITY_KIND_SET_UI_FOREGROUND = 14;
+  CORE_UTILITY_KIND_PERFORMANCE_COUNTERS = 15;
 }
 
 message CoreUtilityRequest {
@@ -394,6 +396,10 @@ message CoreProbeReport {
   CoreContract contract = 6;
   uint32 validated_fixture_count = 7;
   CoreError error = 8;
+}
+
+message UiForegroundState {
+  bool foreground = 1;
 }
 
 message NotificationPresentation {

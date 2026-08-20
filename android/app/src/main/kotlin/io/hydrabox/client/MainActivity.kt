@@ -1585,8 +1585,12 @@ class MainActivity : FlutterFragmentActivity() {
                     foreground: Boolean,
                     callback: (Result<Unit>) -> Unit,
                 ) {
-                    // Runtime event cadence is core-owned in 1.0.
-                    callback(Result.success(Unit))
+                    coreRuntimeClient.setUiForeground(foreground) { result ->
+                        result.exceptionOrNull()?.let {
+                            HydraBoxDiagnostics.log(TAG, "ui_foreground_ipc_failed value=" + foreground, it)
+                        }
+                        callback(Result.success(Unit))
+                    }
                 }
 
                 override fun ensureNotificationPermission(callback: (Result<Boolean>) -> Unit) {
@@ -2184,7 +2188,13 @@ class MainActivity : FlutterFragmentActivity() {
                 }
 
                 override fun getPerformanceSnapshot(callback: (Result<Map<String?, Any?>>) -> Unit) {
-                    callback(Result.success(pigeonMap(buildPerformanceSnapshot())))
+                    val localSnapshot = buildPerformanceSnapshot().toMutableMap()
+                    coreRuntimeClient.performanceCounters { result ->
+                        result.getOrNull()?.let { coreCounters ->
+                            localSnapshot.putAll(coreCounters)
+                        }
+                        callback(Result.success(pigeonMap(localSnapshot)))
+                    }
                 }
 
                 override fun getHappCrypt5Support(callback: (Result<Map<String?, Any?>>) -> Unit) {

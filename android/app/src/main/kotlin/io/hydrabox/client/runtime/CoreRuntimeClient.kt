@@ -15,6 +15,7 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executors
+import org.json.JSONObject
 
 class CoreRuntimeException(
     val code: String,
@@ -516,6 +517,34 @@ class CoreRuntimeClient(context: Context) {
             CoreRuntimeProtocol.CoreUtilityKind.CORE_UTILITY_KIND_REFRESH_RUNTIME_FLAGS,
             emptyList(),
         ) { result -> callback(result.map { Unit }) }
+    }
+
+    fun setUiForeground(foreground: Boolean, callback: (Result<Unit>) -> Unit = {}) {
+        val value = CoreRuntimeProtocol.UiForegroundState.newBuilder()
+            .setForeground(foreground)
+            .build()
+        utility(
+            CoreRuntimeProtocol.CoreUtilityKind.CORE_UTILITY_KIND_SET_UI_FOREGROUND,
+            listOf(value.toByteArray()),
+        ) { result -> callback(result.map { Unit }) }
+    }
+
+    fun performanceCounters(callback: (Result<Map<String, Long>>) -> Unit) {
+        utility(
+            CoreRuntimeProtocol.CoreUtilityKind.CORE_UTILITY_KIND_PERFORMANCE_COUNTERS,
+            emptyList(),
+        ) { result ->
+            callback(
+                result.mapCatching { bytes ->
+                    val json = JSONObject(bytes.toString(Charsets.UTF_8))
+                    val map = mutableMapOf<String, Long>()
+                    for (key in json.keys()) {
+                        map[key] = json.optLong(key)
+                    }
+                    map
+                },
+            )
+        }
     }
 
     private fun utility(

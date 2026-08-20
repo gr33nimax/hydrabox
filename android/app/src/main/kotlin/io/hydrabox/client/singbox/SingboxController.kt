@@ -93,7 +93,9 @@ object SingboxController {
     private val eventSink: RuntimeEventConsumer?
         get() = eventSinkRegistry.current()
     @Volatile
-    private var uiForeground = true
+    private var uiForeground = false
+    @Volatile
+    private var screenInteractive = true
     @Volatile
     private var latestStatusPayload: Map<String, Any?>? = null
     @Volatile
@@ -384,10 +386,9 @@ object SingboxController {
 
     fun registerEventSink(sink: RuntimeEventConsumer): Long {
         val registration = eventSinkRegistry.register(sink)
-        // A fresh Flutter subscription is authoritative evidence that a UI
-        // engine has been attached. The previous engine may have left this
-        // flag false when its task was removed.
-        uiForeground = true
+        // Note: registerEventSink is called by CoreRuntimeService in the :core
+        // process. UI foreground lifecycle is driven explicitly by Flutter via
+        // setUiForeground IPC calls.
         HydraBoxDiagnostics.log(
             TAG,
             "runtime event sink attached registration=$registration running=$running",
@@ -414,6 +415,11 @@ object SingboxController {
             return
         }
         HydraBoxDiagnostics.log(TAG, "runtime event sink detached registration=$registration")
+        val wasForeground = uiForeground
+        uiForeground = false
+        if (wasForeground && running) {
+            reconnectClientForCadenceChange("event_sink_cleared")
+        }
         // The command stream is also the source of native foreground-service
         // telemetry. Do not stop it just because Flutter is detached: the VPN
         // notification must continue receiving traffic totals and a refresh
@@ -457,6 +463,18 @@ object SingboxController {
         lastRuntimeError = ""
     }
 
+    fun setScreenInteractive(interactive: Boolean) {
+        val changed = screenInteractive != interactive
+        screenInteractive = interactive
+        HydraBoxDiagnostics.log(
+            TAG,
+            "screen interactive=$interactive changed=$changed running=$running",
+        )
+        if (changed && running) {
+            reconnectClientForCadenceChange("screen_interactive=$interactive")
+        }
+    }
+
     fun setUiForeground(value: Boolean, registration: Long = 0L) {
         if (!eventSinkRegistry.canControl(registration)) {
             HydraBoxDiagnostics.log(
@@ -476,11 +494,19 @@ object SingboxController {
             emitCurrentStatus()
             emitCurrentGroups()
         }
-        if (running) {
-            connectClient()
+        if (changed && running) {
+            reconnectClientForCadenceChange("ui_foreground=$value")
         }
         if (!value) {
             cancelPreconnectUrlTest("app_background")
+        }
+    }
+
+    private fun reconnectClientForCadenceChange(reason: String) {
+        commandExecutor.execute {
+            HydraBoxDiagnostics.log(TAG, "reconnecting command client for cadence change reason=$reason")
+            disconnectClientOnExecutor(reason)
+            connectClient()
         }
     }
 
@@ -871,11 +897,11 @@ object SingboxController {
     )
 
     private fun runtimeEventIntervalMillis(): Long =
-        when (HydraBoxApplication.performanceMode.lowercase()) {
-            "performance" -> 250L
-            "balanced" -> 500L
-            else -> 1_000L
-        }
+        RuntimeEventCadence.intervalMillis(
+            uiForeground = uiForeground,
+            screenInteractive = screenInteractive,
+            performanceMode = HydraBoxApplication.performanceMode,
+        )
 
     private fun emitUrlTestSessions(
         sequence: Long,

@@ -17,12 +17,14 @@ import io.hydrabox.client.runtime.proto.CoreRuntimeProtocol
 import io.hydrabox.client.singbox.HydraBoxProxyService
 import io.hydrabox.client.singbox.HydraBoxService
 import io.hydrabox.client.singbox.HydraBoxVpnService
+import io.hydrabox.client.singbox.HydraBoxForegroundNotification
 import io.hydrabox.client.singbox.RuntimeEventConsumer
 import io.hydrabox.client.singbox.SingboxController
 import io.hydrabox.client.singbox.NativeCoreEnvironment
 import io.hydrabox.client.singbox.HydraBoxDefaultNetworkMonitor
 import io.hydrabox.client.singbox.HydraBoxDiagnostics
 import io.nekohasekai.libbox.Libbox
+import org.json.JSONObject
 import java.io.FileOutputStream
 import java.security.MessageDigest
 import java.util.UUID
@@ -432,6 +434,21 @@ class CoreRuntimeService : Service() {
                 CoreRuntimeProtocol.CoreUtilityKind.CORE_UTILITY_KIND_REFRESH_RUNTIME_FLAGS -> {
                     HydraBoxDefaultNetworkMonitor.refreshHeartbeat()
                     ByteArray(0)
+                }
+                CoreRuntimeProtocol.CoreUtilityKind.CORE_UTILITY_KIND_SET_UI_FOREGROUND -> {
+                    require(request.argumentsCount == 1)
+                    val value = CoreRuntimeProtocol.UiForegroundState.parseFrom(request.getArguments(0))
+                    SingboxController.setUiForeground(value.foreground, controllerRegistration)
+                    ByteArray(0)
+                }
+                CoreRuntimeProtocol.CoreUtilityKind.CORE_UTILITY_KIND_PERFORMANCE_COUNTERS -> {
+                    val counters = JSONObject().apply {
+                        for ((k, v) in SingboxController.performanceCounters()) {
+                            put(k, v)
+                        }
+                        put("notificationUpdateCount", HydraBoxForegroundNotification.updateCount())
+                    }
+                    counters.toString().toByteArray(Charsets.UTF_8)
                 }
                 else -> throw IllegalArgumentException("Unsupported utility operation")
             }
