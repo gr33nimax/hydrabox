@@ -36,6 +36,7 @@ internal class HydraBoxForegroundNotification(
         private const val ACTION_STOP_REQUEST_CODE = 4202
         private const val CONTENT_REQUEST_CODE = 4203
         private const val DEFAULT_LATENCY_TIMEOUT_MS = 20_000L
+        private const val TRAFFIC_NOTIFY_MIN_INTERVAL_MS = 2_000L
         private const val MAX_TEXT_LENGTH = 120
         private const val PRESENTATION_PREFS = "hydrabox_foreground_notification"
         private const val PREF_DETAILED = "detailed"
@@ -129,9 +130,23 @@ internal class HydraBoxForegroundNotification(
     private var trafficAvailable = false
     private var displayedUplink = 0L
     private var displayedDownlink = 0L
+    private var lastTrafficNotifyAt = 0L
+    private var pendingTrafficRefresh = false
+    private var screenInteractive = true
     private var latencyChecking = false
     private var latencyActionGeneration = 0L
     private var latencyActionInFlight = false
+
+    fun setScreenInteractive(interactive: Boolean) {
+        synchronized(this) {
+            val changed = screenInteractive != interactive
+            screenInteractive = interactive
+            if (changed && interactive) {
+                lastTrafficNotifyAt = System.currentTimeMillis()
+                refreshLocked()
+            }
+        }
+    }
 
     fun buildForForeground(status: String): Notification {
         synchronized(this) {
@@ -200,7 +215,29 @@ internal class HydraBoxForegroundNotification(
             if (changed) {
                 displayedUplink = smoothRate(displayedUplink, uplink, trafficAvailable)
                 displayedDownlink = smoothRate(displayedDownlink, downlink, trafficAvailable)
-                refreshLocked()
+                if (!screenInteractive) {
+                    return
+                }
+                val now = System.currentTimeMillis()
+                if (now - lastTrafficNotifyAt >= TRAFFIC_NOTIFY_MIN_INTERVAL_MS) {
+                    lastTrafficNotifyAt = now
+                    refreshLocked()
+                } else if (!pendingTrafficRefresh) {
+                    pendingTrafficRefresh = true
+                    val delay = TRAFFIC_NOTIFY_MIN_INTERVAL_MS - (now - lastTrafficNotifyAt)
+                    mainHandler.postDelayed(
+                        {
+                            synchronized(this) {
+                                pendingTrafficRefresh = false
+                                if (screenInteractive && foregroundStarted) {
+                                    lastTrafficNotifyAt = System.currentTimeMillis()
+                                    refreshLocked()
+                                }
+                            }
+                        },
+                        delay,
+                    )
+                }
             }
         }
     }

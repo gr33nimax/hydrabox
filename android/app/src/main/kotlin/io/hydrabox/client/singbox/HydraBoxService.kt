@@ -154,13 +154,25 @@ class HydraBoxService(
 
     init {
         activeServices += this
+        val powerManager = service.getSystemService(Context.POWER_SERVICE) as? PowerManager
+        val interactive = powerManager?.isInteractive ?: true
+        SingboxController.setScreenInteractive(interactive)
+        foregroundNotification.setScreenInteractive(interactive)
     }
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
                 PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED -> updateDeviceIdleMode()
-                Intent.ACTION_SCREEN_ON -> requestRuntimeRecovery("screen_on")
+                Intent.ACTION_SCREEN_ON -> {
+                    foregroundNotification.setScreenInteractive(true)
+                    SingboxController.setScreenInteractive(true)
+                    requestRuntimeRecovery("screen_on")
+                }
+                Intent.ACTION_SCREEN_OFF -> {
+                    foregroundNotification.setScreenInteractive(false)
+                    SingboxController.setScreenInteractive(false)
+                }
                 Intent.ACTION_USER_PRESENT -> requestRuntimeRecovery("user_present")
             }
         }
@@ -1017,6 +1029,7 @@ class HydraBoxService(
         val filter = IntentFilter().apply {
             addAction(PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED)
             addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_SCREEN_OFF)
             addAction(Intent.ACTION_USER_PRESENT)
         }
         runCatching {
