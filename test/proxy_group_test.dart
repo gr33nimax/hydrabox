@@ -2727,7 +2727,6 @@ Subscription _foreignOwnerHydraChainSubscription() {
       },
     },
   );
-}
 
   test('generates experimental.cache_file with store_rdrc and optional cache_id', () {
     const subscription = Subscription(
@@ -2790,6 +2789,7 @@ Subscription _foreignOwnerHydraChainSubscription() {
     expect(cacheFile['cache_id'], 'sub-strict');
     expect(cacheFile, isNot(contains('path')));
   });
+}
 
 SingboxConfigBuilder _defaultBuilder(
   Subscription subscription, {
