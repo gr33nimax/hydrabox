@@ -597,8 +597,8 @@ abstract class AppSettingsStore {
     final rawMtu = int.tryParse(map[_vpnMtuKey]?.toString() ?? '');
     final resolvedMtu =
         (!mtuMigrated && (rawMtu == 1500 || rawMtu == 3400 || rawMtu == null))
-            ? 9000
-            : _vpnMtuValue(map[_vpnMtuKey]);
+        ? 9000
+        : _vpnMtuValue(map[_vpnMtuKey]);
 
     return AppSettingsState(
       coreConfigSchemaVersion:
@@ -863,8 +863,9 @@ abstract class AppSettingsStore {
       _blockLeaksKey: state.blockLeaks ? '1' : '0',
       _adBlockEnabledKey: state.adBlockEnabled ? '1' : '0',
       _useRussiaRouteDataKey: state.useRussiaRouteData ? '1' : '0',
-      _routeExcludeRussiaEnabledKey:
-          state.routeExcludeRussiaEnabled ? '1' : '0',
+      _routeExcludeRussiaEnabledKey: state.routeExcludeRussiaEnabled
+          ? '1'
+          : '0',
       _bypassLocalNetworkKey: state.bypassLocalNetwork ? '1' : '0',
       _splitRoutingModeKey: switch (state.splitRoutingMode) {
         SplitRoutingMode.disabled => 'disabled',

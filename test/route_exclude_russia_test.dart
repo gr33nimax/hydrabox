@@ -40,21 +40,28 @@ void main() {
       adBlockEnabled: false,
       useRussiaRouteData: useRussiaRouteData,
       routeExcludeRussiaEnabled: routeExcludeRussiaEnabled,
-      russiaGeositeRuBlockedPath:
-          useRussiaRouteData ? '/tmp/geosite-ru-blocked.srs' : null,
-      russiaGeositeRuAvailableOnlyInsidePath:
-          useRussiaRouteData ? '/tmp/geosite-ru-available-only-inside.srs' : null,
-      russiaGeositeCategoryRuPath:
-          useRussiaRouteData ? '/tmp/geosite-category-ru.srs' : null,
-      russiaGeoipRuBlockedPath:
-          useRussiaRouteData ? '/tmp/geoip-ru-blocked.srs' : null,
-      russiaGeoipRuWhitelistPath:
-          useRussiaRouteData ? '/tmp/geoip-ru-whitelist.srs' : null,
+      russiaGeositeRuBlockedPath: useRussiaRouteData
+          ? '/tmp/geosite-ru-blocked.srs'
+          : null,
+      russiaGeositeRuAvailableOnlyInsidePath: useRussiaRouteData
+          ? '/tmp/geosite-ru-available-only-inside.srs'
+          : null,
+      russiaGeositeCategoryRuPath: useRussiaRouteData
+          ? '/tmp/geosite-category-ru.srs'
+          : null,
+      russiaGeoipRuBlockedPath: useRussiaRouteData
+          ? '/tmp/geoip-ru-blocked.srs'
+          : null,
+      russiaGeoipRuWhitelistPath: useRussiaRouteData
+          ? '/tmp/geoip-ru-whitelist.srs'
+          : null,
       russiaGeoipRuPath: useRussiaRouteData ? '/tmp/geoip-ru.srs' : null,
-      russiaCuratedDirectServicesPath:
-          useRussiaRouteData ? '/tmp/geosite-ru-available-only-inside.srs' : null,
-      russiaAiServicesPath:
-          useRussiaRouteData ? '/tmp/geosite-ru-blocked.srs' : null,
+      russiaCuratedDirectServicesPath: useRussiaRouteData
+          ? '/tmp/geosite-ru-available-only-inside.srs'
+          : null,
+      russiaAiServicesPath: useRussiaRouteData
+          ? '/tmp/geosite-ru-blocked.srs'
+          : null,
       bypassLocalNetwork: true,
       splitRoutingMode: SplitRoutingMode.disabled,
       splitRoutingPackages: const <String>[],
@@ -68,53 +75,64 @@ void main() {
     );
   }
 
-  test('TUN inbound includes route_exclude_address_set when routeExcludeRussiaEnabled and useRussiaRouteData are both true', () {
-    final config = createBuilder(
-      routeExcludeRussiaEnabled: true,
-      useRussiaRouteData: true,
-    ).build();
+  test(
+    'TUN inbound includes route_exclude_address_set when routeExcludeRussiaEnabled and useRussiaRouteData are both true',
+    () {
+      final config = createBuilder(
+        routeExcludeRussiaEnabled: true,
+        useRussiaRouteData: true,
+      ).build();
 
-    final inbounds = (config['inbounds'] as List).cast<Map<String, dynamic>>();
-    final tunInbound = inbounds.firstWhere((i) => i['type'] == 'tun');
-    expect(tunInbound['route_exclude_address_set'], ['ru-geoip-ru']);
-  });
+      final inbounds = (config['inbounds'] as List)
+          .cast<Map<String, dynamic>>();
+      final tunInbound = inbounds.firstWhere((i) => i['type'] == 'tun');
+      expect(tunInbound['route_exclude_address_set'], ['ru-geoip-ru']);
+    },
+  );
 
-  test('TUN inbound omits route_exclude_address_set when routeExcludeRussiaEnabled is false', () {
-    final config = createBuilder(
-      routeExcludeRussiaEnabled: false,
-      useRussiaRouteData: true,
-    ).build();
+  test(
+    'TUN inbound omits route_exclude_address_set when routeExcludeRussiaEnabled is false',
+    () {
+      final config = createBuilder(
+        routeExcludeRussiaEnabled: false,
+        useRussiaRouteData: true,
+      ).build();
 
-    final inbounds = (config['inbounds'] as List).cast<Map<String, dynamic>>();
-    final tunInbound = inbounds.firstWhere((i) => i['type'] == 'tun');
-    expect(tunInbound.containsKey('route_exclude_address_set'), isFalse);
-  });
+      final inbounds = (config['inbounds'] as List)
+          .cast<Map<String, dynamic>>();
+      final tunInbound = inbounds.firstWhere((i) => i['type'] == 'tun');
+      expect(tunInbound.containsKey('route_exclude_address_set'), isFalse);
+    },
+  );
 
-  test('TUN inbound omits route_exclude_address_set when useRussiaRouteData is false even if routeExcludeRussiaEnabled is true', () {
-    final config = createBuilder(
-      routeExcludeRussiaEnabled: true,
-      useRussiaRouteData: false,
-    ).build();
+  test(
+    'TUN inbound omits route_exclude_address_set when useRussiaRouteData is false even if routeExcludeRussiaEnabled is true',
+    () {
+      final config = createBuilder(
+        routeExcludeRussiaEnabled: true,
+        useRussiaRouteData: false,
+      ).build();
 
-    final inbounds = (config['inbounds'] as List).cast<Map<String, dynamic>>();
-    final tunInbound = inbounds.firstWhere((i) => i['type'] == 'tun');
-    expect(tunInbound.containsKey('route_exclude_address_set'), isFalse);
-  });
+      final inbounds = (config['inbounds'] as List)
+          .cast<Map<String, dynamic>>();
+      final tunInbound = inbounds.firstWhere((i) => i['type'] == 'tun');
+      expect(tunInbound.containsKey('route_exclude_address_set'), isFalse);
+    },
+  );
 
   test('AppSettingsStore maps and exports routeExcludeRussiaEnabled', () {
-    final defaultMap = <String, String>{
-      'route_exclude_russia_enabled': '1',
-    };
+    final defaultMap = <String, String>{'route_exclude_russia_enabled': '1'};
     final state = AppSettingsStore.mapToState(defaultMap);
     expect(state.routeExcludeRussiaEnabled, isTrue);
 
     final exportedMap = AppSettingsStore.stateToMap(state);
     expect(exportedMap['route_exclude_russia_enabled'], '1');
-    expect(AppSettingsStore.safeExportKeys.contains('route_exclude_russia_enabled'), isTrue);
+    expect(
+      AppSettingsStore.safeExportKeys.contains('route_exclude_russia_enabled'),
+      isTrue,
+    );
 
-    final disabledMap = <String, String>{
-      'route_exclude_russia_enabled': '0',
-    };
+    final disabledMap = <String, String>{'route_exclude_russia_enabled': '0'};
     final disabledState = AppSettingsStore.mapToState(disabledMap);
     expect(disabledState.routeExcludeRussiaEnabled, isFalse);
   });

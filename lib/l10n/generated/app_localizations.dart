@@ -1601,7 +1601,7 @@ abstract class AppLocalizations {
   /// No description provided for @mtuSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'TUN interface packet size'**
+  /// **'TUN interface packet size (9000 recommended)'**
   String get mtuSubtitle;
 
   /// No description provided for @strictRouteTitle.

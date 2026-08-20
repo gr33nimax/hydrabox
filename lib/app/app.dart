@@ -5169,8 +5169,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
             onDownloadAdBlockRuleSet: _downloadAdBlockRuleSet,
             onDeleteAdBlockRuleSet: _deleteAdBlockRuleSet,
             onRussiaRouteDataEnabledChanged: _setRussiaRouteDataEnabled,
-            onRouteExcludeRussiaEnabledChanged:
-                _setRouteExcludeRussiaEnabled,
+            onRouteExcludeRussiaEnabledChanged: _setRouteExcludeRussiaEnabled,
             onCheckRussiaRouteDataUpdate: _checkRussiaRouteDataUpdate,
             onInstallRussiaRouteData: _installRussiaRouteData,
             onDeleteRussiaRouteData: _deleteRussiaRouteData,
