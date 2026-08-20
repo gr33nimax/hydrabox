@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## [1.0.1]
+
+- Pinned HydraCore client debug.46 with the reduced API-v2 capability contract
+  and 16-worker VK parasite transport.
+
 - Updated the embedded HydraCore client to debug.34 so a successful VK parasite
   connection remains owned by the bridge lifecycle instead of closing as soon
   as startup returns.

@@ -161,12 +161,12 @@ void main() {
     expect(provenance['distribution'], {
       'id': 'io.hydrabox.hydracore',
       'name': 'HydraCore',
-      'version': 'v1.13.16-extended-hydracore.11-debug.44',
+      'version': 'v1.13.16-extended-hydracore.11-debug.46',
       'role': 'client',
     });
     expect(
       (provenance['source'] as Map<String, dynamic>)['commit'],
-      'c3abeeb300e87d28851a6a763dfc9fd48460348e',
+      'e9d022f9882f32e298b5d82e4856fd5f73231765',
     );
     expect(
       (provenance['upstream'] as Map<String, dynamic>)['commit'],
@@ -176,7 +176,7 @@ void main() {
     expect(
       (artifacts['hydracore-client-libbox.aar']
           as Map<String, dynamic>)['sha256'],
-      'd9a8c327eb4ea9a17d155511555c5f7db9fd45105c61b6eec3d365e399a55041',
+      '5ba5c04286cf99d29a3b050431646e9ec5f73cc15723d8199014faf41b2d8390',
     );
     expect(
       (artifacts['hydracore-client-libbox-sources.jar']
@@ -192,7 +192,7 @@ void main() {
       multiLine: true,
     ).firstMatch(pubspec)!.group(1)!;
 
-    expect(version, '1.0.0');
+    expect(version, '1.0.1');
     expect(
       File('lib/app/app.dart').readAsStringSync(),
       contains("_fallbackClientVersionLabel = '$version'"),

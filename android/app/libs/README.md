@@ -14,8 +14,8 @@ inspection.
 
 The required runtime identity is `io.hydrabox.hydracore`, role `client`, public
 API version 2. Bundle manifests with core API major 1 and 2 are accepted during
-the staged capability-contract migration; the isolated runtime probe still must
-report the exact API major implemented by the running HydraBox process. VPS code
+the staged capability-contract migration; the isolated runtime probe must match
+the signed manifest major to the loaded capability shape. VPS code
 is shipped separately. HydraBox does not use deprecated capability aliases or
 fall back to older subscription contracts.
 

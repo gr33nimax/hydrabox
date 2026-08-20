@@ -43,7 +43,7 @@ class FetchResult {
 class SubscriptionFetcher {
   SubscriptionFetcher._();
 
-  static const fallbackAppVersion = '1.0.0';
+  static const fallbackAppVersion = '1.0.1';
   static String _appVersion = fallbackAppVersion;
   static String get currentAppVersion => _appVersion;
   static String get defaultUserAgent => 'HydraBox/$_appVersion';

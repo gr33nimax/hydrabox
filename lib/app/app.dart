@@ -90,7 +90,7 @@ class HydraBoxClient extends StatefulWidget {
 
 class _HydraBoxClientState extends State<HydraBoxClient>
     with WidgetsBindingObserver {
-  static const _fallbackClientVersionLabel = '1.0.0';
+  static const _fallbackClientVersionLabel = '1.0.1';
   static const _requiredLegalVersion = '0.3.0';
   static final RegExp _quickTileCountryCodePattern = RegExp(r'^[A-Z]{2}$');
   static const _lowestProxyTag = lowestProxyTag;
