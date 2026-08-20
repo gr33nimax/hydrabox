@@ -8,7 +8,7 @@ void main() {
     id: 'sub-exclude-test',
     name: 'Exclude RU Test Sub',
     url: 'https://example.com/sub',
-    outbounds: const [],
+    outbounds: [],
   );
 
   SingboxConfigBuilder createBuilder({
@@ -129,7 +129,7 @@ void main() {
     final exportedMap = store.stateToMap(state);
     expect(exportedMap['route_exclude_russia_enabled'], '1');
     expect(
-      store.safeExportKeys.contains('route_exclude_russia_enabled'),
+      AppSettingsStore.safeExportKeys.contains('route_exclude_russia_enabled'),
       isTrue,
     );
 

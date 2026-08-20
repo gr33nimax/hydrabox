@@ -8,7 +8,7 @@ void main() {
     id: 'sub-fakeip-test',
     name: 'FakeIP Test Sub',
     url: 'https://example.com/sub',
-    outbounds: const [],
+    outbounds: [],
   );
 
   SingboxConfigBuilder createBuilder({
