@@ -2317,6 +2317,8 @@ void main() {
     final inbounds = (config['inbounds'] as List).cast<Map>();
 
     expect(inbounds.where((inbound) => inbound['type'] == 'tun'), hasLength(1));
+    final tun = inbounds.firstWhere((inbound) => inbound['type'] == 'tun');
+    expect(tun['udp_timeout'], '2m');
     expect(
       inbounds.where((inbound) => inbound['type'] == 'mixed'),
       hasLength(1),

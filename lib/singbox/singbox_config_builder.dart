@@ -406,6 +406,7 @@ class SingboxConfigBuilder {
             'auto_route': true,
             'strict_route': vpnStrictRoute,
             'stack': vpnTunImplementation.name,
+            'udp_timeout': '2m',
             if (tunIncludePackages.isNotEmpty)
               'include_package': tunIncludePackages,
             if (tunExcludePackages.isNotEmpty)
