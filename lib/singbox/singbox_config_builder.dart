@@ -117,6 +117,7 @@ class SingboxConfigBuilder {
     this.capabilities = HydraCoreCapabilities.requiredV2,
     this.snowtunBinaryPath,
     this.snowtunProtectPath,
+    this.cacheId = '',
   });
 
   final Subscription? activeSubscription;
@@ -166,6 +167,7 @@ class SingboxConfigBuilder {
   final HydraCoreCapabilities capabilities;
   final String? snowtunBinaryPath;
   final String? snowtunProtectPath;
+  final String cacheId;
 
   Map<String, dynamic> build() {
     return buildPlan().config;
@@ -582,6 +584,13 @@ class SingboxConfigBuilder {
             },
         ],
         'final': routeFinal,
+      },
+      'experimental': {
+        'cache_file': {
+          'enabled': true,
+          'store_rdrc': true,
+          if (cacheId.isNotEmpty) 'cache_id': cacheId,
+        },
       },
     };
     final rawCoreConfig = _readRawSingboxConfig();

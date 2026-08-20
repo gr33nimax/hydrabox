@@ -467,6 +467,7 @@ SingboxConfigBuildResult buildSingboxConfig(SingboxConfigBuildInput input) {
     capabilities: input.capabilities,
     snowtunBinaryPath: input.snowtunBinaryPath,
     snowtunProtectPath: input.snowtunProtectPath,
+    cacheId: input.activeSubscription?.id ?? '',
   ).buildPlan();
   final config = plan.config;
   final configJson = jsonEncode(config);
