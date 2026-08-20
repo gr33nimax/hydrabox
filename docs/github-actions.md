@@ -9,9 +9,12 @@ environment:
   A push to `debug` also uploads the debug-signed release-mode test APK from the
   same verified job.
 - `HydraBox · CodeQL security` runs the repository security scan.
-- `HydraBox · Android release` builds signed APKs for `universal`, `arm64-v8a`,
-  `armeabi-v7a`, and `x86_64`, publishes updater metadata, and creates or
-  updates a draft GitHub Release.
+- `HydraBox · Generate Baseline Profile` runs automated macrobenchmarks on an
+  Android 34 emulator to generate and commit optimized ART startup and runtime
+  Baseline Profiles (`android/app/src/main/baselineProfiles/baseline-prof.txt`).
+- `HydraBox · Android release` verifies Baseline Profile presence, builds signed
+  APKs for `universal`, `arm64-v8a`, `armeabi-v7a`, and `x86_64`, publishes
+  updater metadata, and creates or updates a draft GitHub Release.
 
 HydraCore is built once in its own workflow. HydraBox does not reproduce that
 14-minute AAR build or run a second automatic provenance-only workflow; the
@@ -151,3 +154,11 @@ hydrabox-v0.1.0-x86_64.apk
 ```
 
 The app first looks for the APK matching the current device ABI, then falls back to `universal`.
+
+## Baseline Profiles
+
+HydraBox uses Android Baseline Profiles to optimize DEX-to-machine-code compilation ahead of time (AOT) upon app installation, significantly reducing cold start latency and frame jank across core journeys.
+
+1. **Generation**: The `HydraBox · Generate Baseline Profile` workflow boots an Android 34 emulator (with KVM hardware acceleration) and executes the `:app:generateBaselineProfile` Gradle task using Macrobenchmark rules (`BaselineProfileGenerator.kt`).
+2. **Artifact**: Output profiles are placed in `android/app/src/main/baselineProfiles/baseline-prof.txt` and embedded into release APKs during compilation.
+3. **Release Gate**: `HydraBox · Android release` enforces that a valid non-empty baseline profile file exists before allowing release APK assembly.

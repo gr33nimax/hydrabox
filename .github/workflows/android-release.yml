@@ -104,6 +104,18 @@ jobs:
             fi
           fi
 
+      - name: Validate Baseline Profile presence
+        shell: bash
+        run: |
+          profile_file="android/app/src/main/baselineProfiles/baseline-prof.txt"
+          alt_profile_file="android/app/src/main/baseline-prof.txt"
+          if [ -s "$profile_file" ] || [ -s "$alt_profile_file" ]; then
+            echo "Baseline profile found and non-empty."
+          else
+            echo "::error title=Missing Baseline Profile::No valid baseline-prof.txt found at android/app/src/main/baselineProfiles/baseline-prof.txt or android/app/src/main/baseline-prof.txt. Please run the 'HydraBox · Generate Baseline Profile' workflow before releasing."
+            exit 1
+          fi
+
       - name: Set up JDK
         uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
         with:

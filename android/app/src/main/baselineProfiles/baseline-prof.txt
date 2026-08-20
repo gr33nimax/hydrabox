@@ -1,0 +1,8 @@
+# Baseline Profile for HydraBox
+Lio/hydrabox/client/MainActivity;
+Lio/hydrabox/client/service/HydraBoxService;
+Lio/hydrabox/client/service/HydraBoxForegroundNotification;
+Lio/hydrabox/client/core/SingboxController;
+Lio/hydrabox/client/runtime/RuntimeEventCadence;
+Lio/hydrabox/client/core/CoreRuntimeService;
+Lio/hydrabox/client/core/CoreRuntimeClient;
