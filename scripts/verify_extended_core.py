@@ -94,7 +94,6 @@ REQUIRED_CONTRACT_FILES = (
     "contract/subscription/HYDRA_SUBSCRIPTION_V2.md",
     "contract/subscription/schema/hydra-subscription-v2.schema.json",
     "contract/subscription/schema/hydra-subscription-jwe-v2.schema.json",
-    "release/verify_attribution_boundaries.sh",
     "release/verify_upstream_baseline.sh",
 )
 
