@@ -74,7 +74,7 @@ class CoreProbeService : Service() {
                 .setMaximum(1)
                 .build()
             val contract = CoreRuntimeProtocol.CoreContract.newBuilder()
-                .setApiMajor(CORE_API_MAJOR)
+                .setApiMajor(CoreCapabilityContract.bundleApiMajor(capabilities))
                 .setApiMinor(CORE_API_MINOR)
                 .setCoreVersion(Libbox.version())
                 .setProcessEpoch(UUID.randomUUID().toString())
@@ -132,7 +132,6 @@ class CoreProbeService : Service() {
 
     companion object {
         private const val SCHEMA_VERSION = 2
-        private const val CORE_API_MAJOR = 1
         private const val CORE_API_MINOR = 1
         private const val SHA256_BYTES = 32
         private const val MAX_FIXTURE_BYTES = 256 * 1024

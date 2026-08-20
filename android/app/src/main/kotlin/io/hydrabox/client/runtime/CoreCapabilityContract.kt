@@ -13,7 +13,27 @@ internal object CoreCapabilityContract {
         "call_vk_parasite_client",
         "vk_auth_challenges",
     )
+    private val legacyFeatureNames = setOf(
+        "call_vk_eight_lane_kcp",
+        "call_vk_four_lane_kcp",
+        "call_vk_pre_kcp_admission",
+        "call_vk_relay_flow_control",
+        "call_vk_worker_hot_swap",
+        "call_vk_flow_migration",
+        "call_vk_turn_tcp_fallback",
+        "call_vk_transport_health",
+    )
     private val protocolIdPattern = Regex("^[a-z0-9][a-z0-9._-]{0,63}$")
+
+    fun bundleApiMajor(capabilities: ByteArray): Int {
+        val root = JSONObject(capabilities.toString(Charsets.UTF_8))
+        val features = root.getJSONObject("features")
+        val protocols = root.getJSONObject("protocols")
+        return if (
+            protocols.has("call_vk_parasite_wire") ||
+            legacyFeatureNames.any(features::has)
+        ) 1 else 2
+    }
 
     fun supportedProtocolIds(capabilities: ByteArray): List<String> {
         require(capabilities.isNotEmpty() && capabilities.size <= MAX_CAPABILITIES_BYTES) {

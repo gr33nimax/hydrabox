@@ -1089,7 +1089,7 @@ class CoreRuntimeService : Service() {
             .setMaximum(1)
             .build()
         return CoreRuntimeProtocol.CoreContract.newBuilder()
-            .setApiMajor(CORE_API_MAJOR)
+            .setApiMajor(CoreCapabilityContract.bundleApiMajor(capabilities))
             .setApiMinor(CORE_API_MINOR)
             .setCoreVersion(version)
             .setProcessEpoch(processEpoch)
@@ -1509,7 +1509,6 @@ class CoreRuntimeService : Service() {
     companion object {
         private const val TAG = "HydraCoreRuntime"
         private const val SCHEMA_VERSION = 2
-        private const val CORE_API_MAJOR = 1
         private const val CORE_API_MINOR = 1
         private const val SHA256_BYTES = 32
         // Binder's transaction buffer is finite and shared by the process.

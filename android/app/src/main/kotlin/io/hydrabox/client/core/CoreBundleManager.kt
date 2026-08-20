@@ -19,6 +19,7 @@ import java.util.Locale
 data class InstalledCoreBundle(
     val releaseSequence: Long,
     val version: String,
+    val coreApiMajor: Int,
     val abi: String,
     val libraryPath: String,
     val sha256: String,
@@ -105,6 +106,7 @@ class CoreBundleManager(
         val installed = InstalledCoreBundle(
             releaseSequence = manifest.releaseSequence,
             version = manifest.version,
+            coreApiMajor = manifest.coreApiMajor,
             abi = abi,
             libraryPath = destination.canonicalPath,
             sha256 = artifact.sha256,
@@ -328,6 +330,7 @@ class CoreBundleManager(
     private fun readSlot(prefix: String): InstalledCoreBundle? {
         val sequence = prefs.getLong("${prefix}sequence", 0L)
         val version = prefs.getString("${prefix}version", null).orEmpty()
+        val coreApiMajor = prefs.getInt("${prefix}core_api_major", 1)
         val abi = prefs.getString("${prefix}abi", null).orEmpty()
         val path = prefs.getString("${prefix}path", null).orEmpty()
         val sha = prefs.getString("${prefix}sha256", null).orEmpty()
@@ -337,7 +340,16 @@ class CoreBundleManager(
             path.isBlank() || !SHA_PATTERN.matches(sha) ||
             !SHA_PATTERN.matches(capabilitiesSha)
         ) return null
-        return InstalledCoreBundle(sequence, version, abi, path, sha, capabilitiesSha)
+        if (!CoreBundleManifest.isSupportedApiMajor(coreApiMajor)) return null
+        return InstalledCoreBundle(
+            sequence,
+            version,
+            coreApiMajor,
+            abi,
+            path,
+            sha,
+            capabilitiesSha,
+        )
     }
 
     private fun writeSlot(
@@ -347,6 +359,7 @@ class CoreBundleManager(
     ) {
         editor.putLong("${prefix}sequence", bundle.releaseSequence)
         editor.putString("${prefix}version", bundle.version)
+        editor.putInt("${prefix}core_api_major", bundle.coreApiMajor)
         editor.putString("${prefix}abi", bundle.abi)
         editor.putString("${prefix}path", bundle.libraryPath)
         editor.putString("${prefix}sha256", bundle.sha256)
@@ -356,6 +369,7 @@ class CoreBundleManager(
     private fun clearSlot(editor: SharedPreferences.Editor, prefix: String) {
         editor.remove("${prefix}sequence")
         editor.remove("${prefix}version")
+        editor.remove("${prefix}core_api_major")
         editor.remove("${prefix}abi")
         editor.remove("${prefix}path")
         editor.remove("${prefix}sha256")
