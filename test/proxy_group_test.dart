@@ -2589,6 +2589,73 @@ void main() {
     expect(ruDirect['type'], 'udp');
     expect(ruDirect['server'], '77.88.8.1');
   });
+
+  test(
+    'generates experimental.cache_file with store_rdrc and optional cache_id',
+    () {
+      const subscription = Subscription(
+        id: 'sub-alpha',
+        name: 'Alpha Sub',
+        url: 'https://example.com/alpha',
+        outbounds: [],
+      );
+
+      final withCacheId = _defaultBuilder(
+        subscription,
+        cacheId: 'sub-alpha',
+      ).build();
+
+      final expWithId = withCacheId['experimental'] as Map<String, dynamic>;
+      final cacheFileWithId = expWithId['cache_file'] as Map<String, dynamic>;
+      expect(cacheFileWithId['enabled'], isTrue);
+      expect(cacheFileWithId['store_rdrc'], isTrue);
+      expect(cacheFileWithId['cache_id'], 'sub-alpha');
+      expect(cacheFileWithId, isNot(contains('path')));
+
+      final withoutCacheId = _defaultBuilder(subscription, cacheId: '').build();
+
+      final expWithoutId =
+          withoutCacheId['experimental'] as Map<String, dynamic>;
+      final cacheFileWithoutId =
+          expWithoutId['cache_file'] as Map<String, dynamic>;
+      expect(cacheFileWithoutId['enabled'], isTrue);
+      expect(cacheFileWithoutId['store_rdrc'], isTrue);
+      expect(cacheFileWithoutId, isNot(contains('cache_id')));
+      expect(cacheFileWithoutId, isNot(contains('path')));
+    },
+  );
+
+  test(
+    'strict HydraBox document experimental section is stripped in favor of generated cache_file',
+    () {
+      const subscription = Subscription(
+        id: 'sub-strict',
+        name: 'Strict Sub',
+        url: 'https://example.com/strict',
+        sourceMetadata: {'format': 'hydrabox'},
+        nativeConfig: {
+          'experimental': {
+            'clash_api': {'external_controller': '127.0.0.1:9090'},
+            'cache_file': {'path': '/tmp/untrusted.db'},
+          },
+        },
+        outbounds: [],
+      );
+
+      final config = _defaultBuilder(
+        subscription,
+        cacheId: 'sub-strict',
+      ).build();
+
+      final experimental = config['experimental'] as Map<String, dynamic>;
+      expect(experimental, isNot(contains('clash_api')));
+      final cacheFile = experimental['cache_file'] as Map<String, dynamic>;
+      expect(cacheFile['enabled'], isTrue);
+      expect(cacheFile['store_rdrc'], isTrue);
+      expect(cacheFile['cache_id'], 'sub-strict');
+      expect(cacheFile, isNot(contains('path')));
+    },
+  );
 }
 
 Subscription _foreignOwnerHydraChainSubscription() {
@@ -2725,73 +2792,6 @@ Subscription _foreignOwnerHydraChainSubscription() {
           },
         ],
       },
-    },
-  );
-
-  test(
-    'generates experimental.cache_file with store_rdrc and optional cache_id',
-    () {
-      const subscription = Subscription(
-        id: 'sub-alpha',
-        name: 'Alpha Sub',
-        url: 'https://example.com/alpha',
-        outbounds: [],
-      );
-
-      final withCacheId = _defaultBuilder(
-        subscription,
-        cacheId: 'sub-alpha',
-      ).build();
-
-      final expWithId = withCacheId['experimental'] as Map<String, dynamic>;
-      final cacheFileWithId = expWithId['cache_file'] as Map<String, dynamic>;
-      expect(cacheFileWithId['enabled'], isTrue);
-      expect(cacheFileWithId['store_rdrc'], isTrue);
-      expect(cacheFileWithId['cache_id'], 'sub-alpha');
-      expect(cacheFileWithId, isNot(contains('path')));
-
-      final withoutCacheId = _defaultBuilder(subscription, cacheId: '').build();
-
-      final expWithoutId =
-          withoutCacheId['experimental'] as Map<String, dynamic>;
-      final cacheFileWithoutId =
-          expWithoutId['cache_file'] as Map<String, dynamic>;
-      expect(cacheFileWithoutId['enabled'], isTrue);
-      expect(cacheFileWithoutId['store_rdrc'], isTrue);
-      expect(cacheFileWithoutId, isNot(contains('cache_id')));
-      expect(cacheFileWithoutId, isNot(contains('path')));
-    },
-  );
-
-  test(
-    'strict HydraBox document experimental section is stripped in favor of generated cache_file',
-    () {
-      const subscription = Subscription(
-        id: 'sub-strict',
-        name: 'Strict Sub',
-        url: 'https://example.com/strict',
-        sourceMetadata: {'format': 'hydrabox'},
-        nativeConfig: {
-          'experimental': {
-            'clash_api': {'external_controller': '127.0.0.1:9090'},
-            'cache_file': {'path': '/tmp/untrusted.db'},
-          },
-        },
-        outbounds: [],
-      );
-
-      final config = _defaultBuilder(
-        subscription,
-        cacheId: 'sub-strict',
-      ).build();
-
-      final experimental = config['experimental'] as Map<String, dynamic>;
-      expect(experimental, isNot(contains('clash_api')));
-      final cacheFile = experimental['cache_file'] as Map<String, dynamic>;
-      expect(cacheFile['enabled'], isTrue);
-      expect(cacheFile['store_rdrc'], isTrue);
-      expect(cacheFile['cache_id'], 'sub-strict');
-      expect(cacheFile, isNot(contains('path')));
     },
   );
 }

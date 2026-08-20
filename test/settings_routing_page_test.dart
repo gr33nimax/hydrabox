@@ -187,6 +187,8 @@ Future<void> _pumpPage(
         currentAdBlockStatus: const AdBlockRuleSetStatus.unavailable(),
         currentRussiaRouteDataEnabled: false,
         currentRussiaRouteDataStatus: routeStatus,
+        currentRouteExcludeRussiaEnabled: false,
+        currentFakeIpEnabled: false,
         currentBypassLocalNetwork: true,
         currentVpnInboundEnabled: true,
         currentSplitRoutingMode: splitRoutingMode,
@@ -200,6 +202,7 @@ Future<void> _pumpPage(
         onDeleteAdBlockRuleSet: () async =>
             const AdBlockRuleSetStatus.unavailable(),
         onRussiaRouteDataEnabledChanged: (_) {},
+        onRouteExcludeRussiaEnabledChanged: (_) {},
         onCheckRussiaRouteDataUpdate:
             onCheckUpdate ??
             () async => RussiaRouteUpdateCheck(

@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hydrabox/domain/models/subscription.dart';
+import 'package:hydrabox/data/local/app_settings_store.dart';
+import 'package:hydrabox/models/subscription.dart';
 import 'package:hydrabox/singbox/singbox_config_builder.dart';
 
 void main() {
@@ -7,7 +8,7 @@ void main() {
     id: 'sub-fakeip-test',
     name: 'FakeIP Test Sub',
     url: 'https://example.com/sub',
-    outbounds: [],
+    outbounds: const [],
   );
 
   SingboxConfigBuilder createBuilder({

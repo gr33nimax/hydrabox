@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hydrabox/data/local/app_settings_store.dart';
-import 'package:hydrabox/domain/models/subscription.dart';
+import 'package:hydrabox/models/subscription.dart';
 import 'package:hydrabox/singbox/singbox_config_builder.dart';
 
 void main() {
@@ -8,7 +8,7 @@ void main() {
     id: 'sub-exclude-test',
     name: 'Exclude RU Test Sub',
     url: 'https://example.com/sub',
-    outbounds: [],
+    outbounds: const [],
   );
 
   SingboxConfigBuilder createBuilder({
@@ -121,19 +121,31 @@ void main() {
   );
 
   test('AppSettingsStore maps and exports routeExcludeRussiaEnabled', () {
+    final store = _TestSettingsStore();
     final defaultMap = <String, String>{'route_exclude_russia_enabled': '1'};
-    final state = AppSettingsStore.mapToState(defaultMap);
+    final state = store.mapState(defaultMap);
     expect(state.routeExcludeRussiaEnabled, isTrue);
 
-    final exportedMap = AppSettingsStore.stateToMap(state);
+    final exportedMap = store.stateToMap(state);
     expect(exportedMap['route_exclude_russia_enabled'], '1');
     expect(
-      AppSettingsStore.safeExportKeys.contains('route_exclude_russia_enabled'),
+      store.safeExportKeys.contains('route_exclude_russia_enabled'),
       isTrue,
     );
 
     final disabledMap = <String, String>{'route_exclude_russia_enabled': '0'};
-    final disabledState = AppSettingsStore.mapToState(disabledMap);
+    final disabledState = store.mapState(disabledMap);
     expect(disabledState.routeExcludeRussiaEnabled, isFalse);
   });
+}
+
+final class _TestSettingsStore extends AppSettingsStore {
+  @override
+  Future<void> close() async {}
+
+  @override
+  Future<AppSettingsState> loadState() async => mapState(const {});
+
+  @override
+  Future<void> saveState(AppSettingsState state) async {}
 }
