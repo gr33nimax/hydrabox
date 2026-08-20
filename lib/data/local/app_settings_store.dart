@@ -417,6 +417,7 @@ abstract class AppSettingsStore {
   static const _tlsFragmentationModeKey = 'tls_fragmentation_mode';
   static const _vpnInboundEnabledKey = 'vpn_inbound_enabled';
   static const _vpnMtuKey = 'vpn_mtu';
+  static const _vpnMtuMigratedTo9000Key = 'vpn_mtu_migrated_to_9000';
   static const _vpnStrictRouteKey = 'vpn_strict_route';
   static const _vpnTunImplementationKey = 'vpn_tun_implementation';
   static const _proxyInboundEnabledKey = 'proxy_inbound_enabled';
@@ -579,6 +580,12 @@ abstract class AppSettingsStore {
     final locationLookupTimeout = int.tryParse(
       map[_locationLookupTimeoutSecondsKey]?.toString() ?? '',
     );
+    final mtuMigrated = map[_vpnMtuMigratedTo9000Key] == '1';
+    final rawMtu = int.tryParse(map[_vpnMtuKey]?.toString() ?? '');
+    final resolvedMtu =
+        (!mtuMigrated && (rawMtu == 1500 || rawMtu == 3400 || rawMtu == null))
+            ? 9000
+            : _vpnMtuValue(map[_vpnMtuKey]);
 
     return AppSettingsState(
       coreConfigSchemaVersion:
@@ -646,7 +653,7 @@ abstract class AppSettingsStore {
         _ => TlsFragmentationMode.disabled,
       },
       vpnInboundEnabled: boolValue(_vpnInboundEnabledKey, defaultValue: true),
-      vpnMtu: _vpnMtuValue(map[_vpnMtuKey]),
+      vpnMtu: resolvedMtu,
       vpnStrictRoute: boolValue(_vpnStrictRouteKey, defaultValue: true),
       vpnTunImplementation: switch (map[_vpnTunImplementationKey]) {
         'system' => TunImplementationPreference.system,
@@ -774,7 +781,7 @@ abstract class AppSettingsStore {
   int _vpnMtuValue(Object? rawValue) {
     final value = int.tryParse(rawValue?.toString() ?? '');
     if (value == null || value == 3400) {
-      return 1500;
+      return 9000;
     }
     return value;
   }
@@ -808,6 +815,7 @@ abstract class AppSettingsStore {
       _tlsFragmentationModeKey: state.tlsFragmentationMode.name,
       _vpnInboundEnabledKey: state.vpnInboundEnabled ? '1' : '0',
       _vpnMtuKey: state.vpnMtu.toString(),
+      _vpnMtuMigratedTo9000Key: '1',
       _vpnStrictRouteKey: state.vpnStrictRoute ? '1' : '0',
       _vpnTunImplementationKey: state.vpnTunImplementation.name,
       _proxyInboundEnabledKey: state.proxyInboundEnabled ? '1' : '0',
@@ -1026,7 +1034,7 @@ class MemoryAppSettingsStore extends AppSettingsStore {
             memoryLimitWarningDismissed: false,
             updateInstallMode: AppUpdateInstallMode.ask,
             vpnInboundEnabled: true,
-            vpnMtu: 1500,
+            vpnMtu: 9000,
             vpnStrictRoute: true,
             vpnTunImplementation: TunImplementationPreference.mixed,
             proxyInboundEnabled: false,

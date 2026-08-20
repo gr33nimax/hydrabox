@@ -57,7 +57,7 @@ class SettingsInboundPage extends StatefulWidget {
 }
 
 class _SettingsInboundPageState extends State<SettingsInboundPage> {
-  static const _mtuOptions = <int>[1280, 1400, 1450, 1500, 3400, 9000];
+  static const _mtuOptions = <int>[1280, 1400, 1450, 1500, 9000];
   late final TextEditingController _portController;
   late InboundConnectionMode _connectionMode;
   late bool _proxyEnabled;

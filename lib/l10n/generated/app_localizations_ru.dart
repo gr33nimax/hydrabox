@@ -846,7 +846,7 @@ class AppLocalizationsRu extends AppLocalizations {
   String get mtuTitle => 'MTU';
 
   @override
-  String get mtuSubtitle => 'Размер пакета TUN-интерфейса';
+  String get mtuSubtitle => 'Размер пакета TUN-интерфейса (рекомендуется 9000)';
 
   @override
   String get strictRouteTitle => 'Не допускать обход VPN';

@@ -376,7 +376,7 @@
   "vpnInboundEnabledSubtitle": "Creates a VPN TUN inbound and routes traffic through it",
   "inboundNoneEnabled": "Enable VPN TUN or Proxy In before starting.",
   "mtuTitle": "MTU",
-  "mtuSubtitle": "TUN interface packet size",
+  "mtuSubtitle": "TUN interface packet size (9000 recommended)",
   "strictRouteTitle": "Prevent VPN bypass",
   "strictRouteSubtitle": "Forces traffic through VPN and reduces the chance of traffic escaping the tunnel",
   "tunImplementationTitle": "TUN implementation",

@@ -279,6 +279,47 @@ void main() {
       'source',
     );
   });
+
+  test('migrates legacy 1500 and 3400 MTU defaults to 9000', () {
+    final store = _TestSettingsStore();
+
+    final unmigratedDefault = store.mapState(const <String, dynamic>{});
+    expect(unmigratedDefault.vpnMtu, 9000);
+
+    final unmigrated1500 = store.mapState(const <String, dynamic>{
+      'vpn_mtu': '1500',
+    });
+    expect(unmigrated1500.vpnMtu, 9000);
+
+    final unmigrated3400 = store.mapState(const <String, dynamic>{
+      'vpn_mtu': '3400',
+    });
+    expect(unmigrated3400.vpnMtu, 9000);
+
+    final serialized = store.stateToMap(unmigrated1500);
+    expect(serialized['vpn_mtu_migrated_to_9000'], '1');
+    expect(serialized['vpn_mtu'], '9000');
+  });
+
+  test('preserves custom MTU values and post-migration intentional 1500 choice', () {
+    final store = _TestSettingsStore();
+
+    final custom1400 = store.mapState(const <String, dynamic>{
+      'vpn_mtu': '1400',
+    });
+    expect(custom1400.vpnMtu, 1400);
+
+    final custom8000 = store.mapState(const <String, dynamic>{
+      'vpn_mtu': '8000',
+    });
+    expect(custom8000.vpnMtu, 8000);
+
+    final migratedIntentional1500 = store.mapState(const <String, dynamic>{
+      'vpn_mtu': '1500',
+      'vpn_mtu_migrated_to_9000': '1',
+    });
+    expect(migratedIntentional1500.vpnMtu, 1500);
+  });
 }
 
 final class _TestSettingsStore extends AppSettingsStore {

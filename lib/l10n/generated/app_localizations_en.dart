@@ -846,7 +846,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get mtuTitle => 'MTU';
 
   @override
-  String get mtuSubtitle => 'TUN interface packet size';
+  String get mtuSubtitle => 'TUN interface packet size (9000 recommended)';
 
   @override
   String get strictRouteTitle => 'Prevent VPN bypass';

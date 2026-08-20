@@ -58,7 +58,7 @@ class AppSettingsController {
   String proxySort = 'source';
   bool progressiveBlurEnabled = false;
   bool vpnInboundEnabled = true;
-  int vpnMtu = 1500;
+  int vpnMtu = 9000;
   bool vpnStrictRoute = true;
   TunImplementationPreference vpnTunImplementation =
       TunImplementationPreference.mixed;

@@ -376,7 +376,7 @@
   "vpnInboundEnabledSubtitle": "Создаёт VPN TUN-вход и маршрутизирует трафик через него",
   "inboundNoneEnabled": "Включите VPN TUN или Proxy In перед запуском.",
   "mtuTitle": "MTU",
-  "mtuSubtitle": "Размер пакета TUN-интерфейса",
+  "mtuSubtitle": "Размер пакета TUN-интерфейса (рекомендуется 9000)",
   "strictRouteTitle": "Не допускать обход VPN",
   "strictRouteSubtitle": "Жёстко направляет трафик через VPN и снижает шанс утечек мимо туннеля",
   "tunImplementationTitle": "Реализация TUN",
