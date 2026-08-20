@@ -1052,6 +1052,17 @@ class AppLocalizationsEn extends AppLocalizations {
       'Use IPv4 only when off; prefer IPv6 when enabled';
 
   @override
+  String get dnsFakeIpTitle => 'FakeIP';
+
+  @override
+  String get dnsFakeIpSubtitle =>
+      'Assign synthetic IPs to reduce latency and save DNS roundtrips';
+
+  @override
+  String get dnsFakeIpDescription =>
+      'FakeIP immediately returns a virtual IP address (198.18.0.0/15) for domain queries, eliminating local DNS resolution latency. The core resolves the true destination address directly at the proxy exit.';
+
+  @override
   String get urlTestUrlTitle => 'Test URL';
 
   @override

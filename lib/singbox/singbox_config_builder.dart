@@ -85,6 +85,7 @@ class SingboxConfigBuilder {
     required this.dnsDirectResolver,
     required this.dnsProxyResolver,
     required this.dnsPreferIpv6,
+    this.dnsFakeIpEnabled = false,
     this.russiaDnsDirectResolver = defaultRussiaDnsDirectResolver,
     required this.urlTestUrl,
     required this.urlTestIntervalSeconds,
@@ -135,6 +136,7 @@ class SingboxConfigBuilder {
   final String dnsDirectResolver;
   final String dnsProxyResolver;
   final bool dnsPreferIpv6;
+  final bool dnsFakeIpEnabled;
   final String russiaDnsDirectResolver;
   final String urlTestUrl;
   final int urlTestIntervalSeconds;
@@ -337,10 +339,18 @@ class SingboxConfigBuilder {
               detour: 'direct',
             ),
           const <String, Object>{'type': 'local', 'tag': 'dns-local'},
+          if (dnsFakeIpEnabled)
+            <String, Object>{
+              'type': 'fakeip',
+              'tag': 'dns-fakeip',
+              'inet4_range': '198.18.0.0/15',
+              if (dnsPreferIpv6) 'inet6_range': 'fc00::/18',
+            },
         ],
         if (russiaRouteDataActive ||
             russiaCuratedDirectServicesActive ||
-            adBlockActive)
+            adBlockActive ||
+            dnsFakeIpEnabled)
           'rules': [
             if (russiaRouteDataActive)
               {
@@ -385,6 +395,12 @@ class SingboxConfigBuilder {
                 'rule_set': 'adblock-block',
                 'action': 'reject',
                 'method': 'default',
+              },
+            if (dnsFakeIpEnabled)
+              {
+                'query_type': ['A', 'AAAA'],
+                'action': 'route',
+                'server': 'dns-fakeip',
               },
           ],
         'final': dnsFinal,
@@ -577,6 +593,8 @@ class SingboxConfigBuilder {
             {'rule_set': 'ru-geosite-category-ru', 'outbound': 'direct'},
           if (russiaCuratedDirectServicesActive)
             {'rule_set': 'ru-direct-services', 'outbound': 'direct'},
+          if (dnsFakeIpEnabled && russiaRouteDataActive)
+            {'action': 'resolve', 'server': 'dns-local'},
           if (russiaRouteDataActive)
             {
               'rule_set': ['ru-geoip-ru-whitelist', 'ru-geoip-ru'],
@@ -589,6 +607,7 @@ class SingboxConfigBuilder {
         'cache_file': {
           'enabled': true,
           'store_rdrc': true,
+          if (dnsFakeIpEnabled) 'store_fakeip': true,
           if (cacheId.isNotEmpty) 'cache_id': cacheId,
         },
       },

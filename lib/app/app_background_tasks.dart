@@ -71,6 +71,7 @@ class SingboxConfigBuildInput {
     required this.dnsDirectResolver,
     required this.dnsProxyResolver,
     required this.dnsPreferIpv6,
+    this.dnsFakeIpEnabled = false,
     this.russiaDnsDirectResolver = defaultRussiaDnsDirectResolver,
     required this.urlTestUrl,
     required this.urlTestIntervalSeconds,
@@ -122,6 +123,7 @@ class SingboxConfigBuildInput {
   final String dnsDirectResolver;
   final String dnsProxyResolver;
   final bool dnsPreferIpv6;
+  final bool dnsFakeIpEnabled;
   final String russiaDnsDirectResolver;
   final String urlTestUrl;
   final int urlTestIntervalSeconds;
@@ -433,6 +435,7 @@ SingboxConfigBuildResult buildSingboxConfig(SingboxConfigBuildInput input) {
     dnsDirectResolver: input.dnsDirectResolver,
     dnsProxyResolver: input.dnsProxyResolver,
     dnsPreferIpv6: input.dnsPreferIpv6,
+    dnsFakeIpEnabled: input.dnsFakeIpEnabled,
     russiaDnsDirectResolver: input.russiaDnsDirectResolver,
     urlTestUrl: input.urlTestUrl,
     urlTestIntervalSeconds: input.urlTestIntervalSeconds,

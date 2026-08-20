@@ -39,6 +39,7 @@ class SettingsDnsPage extends StatefulWidget {
     required this.currentProxyPreset,
     required this.currentProxyResolver,
     required this.currentPreferIpv6,
+    required this.currentFakeIpEnabled,
     required this.currentRussiaDnsDirectResolver,
     required this.currentRussiaRouteDataEnabled,
     required this.onDirectPresetChanged,
@@ -46,6 +47,7 @@ class SettingsDnsPage extends StatefulWidget {
     required this.onProxyPresetChanged,
     required this.onProxyResolverChanged,
     required this.onPreferIpv6Changed,
+    required this.onFakeIpEnabledChanged,
     required this.onRussiaDnsDirectResolverChanged,
   });
 
@@ -54,6 +56,7 @@ class SettingsDnsPage extends StatefulWidget {
   final String currentProxyPreset;
   final String currentProxyResolver;
   final bool currentPreferIpv6;
+  final bool currentFakeIpEnabled;
   final String currentRussiaDnsDirectResolver;
   final bool currentRussiaRouteDataEnabled;
   final ValueChanged<String> onDirectPresetChanged;
@@ -61,6 +64,7 @@ class SettingsDnsPage extends StatefulWidget {
   final ValueChanged<String> onProxyPresetChanged;
   final ValueChanged<String> onProxyResolverChanged;
   final ValueChanged<bool> onPreferIpv6Changed;
+  final ValueChanged<bool> onFakeIpEnabledChanged;
   final ValueChanged<String> onRussiaDnsDirectResolverChanged;
 
   @override
@@ -499,6 +503,26 @@ class _SettingsDnsPageState extends State<SettingsDnsPage> {
               subtitle: Text(l10n.dnsPreferIpv6Subtitle),
               value: widget.currentPreferIpv6,
               onChanged: widget.onPreferIpv6Changed,
+            ),
+          ),
+          const Gap(settingsSectionGap),
+          _SectionLabel(label: l10n.dnsFakeIpTitle),
+          const Gap(settingsSectionLabelGap),
+          Card(
+            margin: EdgeInsets.zero,
+            child: SwitchListTile(
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 8,
+              ),
+              secondary: SettingsLeadingIcon(
+                icon: Icons.shield_outlined,
+                color: cs.primary,
+              ),
+              title: Text(l10n.dnsFakeIpTitle),
+              subtitle: Text(l10n.dnsFakeIpSubtitle),
+              value: widget.currentFakeIpEnabled,
+              onChanged: widget.onFakeIpEnabledChanged,
             ),
           ),
         ],

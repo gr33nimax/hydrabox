@@ -312,6 +312,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
   String get _dnsProxyPreset => _settings.dnsProxyPreset;
   String get _dnsProxyResolver => _settings.dnsProxyResolver;
   bool get _dnsPreferIpv6 => _settings.dnsPreferIpv6;
+  bool get _dnsFakeIpEnabled => _settings.dnsFakeIpEnabled;
   String get _russiaDnsDirectResolver => _settings.russiaDnsDirectResolver;
   String get _urlTestUrl => _settings.urlTestUrl;
   int get _urlTestIntervalSeconds => _settings.urlTestIntervalSeconds;
@@ -4228,6 +4229,10 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     _applySettingsChange(() => _settings.setDnsPreferIpv6(value));
   }
 
+  void _setDnsFakeIpEnabled(bool value) {
+    _applySettingsChange(() => _settings.setDnsFakeIpEnabled(value));
+  }
+
   void _setRussiaDnsDirectResolver(String value) {
     _applySettingsChange(() => _settings.setRussiaDnsDirectResolver(value));
   }
@@ -4800,6 +4805,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
           currentProxyPreset: _dnsProxyPreset,
           currentProxyResolver: _dnsProxyResolver,
           currentPreferIpv6: _dnsPreferIpv6,
+          currentFakeIpEnabled: _dnsFakeIpEnabled,
           currentRussiaDnsDirectResolver: _russiaDnsDirectResolver,
           currentRussiaRouteDataEnabled: _useRussiaRouteData,
           onDirectPresetChanged: _setDnsDirectPreset,
@@ -4807,6 +4813,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
           onProxyPresetChanged: _setDnsProxyPreset,
           onProxyResolverChanged: _setDnsProxyResolver,
           onPreferIpv6Changed: _setDnsPreferIpv6,
+          onFakeIpEnabledChanged: _setDnsFakeIpEnabled,
           onRussiaDnsDirectResolverChanged: _setRussiaDnsDirectResolver,
         ),
       ),

@@ -73,6 +73,7 @@ class AppSettingsController {
   String dnsProxyPreset = 'cloudflare';
   String dnsProxyResolver = 'https://dns.cloudflare.com/dns-query';
   bool dnsPreferIpv6 = false;
+  bool dnsFakeIpEnabled = false;
   String russiaDnsDirectResolver = defaultRussiaDnsDirectResolver;
   String urlTestUrl = defaultUrlTestUrl;
   int urlTestIntervalSeconds = appSettingsStandardUrlTestIntervalSeconds;
@@ -162,6 +163,7 @@ class AppSettingsController {
       dnsProxyPreset: dnsProxyPreset,
       dnsProxyResolver: dnsProxyResolver,
       dnsPreferIpv6: dnsPreferIpv6,
+      dnsFakeIpEnabled: dnsFakeIpEnabled,
       russiaDnsDirectResolver: russiaDnsDirectResolver,
       urlTestUrl: urlTestUrl,
       urlTestIntervalSeconds: urlTestIntervalSeconds,
@@ -232,6 +234,7 @@ class AppSettingsController {
     dnsProxyPreset = state.dnsProxyPreset;
     dnsProxyResolver = state.dnsProxyResolver;
     dnsPreferIpv6 = state.dnsPreferIpv6;
+    dnsFakeIpEnabled = state.dnsFakeIpEnabled;
     russiaDnsDirectResolver = normalizedRussiaDnsDirectResolver(
       state.russiaDnsDirectResolver,
     );
@@ -591,6 +594,17 @@ class AppSettingsController {
     return const AppSettingsChange(
       changed: true,
       configReason: 'dns ip preference changed',
+    );
+  }
+
+  AppSettingsChange setDnsFakeIpEnabled(bool value) {
+    if (dnsFakeIpEnabled == value) {
+      return const AppSettingsChange.none();
+    }
+    dnsFakeIpEnabled = value;
+    return const AppSettingsChange(
+      changed: true,
+      configReason: 'dns fakeip mode changed',
     );
   }
 

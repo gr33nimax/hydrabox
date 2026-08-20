@@ -167,6 +167,7 @@ class AppSettingsState {
     required this.dnsProxyPreset,
     required this.dnsProxyResolver,
     required this.dnsPreferIpv6,
+    this.dnsFakeIpEnabled = false,
     this.russiaDnsDirectResolver = defaultRussiaDnsDirectResolver,
     required this.urlTestUrl,
     required this.urlTestIntervalSeconds,
@@ -225,6 +226,7 @@ class AppSettingsState {
   final String dnsProxyPreset;
   final String dnsProxyResolver;
   final bool dnsPreferIpv6;
+  final bool dnsFakeIpEnabled;
   final String russiaDnsDirectResolver;
   final String urlTestUrl;
   final int urlTestIntervalSeconds;
@@ -283,6 +285,7 @@ class AppSettingsState {
     String? dnsProxyPreset,
     String? dnsProxyResolver,
     bool? dnsPreferIpv6,
+    bool? dnsFakeIpEnabled,
     String? russiaDnsDirectResolver,
     String? urlTestUrl,
     int? urlTestIntervalSeconds,
@@ -348,6 +351,7 @@ class AppSettingsState {
       dnsProxyPreset: dnsProxyPreset ?? this.dnsProxyPreset,
       dnsProxyResolver: dnsProxyResolver ?? this.dnsProxyResolver,
       dnsPreferIpv6: dnsPreferIpv6 ?? this.dnsPreferIpv6,
+      dnsFakeIpEnabled: dnsFakeIpEnabled ?? this.dnsFakeIpEnabled,
       russiaDnsDirectResolver:
           russiaDnsDirectResolver ?? this.russiaDnsDirectResolver,
       urlTestUrl: urlTestUrl ?? this.urlTestUrl,
@@ -431,6 +435,7 @@ abstract class AppSettingsStore {
   static const _dnsProxyPresetKey = 'dns_proxy_preset';
   static const _dnsProxyResolverKey = 'dns_proxy_resolver';
   static const _dnsPreferIpv6Key = 'dns_prefer_ipv6';
+  static const _dnsFakeIpEnabledKey = 'dns_fake_ip_enabled';
   static const _russiaDnsDirectResolverKey = 'russia_dns_direct_resolver';
   static const _urlTestUrlKey = 'urltest_url';
   static const _urlTestIntervalSecondsKey = 'urltest_interval_seconds';
@@ -490,6 +495,7 @@ abstract class AppSettingsStore {
     _dnsProxyPresetKey,
     _dnsProxyResolverKey,
     _dnsPreferIpv6Key,
+    _dnsFakeIpEnabledKey,
     _russiaDnsDirectResolverKey,
     _urlTestUrlKey,
     _urlTestIntervalSecondsKey,
@@ -692,6 +698,7 @@ abstract class AppSettingsStore {
           ) ??
           'https://dns.cloudflare.com/dns-query',
       dnsPreferIpv6: map[_dnsPreferIpv6Key] == '1',
+      dnsFakeIpEnabled: map[_dnsFakeIpEnabledKey] == '1',
       russiaDnsDirectResolver:
           _resolverValue(
             map[_russiaDnsDirectResolverKey]?.toString(),
@@ -829,6 +836,7 @@ abstract class AppSettingsStore {
       _dnsProxyPresetKey: state.dnsProxyPreset,
       _dnsProxyResolverKey: state.dnsProxyResolver,
       _dnsPreferIpv6Key: state.dnsPreferIpv6 ? '1' : '0',
+      _dnsFakeIpEnabledKey: state.dnsFakeIpEnabled ? '1' : '0',
       _russiaDnsDirectResolverKey: state.russiaDnsDirectResolver,
       _urlTestUrlKey: state.urlTestUrl,
       _urlTestIntervalSecondsKey: state.urlTestIntervalSeconds.toString(),
@@ -1046,6 +1054,7 @@ class MemoryAppSettingsStore extends AppSettingsStore {
             dnsProxyPreset: 'cloudflare',
             dnsProxyResolver: 'https://dns.cloudflare.com/dns-query',
             dnsPreferIpv6: false,
+            dnsFakeIpEnabled: false,
             russiaDnsDirectResolver: defaultRussiaDnsDirectResolver,
             urlTestUrl: defaultUrlTestUrl,
             urlTestIntervalSeconds: 1800,

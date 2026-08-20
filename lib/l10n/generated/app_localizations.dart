@@ -1958,6 +1958,24 @@ abstract class AppLocalizations {
   /// **'Use IPv4 only when off; prefer IPv6 when enabled'**
   String get dnsPreferIpv6Subtitle;
 
+  /// No description provided for @dnsFakeIpTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'FakeIP'**
+  String get dnsFakeIpTitle;
+
+  /// No description provided for @dnsFakeIpSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Assign synthetic IPs to reduce latency and save DNS roundtrips'**
+  String get dnsFakeIpSubtitle;
+
+  /// No description provided for @dnsFakeIpDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'FakeIP immediately returns a virtual IP address (198.18.0.0/15) for domain queries, eliminating local DNS resolution latency. The core resolves the true destination address directly at the proxy exit.'**
+  String get dnsFakeIpDescription;
+
   /// No description provided for @urlTestUrlTitle.
   ///
   /// In en, this message translates to:

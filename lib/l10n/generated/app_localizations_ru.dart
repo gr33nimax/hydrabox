@@ -1053,6 +1053,17 @@ class AppLocalizationsRu extends AppLocalizations {
       'Только IPv4, если выключено; при включении — приоритет IPv6';
 
   @override
+  String get dnsFakeIpTitle => 'FakeIP';
+
+  @override
+  String get dnsFakeIpSubtitle =>
+      'Синтетические IP-адреса для мгновенного ответа и экономии DNS-запросов';
+
+  @override
+  String get dnsFakeIpDescription =>
+      'FakeIP мгновенно возвращает виртуальный IP-адрес (198.18.0.0/15) на DNS-запросы, исключая задержку локального разрешения. Ядро передаёт доменное имя напрямую на прокси-сервер.';
+
+  @override
   String get urlTestUrlTitle => 'URL проверки';
 
   @override
