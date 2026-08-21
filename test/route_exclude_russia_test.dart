@@ -1,7 +1,13 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hydrabox/data/local/app_settings_store.dart';
 import 'package:hydrabox/models/subscription.dart';
 import 'package:hydrabox/singbox/singbox_config_builder.dart';
+
+String _russiaRuleSetPath(String fileName) {
+  return '${Directory.current.path}/assets/route_data/russia/$fileName';
+}
 
 void main() {
   const sampleSubscription = Subscription(
@@ -41,26 +47,28 @@ void main() {
       useRussiaRouteData: useRussiaRouteData,
       routeExcludeRussiaEnabled: routeExcludeRussiaEnabled,
       russiaGeositeRuBlockedPath: useRussiaRouteData
-          ? '/tmp/geosite-ru-blocked.srs'
+          ? _russiaRuleSetPath('geosite-ru-blocked.srs')
           : null,
       russiaGeositeRuAvailableOnlyInsidePath: useRussiaRouteData
-          ? '/tmp/geosite-ru-available-only-inside.srs'
+          ? _russiaRuleSetPath('geosite-ru-available-only-inside.srs')
           : null,
       russiaGeositeCategoryRuPath: useRussiaRouteData
-          ? '/tmp/geosite-category-ru.srs'
+          ? _russiaRuleSetPath('geosite-category-ru.srs')
           : null,
       russiaGeoipRuBlockedPath: useRussiaRouteData
-          ? '/tmp/geoip-ru-blocked.srs'
+          ? _russiaRuleSetPath('geoip-ru-blocked.srs')
           : null,
       russiaGeoipRuWhitelistPath: useRussiaRouteData
-          ? '/tmp/geoip-ru-whitelist.srs'
+          ? _russiaRuleSetPath('geoip-ru-whitelist.srs')
           : null,
-      russiaGeoipRuPath: useRussiaRouteData ? '/tmp/geoip-ru.srs' : null,
+      russiaGeoipRuPath: useRussiaRouteData
+          ? _russiaRuleSetPath('geoip-ru.srs')
+          : null,
       russiaCuratedDirectServicesPath: useRussiaRouteData
-          ? '/tmp/geosite-ru-available-only-inside.srs'
+          ? _russiaRuleSetPath('geosite-ru-available-only-inside.srs')
           : null,
       russiaAiServicesPath: useRussiaRouteData
-          ? '/tmp/geosite-ru-blocked.srs'
+          ? _russiaRuleSetPath('geosite-ru-blocked.srs')
           : null,
       bypassLocalNetwork: true,
       splitRoutingMode: SplitRoutingMode.disabled,
