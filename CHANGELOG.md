@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## [1.0.2]
+
+- Optimized vk_parasite transport CPU overhead and memory allocations:
+  - Buffer pooling on outgoing/incoming packet path.
+  - Zero CSPRNG syscalls for random RTP padding content.
+  - Telemetry measurement gating when active collection is disabled.
+  - Monotonic wall-clock RTP timestamps with safe integer wrapping.
+  - Pinned HydraCore client debug.47.
+
 ## [1.0.1]
 
 - Pinned HydraCore client debug.46 with the reduced API-v2 capability contract
