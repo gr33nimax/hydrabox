@@ -37,6 +37,7 @@ class HydraCoreCapabilities {
     this.supportsRmux = true,
     this.supportsCall = true,
     this.supportsCallVkParasite = true,
+    this.supportsCallVkParasiteQuic = true,
     this.supportsCallVkParasiteClient = true,
     this.supportsCallVkParasiteServer = false,
     this.supportsCallVkTelemetry = true,
@@ -179,6 +180,10 @@ class HydraCoreCapabilities {
       supportsRmux: _requiredBool(features, 'rmux'),
       supportsCall: _requiredBool(features, 'call'),
       supportsCallVkParasite: _requiredBool(features, 'call_vk_parasite'),
+      supportsCallVkParasiteQuic: _requiredBool(
+        features,
+        'call_vk_parasite_quic',
+      ),
       supportsCallVkParasiteClient: _requiredBool(
         features,
         'call_vk_parasite_client',
@@ -295,6 +300,7 @@ class HydraCoreCapabilities {
   final bool supportsRmux;
   final bool supportsCall;
   final bool supportsCallVkParasite;
+  final bool supportsCallVkParasiteQuic;
   final bool supportsCallVkParasiteClient;
   final bool supportsCallVkParasiteServer;
   final bool supportsCallVkTelemetry;
@@ -348,6 +354,7 @@ class HydraCoreCapabilities {
       supportsSubscriptionJwe &&
       supportsCall &&
       supportsCallVkParasite &&
+      supportsCallVkParasiteQuic &&
       supportsCallVkParasiteClient &&
       !supportsCallVkParasiteServer &&
       supportsCallVkTelemetry &&

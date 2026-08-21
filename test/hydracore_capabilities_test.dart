@@ -15,6 +15,7 @@ void main() {
     expect(capabilities.coreVersion, 'v1.13.16-extended-hydracore.11-debug.46');
     expect(capabilities.coreRole, 'client');
     expect(capabilities.supportsCallVkParasite, isTrue);
+    expect(capabilities.supportsCallVkParasiteQuic, isTrue);
     expect(capabilities.supportsCallVkParasiteClient, isTrue);
     expect(capabilities.supportsCallVkParasiteServer, isFalse);
     expect(capabilities.supportsCallVkTelemetry, isTrue);
@@ -79,6 +80,7 @@ void main() {
       'subscription_jwe',
       'call',
       'call_vk_parasite',
+      'call_vk_parasite_quic',
       'call_vk_parasite_client',
       'call_vk_telemetry',
       'vk_auth_challenges',
@@ -153,6 +155,7 @@ Map<String, dynamic> _capabilities() => {
     'rmux': true,
     'call': true,
     'call_vk_parasite': true,
+    'call_vk_parasite_quic': true,
     'call_vk_parasite_client': true,
     'call_vk_parasite_server': false,
     'call_vk_telemetry': true,
