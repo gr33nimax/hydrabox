@@ -36,7 +36,7 @@ void main() {
     () {
       final capabilities = HydraCoreCapabilities.parseStrict(
         File(
-          'test/fixtures/hydracore_client_capabilities_v1.13.16-extended-hydracore.11-debug.46.json',
+          'test/fixtures/hydracore_client_capabilities_v1.13.16-extended-hydracore.11-debug.48.json',
         ).readAsStringSync(),
       );
 
