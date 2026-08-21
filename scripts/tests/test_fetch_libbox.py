@@ -109,7 +109,7 @@ class FetchLibboxTest(unittest.TestCase):
         )
         self.assertEqual(
             parsed.sha256,
-            "5ba5c04286cf99d29a3b050431646e9ec5f73cc15723d8199014faf41b2d8390",
+            "a63538c9e83dc7446b6da6b6da15c7a6526cecfa1cd3db8697e25ea348c45c19",
         )
 
     def test_downloads_only_the_pinned_release_asset(self) -> None:
