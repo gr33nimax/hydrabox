@@ -8,7 +8,7 @@
   },
   "source": {
     "repository": "https://github.com/gr33nimax/hydracore",
-    "commit": "e9d022f9882f32e298b5d82e4856fd5f73231765",
+    "commit": "21aa21b07444c46cc0a7e38f694ea2021b32b5a9",
     "version": "v1.13.16-extended-hydracore.11-debug.46"
   },
   "upstream": {
@@ -67,7 +67,7 @@
   },
   "artifacts": {
     "hydracore-client-libbox.aar": {
-      "sha256": "5ba5c04286cf99d29a3b050431646e9ec5f73cc15723d8199014faf41b2d8390"
+      "sha256": "db6643ada66df795bd9c8cfd80f06c1023c6eabddfe8d1ea1efae394ba76c199"
     },
     "hydracore-client-libbox-sources.jar": {
       "sha256": "8ca57fbf682413a416f678d5133165433c83eedb7ff5fb7cf80a7605734ca84d"
