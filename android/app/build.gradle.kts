@@ -145,6 +145,14 @@ android {
         }
     }
 
+    // Инструментировать надо ту сборку, которая уходит пользователю. Тест-APK
+    // при этом обязан быть того же build type: debug-вариант собирается против
+    // неурезанного Kotlin stdlib, а release-приложение проходит через R8, и в
+    // рантайме тест падал на NoClassDefFoundError kotlin.jvm.internal.Intrinsics
+    // ещё до первого теста. При release-варианте AGP прогоняет R8 и по тест-APK,
+    // с mapping приложения.
+    testBuildType = "release"
+
     buildTypes {
         release {
             if (keyPropertiesFile.exists()) {

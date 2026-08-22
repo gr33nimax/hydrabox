@@ -4,7 +4,7 @@ set -euo pipefail
 api_level="${1:?API level is required}"
 arch="${2:?architecture is required}"
 app_apk="$(find instrumentation-apks -name "app-$arch-release.apk" -print -quit)"
-test_apk="$(find instrumentation-apks -name app-debug-androidTest.apk -print -quit)"
+test_apk="$(find instrumentation-apks -name app-release-androidTest.apk -print -quit)"
 
 test -f "$app_apk"
 test -f "$test_apk"
