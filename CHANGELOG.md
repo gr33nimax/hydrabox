@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Fixed vk_parasite startup always failing with `runtime.transport.unhealthy`:
+  the transport health snapshot was never published, so Android waited out the
+  30 s deadline while the lanes were already up.
+- Fixed UDP over vk_parasite, which never reached the internet. Datagrams are
+  now fragmented and reassembled instead of dropped when they exceed one QUIC
+  DATAGRAM frame, and the receiving side accepts associations opened by the
+  peer instead of discarding unknown ones. Wire-incompatible with earlier
+  vk_parasite datagram builds.
+- Fixed `VPN service cleanup incomplete` after a failed start: a command client
+  reconnect could hold the single command executor past the teardown budget,
+  and the dial loop now aborts as soon as a disconnect is requested.
+- Fixed a `call` outbound without an explicit `mode` requiring vk_parasite
+  transport health, which made every non-parasite call profile fail to start.
+- Pinned HydraCore client debug.49 with the fixed vk_parasite transport health
+  and UDP datagram path.
+
 ## [1.0.2]
 
 - Optimized vk_parasite transport CPU overhead and memory allocations:

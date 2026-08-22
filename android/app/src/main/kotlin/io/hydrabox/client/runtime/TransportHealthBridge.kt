@@ -10,8 +10,12 @@ internal object TransportHealthBridge {
             ?: return@runCatching false
         repeat(outbounds.length()) { index ->
             val outbound = outbounds.optJSONObject(index) ?: return@repeat
+            // Значение по умолчанию обязано совпадать с ядром и генератором
+            // конфигурации ("p2p"): иначе call-outbound без явного mode ждал бы
+            // снимок здоровья, который публикует только vk_parasite, и старт
+            // падал бы по дедлайну.
             if (outbound.optString("type") == "call" &&
-                outbound.optString("mode", "vk_parasite") == "vk_parasite"
+                outbound.optString("mode", "p2p") == "vk_parasite"
             ) {
                 return@runCatching true
             }
