@@ -3,13 +3,13 @@
   "distribution": {
     "id": "io.hydrabox.hydracore",
     "name": "HydraCore",
-    "version": "v1.13.16-extended-hydracore.11-debug.48",
+    "version": "v1.13.16-extended-hydracore.11-debug.49",
     "role": "client"
   },
   "source": {
     "repository": "https://github.com/gr33nimax/hydracore",
-    "commit": "80993d8aa8fe6ed7526af8bc0fc96a249bfcd3d0",
-    "version": "v1.13.16-extended-hydracore.11-debug.48"
+    "commit": "2beff4e4ebb2a51f04976f34b165f3f08c382ffa",
+    "version": "v1.13.16-extended-hydracore.11-debug.49"
   },
   "upstream": {
     "project": "sing-box-extended",
@@ -67,31 +67,31 @@
   },
   "artifacts": {
     "hydracore-client-libbox.aar": {
-      "sha256": "a63538c9e83dc7446b6da6b6da15c7a6526cecfa1cd3db8697e25ea348c45c19"
+      "sha256": "1b8e2e9cca8bbb3c2fa29a706cebf0311a69f36b9444a1c12276db59d259be6e"
     },
     "hydracore-client-libbox-sources.jar": {
       "sha256": "8ca57fbf682413a416f678d5133165433c83eedb7ff5fb7cf80a7605734ca84d"
     },
     "hydracore-bundle-manifest-v1.json": {
-      "sha256": "493b001c98f830ef1c02a47a695f96405c7800a9551ae72a46b062076a8a6c25"
+      "sha256": "ff04a4e10e44b2040b44db3a4d7c66cd74e30627a9b4912d68b728c62bc4d772"
     },
     "hydracore-bundle-manifest-v1.sig": {
-      "sha256": "fa6e3fcd34bf9b11348488e372ab73bb32fcf7f05810e0da52c1330f8bb2b416"
+      "sha256": "bd919eff408e1af567516f6b310607b2053259ad1ec7f71bb39dcf53f47beed8"
     },
     "hydracore-android-arm64-v8a-libbox.so": {
-      "sha256": "2e7600c78b85c3fd3b0de2e7447df0231f4db4785de2d1b29d64cf7c0ca4cbde"
+      "sha256": "17f40a81d3be1c3c3985af18aa0cbcd80d8ea4689a7a1855ad24bcceba577b62"
     },
     "hydracore-android-armeabi-v7a-libbox.so": {
-      "sha256": "74c575e38f559ea50d71a1d24048205fa981cfa661acee292e66ccc266ad9360"
+      "sha256": "49e9c0b8053e74316f0741e2c7759f63a32a9389902158bf3ed75414e2af70da"
     },
     "hydracore-android-x86_64-libbox.so": {
-      "sha256": "c40b30cda730636b1018813a0dabb5799a139d0a60cc3bea419f2fab8cc6a910"
+      "sha256": "1886ca8c243121a6861f4a77d0895b386129d27230d9d90e60a86eabd1ce2921"
     },
     "hydracore-vps-linux-amd64.tar.gz": {
-      "sha256": "6b9c2f35078192220b02278d025cd6a8cebb1d0ad5043f45a4c43f3564bbb056"
+      "sha256": "993a25fdfd162fceaa48b6335d7df3865269f9d5526c0aae809d9848a9202a5f"
     },
     "hydracore-vps-linux-arm64.tar.gz": {
-      "sha256": "fc721ffd634cf0e604a6ca92f202b40ad2289a4b4e93c96d0b67535a20335bf1"
+      "sha256": "769c3b3313f440b6163ea6abc131fb75c32c280f0415bb53913089616de5d299"
     }
   },
   "lineage": [
