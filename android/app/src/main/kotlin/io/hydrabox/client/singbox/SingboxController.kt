@@ -284,12 +284,9 @@ object SingboxController {
                     "level" to entry.level,
                     "message" to message,
                 )
-                // Debug/info streams are already forwarded to Flutter. Persisting
-                // every DNS/connection line caused heavy synchronous file I/O and
-                // retained browsing details in exported diagnostics.
-                if (entry.level <= 3) {
-                    HydraBoxDiagnostics.log(TAG, "libbox log level=${entry.level} message=$message")
-                }
+                // Errors can be emitted after the Flutter event sink disconnects;
+                // keep them in the bounded native diagnostic tail for export.
+                HydraBoxDiagnostics.log(TAG, "libbox log level=${entry.level} message=$message")
             }
             emit(mapOf("type" to "logs", "logs" to logs))
         }

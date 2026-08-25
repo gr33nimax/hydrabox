@@ -57,6 +57,7 @@ void main() {
     expect(state?.hasError, isFalse);
     expect(status?['uplink'], 11);
     expect(network?['reason'], 'default_interface');
+    expect(AppLogStore.entries.value.single.title, 'network handover');
     expect(groups?.groups, [
       {'tag': 'select'},
     ]);
@@ -120,6 +121,8 @@ void main() {
 
     expect(health?.challengeId, 'challenge-2');
     expect(health?.challengeUri, isNull);
+    expect(AppLogStore.entries.value.last.title, 'vk-parasite transport');
+    expect(AppLogStore.entries.value.last.message, contains('captcha_pending=true'));
   });
 
   test('nativeLog normalizes warn and records through AppLogStore', () {

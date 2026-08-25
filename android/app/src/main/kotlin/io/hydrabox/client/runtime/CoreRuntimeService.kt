@@ -16,6 +16,7 @@ import io.hydrabox.client.core.CoreBundleManager
 import io.hydrabox.client.runtime.proto.CoreRuntimeProtocol
 import io.hydrabox.client.singbox.HydraBoxProxyService
 import io.hydrabox.client.singbox.HydraBoxService
+import io.hydrabox.client.singbox.HydraBoxDiagnostics
 import io.hydrabox.client.singbox.HydraBoxVpnService
 import io.hydrabox.client.singbox.HydraBoxForegroundNotification
 import io.hydrabox.client.singbox.RuntimeEventConsumer
@@ -1356,6 +1357,15 @@ class CoreRuntimeService : Service() {
                 transportHealth = parsed
                 true
             }
+        }
+        if (changed) {
+            val failure = parsed.failure
+            HydraBoxDiagnostics.log(
+                "CoreRuntimeService",
+                "transport_health state=${parsed.state.name} lanes=${parsed.activeLanes}/${parsed.totalLanes} " +
+                    "demand=${parsed.demand} failureStage=${failure.stage} " +
+                    "failureKind=${failure.kind} failureCode=${failure.code}",
+            )
         }
         if (changed && emitIfChanged) emit(snapshotEvent())
     }

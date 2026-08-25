@@ -152,6 +152,7 @@ class RuntimeEventController {
   final DateTime Function() _now;
 
   StreamSubscription<Map<String, dynamic>>? _subscription;
+  String? _lastTransportHealthLogKey;
 
   void start() {
     _subscription?.cancel();
@@ -180,6 +181,7 @@ class RuntimeEventController {
         break;
       case 'network':
         _onNetwork(event);
+        _recordNetwork(event);
         break;
       case 'groups':
         _onGroups(
@@ -202,7 +204,9 @@ class RuntimeEventController {
         );
         break;
       case 'transportHealth':
-        _onTransportHealth?.call(_transportHealthEvent(event));
+        final health = _transportHealthEvent(event);
+        _recordTransportHealth(health);
+        _onTransportHealth?.call(health);
         break;
       case 'nativeLog':
         _recordNativeLog(event);
@@ -264,6 +268,34 @@ class RuntimeEventController {
       );
     }
     AppLogStore.appendBatch(batch);
+  }
+
+  void _recordNetwork(Map<String, dynamic> event) {
+    final reason = event['reason']?.toString().trim() ?? '';
+    final interfaceName = event['interfaceName']?.toString().trim() ?? '';
+    final index = (event['interfaceIndex'] as num?)?.toInt() ?? -1;
+    AppLogStore.info(
+      'network handover',
+      'reason=${reason.isEmpty ? 'unknown' : reason} '
+          'interface=${interfaceName.isEmpty ? 'none' : interfaceName} index=$index',
+    );
+  }
+
+  void _recordTransportHealth(RuntimeTransportHealthEvent health) {
+    if (!health.applicable) return;
+    final key = '${health.state}|${health.activeLanes}|${health.totalLanes}|'
+        '${health.demand}|${health.failureCode}|${health.challengeId}';
+    if (key == _lastTransportHealthLogKey) return;
+    _lastTransportHealthLogKey = key;
+    final message = 'state=${health.state} lanes=${health.activeLanes}/${health.totalLanes} '
+        'demand=${health.demand}'
+        '${health.failureCode == null || health.failureCode!.isEmpty ? '' : ' failure=${health.failureCode}'}'
+        '${health.challengeId == null || health.challengeId!.isEmpty ? '' : ' captcha_pending=true'}';
+    if (health.state == 'failed' || health.state == 'waiting_user') {
+      AppLogStore.warning('vk-parasite transport', message);
+    } else {
+      AppLogStore.info('vk-parasite transport', message);
+    }
   }
 
   RuntimeTransportHealthEvent _transportHealthEvent(
