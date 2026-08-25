@@ -283,11 +283,13 @@ class RuntimeEventController {
 
   void _recordTransportHealth(RuntimeTransportHealthEvent health) {
     if (!health.applicable) return;
-    final key = '${health.state}|${health.activeLanes}|${health.totalLanes}|'
+    final key =
+        '${health.state}|${health.activeLanes}|${health.totalLanes}|'
         '${health.demand}|${health.failureCode}|${health.challengeId}';
     if (key == _lastTransportHealthLogKey) return;
     _lastTransportHealthLogKey = key;
-    final message = 'state=${health.state} lanes=${health.activeLanes}/${health.totalLanes} '
+    final message =
+        'state=${health.state} lanes=${health.activeLanes}/${health.totalLanes} '
         'demand=${health.demand}'
         '${health.failureCode == null || health.failureCode!.isEmpty ? '' : ' failure=${health.failureCode}'}'
         '${health.challengeId == null || health.challengeId!.isEmpty ? '' : ' captcha_pending=true'}';

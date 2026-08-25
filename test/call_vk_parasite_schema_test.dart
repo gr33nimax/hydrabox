@@ -31,18 +31,15 @@ void main() {
     expect(ParsedOutboundSchema.validate(sanitized!), isNull);
   });
 
-  test(
-    'accepts and preserves every supported worker count',
-    () {
-      for (final count in [4, 8, 12, 16, 20]) {
-        final input = valid()..['workers'] = count;
-        expect(ParsedOutboundSchema.validate(input), isNull);
-        final sanitized = ParsedOutboundSchema.sanitize(input);
-        expect(sanitized, isNotNull);
-        expect(sanitized?['workers'], count);
-      }
-    },
-  );
+  test('accepts and preserves every supported worker count', () {
+    for (final count in [4, 8, 12, 16, 20]) {
+      final input = valid()..['workers'] = count;
+      expect(ParsedOutboundSchema.validate(input), isNull);
+      final sanitized = ParsedOutboundSchema.sanitize(input);
+      expect(sanitized, isNotNull);
+      expect(sanitized?['workers'], count);
+    }
+  });
 
   test('rejects invalid worker counts and configurations', () {
     final wrongLaneCount5 = valid()..['workers'] = 5;
@@ -53,12 +50,20 @@ void main() {
       ..['join_links'] = <String>[
         'https://calls.example/join/same',
         'https://calls.example/join/same',
+        'https://calls.example/join/same',
+        'https://calls.example/join/same',
       ];
     final noSharedObfs = valid()..remove('obfs_password');
     final excessiveTimeout = valid()..['worker_connect_timeout'] = '121s';
 
-    expect(ParsedOutboundSchema.validate(wrongLaneCount5), contains('4, 8, 12, 16, or 20'));
-    expect(ParsedOutboundSchema.validate(wrongLaneCount18), contains('4, 8, 12, 16, or 20'));
+    expect(
+      ParsedOutboundSchema.validate(wrongLaneCount5),
+      contains('4, 8, 12, 16, or 20'),
+    );
+    expect(
+      ParsedOutboundSchema.validate(wrongLaneCount18),
+      contains('4, 8, 12, 16, or 20'),
+    );
     expect(ParsedOutboundSchema.validate(tooManyLinks), contains('exactly 4'));
     expect(
       ParsedOutboundSchema.validate(duplicateLinks),
