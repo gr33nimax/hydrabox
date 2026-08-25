@@ -478,6 +478,7 @@ class ParsedOutboundSchema {
     'user',
     'password',
     'obfs_password',
+    'workers',
     'worker_connect_timeout',
   };
 
@@ -630,15 +631,14 @@ class ParsedOutboundSchema {
         }
         final joinLinks = config['join_links'];
         if (joinLinks is! List ||
-            joinLinks.isEmpty ||
-            joinLinks.length > 4 ||
+            joinLinks.length != 4 ||
             joinLinks.any(
               (value) =>
                   value is! String ||
                   value.trim().isEmpty ||
                   utf8.encode(value.trim()).length > 2048,
             )) {
-          return 'call join_links must contain 1..4 bounded links';
+          return 'call join_links must contain exactly 4 bounded links';
         }
         final normalizedJoinLinks = joinLinks
             .cast<String>()
@@ -661,8 +661,8 @@ class ParsedOutboundSchema {
           }
         }
         final workers = config['workers'];
-        if (workers != null && workers != 4 && workers != 16) {
-          return 'call workers must be 4 or 16';
+        if (workers != null && !const {4, 8, 12, 16, 20}.contains(workers)) {
+          return 'call workers must be 4, 8, 12, 16, or 20';
         }
         final workerConnectTimeout = config['worker_connect_timeout'];
         if (workerConnectTimeout != null) {

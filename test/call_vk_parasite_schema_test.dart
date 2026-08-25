@@ -12,6 +12,8 @@ void main() {
     'join_links': <String>[
       'https://calls.example/join/room-a',
       'https://calls.example/join/room-b',
+      'https://calls.example/join/room-c',
+      'https://calls.example/join/room-d',
     ],
     'user': 'alice',
     'password': 'per-user-secret',
@@ -19,32 +21,32 @@ void main() {
     'worker_connect_timeout': '12s',
   };
 
-  test('retains and validates the VK parasite outbound and strips workers', () {
+  test('retains and validates the VK parasite outbound', () {
     final sanitized = ParsedOutboundSchema.sanitize(valid());
 
     expect(sanitized, isNotNull);
     expect(sanitized?['mode'], 'vk_parasite');
-    expect(sanitized?['join_links'], hasLength(2));
+    expect(sanitized?['join_links'], hasLength(4));
     expect(sanitized?['workers'], isNull);
     expect(ParsedOutboundSchema.validate(sanitized!), isNull);
   });
 
   test(
-    'accepts legacy 4 or target 16 workers on input and strips from output',
+    'accepts and preserves every supported worker count',
     () {
-      for (final count in [4, 16]) {
+      for (final count in [4, 8, 12, 16, 20]) {
         final input = valid()..['workers'] = count;
         expect(ParsedOutboundSchema.validate(input), isNull);
         final sanitized = ParsedOutboundSchema.sanitize(input);
         expect(sanitized, isNotNull);
-        expect(sanitized?['workers'], isNull);
+        expect(sanitized?['workers'], count);
       }
     },
   );
 
   test('rejects invalid worker counts and configurations', () {
-    final wrongLaneCount3 = valid()..['workers'] = 3;
-    final wrongLaneCount8 = valid()..['workers'] = 8;
+    final wrongLaneCount5 = valid()..['workers'] = 5;
+    final wrongLaneCount18 = valid()..['workers'] = 18;
     final tooManyLinks = valid()
       ..['join_links'] = <String>['a', 'b', 'c', 'd', 'e'];
     final duplicateLinks = valid()
@@ -55,9 +57,9 @@ void main() {
     final noSharedObfs = valid()..remove('obfs_password');
     final excessiveTimeout = valid()..['worker_connect_timeout'] = '121s';
 
-    expect(ParsedOutboundSchema.validate(wrongLaneCount3), contains('4 or 16'));
-    expect(ParsedOutboundSchema.validate(wrongLaneCount8), contains('4 or 16'));
-    expect(ParsedOutboundSchema.validate(tooManyLinks), contains('1..4'));
+    expect(ParsedOutboundSchema.validate(wrongLaneCount5), contains('4, 8, 12, 16, or 20'));
+    expect(ParsedOutboundSchema.validate(wrongLaneCount18), contains('4, 8, 12, 16, or 20'));
+    expect(ParsedOutboundSchema.validate(tooManyLinks), contains('exactly 4'));
     expect(
       ParsedOutboundSchema.validate(duplicateLinks),
       contains('must be unique'),
