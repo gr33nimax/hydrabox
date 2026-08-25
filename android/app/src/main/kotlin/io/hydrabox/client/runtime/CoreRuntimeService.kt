@@ -23,7 +23,6 @@ import io.hydrabox.client.singbox.RuntimeEventConsumer
 import io.hydrabox.client.singbox.SingboxController
 import io.hydrabox.client.singbox.NativeCoreEnvironment
 import io.hydrabox.client.singbox.HydraBoxDefaultNetworkMonitor
-import io.hydrabox.client.singbox.HydraBoxDiagnostics
 import io.nekohasekai.libbox.Libbox
 import org.json.JSONObject
 import java.io.FileOutputStream
