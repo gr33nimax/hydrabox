@@ -230,8 +230,6 @@ dependencies {
     // them from the production APK when the app itself does not reference them.
     androidTestImplementation("org.jetbrains.kotlin:kotlin-stdlib:2.2.20")
     androidTestImplementation("androidx.tracing:tracing:1.2.0")
-    androidTestImplementation("androidx.concurrent:concurrent-futures-ktx:1.1.0")
-    androidTestImplementation("com.google.errorprone:error_prone_annotations:2.36.0")
 }
 
 protobuf {
