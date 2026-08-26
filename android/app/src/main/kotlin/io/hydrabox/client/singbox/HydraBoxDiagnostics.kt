@@ -28,6 +28,23 @@ object HydraBoxDiagnostics {
     private val diagnosticsFile: File
         get() = File(HydraBoxApplication.application.filesDir, "hydrabox-native-diagnostics.log")
 
+    fun event(name: String, vararg fields: Pair<String, Any?>) {
+        val line = buildString {
+            append("HB1 ")
+            append(System.currentTimeMillis())
+            append(' ')
+            append(name)
+            fields.forEach { (key, value) ->
+                value ?: return@forEach
+                append(' ')
+                append(key)
+                append('=')
+                append(value.toString().replace(Regex("\\s+"), "_").take(64))
+            }
+        }
+        log("HB1", line)
+    }
+
     fun log(tag: String, message: String, error: Throwable? = null) {
         runCatching {
             val flushNow = synchronized(pendingLock) {
