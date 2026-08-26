@@ -57,7 +57,7 @@ void main() {
     expect(workflow, contains(':app:testDebugUnitTest'));
     expect(workflow, contains(':app:lintDebug'));
     expect(workflow, contains(':app:assembleDebug'));
-    expect(workflow, contains(':app:assembleReleaseAndroidTest'));
+    expect(workflow, isNot(contains(':app:assembleReleaseAndroidTest')));
     expect(workflow, contains('flutter build apk --release --split-per-abi'));
     expect(workflow, contains('app-arm64-v8a-release.apk'));
     expect(workflow, contains('build/app/outputs/apk/debug/*.apk'));
