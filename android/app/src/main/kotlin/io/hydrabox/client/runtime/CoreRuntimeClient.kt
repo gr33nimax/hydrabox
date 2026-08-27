@@ -28,6 +28,18 @@ private const val MAX_AUTOMATIC_REBIND_ATTEMPTS = 3
 
 internal fun shouldRebind(attempt: Int): Boolean = attempt in 1..MAX_AUTOMATIC_REBIND_ATTEMPTS
 
+internal fun epochChangedEvent(
+    previousEpoch: String?,
+    snapshot: CoreRuntimeProtocol.RuntimeSnapshot,
+): Map<String, Any?>? {
+    val epoch = snapshot.processEpoch.takeIf { it.isNotBlank() } ?: return null
+    return if (previousEpoch != null && previousEpoch != epoch) {
+        mapOf("type" to "epochChanged", "processEpoch" to epoch)
+    } else {
+        null
+    }
+}
+
 internal class RebindAttemptCounter {
     private var attempt = 0
 
@@ -66,6 +78,7 @@ class CoreRuntimeClient(context: Context) {
     private var latestContract: CoreRuntimeProtocol.CoreContract? = null
     @Volatile
     private var latestPreconnectSessionId: String? = null
+    private var lastProcessEpoch: String? = null
 
     private val listener = object : ICoreRuntimeListener.Stub() {
         override fun onEvent(eventBytes: ByteArray?) {
@@ -73,7 +86,15 @@ class CoreRuntimeClient(context: Context) {
                 require(eventBytes != null && eventBytes.isNotEmpty())
                 CoreRuntimeProtocol.RuntimeEvent.parseFrom(eventBytes)
             }.getOrNull() ?: return
-            if (event.hasSnapshot()) latestSnapshot = event.snapshot
+            val epochEvent = if (event.hasSnapshot()) {
+                val snapshot = event.snapshot
+                latestSnapshot = snapshot
+                epochChangedEvent(lastProcessEpoch, snapshot).also {
+                    lastProcessEpoch = snapshot.processEpoch.takeIf { it.isNotBlank() }
+                }
+            } else {
+                null
+            }
             if (event.hasCommandResult()) completeCommand(event.commandResult)
             if (event.hasProbeResult()) {
                 probeResultCallbacks.remove(event.probeResult.sessionId)?.let { completion ->
@@ -98,7 +119,7 @@ class CoreRuntimeClient(context: Context) {
                     }
                 }
             }
-            val legacyEvents = event.toLegacyEventMaps()
+            val legacyEvents = listOfNotNull(epochEvent) + event.toLegacyEventMaps()
             if (legacyEvents.isNotEmpty()) {
                 mainHandler.post {
                     legacyEvents.forEach { legacyEvent ->

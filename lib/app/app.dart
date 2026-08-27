@@ -200,7 +200,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
   final RuntimeConnectionController _runtimeConnection =
       RuntimeConnectionController();
   final RuntimeIntentController _runtimeIntent = RuntimeIntentController();
-  final RuntimeOperationCoordinator _runtimeOperations =
+  RuntimeOperationCoordinator _runtimeOperations =
       RuntimeOperationCoordinator();
   final RuntimeRecoveryController _runtimeRecovery =
       RuntimeRecoveryController();
@@ -1793,6 +1793,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       onStatus: _handleTrafficStatusEvent,
       onNetwork: _handleRuntimeNetworkEvent,
       onGroups: _applyGroupUpdates,
+      onEpochChanged: _handleRuntimeEpochChanged,
       onUrlTestSessions: _applyManagedUrlTestSessions,
       onTransportHealth: _handleTransportHealth,
       shouldRecordLog: _shouldRecordSingBoxLog,
@@ -5930,6 +5931,30 @@ class _HydraBoxClientState extends State<HydraBoxClient>
         );
       }
     }
+  }
+
+  void _handleRuntimeEpochChanged(Map<String, dynamic> event) {
+    if (!mounted) return;
+    _latencyCoordinator.cancel();
+    _cancelUniversalUrlTest(reason: 'process_epoch_changed');
+    _groupUrlTestScheduler.cancel();
+    setState(() {
+      _runtimeOperations = RuntimeOperationCoordinator();
+      _lowestLatency = null;
+      _runtimeLowestOutboundTag = null;
+      _runtimeLowestSelections.clear();
+      _runtimeLatencies.clear();
+      _unavailableLatencyTags.clear();
+      _invalidatedLatencyTags.clear();
+      _latencyErrors.clear();
+      _latencyFailureCounts.clear();
+      _pendingVkCaptchaId = null;
+      _pendingVkCaptchaUri = null;
+      _lastVkCaptchaId = null;
+      _runtimeStartupUrlTestGate.reset();
+      _networkInterfaceGeneration = 0;
+    });
+    AppLogStore.info('runtime', 'HB1 EPOCH ep=${event['processEpoch'] ?? ''}');
   }
 
   void _handleTrafficStatusEvent(Map<String, dynamic> event) {

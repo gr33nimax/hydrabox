@@ -82,6 +82,41 @@ void main() {
     ]);
   });
 
+  test('epochChanged is delivered once before following snapshot events', () {
+    final received = <String>[];
+    final controller = RuntimeEventController(
+      events: const Stream.empty(),
+      onState: (_) => received.add('state'),
+      onStatus: (_) {},
+      onNetwork: (_) {},
+      onGroups: (_) {},
+      onEpochChanged: (_) => received.add('epochChanged'),
+      shouldRecordLog: (_) => false,
+    );
+
+    controller.dispatch({'type': 'epochChanged'});
+    controller.dispatch({'type': 'state', 'running': true});
+
+    expect(received, ['epochChanged', 'state']);
+  });
+
+  test('does not deliver epochChanged for an unchanged epoch', () {
+    var changes = 0;
+    final controller = RuntimeEventController(
+      events: const Stream.empty(),
+      onState: (_) {},
+      onStatus: (_) {},
+      onNetwork: (_) {},
+      onGroups: (_) {},
+      onEpochChanged: (_) => changes++,
+      shouldRecordLog: (_) => false,
+    );
+
+    controller.dispatch({'type': 'state', 'running': true});
+
+    expect(changes, 0);
+  });
+
   test('structured transport health exposes only a safe local challenge', () {
     RuntimeTransportHealthEvent? health;
     final controller = RuntimeEventController(

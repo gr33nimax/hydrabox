@@ -128,6 +128,7 @@ class RuntimeEventController {
     required RuntimeRawEventHandler onNetwork,
     required RuntimeGroupsHandler onGroups,
     required RuntimeLogFilter shouldRecordLog,
+    RuntimeRawEventHandler? onEpochChanged,
     RuntimeUrlTestSessionsHandler? onUrlTestSessions,
     RuntimeTransportHealthHandler? onTransportHealth,
     DateTime Function()? now,
@@ -136,6 +137,7 @@ class RuntimeEventController {
        _onStatus = onStatus,
        _onNetwork = onNetwork,
        _onGroups = onGroups,
+       _onEpochChanged = onEpochChanged,
        _onUrlTestSessions = onUrlTestSessions,
        _onTransportHealth = onTransportHealth,
        _shouldRecordLog = shouldRecordLog,
@@ -146,6 +148,7 @@ class RuntimeEventController {
   final RuntimeRawEventHandler _onStatus;
   final RuntimeRawEventHandler _onNetwork;
   final RuntimeGroupsHandler _onGroups;
+  final RuntimeRawEventHandler? _onEpochChanged;
   final RuntimeUrlTestSessionsHandler? _onUrlTestSessions;
   final RuntimeTransportHealthHandler? _onTransportHealth;
   final RuntimeLogFilter _shouldRecordLog;
@@ -167,6 +170,9 @@ class RuntimeEventController {
   void dispatch(Map<String, dynamic> event) {
     final type = event['type'] as String? ?? '';
     switch (type) {
+      case 'epochChanged':
+        _onEpochChanged?.call(event);
+        break;
       case 'state':
         _onState(
           RuntimeStateEvent(
