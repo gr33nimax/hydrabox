@@ -15,7 +15,9 @@ void main() {
 
     for (final entry in cases.entries) {
       expect(
-        runtimeSnapshotPhase(<String, dynamic>{'state': entry.key}),
+        runtimeSnapshotPhase(<String, dynamic>{
+          'state': entry.key,
+        }, currentPhase: AppConnectionPhase.idle),
         entry.value,
       );
     }
@@ -26,8 +28,19 @@ void main() {
       runtimeSnapshotPhase(<String, dynamic>{
         'running': true,
         'state': 'RUNTIME_STATE_STOPPED',
-      }),
+      }, currentPhase: AppConnectionPhase.connected),
       AppConnectionPhase.idle,
     );
+  });
+
+  test('unknown runtime state preserves the current phase', () {
+    for (final phase in AppConnectionPhase.values) {
+      expect(
+        runtimeSnapshotPhase(<String, dynamic>{
+          'state': 'RUNTIME_STATE_UNKNOWN',
+        }, currentPhase: phase),
+        phase,
+      );
+    }
   });
 }

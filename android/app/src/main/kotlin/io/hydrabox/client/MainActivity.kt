@@ -1247,51 +1247,16 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     private fun runtimeStatusMap(): Map<String?, Any?> {
-        mutableCoreRuntimeClient?.cachedSnapshot()?.let { snapshot ->
-            return snapshot.toLegacyRuntimeMap()
-        }
-        val recordedState = HydraBoxApplication.readServiceState()
-        val runtimeIntent = HydraBoxApplication.readRuntimeIntent()
-        val recordedServiceAlive = HydraBoxApplication.isRecordedServiceAlive()
-        val activeRuntimeOwner = HydraBoxService.hasActiveRuntimeOwner(
-            SingboxController.serviceMode.takeIf { it.isNotBlank() },
-        )
-        val nativeRecoveryPending =
-            !SingboxController.running && (recordedServiceAlive || activeRuntimeOwner)
-        return mapOf(
-            "running" to SingboxController.running,
-            "mode" to SingboxController.serviceMode,
-            "runtimeGeneration" to SingboxController.activeRuntimeGeneration,
-            "uplink" to SingboxController.uplink,
-            "downlink" to SingboxController.downlink,
-            "uplinkTotal" to SingboxController.uplinkTotal,
-            "downlinkTotal" to SingboxController.downlinkTotal,
-            "recordedServiceAlive" to recordedServiceAlive,
-            "recordedServiceMode" to recordedState?.mode,
-            "recordedServicePid" to recordedState?.pid,
-            "recordedServiceUpdatedAtMillis" to recordedState?.updatedAtMillis,
-            "recordedServiceState" to HydraBoxApplication.describeRecordedServiceState(),
-            "activeRuntimeOwner" to activeRuntimeOwner,
-            "nativeRecoveryPending" to nativeRecoveryPending,
-            // Status is intentionally read-only. Recovery belongs to explicit
-            // stop/timeout paths so polling cannot interrupt a normal restart.
-            "staleRuntimeStateCleaned" to false,
-            "runtimeIntentFresh" to HydraBoxApplication.isRuntimeIntentFresh(),
-            "runtimeIntentMode" to runtimeIntent?.mode,
-            "runtimeIntentReason" to runtimeIntent?.reason,
-            "runtimeIntentPid" to runtimeIntent?.pid,
-            "runtimeIntentUpdatedAtMillis" to runtimeIntent?.updatedAtMillis,
-            "runtimeIntentState" to HydraBoxApplication.describeRuntimeIntent(),
-            "lastError" to SingboxController.lastRuntimeError,
-            "runtimeSnapshotAuthoritative" to false,
-        )
+        return mutableCoreRuntimeClient?.cachedSnapshot()?.toLegacyRuntimeMap()
+            ?: mapOf("state" to "RUNTIME_STATE_UNKNOWN", "processEpoch" to "")
     }
 
     private fun logsWithNativeDiagnostics(content: String): String {
         val nativeDiagnostics = HydraBoxDiagnostics.readTail()
         val crashReport = HydraBoxDiagnostics.readCrashReportTail()
         val oomReport = HydraBoxDiagnostics.readLatestOomReportMetadata()
-        val runtimeSnapshot = runCatching { runtimeStatusMap().toString() }.getOrDefault("unavailable")
+        val runtimeSnapshot = mutableCoreRuntimeClient?.cachedSnapshot()?.toLegacyRuntimeMap()?.toString()
+            ?: "runtime snapshot: unavailable"
         val splitSnapshot = HydraBoxVpnPlatformInterface.describeLastTunPackages()
         return HydraBoxLogSanitizer.redact(buildString {
             append(content)

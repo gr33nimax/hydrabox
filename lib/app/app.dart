@@ -6070,7 +6070,11 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     try {
       final status = await SingboxRuntime.instance.status();
       if (!mounted || !_foregroundLifecycleActive) return;
-      final snapshotPhase = runtimeSnapshotPhase(status);
+      final snapshotPhase = runtimeSnapshotPhase(
+        status,
+        currentPhase: _connectionPhase,
+      );
+      if (status['state'] == 'RUNTIME_STATE_UNKNOWN') return;
       final running = snapshotPhase == AppConnectionPhase.connected;
       _runtimeOperations.updateRuntimeState(
         running: running,
