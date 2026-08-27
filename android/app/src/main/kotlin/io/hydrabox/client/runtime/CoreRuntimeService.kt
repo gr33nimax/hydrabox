@@ -34,11 +34,16 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
-private object CoreProcessIdentity {
+internal object CoreProcessIdentity {
     val epoch: String = UUID.randomUUID().toString()
     val sequence = AtomicLong(0L)
     val generation = AtomicLong(0L)
 }
+
+private fun shortId(value: String): String = value.take(8).ifEmpty { "none" }
+
+private fun shortHex(bytes: ByteArray): String =
+    if (bytes.isEmpty()) "none" else bytes.take(4).joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
 internal enum class ProbeExecutionMode {
     EPHEMERAL,
@@ -155,6 +160,15 @@ class CoreRuntimeService : Service() {
 
             startupFailure.markStage("contract", HydraNativeLoader.loadedSource())
             coreContract = buildContract()
+            HydraBoxDiagnostics.event(
+                "EPOCH",
+                "ep" to shortId(processEpoch), "cg" to generation.get(),
+                "rg" to SingboxController.activeRuntimeGeneration,
+                "ng" to HydraBoxDefaultNetworkMonitor.currentInterfaceState("epoch").generation,
+                "prof" to shortHex(activeConfigSha256),
+                "native_source" to HydraNativeLoader.loadedSource(),
+                "api" to "${coreContract.apiMajor}.${coreContract.apiMinor}",
+            )
 
             startupFailure.markStage("controller", HydraNativeLoader.loadedSource())
             controllerRegistration = SingboxController.registerEventSink(
@@ -545,6 +559,14 @@ class CoreRuntimeService : Service() {
             return
         }
         synchronized(snapshotLock) { activeConfigSha256 = expectedDigest.copyOf() }
+        HydraBoxDiagnostics.event(
+            "CONNECT",
+            "ep" to shortId(processEpoch), "cg" to commandGeneration,
+            "rg" to SingboxController.activeRuntimeGeneration,
+            "ng" to HydraBoxDefaultNetworkMonitor.currentInterfaceState("connect").generation,
+            "prof" to shortHex(activeConfigSha256),
+            "mode" to request.mode.name.lowercase().removePrefix("runtime_mode_"), "source" to "ui",
+        )
         updateState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STARTING)
         mainHandler.post {
             val targetName = if (request.mode == CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_VPN) "vpn" else "proxy"
@@ -718,6 +740,14 @@ class CoreRuntimeService : Service() {
             runCatching { CoreBundleManager(this).markHealthy(bundle.releaseSequence) }
         }
         commandSucceeded(commandId, CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING)
+        val health = synchronized(snapshotLock) { transportHealth }
+        HydraBoxDiagnostics.event(
+            "READY",
+            "ep" to shortId(processEpoch), "cg" to generation.get(), "rg" to SingboxController.activeRuntimeGeneration,
+            "ng" to HydraBoxDefaultNetworkMonitor.currentInterfaceState("ready").generation,
+            "prof" to synchronized(snapshotLock) { shortHex(activeConfigSha256) },
+            "active_lanes" to health.activeLanes, "target_lanes" to health.totalLanes, "elapsed_ms_from_connect" to 0,
+        )
     }
 
     private fun failStartAndRollback(
@@ -787,6 +817,13 @@ class CoreRuntimeService : Service() {
 
     private fun stop(command: CoreRuntimeProtocol.RuntimeCommand) {
         generation.incrementAndGet()
+        HydraBoxDiagnostics.event(
+            "STOP",
+            "ep" to shortId(processEpoch), "cg" to generation.get(), "rg" to SingboxController.activeRuntimeGeneration,
+            "ng" to HydraBoxDefaultNetworkMonitor.currentInterfaceState("stop").generation,
+            "prof" to synchronized(snapshotLock) { shortHex(activeConfigSha256) },
+            "reason" to command.stop.reason.ifBlank { "runtime_command" }, "stage" to "requested",
+        )
         updateState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING)
         shutdownRuntimeServices(command.stop.reason.ifBlank { "runtime_command" }) { stopped ->
             if (stopped) {
@@ -1083,6 +1120,13 @@ class CoreRuntimeService : Service() {
             return
         }
         updateState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RECOVERING)
+        HydraBoxDiagnostics.event(
+            "RECOVERY",
+            "ep" to shortId(processEpoch), "cg" to generation.get(), "rg" to SingboxController.activeRuntimeGeneration,
+            "ng" to HydraBoxDefaultNetworkMonitor.currentInterfaceState("recovery").generation,
+            "prof" to synchronized(snapshotLock) { shortHex(activeConfigSha256) },
+            "reason" to "transport_lost", "elapsed_ms" to 0,
+        )
         HydraBoxService.requestStopAll("recovery:${command.requestRecovery.reason}")
         mainHandler.postDelayed({
             dispatchStart(mode.get())

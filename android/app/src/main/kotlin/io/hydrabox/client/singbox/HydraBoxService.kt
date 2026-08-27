@@ -17,6 +17,7 @@ import io.nekohasekai.libbox.PlatformInterface
 import io.nekohasekai.libbox.SystemProxyStatus
 import io.hydrabox.client.HydraBoxApplication
 import io.hydrabox.client.HydraBoxQuickSettingsTileService
+import io.hydrabox.client.runtime.CoreProcessIdentity
 import org.json.JSONObject
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.Executors
@@ -24,6 +25,8 @@ import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
+
+private fun shortServiceId(value: String): String = value.take(8).ifEmpty { "none" }
 
 class HydraBoxService(
     private val service: Service,
@@ -510,28 +513,22 @@ class HydraBoxService(
         }
         Log.i(TAG, "startOrReloadInternal begin service=${service.javaClass.simpleName}")
         val mode = currentMode()
-        HydraBoxApplication.writeRuntimeIntent(mode, "start_or_reload")
-        SingboxController.log(
-            "info",
-            "native_start_marker phase=begin service=${service.javaClass.simpleName} " +
-                "mode=$mode token=$token attempt=$networkWaitAttempt pid=${android.os.Process.myPid()} " +
-                "intent=${HydraBoxApplication.describeRuntimeIntent()} " +
-                "serviceState=${HydraBoxApplication.describeRecordedServiceState()}",
+        val startedAt = SystemClock.elapsedRealtime()
+        HydraBoxDiagnostics.event(
+            "START", "ep" to shortServiceId(CoreProcessIdentity.epoch), "cg" to CoreProcessIdentity.generation.get(),
+            "rg" to SingboxController.activeRuntimeGeneration,
+            "ng" to HydraBoxDefaultNetworkMonitor.currentInterfaceState("start").generation,
+            "stage" to "foreground", "result" to "ok",
         )
+        HydraBoxApplication.writeRuntimeIntent(mode, "start_or_reload")
         HydraBoxDiagnostics.log(
             TAG,
             "startOrReloadInternal begin service=${service.javaClass.simpleName} " +
                 "current=${HydraBoxDefaultNetworkMonitor.describeCurrentState()}",
         )
         try {
-            SingboxController.log(
-                "info",
-                "native_start_marker phase=before_libbox_setup memoryLimit=${HydraBoxApplication.memoryLimitEnabled}",
-            )
             NativeCoreEnvironment.ensureSetup()
-            SingboxController.log("info", "native_start_marker phase=after_libbox_setup")
             showForeground("Starting")
-            SingboxController.log("info", "native_start_marker phase=foreground_starting")
         } catch (error: Throwable) {
             Log.e(TAG, "startOrReloadInternal setup failed", error)
             HydraBoxDiagnostics.log(TAG, "startOrReloadInternal setup failed", error)
@@ -541,6 +538,13 @@ class HydraBoxService(
         registerRuntimeReceiver()
         HydraBoxDefaultNetworkMonitor.start()
         if (!HydraBoxDefaultNetworkMonitor.awaitUsableDefaultInterface(NETWORK_WAIT_TIMEOUT_MS)) {
+            HydraBoxDiagnostics.event(
+                "START", "ep" to shortServiceId(CoreProcessIdentity.epoch), "cg" to CoreProcessIdentity.generation.get(),
+                "rg" to SingboxController.activeRuntimeGeneration,
+                "ng" to HydraBoxDefaultNetworkMonitor.currentInterfaceState("network_wait").generation,
+                "stage" to "network_wait", "result" to "fail",
+                "elapsed_ms" to SystemClock.elapsedRealtime() - startedAt, "attempt" to networkWaitAttempt,
+            )
             SingboxController.log(
                 "warning",
                 "network_interface_wait_timeout attempt=$networkWaitAttempt token=$token " +
@@ -574,6 +578,13 @@ class HydraBoxService(
             "info",
             "network_interface_ready token=$token current=${HydraBoxDefaultNetworkMonitor.describeCurrentState()}",
         )
+        HydraBoxDiagnostics.event(
+            "START", "ep" to shortServiceId(CoreProcessIdentity.epoch), "cg" to CoreProcessIdentity.generation.get(),
+            "rg" to SingboxController.activeRuntimeGeneration,
+            "ng" to HydraBoxDefaultNetworkMonitor.currentInterfaceState("network_wait").generation,
+            "stage" to "network_wait", "result" to "ok",
+            "elapsed_ms" to SystemClock.elapsedRealtime() - startedAt, "attempt" to networkWaitAttempt,
+        )
         if (!startTokenCurrent(token)) {
             HydraBoxDiagnostics.log(TAG, "start cancelled after network wait token=$token")
             return
@@ -595,17 +606,8 @@ class HydraBoxService(
             return
         }
         try {
-            SingboxController.log(
-                "info",
-                "native_start_marker phase=before_command_server configChars=${preparedRuntimeConfig.config.length} " +
-                    "configHash=$configHash splitMode=$mode",
-            )
             val server = commandServer ?: createCommandServer()
             Log.i(TAG, "starting/reloading libbox service")
-            SingboxController.log(
-                "info",
-                "native_start_marker phase=before_start_or_reload_service hasCommandServer=${commandServer != null}",
-            )
             HydraBoxDiagnostics.log(
                 TAG,
                 "starting/reloading libbox service current=${HydraBoxDefaultNetworkMonitor.describeCurrentState()}",
@@ -616,11 +618,11 @@ class HydraBoxService(
                 preparedRuntimeConfig.overrideOptions,
             )
             val elapsedMs = System.currentTimeMillis() - startedAt
-            SingboxController.log(
-                "info",
-                "native_start_marker phase=after_start_or_reload_service " +
-                    "tun_fd_ownership owner=libbox service=${service.javaClass.simpleName} " +
-                    "startElapsedMs=$elapsedMs",
+            HydraBoxDiagnostics.event(
+                "START", "ep" to shortServiceId(CoreProcessIdentity.epoch), "cg" to CoreProcessIdentity.generation.get(),
+                "rg" to SingboxController.activeRuntimeGeneration,
+                "ng" to HydraBoxDefaultNetworkMonitor.currentInterfaceState("libbox_start").generation,
+                "stage" to "libbox_start", "result" to "ok", "elapsed_ms" to elapsedMs,
             )
             HydraBoxDefaultNetworkMonitor.reassertDefaultInterface("after_start_or_reload_service")
             scheduleRetry(
@@ -784,6 +786,12 @@ class HydraBoxService(
             "warning",
             "VPN service stopped source=$source " +
                 "service=${service.javaClass.simpleName}",
+        )
+        HydraBoxDiagnostics.event(
+            "STOP", "ep" to shortServiceId(CoreProcessIdentity.epoch), "cg" to CoreProcessIdentity.generation.get(),
+            "rg" to SingboxController.activeRuntimeGeneration,
+            "ng" to HydraBoxDefaultNetworkMonitor.currentInterfaceState("stop_released").generation,
+            "stage" to "released", "elapsed_ms" to 0,
         )
 
         runCatching {

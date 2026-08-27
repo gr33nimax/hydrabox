@@ -13,7 +13,10 @@ import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
 import io.hydrabox.client.HydraBoxApplication
+import io.hydrabox.client.runtime.CoreProcessIdentity
 import java.net.Socket
+
+private fun shortVpnId(value: String): String = value.take(8).ifEmpty { "none" }
 
 class HydraBoxVpnService : VpnService() {
     companion object {
@@ -135,6 +138,12 @@ class HydraBoxVpnService : VpnService() {
     override fun onRevoke() {
         Log.w(TAG, "onRevoke")
         HydraBoxDiagnostics.log(TAG, "onRevoke")
+        HydraBoxDiagnostics.event(
+            "STOP", "ep" to shortVpnId(CoreProcessIdentity.epoch), "cg" to CoreProcessIdentity.generation.get(),
+            "rg" to SingboxController.activeRuntimeGeneration,
+            "ng" to HydraBoxDefaultNetworkMonitor.currentInterfaceState("revoke").generation,
+            "stage" to "revoked",
+        )
         HydraBoxApplication.clearRuntimeIntent()
         cancelScheduledRestart("vpn_permission_revoked")
         try {
@@ -190,6 +199,12 @@ class HydraBoxVpnService : VpnService() {
         val action = VpnServiceLifecyclePolicy.taskRemovalAction(
             runtimeRunning = SingboxController.running,
             activeRuntimeOwner = HydraBoxService.hasActiveRuntimeOwner("vpn"),
+        )
+        HydraBoxDiagnostics.event(
+            "STOP", "ep" to shortVpnId(CoreProcessIdentity.epoch), "cg" to CoreProcessIdentity.generation.get(),
+            "rg" to SingboxController.activeRuntimeGeneration,
+            "ng" to HydraBoxDefaultNetworkMonitor.currentInterfaceState("task_removed").generation,
+            "stage" to "task_removed",
         )
         if (action == VpnTaskRemovalAction.STOP_LINGERING_SERVICE) {
             Log.i(TAG, "onTaskRemoved – runtime is stopped; stopping lingering VPN service")

@@ -9,8 +9,10 @@ import android.net.NetworkRequest
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.SystemClock
 import android.util.Log
 import io.hydrabox.client.HydraBoxApplication
+import io.hydrabox.client.runtime.CoreProcessIdentity
 import io.nekohasekai.libbox.InterfaceUpdateListener
 import java.net.NetworkInterface
 import java.util.concurrent.CountDownLatch
@@ -19,8 +21,14 @@ import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
+internal fun msSinceLastCallback(nowMs: Long, lastMs: Long): Long =
+    if (lastMs < 0L) -1L else (nowMs - lastMs).coerceAtLeast(0L)
+
+private fun shortMonitorId(value: String): String = value.take(8).ifEmpty { "none" }
+
 object HydraBoxDefaultNetworkMonitor {
     private const val TAG = "HydraBoxDefaultNetwork"
+    private const val NO_CALLBACK_YET = -1L
     private const val NETWORK_CHANGE_DEBOUNCE_MS = 1_500L
     private val lock = Any()
     private val networkHandlerThread = HandlerThread("HydraBoxNetworkCallback").apply { start() }
@@ -32,6 +40,7 @@ object HydraBoxDefaultNetworkMonitor {
         Thread(runnable, "HydraBoxNetworkHeartbeat").apply { isDaemon = true }
     }
     private val notificationGeneration = AtomicLong(0L)
+    private val lastAndroidCallbackElapsedMs = AtomicLong(NO_CALLBACK_YET)
     private val request = NetworkRequest.Builder()
         .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
         .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
@@ -63,12 +72,14 @@ object HydraBoxDefaultNetworkMonitor {
 
     private val callback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
+            lastAndroidCallbackElapsedMs.set(SystemClock.elapsedRealtime())
             Log.i(TAG, "onAvailable network=$network")
             HydraBoxDiagnostics.log(TAG, "onAvailable ${describeNetwork(network)}")
             updateNetwork(network)
         }
 
         override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
+            lastAndroidCallbackElapsedMs.set(SystemClock.elapsedRealtime())
             Log.i(
                 TAG,
                 "onCapabilitiesChanged network=$network transports=${describeTransports(networkCapabilities)}",
@@ -81,6 +92,7 @@ object HydraBoxDefaultNetworkMonitor {
         }
 
         override fun onLinkPropertiesChanged(network: Network, linkProperties: LinkProperties) {
+            lastAndroidCallbackElapsedMs.set(SystemClock.elapsedRealtime())
             HydraBoxDiagnostics.log(
                 TAG,
                 "onLinkPropertiesChanged network=$network interface=${linkProperties.interfaceName}",
@@ -89,6 +101,7 @@ object HydraBoxDefaultNetworkMonitor {
         }
 
         override fun onLost(network: Network) {
+            lastAndroidCallbackElapsedMs.set(SystemClock.elapsedRealtime())
             Log.w(TAG, "onLost network=$network")
             HydraBoxDiagnostics.log(TAG, "onLost ${describeNetwork(network)}")
             synchronized(lock) {
@@ -166,6 +179,12 @@ object HydraBoxDefaultNetworkMonitor {
         val active = HydraBoxApplication.connectivity.activeNetwork
         val cached = synchronized(lock) { currentNetwork }
         val best = resolveBestNetwork()
+        HydraBoxDiagnostics.event(
+            "NETWORK", "ep" to shortMonitorId(CoreProcessIdentity.epoch), "cg" to CoreProcessIdentity.generation.get(),
+            "rg" to SingboxController.activeRuntimeGeneration, "ng" to notificationGeneration.get(),
+            "trigger" to "heartbeat", "branch" to "tick",
+            "ms_since_last_callback" to msSinceLastCallback(SystemClock.elapsedRealtime(), lastAndroidCallbackElapsedMs.get()),
+        )
         if (best != null && best != cached) {
             Log.i(TAG, "heartbeat divergence cached=$cached best=$best")
             synchronized(lock) {
@@ -343,6 +362,12 @@ object HydraBoxDefaultNetworkMonitor {
     }
 
     private fun updateNetwork(network: Network) {
+        HydraBoxDiagnostics.event(
+            "NETWORK", "ep" to shortMonitorId(CoreProcessIdentity.epoch), "cg" to CoreProcessIdentity.generation.get(),
+            "rg" to SingboxController.activeRuntimeGeneration, "ng" to notificationGeneration.get(),
+            "trigger" to "callback", "branch" to "update",
+            "ms_since_last_callback" to msSinceLastCallback(SystemClock.elapsedRealtime(), lastAndroidCallbackElapsedMs.get()),
+        )
         if (!isBaseUsableNetwork(network)) {
             Log.i(TAG, "ignore unusable network=$network")
             HydraBoxDiagnostics.log(TAG, "ignore unusable ${describeNetwork(network)}")
@@ -540,6 +565,11 @@ object HydraBoxDefaultNetworkMonitor {
             return
         }
         notifyListeners(currentListeners, interfaceName, index)
+        HydraBoxDiagnostics.event(
+            "REBIND", "ep" to shortMonitorId(CoreProcessIdentity.epoch), "cg" to CoreProcessIdentity.generation.get(),
+            "rg" to SingboxController.activeRuntimeGeneration, "ng" to notificationGeneration.get(),
+            "paths_closed" to 0,
+        )
         if (shouldBroadcastNetworkChange(duplicate, targetListener != null)) {
             SingboxController.emitNetworkChanged(
                 "default_interface",
