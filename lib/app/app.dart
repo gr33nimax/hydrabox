@@ -29,6 +29,7 @@ import 'package:hydrabox/app/runtime_intent_controller.dart';
 import 'package:hydrabox/app/runtime_operation_coordinator.dart';
 import 'package:hydrabox/app/runtime_recovery_controller.dart';
 import 'package:hydrabox/app/runtime_session_coordinator.dart';
+import 'package:hydrabox/app/runtime_snapshot_reducer.dart';
 import 'package:hydrabox/app/singbox_config_coordinator.dart';
 import 'package:hydrabox/app/subscription_coordinator.dart';
 import 'package:hydrabox/app/subscription_runtime_controller.dart';
@@ -6069,23 +6070,20 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     try {
       final status = await SingboxRuntime.instance.status();
       if (!mounted || !_foregroundLifecycleActive) return;
-      final running = status['running'] == true;
+      final snapshotPhase = runtimeSnapshotPhase(status);
+      final running = snapshotPhase == AppConnectionPhase.connected;
       _runtimeOperations.updateRuntimeState(
         running: running,
         nativeRuntimeGeneration:
             (status['runtimeGeneration'] as num?)?.toInt() ?? 0,
       );
-      final recordedServiceAlive = status['recordedServiceAlive'] == true;
-      final activeRuntimeOwner = status['activeRuntimeOwner'] == true;
       final runtimeState = status['state']?.toString();
       final hasRuntimeError =
           runtimeState == 'RUNTIME_STATE_FAILED' ||
           status['errorCode']?.toString().trim().isNotEmpty == true;
-      final nativeRecoveryPending = nativeRuntimeRecoveryPending(
-        running: running,
-        recordedServiceAlive: recordedServiceAlive,
-        activeRuntimeOwner: activeRuntimeOwner,
-      );
+      final snapshotRecoveryPending =
+          snapshotPhase == AppConnectionPhase.starting ||
+          snapshotPhase == AppConnectionPhase.recovering;
       final localTransitionPending =
           _starting ||
           _invalidOutboundRetryScheduled ||
@@ -6093,11 +6091,11 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       final decision = _runtimeSession.decideStatus(
         running: running,
         hasError: hasRuntimeError,
-        nativeRecoveryPending: nativeRecoveryPending,
+        nativeRecoveryPending: snapshotRecoveryPending,
         localTransitionPending: localTransitionPending,
         retryScheduled: _invalidOutboundRetryScheduled,
       );
-      if (nativeRecoveryPending) {
+      if (snapshotRecoveryPending) {
         _logRuntimeRecoveryStatus(status);
       }
       final now = DateTime.now();
@@ -6118,7 +6116,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
         _applyTrafficStatus(syncedTraffic);
         if (running) {
           _recordTrafficSample(now);
-        } else if (!nativeRecoveryPending) {
+        } else if (!snapshotRecoveryPending) {
           _resetTrafficDashboardData();
           _groupUrlTestScheduler.cancel();
           _runtimeStartupUrlTestGate.reset();
@@ -6150,14 +6148,8 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     AppLogStore.warning(
       'runtime',
       'runtime sync pending native recovery '
-          'running=${status['running']} '
-          'recordedAlive=${status['recordedServiceAlive']} '
-          'recordedMode=${status['recordedServiceMode'] ?? ''} '
-          'intentFresh=${status['runtimeIntentFresh']} '
-          'intentMode=${status['runtimeIntentMode'] ?? ''} '
-          'intentReason=${status['runtimeIntentReason'] ?? ''} '
-          'intent=${status['runtimeIntentState'] ?? ''} '
-          'service=${status['recordedServiceState'] ?? ''}',
+          'state=${status['state']} '
+          'mode=${status['mode'] ?? ''}',
     );
   }
 

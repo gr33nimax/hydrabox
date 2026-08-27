@@ -2,11 +2,12 @@ package io.hydrabox.client
 
 import io.hydrabox.client.runtime.proto.CoreRuntimeProtocol
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class CoreRuntimeSnapshotCompatibilityTest {
     @Test
-    fun `running authoritative snapshot supplies legacy owner evidence`() {
+    fun `running authoritative snapshot omits synthesized owner evidence`() {
         val snapshot = CoreRuntimeProtocol.RuntimeSnapshot.newBuilder()
             .setState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING)
             .setMode(CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_VPN)
@@ -16,14 +17,15 @@ class CoreRuntimeSnapshotCompatibilityTest {
         val status = snapshot.toLegacyRuntimeMap()
 
         assertEquals(true, status["running"])
-        assertEquals(true, status["recordedServiceAlive"])
-        assertEquals(true, status["activeRuntimeOwner"])
-        assertEquals(false, status["nativeRecoveryPending"])
-        assertEquals(true, status["runtimeSnapshotAuthoritative"])
+        assertFalse(status.containsKey("recordedServiceAlive"))
+        assertFalse(status.containsKey("activeRuntimeOwner"))
+        assertFalse(status.containsKey("runtimeIntentFresh"))
+        assertFalse(status.containsKey("nativeRecoveryPending"))
+        assertFalse(status.containsKey("runtimeSnapshotAuthoritative"))
     }
 
     @Test
-    fun `recovering authoritative snapshot stays pending without claiming running`() {
+    fun `recovering authoritative snapshot reports its state without synthesized fields`() {
         val snapshot = CoreRuntimeProtocol.RuntimeSnapshot.newBuilder()
             .setState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RECOVERING)
             .setMode(CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_VPN)
@@ -33,8 +35,11 @@ class CoreRuntimeSnapshotCompatibilityTest {
         val status = snapshot.toLegacyRuntimeMap()
 
         assertEquals(false, status["running"])
-        assertEquals(true, status["recordedServiceAlive"])
-        assertEquals(false, status["activeRuntimeOwner"])
-        assertEquals(true, status["nativeRecoveryPending"])
+        assertEquals("RUNTIME_STATE_RECOVERING", status["state"])
+        assertFalse(status.containsKey("recordedServiceAlive"))
+        assertFalse(status.containsKey("activeRuntimeOwner"))
+        assertFalse(status.containsKey("runtimeIntentFresh"))
+        assertFalse(status.containsKey("nativeRecoveryPending"))
+        assertFalse(status.containsKey("runtimeSnapshotAuthoritative"))
     }
 }

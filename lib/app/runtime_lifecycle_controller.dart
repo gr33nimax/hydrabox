@@ -318,9 +318,8 @@ class RuntimeLifecycleController {
       'runtime',
       'runtime start was not confirmed useVpn=$useVpn '
           'running=${lastStatus['running']} mode=${lastStatus['mode']} '
-          'generation=${lastStatus['runtimeGeneration']} '
-          'recordedServiceAlive=${lastStatus['recordedServiceAlive']} '
-          'activeRuntimeOwner=${lastStatus['activeRuntimeOwner']}',
+          'state=${lastStatus['state']} '
+          'mode=${lastStatus['mode']}',
     );
     return false;
   }
@@ -330,13 +329,8 @@ class RuntimeLifecycleController {
     required bool useVpn,
   }) {
     final expectedMode = useVpn ? 'vpn' : 'proxy';
-    final runtimeGeneration =
-        (status['runtimeGeneration'] as num?)?.toInt() ?? 0;
-    return status['running'] == true &&
-        status['mode'] == expectedMode &&
-        status['recordedServiceAlive'] == true &&
-        status['activeRuntimeOwner'] == true &&
-        runtimeGeneration > 0;
+    return status['state'] == 'RUNTIME_STATE_RUNNING' &&
+        status['mode'] == expectedMode;
   }
 
   Future<RuntimeLifecycleResult> applyRuntimeBuild({
@@ -548,10 +542,7 @@ class RuntimeLifecycleController {
               ? remaining
               : const Duration(milliseconds: 1),
         );
-        final stopped =
-            status['running'] != true &&
-            status['recordedServiceAlive'] != true &&
-            status['activeRuntimeOwner'] != true;
+        final stopped = status['state'] == 'RUNTIME_STATE_STOPPED';
         if (stopped) {
           return true;
         }

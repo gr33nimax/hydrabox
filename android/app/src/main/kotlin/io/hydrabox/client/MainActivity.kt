@@ -108,12 +108,6 @@ internal fun hasHydraKeyQuery(rawQuery: String?): Boolean =
 
 internal fun CoreRuntimeProtocol.RuntimeSnapshot.toLegacyRuntimeMap(): Map<String?, Any?> {
     val running = state == CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING
-    val recoveryPending = when (state) {
-        CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_PREPARING,
-        CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STARTING,
-        CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RECOVERING -> true
-        else -> false
-    }
     return mapOf(
         "running" to running,
         "state" to state.name,
@@ -131,15 +125,6 @@ internal fun CoreRuntimeProtocol.RuntimeSnapshot.toLegacyRuntimeMap(): Map<Strin
         "errorCode" to lastError.code,
         "processEpoch" to processEpoch,
         "sequence" to lastSequence,
-        // The protobuf comes from the process that owns libbox, so a running
-        // state is already stronger evidence than the old process-local
-        // service/owner flags. Keep the compatibility fields for Dart code
-        // that still performs the legacy startup and recovery checks.
-        "recordedServiceAlive" to (running || recoveryPending),
-        "activeRuntimeOwner" to running,
-        "runtimeIntentFresh" to recoveryPending,
-        "nativeRecoveryPending" to recoveryPending,
-        "runtimeSnapshotAuthoritative" to true,
         "groups" to outboundGroupsList.map { group ->
             mapOf(
                 "tag" to group.groupId,

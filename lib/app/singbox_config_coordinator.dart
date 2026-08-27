@@ -671,16 +671,16 @@ class SingboxConfigCoordinator {
     required bool forceFullServiceRestart,
   }) async {
     final status = await _runtimeStatusSnapshot(reason: 'config_apply_policy');
-    final running = status['running'] == true;
+    final runtimeState = status['state']?.toString();
+    final running = runtimeState == 'RUNTIME_STATE_RUNNING';
     final currentMode = status['mode']?.toString().toLowerCase();
     final targetMode = useVpn ? 'vpn' : 'proxy';
-    final recordedServiceAlive = status['recordedServiceAlive'] == true;
-    final runtimeIntentFresh = status['runtimeIntentFresh'] == true;
     final transitionInProgress = _readSnapshot().runtimeTransitionInProgress;
     final serviceMayBeAlive =
-        running ||
-        recordedServiceAlive ||
-        runtimeIntentFresh ||
+        runtimeState == 'RUNTIME_STATE_PREPARING' ||
+        runtimeState == 'RUNTIME_STATE_STARTING' ||
+        runtimeState == 'RUNTIME_STATE_RUNNING' ||
+        runtimeState == 'RUNTIME_STATE_RECOVERING' ||
         transitionInProgress;
     final policy = forceFullServiceRestart && serviceMayBeAlive
         ? RuntimeApplyPolicy.fullServiceRestart
@@ -695,8 +695,7 @@ class SingboxConfigCoordinator {
           'requestedRestart=$restartRuntime running=$running '
           'forceFullServiceRestart=$forceFullServiceRestart '
           'mode=${currentMode ?? ''} target=$targetMode '
-          'recordedServiceAlive=$recordedServiceAlive '
-          'runtimeIntentFresh=$runtimeIntentFresh',
+          'state=${runtimeState ?? ''}',
     );
     return policy;
   }

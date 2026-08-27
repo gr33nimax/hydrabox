@@ -213,7 +213,7 @@ void main() {
   });
 
   test(
-    'running without a native runtime owner is not a successful start',
+    'running state without legacy owner evidence is a successful start',
     () async {
       final runtime = _FakeRuntime(
         running: false,
@@ -236,9 +236,9 @@ void main() {
         onWatchdogTimeout: (_) {},
       );
 
-      expect(result.success, isFalse);
-      expect(result.timedOut, isTrue);
-      expect(runtime.stopCalls, 1);
+      expect(result.success, isTrue);
+      expect(result.timedOut, isFalse);
+      expect(runtime.stopCalls, 0);
     },
   );
 
@@ -271,26 +271,21 @@ void main() {
     },
   );
 
-  test(
-    'explicit stop waits until service and runtime ownership are gone',
-    () async {
-      final runtime = _FakeRuntime();
-      final controller = RuntimeLifecycleController(
-        runtime: runtime,
-        stopSettleDelay: Duration.zero,
-      );
-      addTearDown(controller.dispose);
+  test('explicit stop waits until the runtime reports stopped', () async {
+    final runtime = _FakeRuntime();
+    final controller = RuntimeLifecycleController(
+      runtime: runtime,
+      stopSettleDelay: Duration.zero,
+    );
+    addTearDown(controller.dispose);
 
-      final stopped = await controller.stopRuntime(reason: 'profile_switch');
+    final stopped = await controller.stopRuntime(reason: 'profile_switch');
 
-      expect(stopped, isTrue);
-      expect(runtime.stopCalls, 1);
-      expect(runtime.statusCalls, greaterThanOrEqualTo(1));
-      expect(runtime.running, isFalse);
-      expect(runtime.recordedServiceAlive, isFalse);
-      expect(runtime.activeRuntimeOwner, isFalse);
-    },
-  );
+    expect(stopped, isTrue);
+    expect(runtime.stopCalls, 1);
+    expect(runtime.statusCalls, greaterThanOrEqualTo(1));
+    expect(runtime.running, isFalse);
+  });
 }
 
 SingboxConfigBuildResult _build({bool hasInteractiveVkCall = false}) {
@@ -324,9 +319,7 @@ class _FakeRuntime implements RuntimeLifecycleRuntime {
     this.confirmStartImmediately = true,
     this.lastError = '',
     this.startDelay = Duration.zero,
-  }) : recordedServiceAlive = running,
-       activeRuntimeOwner = running,
-       runtimeGeneration = running ? 1 : 0;
+  }) : runtimeGeneration = running ? 1 : 0;
 
   bool running;
   String mode = 'vpn';
@@ -337,8 +330,6 @@ class _FakeRuntime implements RuntimeLifecycleRuntime {
   bool confirmStartImmediately;
   String lastError;
   Duration startDelay;
-  bool recordedServiceAlive;
-  bool activeRuntimeOwner;
   int runtimeGeneration;
   int applyPreparedConfigCalls = 0;
   int applyConfigCalls = 0;
@@ -431,10 +422,9 @@ class _FakeRuntime implements RuntimeLifecycleRuntime {
     statusCalls++;
     return <String, dynamic>{
       'running': running,
+      'state': running ? 'RUNTIME_STATE_RUNNING' : 'RUNTIME_STATE_STOPPED',
       'mode': mode,
       'runtimeGeneration': runtimeGeneration,
-      'recordedServiceAlive': recordedServiceAlive,
-      'activeRuntimeOwner': activeRuntimeOwner,
       'lastError': lastError,
     };
   }
@@ -444,8 +434,6 @@ class _FakeRuntime implements RuntimeLifecycleRuntime {
     stopCalls++;
     if (!ignoreStop) {
       running = false;
-      recordedServiceAlive = false;
-      activeRuntimeOwner = false;
       runtimeGeneration = 0;
     }
   }
@@ -453,8 +441,6 @@ class _FakeRuntime implements RuntimeLifecycleRuntime {
   void confirmStarted({required bool useVpn}) {
     running = true;
     mode = useVpn ? 'vpn' : 'proxy';
-    recordedServiceAlive = true;
-    activeRuntimeOwner = true;
     runtimeGeneration++;
   }
 }
