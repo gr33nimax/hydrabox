@@ -11,6 +11,11 @@ import android.util.Log
 import com.google.protobuf.ByteString
 import com.google.protobuf.InvalidProtocolBufferException
 import io.hydrabox.client.HydraBoxApplication
+import io.hydrabox.client.DesiredRuntime
+import io.hydrabox.client.DesiredRuntimeDecision
+import io.hydrabox.client.DesiredRuntimeEvent
+import io.hydrabox.client.desiredRuntimeDecision
+import io.hydrabox.client.desiredRuntimeTransition
 import io.hydrabox.client.runtime.proto.CoreRuntimeProtocol
 import io.hydrabox.client.singbox.HydraBoxProxyService
 import io.hydrabox.client.singbox.HydraBoxService
@@ -239,6 +244,8 @@ class CoreRuntimeService : Service() {
                 TAG,
                 "startup_healthy source=${nativeSourceLabel()} api=${coreContract.apiMajor}.${coreContract.apiMinor}",
             )
+            // Moves to submitInternal(Event.Reconcile) in HB-RW-008.
+            commandExecutor.execute { reconcile() }
         } catch (error: Throwable) {
             Log.e(TAG, "startup_failed source=${nativeSourceLabel()}", error)
             HydraBoxDiagnostics.log(
@@ -548,7 +555,7 @@ class CoreRuntimeService : Service() {
             .setError(coreError(code, stage, safeMessage, false, requestId))
             .build()
 
-    private fun start(command: CoreRuntimeProtocol.RuntimeCommand) {
+    private fun start(command: CoreRuntimeProtocol.RuntimeCommand, recovery: Boolean = false) {
         val request = command.start
         val expectedDigest = request.configSha256.toByteArray()
         val config = request.compiledConfig.toByteArray()
@@ -582,13 +589,19 @@ class CoreRuntimeService : Service() {
             return
         }
         synchronized(snapshotLock) { activeConfigSha256 = expectedDigest.copyOf() }
+        if (!recovery) {
+            HydraBoxApplication.writeDesiredRuntime(
+                DesiredRuntime(true, modeName(request.mode), expectedDigest.toHex(), 0, System.currentTimeMillis()),
+            )
+        }
         HydraBoxDiagnostics.event(
             "CONNECT",
             "ep" to shortId(processEpoch), "cg" to commandGeneration,
             "rg" to SingboxController.activeRuntimeGeneration,
             "ng" to HydraBoxDefaultNetworkMonitor.currentInterfaceState("connect").generation,
             "prof" to shortHex(activeConfigSha256),
-            "mode" to request.mode.name.lowercase().removePrefix("runtime_mode_"), "source" to "ui",
+            "mode" to request.mode.name.lowercase().removePrefix("runtime_mode_"),
+            "source" to if (recovery) "recovery" else "ui",
         )
         updateState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STARTING)
         mainHandler.post {
@@ -758,6 +771,9 @@ class CoreRuntimeService : Service() {
     }
 
     private fun completeHealthyStart(commandId: String) {
+        HydraBoxApplication.readDesiredRuntime()?.let {
+            HydraBoxApplication.writeDesiredRuntime(desiredRuntimeTransition(it, DesiredRuntimeEvent.READY))
+        }
         commandSucceeded(commandId, CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING)
         val health = synchronized(snapshotLock) { transportHealth }
         HydraBoxDiagnostics.event(
@@ -837,6 +853,7 @@ class CoreRuntimeService : Service() {
 
     private fun stop(command: CoreRuntimeProtocol.RuntimeCommand) {
         generation.incrementAndGet()
+        writeStoppedDesiredRuntime()
         HydraBoxDiagnostics.event(
             "STOP",
             "ep" to shortId(processEpoch), "cg" to generation.get(), "rg" to SingboxController.activeRuntimeGeneration,
@@ -1537,6 +1554,9 @@ class CoreRuntimeService : Service() {
         val error = coreError(code, stage, safeMessage, retryable, commandId.ifBlank { UUID.randomUUID().toString() })
         synchronized(snapshotLock) { lastError = error }
         if (!stage.startsWith("probe") && stage != "selector") {
+            HydraBoxApplication.readDesiredRuntime()?.let {
+                HydraBoxApplication.writeDesiredRuntime(desiredRuntimeTransition(it, DesiredRuntimeEvent.FAILED))
+            }
             state.set(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_FAILED)
         }
         val result = CoreRuntimeProtocol.CommandResult.newBuilder()
@@ -1600,6 +1620,68 @@ class CoreRuntimeService : Service() {
             throw error
         }
     }
+
+    private fun reconcile() {
+        val desired = HydraBoxApplication.readDesiredRuntime()
+        if (desired != null && !HydraBoxApplication.desiredRuntimeFile.exists()) {
+            HydraBoxApplication.writeDesiredRuntime(desired)
+        }
+        if (desired == null || !desired.wantRunning) {
+            updateState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPED)
+            return
+        }
+        val config = runCatching {
+            HydraBoxApplication.configFile.readBytes().also {
+                require(it.isNotEmpty() && it.size <= MAX_CONFIG_BYTES)
+                Libbox.checkConfig(it.toString(Charsets.UTF_8))
+            }
+        }.getOrElse {
+            failRuntime("", "config.quarantined", "config_validation", "The stored runtime configuration is invalid.", false)
+            return
+        }
+        when (val decision = desiredRuntimeDecision(desired, config.toHex())) {
+            DesiredRuntimeDecision.None -> updateState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPED)
+            is DesiredRuntimeDecision.Failed ->
+                failRuntime("", decision.code, "reconciliation", "The stored runtime configuration cannot be recovered.", false)
+            is DesiredRuntimeDecision.Recover -> {
+                HydraBoxApplication.writeDesiredRuntime(decision.next)
+                val targetMode = if (decision.next.mode == "vpn") {
+                    CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_VPN
+                } else {
+                    CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_PROXY
+                }
+                val command = CoreRuntimeProtocol.RuntimeCommand.newBuilder()
+                    .setSchemaVersion(SCHEMA_VERSION)
+                    .setCommandId(UUID.randomUUID().toString())
+                    .setKind(CoreRuntimeProtocol.CommandKind.COMMAND_KIND_START)
+                    .setStart(
+                        CoreRuntimeProtocol.StartRuntime.newBuilder()
+                            .setMode(targetMode)
+                            .setCompiledConfig(ByteString.copyFrom(config))
+                            .setConfigSha256(ByteString.copyFrom(config.toSha256Bytes()))
+                    )
+                    .build()
+                start(command, recovery = true)
+            }
+        }
+    }
+
+    private fun writeStoppedDesiredRuntime() {
+        val current = HydraBoxApplication.readDesiredRuntime()
+            ?: DesiredRuntime(false, modeName(mode.get()), currentConfigSha256(), 0, System.currentTimeMillis())
+        HydraBoxApplication.writeDesiredRuntime(desiredRuntimeTransition(current, DesiredRuntimeEvent.USER_STOP))
+    }
+
+    private fun currentConfigSha256(): String = runCatching {
+        HydraBoxApplication.configFile.readBytes().toHex()
+    }.getOrDefault("0".repeat(64))
+
+    private fun modeName(value: CoreRuntimeProtocol.RuntimeMode): String =
+        if (value == CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_PROXY) "proxy" else "vpn"
+
+    private fun ByteArray.toSha256Bytes(): ByteArray = MessageDigest.getInstance("SHA-256").digest(this)
+
+    private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
     companion object {
         private const val TAG = "HydraCoreRuntime"

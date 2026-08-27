@@ -15,6 +15,63 @@ import kotlin.system.exitProcess
 internal fun staleCoreBundleDirs(root: File): List<File> =
     root.listFiles()?.filter { it.isDirectory && it.name == "hydracore" }.orEmpty()
 
+internal data class DesiredRuntime(
+    val wantRunning: Boolean,
+    val mode: String,
+    val configSha256: String,
+    val recoveryAttempt: Int,
+    val updatedAtMillis: Long,
+) {
+    fun serialize(): String = buildString {
+        append("schema=1\nwantRunning=$wantRunning\nmode=$mode\nconfigSha256=$configSha256\n")
+        append("recoveryAttempt=$recoveryAttempt\nupdatedAtMillis=$updatedAtMillis\n")
+    }
+
+    companion object {
+        fun parse(text: String): DesiredRuntime? = runCatching {
+            val values = text.lineSequence().mapNotNull { line ->
+                line.indexOf('=').takeIf { it > 0 }?.let { line.substring(0, it) to line.substring(it + 1) }
+            }.toMap()
+            require(values["schema"] == "1")
+            val mode = values["mode"].orEmpty()
+            val digest = values["configSha256"].orEmpty()
+            require(mode == "vpn" || mode == "proxy")
+            require(Regex("^[0-9a-f]{64}$").matches(digest))
+            DesiredRuntime(
+                wantRunning = values["wantRunning"]?.toBooleanStrict() ?: false,
+                mode = mode,
+                configSha256 = digest,
+                recoveryAttempt = values["recoveryAttempt"]?.toIntOrNull()?.coerceIn(0, 3) ?: 0,
+                updatedAtMillis = values["updatedAtMillis"]?.toLongOrNull() ?: 0L,
+            )
+        }.getOrNull()
+    }
+}
+
+internal enum class DesiredRuntimeEvent { USER_START, AUTOMATIC_RECOVERY, READY, USER_STOP, REVOKED, FAILED, RECOVERY_EXHAUSTED }
+
+internal fun desiredRuntimeTransition(state: DesiredRuntime, event: DesiredRuntimeEvent): DesiredRuntime =
+    when (event) {
+        DesiredRuntimeEvent.USER_START -> state.copy(wantRunning = true, recoveryAttempt = 0)
+        DesiredRuntimeEvent.READY -> state.copy(recoveryAttempt = 0)
+        DesiredRuntimeEvent.AUTOMATIC_RECOVERY -> state.copy(recoveryAttempt = state.recoveryAttempt + 1)
+        DesiredRuntimeEvent.USER_STOP, DesiredRuntimeEvent.REVOKED -> state.copy(wantRunning = false, recoveryAttempt = 0)
+        DesiredRuntimeEvent.FAILED, DesiredRuntimeEvent.RECOVERY_EXHAUSTED -> state.copy(wantRunning = false)
+    }
+
+internal sealed class DesiredRuntimeDecision {
+    data object None : DesiredRuntimeDecision()
+    data class Failed(val code: String) : DesiredRuntimeDecision()
+    data class Recover(val next: DesiredRuntime) : DesiredRuntimeDecision()
+}
+
+internal fun desiredRuntimeDecision(desired: DesiredRuntime?, configSha256: String?): DesiredRuntimeDecision = when {
+    desired == null || !desired.wantRunning -> DesiredRuntimeDecision.None
+    desired.recoveryAttempt > 2 -> DesiredRuntimeDecision.Failed("runtime.recovery.exhausted")
+    configSha256 != desired.configSha256 -> DesiredRuntimeDecision.Failed("config.stale")
+    else -> DesiredRuntimeDecision.Recover(desiredRuntimeTransition(desired, DesiredRuntimeEvent.AUTOMATIC_RECOVERY))
+}
+
 class HydraBoxApplication : Application(), Configuration.Provider {
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder().build()
@@ -76,6 +133,8 @@ class HydraBoxApplication : Application(), Configuration.Provider {
             get() = File(application.filesDir, "singbox-service-state.txt")
         val runtimeIntentFile: File
             get() = File(application.filesDir, "singbox-runtime-intent.txt")
+        val desiredRuntimeFile: File
+            get() = File(application.filesDir, "runtime-desired.txt")
 
         private val runtimeFlagsPrefs
             get() = application.getSharedPreferences(
@@ -205,6 +264,21 @@ class HydraBoxApplication : Application(), Configuration.Provider {
                 "Application",
                 "writeRuntimeIntent pid=$pid mode=$mode reason=$reason updatedAtMillis=$updatedAtMillis",
             )
+        }
+
+        internal fun readDesiredRuntime(): DesiredRuntime? {
+            if (desiredRuntimeFile.isFile) return DesiredRuntime.parse(desiredRuntimeFile.readText())
+            val legacy = readRuntimeIntent() ?: return null
+            val digest = runCatching {
+                java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(configFile.readBytes()).joinToString("") { "%02x".format(it.toInt() and 0xff) }
+            }.getOrDefault("0".repeat(64))
+            // Removes in HB-RW-033.
+            return DesiredRuntime(true, legacy.mode, digest, 0, legacy.updatedAtMillis)
+        }
+
+        internal fun writeDesiredRuntime(value: DesiredRuntime) {
+            writeAtomicText(desiredRuntimeFile, value.serialize())
         }
 
         fun clearServiceState() {
