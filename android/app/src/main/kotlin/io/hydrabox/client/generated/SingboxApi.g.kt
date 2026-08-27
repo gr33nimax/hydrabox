@@ -471,222 +471,6 @@ data class PreconnectUrlTestResultMessage (
 }
 
 /** Generated class from Pigeon that represents data sent in messages. */
-data class CoreBundleSlotMessage (
-  val releaseSequence: Long,
-  val version: String,
-  val abi: String,
-  val sha256: String
-)
- {
-  companion object {
-    fun fromList(pigeonVar_list: List<Any?>): CoreBundleSlotMessage {
-      val releaseSequence = pigeonVar_list[0] as Long
-      val version = pigeonVar_list[1] as String
-      val abi = pigeonVar_list[2] as String
-      val sha256 = pigeonVar_list[3] as String
-      return CoreBundleSlotMessage(releaseSequence, version, abi, sha256)
-    }
-  }
-  fun toList(): List<Any?> {
-    return listOf(
-      releaseSequence,
-      version,
-      abi,
-      sha256,
-    )
-  }
-  override fun equals(other: Any?): Boolean {
-    if (other == null || other.javaClass != javaClass) {
-      return false
-    }
-    if (this === other) {
-      return true
-    }
-    val other = other as CoreBundleSlotMessage
-    return SingboxApiPigeonUtils.deepEquals(this.releaseSequence, other.releaseSequence) && SingboxApiPigeonUtils.deepEquals(this.version, other.version) && SingboxApiPigeonUtils.deepEquals(this.abi, other.abi) && SingboxApiPigeonUtils.deepEquals(this.sha256, other.sha256)
-  }
-
-  override fun hashCode(): Int {
-    var result = javaClass.hashCode()
-    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.releaseSequence)
-    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.version)
-    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.abi)
-    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.sha256)
-    return result
-  }
-}
-
-/** Generated class from Pigeon that represents data sent in messages. */
-data class CoreManagerStateMessage (
-  val embeddedVersion: String,
-  val releaseChannel: String,
-  val active: CoreBundleSlotMessage? = null,
-  val previous: CoreBundleSlotMessage? = null,
-  val candidate: CoreBundleSlotMessage? = null,
-  val trustedKeyRingAvailable: Boolean,
-  val usingEmbeddedFallback: Boolean,
-  val runtimeDisconnected: Boolean,
-  val recoveryRollbackAllowed: Boolean
-)
- {
-  companion object {
-    fun fromList(pigeonVar_list: List<Any?>): CoreManagerStateMessage {
-      val embeddedVersion = pigeonVar_list[0] as String
-      val releaseChannel = pigeonVar_list[1] as String
-      val active = pigeonVar_list[2] as CoreBundleSlotMessage?
-      val previous = pigeonVar_list[3] as CoreBundleSlotMessage?
-      val candidate = pigeonVar_list[4] as CoreBundleSlotMessage?
-      val trustedKeyRingAvailable = pigeonVar_list[5] as Boolean
-      val usingEmbeddedFallback = pigeonVar_list[6] as Boolean
-      val runtimeDisconnected = pigeonVar_list[7] as Boolean
-      val recoveryRollbackAllowed = pigeonVar_list[8] as Boolean
-      return CoreManagerStateMessage(embeddedVersion, releaseChannel, active, previous, candidate, trustedKeyRingAvailable, usingEmbeddedFallback, runtimeDisconnected, recoveryRollbackAllowed)
-    }
-  }
-  fun toList(): List<Any?> {
-    return listOf(
-      embeddedVersion,
-      releaseChannel,
-      active,
-      previous,
-      candidate,
-      trustedKeyRingAvailable,
-      usingEmbeddedFallback,
-      runtimeDisconnected,
-      recoveryRollbackAllowed,
-    )
-  }
-  override fun equals(other: Any?): Boolean {
-    if (other == null || other.javaClass != javaClass) {
-      return false
-    }
-    if (this === other) {
-      return true
-    }
-    val other = other as CoreManagerStateMessage
-    return SingboxApiPigeonUtils.deepEquals(this.embeddedVersion, other.embeddedVersion) && SingboxApiPigeonUtils.deepEquals(this.releaseChannel, other.releaseChannel) && SingboxApiPigeonUtils.deepEquals(this.active, other.active) && SingboxApiPigeonUtils.deepEquals(this.previous, other.previous) && SingboxApiPigeonUtils.deepEquals(this.candidate, other.candidate) && SingboxApiPigeonUtils.deepEquals(this.trustedKeyRingAvailable, other.trustedKeyRingAvailable) && SingboxApiPigeonUtils.deepEquals(this.usingEmbeddedFallback, other.usingEmbeddedFallback) && SingboxApiPigeonUtils.deepEquals(this.runtimeDisconnected, other.runtimeDisconnected) && SingboxApiPigeonUtils.deepEquals(this.recoveryRollbackAllowed, other.recoveryRollbackAllowed)
-  }
-
-  override fun hashCode(): Int {
-    var result = javaClass.hashCode()
-    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.embeddedVersion)
-    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.releaseChannel)
-    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.active)
-    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.previous)
-    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.candidate)
-    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.trustedKeyRingAvailable)
-    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.usingEmbeddedFallback)
-    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.runtimeDisconnected)
-    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.recoveryRollbackAllowed)
-    return result
-  }
-}
-
-/** Generated class from Pigeon that represents data sent in messages. */
-data class CheckedCoreReleaseMessage (
-  val releaseId: Long,
-  val releaseSequence: Long,
-  val version: String,
-  val publishedAt: String,
-  val coreApiMajor: Long,
-  val coreApiMinor: Long,
-  val artifactSizeBytes: Long
-)
- {
-  companion object {
-    fun fromList(pigeonVar_list: List<Any?>): CheckedCoreReleaseMessage {
-      val releaseId = pigeonVar_list[0] as Long
-      val releaseSequence = pigeonVar_list[1] as Long
-      val version = pigeonVar_list[2] as String
-      val publishedAt = pigeonVar_list[3] as String
-      val coreApiMajor = pigeonVar_list[4] as Long
-      val coreApiMinor = pigeonVar_list[5] as Long
-      val artifactSizeBytes = pigeonVar_list[6] as Long
-      return CheckedCoreReleaseMessage(releaseId, releaseSequence, version, publishedAt, coreApiMajor, coreApiMinor, artifactSizeBytes)
-    }
-  }
-  fun toList(): List<Any?> {
-    return listOf(
-      releaseId,
-      releaseSequence,
-      version,
-      publishedAt,
-      coreApiMajor,
-      coreApiMinor,
-      artifactSizeBytes,
-    )
-  }
-  override fun equals(other: Any?): Boolean {
-    if (other == null || other.javaClass != javaClass) {
-      return false
-    }
-    if (this === other) {
-      return true
-    }
-    val other = other as CheckedCoreReleaseMessage
-    return SingboxApiPigeonUtils.deepEquals(this.releaseId, other.releaseId) && SingboxApiPigeonUtils.deepEquals(this.releaseSequence, other.releaseSequence) && SingboxApiPigeonUtils.deepEquals(this.version, other.version) && SingboxApiPigeonUtils.deepEquals(this.publishedAt, other.publishedAt) && SingboxApiPigeonUtils.deepEquals(this.coreApiMajor, other.coreApiMajor) && SingboxApiPigeonUtils.deepEquals(this.coreApiMinor, other.coreApiMinor) && SingboxApiPigeonUtils.deepEquals(this.artifactSizeBytes, other.artifactSizeBytes)
-  }
-
-  override fun hashCode(): Int {
-    var result = javaClass.hashCode()
-    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.releaseId)
-    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.releaseSequence)
-    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.version)
-    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.publishedAt)
-    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.coreApiMajor)
-    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.coreApiMinor)
-    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.artifactSizeBytes)
-    return result
-  }
-}
-
-/** Generated class from Pigeon that represents data sent in messages. */
-data class CoreCandidateProbeMessage (
-  val healthy: Boolean,
-  val candidate: CoreBundleSlotMessage,
-  val validatedFixtureCount: Long,
-  val errorCode: String? = null
-)
- {
-  companion object {
-    fun fromList(pigeonVar_list: List<Any?>): CoreCandidateProbeMessage {
-      val healthy = pigeonVar_list[0] as Boolean
-      val candidate = pigeonVar_list[1] as CoreBundleSlotMessage
-      val validatedFixtureCount = pigeonVar_list[2] as Long
-      val errorCode = pigeonVar_list[3] as String?
-      return CoreCandidateProbeMessage(healthy, candidate, validatedFixtureCount, errorCode)
-    }
-  }
-  fun toList(): List<Any?> {
-    return listOf(
-      healthy,
-      candidate,
-      validatedFixtureCount,
-      errorCode,
-    )
-  }
-  override fun equals(other: Any?): Boolean {
-    if (other == null || other.javaClass != javaClass) {
-      return false
-    }
-    if (this === other) {
-      return true
-    }
-    val other = other as CoreCandidateProbeMessage
-    return SingboxApiPigeonUtils.deepEquals(this.healthy, other.healthy) && SingboxApiPigeonUtils.deepEquals(this.candidate, other.candidate) && SingboxApiPigeonUtils.deepEquals(this.validatedFixtureCount, other.validatedFixtureCount) && SingboxApiPigeonUtils.deepEquals(this.errorCode, other.errorCode)
-  }
-
-  override fun hashCode(): Int {
-    var result = javaClass.hashCode()
-    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.healthy)
-    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.candidate)
-    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.validatedFixtureCount)
-    result = 31 * result + SingboxApiPigeonUtils.deepHash(this.errorCode)
-    return result
-  }
-}
-
-/** Generated class from Pigeon that represents data sent in messages. */
 data class InstalledAppMessage (
   val packageName: String,
   val label: String,
@@ -1025,45 +809,25 @@ private open class SingboxApiPigeonCodec : StandardMessageCodec() {
       }
       134.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          CoreBundleSlotMessage.fromList(it)
+          InstalledAppMessage.fromList(it)
         }
       }
       135.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          CoreManagerStateMessage.fromList(it)
+          NotificationPresentationMessage.fromList(it)
         }
       }
       136.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          CheckedCoreReleaseMessage.fromList(it)
+          DownloadedApkInspectionMessage.fromList(it)
         }
       }
       137.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          CoreCandidateProbeMessage.fromList(it)
-        }
-      }
-      138.toByte() -> {
-        return (readValue(buffer) as? List<Any?>)?.let {
-          InstalledAppMessage.fromList(it)
-        }
-      }
-      139.toByte() -> {
-        return (readValue(buffer) as? List<Any?>)?.let {
-          NotificationPresentationMessage.fromList(it)
-        }
-      }
-      140.toByte() -> {
-        return (readValue(buffer) as? List<Any?>)?.let {
-          DownloadedApkInspectionMessage.fromList(it)
-        }
-      }
-      141.toByte() -> {
-        return (readValue(buffer) as? List<Any?>)?.let {
           UnderlyingHttpRequestMessage.fromList(it)
         }
       }
-      142.toByte() -> {
+      138.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
           UnderlyingHttpResponseMessage.fromList(it)
         }
@@ -1093,40 +857,24 @@ private open class SingboxApiPigeonCodec : StandardMessageCodec() {
         stream.write(133)
         writeValue(stream, value.toList())
       }
-      is CoreBundleSlotMessage -> {
+      is InstalledAppMessage -> {
         stream.write(134)
         writeValue(stream, value.toList())
       }
-      is CoreManagerStateMessage -> {
+      is NotificationPresentationMessage -> {
         stream.write(135)
         writeValue(stream, value.toList())
       }
-      is CheckedCoreReleaseMessage -> {
+      is DownloadedApkInspectionMessage -> {
         stream.write(136)
         writeValue(stream, value.toList())
       }
-      is CoreCandidateProbeMessage -> {
+      is UnderlyingHttpRequestMessage -> {
         stream.write(137)
         writeValue(stream, value.toList())
       }
-      is InstalledAppMessage -> {
-        stream.write(138)
-        writeValue(stream, value.toList())
-      }
-      is NotificationPresentationMessage -> {
-        stream.write(139)
-        writeValue(stream, value.toList())
-      }
-      is DownloadedApkInspectionMessage -> {
-        stream.write(140)
-        writeValue(stream, value.toList())
-      }
-      is UnderlyingHttpRequestMessage -> {
-        stream.write(141)
-        writeValue(stream, value.toList())
-      }
       is UnderlyingHttpResponseMessage -> {
-        stream.write(142)
+        stream.write(138)
         writeValue(stream, value.toList())
       }
       else -> super.writeValue(stream, value)
@@ -1135,137 +883,6 @@ private open class SingboxApiPigeonCodec : StandardMessageCodec() {
 }
 
 
-/** Generated interface from Pigeon that represents a handler of messages from Flutter. */
-interface CoreManagerHostApi {
-  fun getState(callback: (Result<CoreManagerStateMessage>) -> Unit)
-  fun checkLatest(releaseChannel: String, callback: (Result<CheckedCoreReleaseMessage>) -> Unit)
-  fun downloadChecked(callback: (Result<CoreBundleSlotMessage>) -> Unit)
-  fun probeCandidate(callback: (Result<CoreCandidateProbeMessage>) -> Unit)
-  fun activateCandidate(callback: (Result<CoreManagerStateMessage>) -> Unit)
-  fun rollback(callback: (Result<CoreManagerStateMessage>) -> Unit)
-
-  companion object {
-    /** The codec used by CoreManagerHostApi. */
-    val codec: MessageCodec<Any?> by lazy {
-      SingboxApiPigeonCodec()
-    }
-    /** Sets up an instance of `CoreManagerHostApi` to handle messages through the `binaryMessenger`. */
-    @JvmOverloads
-    fun setUp(binaryMessenger: BinaryMessenger, api: CoreManagerHostApi?, messageChannelSuffix: String = "") {
-      val separatedMessageChannelSuffix = if (messageChannelSuffix.isNotEmpty()) ".$messageChannelSuffix" else ""
-      run {
-        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.hydrabox.CoreManagerHostApi.getState$separatedMessageChannelSuffix", codec)
-        if (api != null) {
-          channel.setMessageHandler { _, reply ->
-            api.getState{ result: Result<CoreManagerStateMessage> ->
-              val error = result.exceptionOrNull()
-              if (error != null) {
-                reply.reply(SingboxApiPigeonUtils.wrapError(error))
-              } else {
-                val data = result.getOrNull()
-                reply.reply(SingboxApiPigeonUtils.wrapResult(data))
-              }
-            }
-          }
-        } else {
-          channel.setMessageHandler(null)
-        }
-      }
-      run {
-        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.hydrabox.CoreManagerHostApi.checkLatest$separatedMessageChannelSuffix", codec)
-        if (api != null) {
-          channel.setMessageHandler { message, reply ->
-            val args = message as List<Any?>
-            val releaseChannelArg = args[0] as String
-            api.checkLatest(releaseChannelArg) { result: Result<CheckedCoreReleaseMessage> ->
-              val error = result.exceptionOrNull()
-              if (error != null) {
-                reply.reply(SingboxApiPigeonUtils.wrapError(error))
-              } else {
-                val data = result.getOrNull()
-                reply.reply(SingboxApiPigeonUtils.wrapResult(data))
-              }
-            }
-          }
-        } else {
-          channel.setMessageHandler(null)
-        }
-      }
-      run {
-        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.hydrabox.CoreManagerHostApi.downloadChecked$separatedMessageChannelSuffix", codec)
-        if (api != null) {
-          channel.setMessageHandler { _, reply ->
-            api.downloadChecked{ result: Result<CoreBundleSlotMessage> ->
-              val error = result.exceptionOrNull()
-              if (error != null) {
-                reply.reply(SingboxApiPigeonUtils.wrapError(error))
-              } else {
-                val data = result.getOrNull()
-                reply.reply(SingboxApiPigeonUtils.wrapResult(data))
-              }
-            }
-          }
-        } else {
-          channel.setMessageHandler(null)
-        }
-      }
-      run {
-        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.hydrabox.CoreManagerHostApi.probeCandidate$separatedMessageChannelSuffix", codec)
-        if (api != null) {
-          channel.setMessageHandler { _, reply ->
-            api.probeCandidate{ result: Result<CoreCandidateProbeMessage> ->
-              val error = result.exceptionOrNull()
-              if (error != null) {
-                reply.reply(SingboxApiPigeonUtils.wrapError(error))
-              } else {
-                val data = result.getOrNull()
-                reply.reply(SingboxApiPigeonUtils.wrapResult(data))
-              }
-            }
-          }
-        } else {
-          channel.setMessageHandler(null)
-        }
-      }
-      run {
-        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.hydrabox.CoreManagerHostApi.activateCandidate$separatedMessageChannelSuffix", codec)
-        if (api != null) {
-          channel.setMessageHandler { _, reply ->
-            api.activateCandidate{ result: Result<CoreManagerStateMessage> ->
-              val error = result.exceptionOrNull()
-              if (error != null) {
-                reply.reply(SingboxApiPigeonUtils.wrapError(error))
-              } else {
-                val data = result.getOrNull()
-                reply.reply(SingboxApiPigeonUtils.wrapResult(data))
-              }
-            }
-          }
-        } else {
-          channel.setMessageHandler(null)
-        }
-      }
-      run {
-        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.hydrabox.CoreManagerHostApi.rollback$separatedMessageChannelSuffix", codec)
-        if (api != null) {
-          channel.setMessageHandler { _, reply ->
-            api.rollback{ result: Result<CoreManagerStateMessage> ->
-              val error = result.exceptionOrNull()
-              if (error != null) {
-                reply.reply(SingboxApiPigeonUtils.wrapError(error))
-              } else {
-                val data = result.getOrNull()
-                reply.reply(SingboxApiPigeonUtils.wrapResult(data))
-              }
-            }
-          }
-        } else {
-          channel.setMessageHandler(null)
-        }
-      }
-    }
-  }
-}
 /** Generated interface from Pigeon that represents a handler of messages from Flutter. */
 interface SingboxHostApi {
   fun prepareVpn(requiresVpn: Boolean, callback: (Result<Boolean>) -> Unit)

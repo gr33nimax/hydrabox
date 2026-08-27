@@ -22,8 +22,6 @@ import android.util.AtomicFile
 import android.util.Log
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
-import io.hydrabox.client.core.CoreManagerHostApiHandler
-import io.hydrabox.client.generated.CoreManagerHostApi
 import io.hydrabox.client.generated.DownloadedApkInspectionMessage
 import io.hydrabox.client.generated.InstalledAppMessage
 import io.hydrabox.client.generated.NotificationPresentationMessage
@@ -222,7 +220,6 @@ class MainActivity : FlutterFragmentActivity() {
     private val coreRuntimeClient: CoreRuntimeClient
         get() = mutableCoreRuntimeClient
             ?: CoreRuntimeClient(applicationContext).also { mutableCoreRuntimeClient = it }
-    private var coreManagerHostApiHandler: CoreManagerHostApiHandler? = null
     @Volatile
     private var activityDestroyed = false
     private var singboxEventConsumer: RuntimeEventConsumer? = null
@@ -2251,18 +2248,6 @@ class MainActivity : FlutterFragmentActivity() {
         super.configureFlutterEngine(flutterEngine)
         val binaryMessenger = flutterEngine.dartExecutor.binaryMessenger
 
-        // Core recovery is the emergency control plane. Register it before the
-        // runtime API and before attempting to bind :core so a failed native
-        // process can never make its own repair action unreachable.
-        coreManagerHostApiHandler = CoreManagerHostApiHandler(
-            context = applicationContext,
-            runtimeClient = { coreRuntimeClient },
-            cycleCoreProcess = ::cycleCoreProcessForBundleChange,
-        ).also { handler ->
-            CoreManagerHostApi.setUp(binaryMessenger, handler)
-        }
-        Log.i(TAG, "platform_bridge_ready name=core_manager")
-
         setupSingboxHostApi(binaryMessenger)
         Log.i(TAG, "platform_bridge_ready name=singbox")
 
@@ -2849,67 +2834,11 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun onDestroy() {
         activityDestroyed = true
-        coreManagerHostApiHandler?.close()
-        coreManagerHostApiHandler = null
         singboxEventConsumer?.let(coreRuntimeClient::unregisterEventConsumer)
         singboxEventConsumer = null
         coreRuntimeClient.close()
         deepLinkEventSink = null
         super.onDestroy()
-    }
-
-    private fun cycleCoreProcessForBundleChange(
-        mutation: () -> Unit,
-        callback: (Result<Unit>) -> Unit,
-    ) {
-        val previousClient = coreRuntimeClient
-        val previousProcessEpoch = previousClient.cachedProcessEpoch()
-        if (previousProcessEpoch.isBlank()) {
-            callback(
-                Result.failure(
-                    IllegalStateException("HydraCore process epoch is unavailable before activation"),
-                ),
-            )
-            return
-        }
-        singboxEventConsumer?.let(previousClient::unregisterEventConsumer)
-        previousClient.close()
-        ioExecutor.execute {
-            stopService(Intent(applicationContext, CoreRuntimeService::class.java))
-            val mutationResult = runCatching {
-                terminateCoreProcess()
-                mutation()
-            }
-            mainHandler.post {
-                if (activityDestroyed) return@post
-                val replacement = CoreRuntimeClient(applicationContext)
-                mutableCoreRuntimeClient = replacement
-                singboxEventConsumer?.let(replacement::registerEventConsumer)
-                replacement.connect()
-                replacement.contract { handshake ->
-                    callback(
-                        mutationResult.fold(
-                            onSuccess = {
-                                handshake.fold(
-                                    onSuccess = { contract ->
-                                        runCatching {
-                                            require(contract.processEpoch.isNotBlank()) {
-                                                "HydraCore restart returned no process epoch"
-                                            }
-                                            require(contract.processEpoch != previousProcessEpoch) {
-                                                "HydraCore process epoch did not change"
-                                            }
-                                        }
-                                    },
-                                    onFailure = { Result.failure(it) },
-                                )
-                            },
-                            onFailure = { Result.failure(it) },
-                        ),
-                    )
-                }
-            }
-        }
     }
 
     private fun terminateCoreProcess() {

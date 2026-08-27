@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Removed the Core Manager screen; HydraCore is now only the version embedded in the APK.
+
 - Fixed vk_parasite startup always failing with `runtime.transport.unhealthy`:
   the transport health snapshot was never published, so Android waited out the
   30 s deadline while the lanes were already up.

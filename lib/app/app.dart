@@ -2659,37 +2659,6 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     }
   }
 
-  Future<void> _repairEmbeddedCoreAndBootstrap() async {
-    if (_bootstrapInFlight || !mounted) return;
-    setState(() => _bootstrapInFlight = true);
-    var repaired = false;
-    try {
-      await platform_bridge.CoreManagerHostApi().rollback().timeout(
-        const Duration(seconds: 20),
-      );
-      repaired = true;
-    } catch (error, stackTrace) {
-      AppLogStore.error(
-        'bootstrap',
-        'Embedded HydraCore repair failed: $error\n$stackTrace',
-      );
-      if (mounted) {
-        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          SnackBar(
-            content: Text(
-              AppLocalizations.of(context).bootstrapCoreRepairFailed,
-            ),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _bootstrapInFlight = false);
-      }
-    }
-    if (repaired && mounted) await _bootstrap();
-  }
-
   void _scheduleDeferredBootstrapStatuses() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
@@ -7702,7 +7671,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
                                     ? _bootstrap()
                                     : isBridge
                                     ? _bootstrap()
-                                    : _repairEmbeddedCoreAndBootstrap(),
+                                    : _bootstrap(),
                               ),
                         icon: Icon(
                           isStorage

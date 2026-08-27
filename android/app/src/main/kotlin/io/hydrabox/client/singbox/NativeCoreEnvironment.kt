@@ -18,7 +18,7 @@ object NativeCoreEnvironment {
             if (ready) return
             val app = HydraBoxApplication.application
             val processName = AndroidProcessIdentity.current(app)
-            check(processName.endsWith(":core") || processName.endsWith(":core_probe")) {
+            check(processName.endsWith(":core")) {
                 "HydraCore cannot be initialized in the Android UI process"
             }
             HydraBoxDiagnostics.log(

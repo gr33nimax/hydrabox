@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:gap/gap.dart';
 import 'package:hydrabox/core/widgets/app_notice.dart';
-import 'package:hydrabox/features/core_manager/core_manager_page.dart';
 import 'package:hydrabox/features/legal/legal_consent_page.dart';
 import 'package:hydrabox/features/settings/settings_update_page.dart';
 import 'package:hydrabox/features/settings/settings_ui.dart';
@@ -75,12 +74,6 @@ class _SettingsAboutPageState extends State<SettingsAboutPage> {
     );
   }
 
-  void _openCoreManager() {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (context) => const CoreManagerPage()),
-    );
-  }
-
   void _openLegalDocument({required bool privacy}) {
     final l10n = AppLocalizations.of(context);
     Navigator.of(context).push<void>(
@@ -145,8 +138,6 @@ class _SettingsAboutPageState extends State<SettingsAboutPage> {
                   onDebugToggle: _toggleDebugVisible,
                 ),
                 const Gap(12),
-                _AboutCoreManagerCard(onOpen: _openCoreManager),
-                const Gap(12),
                 _AboutUpdatesCard(onOpenUpdates: _openUpdatePage),
                 AnimatedSwitcher(
                   duration: const Duration(milliseconds: 180),
@@ -168,42 +159,6 @@ class _SettingsAboutPageState extends State<SettingsAboutPage> {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _AboutCoreManagerCard extends StatelessWidget {
-  const _AboutCoreManagerCard({required this.onOpen});
-
-  final VoidCallback onOpen;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final l10n = AppLocalizations.of(context);
-    final colors = theme.colorScheme;
-    return Card(
-      margin: EdgeInsets.zero,
-      child: ListTile(
-        onTap: onOpen,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-        leading: Container(
-          width: 42,
-          height: 42,
-          decoration: BoxDecoration(
-            color: colors.tertiaryContainer,
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Icon(Icons.memory_rounded, color: colors.onTertiaryContainer),
-        ),
-        title: Text(
-          l10n.coreManagerOpenAction,
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        trailing: const Icon(Icons.chevron_right_rounded),
       ),
     );
   }

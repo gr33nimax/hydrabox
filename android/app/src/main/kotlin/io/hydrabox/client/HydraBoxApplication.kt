@@ -12,6 +12,9 @@ import java.io.File
 import java.io.FileOutputStream
 import kotlin.system.exitProcess
 
+internal fun staleCoreBundleDirs(root: File): List<File> =
+    root.listFiles()?.filter { it.isDirectory && it.name == "hydracore" }.orEmpty()
+
 class HydraBoxApplication : Application(), Configuration.Provider {
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder().build()
@@ -22,6 +25,11 @@ class HydraBoxApplication : Application(), Configuration.Provider {
         val processName = AndroidProcessIdentity.current(this)
         if (processName == packageName) {
             SubscriptionRefreshScheduler.ensureScheduled(this)
+            val preferences = getSharedPreferences("hydracore_bundle_cleanup_v1", Context.MODE_PRIVATE)
+            if (!preferences.getBoolean("completed", false)) {
+                staleCoreBundleDirs(noBackupFilesDir).forEach(File::deleteRecursively)
+                preferences.edit().putBoolean("completed", true).apply()
+            }
         }
         installUncaughtExceptionLogger()
         // Legacy native Happ crypt5 used an isolated process:

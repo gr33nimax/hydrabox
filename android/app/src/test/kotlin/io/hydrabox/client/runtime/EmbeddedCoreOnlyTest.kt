@@ -13,7 +13,7 @@ class EmbeddedCoreOnlyTest {
 
     @Test
     fun `runtime service does not use bundle manager`() {
-        assertFalse(runtimeServiceSource().contains("CoreBundleManager"))
+        assertFalse(runtimeServiceSource().contains("CoreBundle" + "Manager"))
     }
 
     private fun runtimeServiceSource(): String {

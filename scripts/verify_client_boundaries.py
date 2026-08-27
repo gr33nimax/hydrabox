@@ -141,9 +141,7 @@ def verify_android_process_isolation() -> None:
     ).read_text(encoding="utf-8")
     required_process_bindings = (
         'android:name=".runtime.CoreRuntimeService"',
-        'android:name=".runtime.CoreProbeService"',
         'android:process=":core"',
-        'android:process=":core_probe"',
     )
     missing = [value for value in required_process_bindings if value not in manifest]
     if missing:
@@ -172,7 +170,6 @@ def verify_platform_bridge_boot_order() -> None:
         fail("MainActivity Flutter engine bootstrap block is missing")
     bootstrap = activity[configure_start:configure_end]
     markers = (
-        "CoreManagerHostApi.setUp(binaryMessenger, handler)",
         "setupSingboxHostApi(binaryMessenger)",
         "coreRuntimeClient.connect()",
     )

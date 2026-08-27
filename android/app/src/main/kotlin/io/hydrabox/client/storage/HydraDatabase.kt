@@ -41,7 +41,7 @@ abstract class HydraDatabase : RoomDatabase() {
         fun open(context: Context): HydraDatabase {
             val app = context.applicationContext
             val processName = AndroidProcessIdentity.current(app)
-            check(!processName.endsWith(":core") && !processName.endsWith(":core_probe")) {
+            check(!processName.endsWith(":core")) {
                 "The HydraCore process cannot open the domain database"
             }
             return instance ?: synchronized(this) {

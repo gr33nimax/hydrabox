@@ -60,7 +60,7 @@ class AppSettingsStore private constructor(
         fun open(context: Context): AppSettingsStore {
             val app = context.applicationContext
             val processName = AndroidProcessIdentity.current(app)
-            check(!processName.endsWith(":core") && !processName.endsWith(":core_probe")) {
+            check(!processName.endsWith(":core")) {
                 "The HydraCore process cannot open application settings"
             }
             return instance ?: synchronized(this) {

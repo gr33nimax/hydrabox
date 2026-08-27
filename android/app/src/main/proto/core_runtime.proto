@@ -381,6 +381,7 @@ message OutboundExternalInfo {
 }
 
 message CoreProbeRequest {
+  option deprecated = true;
   uint32 schema_version = 1;
   uint64 release_sequence = 2;
   bytes artifact_sha256 = 3;
@@ -388,6 +389,7 @@ message CoreProbeRequest {
 }
 
 message CoreProbeReport {
+  option deprecated = true;
   uint32 schema_version = 1;
   uint64 release_sequence = 2;
   bytes artifact_sha256 = 3;

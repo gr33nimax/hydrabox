@@ -130,12 +130,6 @@
             android:stopWithTask="false" />
 
         <service
-            android:name=".runtime.CoreProbeService"
-            android:exported="false"
-            android:process=":core_probe"
-            android:stopWithTask="true" />
-
-        <service
             android:name=".HydraBoxQuickSettingsTileService"
             android:exported="true"
             android:icon="@drawable/ic_hydrabox_status"
