@@ -60,6 +60,17 @@ internal fun selectProbeExecutionMode(
     else -> ProbeExecutionMode.REJECT_MISSING_PLAN
 }
 
+internal fun notificationStatusFor(
+    state: CoreRuntimeProtocol.RuntimeState,
+): String? = when (state) {
+    CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STARTING,
+    CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RECOVERING -> "Connecting"
+    CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING -> "Connected"
+    CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING -> "Disconnecting"
+    CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_FAILED -> "Failed"
+    else -> null
+}
+
 /**
  * Sole binder owner of native runtime state. The UI process only exchanges
  * versioned protobuf bytes with this service and never initializes libbox.
@@ -1443,6 +1454,7 @@ class CoreRuntimeService : Service() {
 
     private fun updateState(value: CoreRuntimeProtocol.RuntimeState) {
         state.set(value)
+        notificationStatusFor(value)?.let(HydraBoxService::applyRuntimeStatus)
         emit(snapshotEvent())
     }
 

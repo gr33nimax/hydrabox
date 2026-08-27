@@ -75,6 +75,12 @@ class HydraBoxService(
             }
         }
 
+        fun applyRuntimeStatus(state: String) {
+            for (boxService in activeServices) {
+                boxService.showForeground(state)
+            }
+        }
+
         /**
          * Flutter may be paused or its event sink detached while the VPN keeps
          * running. Keep the notification snapshot with the foreground service.
@@ -190,7 +196,7 @@ class HydraBoxService(
                 // A service started with startForegroundService() must enter the
                 // foreground before any queued native work. JNI cleanup/startup
                 // can legitimately take several seconds during a VPN restart.
-                showForeground("Starting")
+                showForeground("Connecting")
                 Log.w(TAG, "restoring sticky restart mode=$mode")
                 SingboxController.log(
                     "warning",
@@ -216,7 +222,7 @@ class HydraBoxService(
         var sticky = false
         when (action) {
             ACTION_START -> {
-                showForeground("Starting")
+                showForeground("Connecting")
                 sticky = true
                 val token = nextStartToken("action_start")
                 submitServiceTask("action_start") { startInternal("action_start", token) }
@@ -225,7 +231,7 @@ class HydraBoxService(
                 val reason = intent.getStringExtra(EXTRA_STOP_REASON)?.takeIf { it.isNotBlank() }
                     ?: "unspecified"
                 HydraBoxApplication.clearRuntimeIntent()
-                showForeground("Stopping")
+                showForeground("Disconnecting")
                 submitServiceTask("action_stop:$reason") {
                     stopInternal("action_stop:$reason", startId = startId)
                 }
@@ -239,7 +245,7 @@ class HydraBoxService(
                 return Service.START_STICKY
             }
             ACTION_RESTART_CORE -> {
-                showForeground("Restarting")
+                showForeground("Connecting")
                 sticky = true
                 val token = nextStartToken("action_restart_core")
                 submitServiceTask("action_restart_core") {
@@ -247,7 +253,7 @@ class HydraBoxService(
                 }
             }
             ACTION_RELOAD -> {
-                showForeground("Reloading")
+                showForeground("Connecting")
                 sticky = true
                 val token = nextStartToken("action_reload")
                 submitServiceTask("action_reload") { startOrReloadInternal(token) }
@@ -494,7 +500,7 @@ class HydraBoxService(
             registerRuntimeReceiver()
             HydraBoxDefaultNetworkMonitor.start()
             requestRuntimeRecovery("existing_runtime:$source")
-            showForeground("Connected")
+            showForeground("Connecting")
             HydraBoxApplication.writeServiceState(mode)
             HydraBoxQuickSettingsTileService.requestRefresh(service)
             return
@@ -528,7 +534,7 @@ class HydraBoxService(
         )
         try {
             NativeCoreEnvironment.ensureSetup()
-            showForeground("Starting")
+            showForeground("Connecting")
         } catch (error: Throwable) {
             Log.e(TAG, "startOrReloadInternal setup failed", error)
             HydraBoxDiagnostics.log(TAG, "startOrReloadInternal setup failed", error)
@@ -636,7 +642,7 @@ class HydraBoxService(
                 },
                 POST_START_INTERFACE_REASSERT_DELAY_MS,
             )
-            showForeground("Connected")
+            showForeground("Connecting")
             HydraBoxApplication.writeServiceState(mode)
             Log.i(TAG, "libbox service started mode=$mode")
             HydraBoxDiagnostics.log(
@@ -760,7 +766,7 @@ class HydraBoxService(
                     "cleanupComplete=false",
             )
 
-            showForeground("Stopping")
+            showForeground("Disconnecting")
             return
         }
 
