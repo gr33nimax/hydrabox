@@ -343,6 +343,7 @@ class _BlockingRuntime implements RuntimeLifecycleRuntime {
   Future<Map<String, dynamic>> status() async {
     return <String, dynamic>{
       'running': running,
+      'state': running ? 'RUNTIME_STATE_RUNNING' : 'RUNTIME_STATE_STOPPED',
       'mode': mode,
       'runtimeGeneration': runtimeGeneration,
       'recordedServiceAlive': recordedServiceAlive,
