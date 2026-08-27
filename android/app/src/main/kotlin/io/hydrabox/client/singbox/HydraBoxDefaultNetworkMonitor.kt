@@ -26,6 +26,23 @@ internal fun msSinceLastCallback(nowMs: Long, lastMs: Long): Long =
 
 private fun shortMonitorId(value: String): String = value.take(8).ifEmpty { "none" }
 
+internal enum class InterfacePublication {
+    PUBLISH_INTERFACE,
+    RETRY_SNAPSHOT,
+    PUBLISH_NONE,
+}
+
+internal fun decideInterfacePublication(
+    effectiveNetworkPresent: Boolean,
+    interfaceIndex: Int,
+    consecutiveUnresolvedSnapshots: Int,
+): InterfacePublication = when {
+    !effectiveNetworkPresent -> InterfacePublication.PUBLISH_NONE
+    interfaceIndex >= 0 -> InterfacePublication.PUBLISH_INTERFACE
+    consecutiveUnresolvedSnapshots >= 3 -> InterfacePublication.PUBLISH_NONE
+    else -> InterfacePublication.RETRY_SNAPSHOT
+}
+
 object HydraBoxDefaultNetworkMonitor {
     private const val TAG = "HydraBoxDefaultNetwork"
     private const val NO_CALLBACK_YET = -1L
@@ -52,6 +69,8 @@ object HydraBoxDefaultNetworkMonitor {
     private var heartbeatFuture: ScheduledFuture<*>? = null
     private var pendingNotifyRunnable: Runnable? = null
     private var lastNotificationKey: String? = null
+    private var unresolvedInterfaceNetwork: Network? = null
+    private var consecutiveUnresolvedInterfaceSnapshots = 0
 
     private data class NetworkCandidate(
         val network: Network,
@@ -120,6 +139,8 @@ object HydraBoxDefaultNetworkMonitor {
             }
             started = true
             lastNotificationKey = null
+            unresolvedInterfaceNetwork = null
+            consecutiveUnresolvedInterfaceSnapshots = 0
         }
         Log.i(TAG, "start")
         HydraBoxDiagnostics.log(TAG, "start current=${describeCurrentState()}")
@@ -135,6 +156,8 @@ object HydraBoxDefaultNetworkMonitor {
             started = false
             currentNetwork = null
             lastNotificationKey = null
+            unresolvedInterfaceNetwork = null
+            consecutiveUnresolvedInterfaceSnapshots = 0
             pendingNotifyRunnable?.let(networkHandler::removeCallbacks)
             pendingNotifyRunnable = null
         }
@@ -459,6 +482,21 @@ object HydraBoxDefaultNetworkMonitor {
         }
     }
 
+    private fun recordUnresolvedInterfaceSnapshot(network: Network): Int = synchronized(lock) {
+        if (unresolvedInterfaceNetwork != network) {
+            unresolvedInterfaceNetwork = network
+            consecutiveUnresolvedInterfaceSnapshots = 0
+        }
+        ++consecutiveUnresolvedInterfaceSnapshots
+    }
+
+    private fun clearUnresolvedInterfaceSnapshots() {
+        synchronized(lock) {
+            unresolvedInterfaceNetwork = null
+            consecutiveUnresolvedInterfaceSnapshots = 0
+        }
+    }
+
     private fun notifyListenerInternal(
         generation: Long,
         capturedNetwork: Network?,
@@ -479,6 +517,7 @@ object HydraBoxDefaultNetworkMonitor {
         val effectiveNetwork = bestNetwork ?: capturedNetwork?.takeIf(::isSelectableNetwork)
         if (effectiveNetwork == null) {
             if (notificationGeneration.get() != generation) return
+            clearUnresolvedInterfaceSnapshots()
             val duplicate = markInterfaceState("none")
             Log.i(TAG, "updateDefaultInterface: none")
             HydraBoxDiagnostics.log(TAG, "updateDefaultInterface none current=${describeCurrentState()}")
@@ -525,20 +564,44 @@ object HydraBoxDefaultNetworkMonitor {
             }
             return
         }
-        var index = -1
-        for (attempt in 0 until 10) {
-            if (notificationGeneration.get() != generation) return
-            index = runCatching { NetworkInterface.getByName(interfaceName)?.index ?: -1 }
-                .getOrDefault(-1)
-            if (index >= 0) break
-            try {
-                Thread.sleep(100)
-            } catch (_: InterruptedException) {
-                Thread.currentThread().interrupt()
-                return
-            }
-        }
+        val index = resolveInterfaceIndex(interfaceName)
         if (notificationGeneration.get() != generation) return
+        val publication = decideInterfacePublication(
+            effectiveNetworkPresent = true,
+            interfaceIndex = index,
+            consecutiveUnresolvedSnapshots = if (index < 0) {
+                recordUnresolvedInterfaceSnapshot(effectiveNetwork)
+            } else {
+                clearUnresolvedInterfaceSnapshots()
+                0
+            },
+        )
+        if (publication == InterfacePublication.RETRY_SNAPSHOT) {
+            HydraBoxDiagnostics.event(
+                "NETWORK", "ep" to shortMonitorId(CoreProcessIdentity.epoch), "cg" to CoreProcessIdentity.generation.get(),
+                "rg" to SingboxController.activeRuntimeGeneration, "ng" to notificationGeneration.get(),
+                "trigger" to "callback", "branch" to "index_unavailable", "result" to "skip",
+            )
+            notifyListener(notifyDuplicate = notifyDuplicate, targetListener = targetListener)
+            return
+        }
+        if (publication == InterfacePublication.PUBLISH_NONE) {
+            val duplicate = markInterfaceState("none")
+            Log.w(TAG, "updateDefaultInterface: interface index unavailable")
+            HydraBoxVpnService.setUnderlyingNetwork(null, "default_interface_index_unavailable")
+            if (duplicate && !notifyDuplicate) return
+            notifyListeners(currentListeners, "", -1)
+            if (shouldBroadcastNetworkChange(duplicate, targetListener != null)) {
+                SingboxController.emitNetworkChanged(
+                    "default_interface_index_unavailable",
+                    describeNetwork(effectiveNetwork),
+                    null,
+                    -1,
+                    notificationGeneration.get(),
+                )
+            }
+            return
+        }
         val notifyKey = "$effectiveNetwork:$interfaceName:$index"
         val duplicate = markInterfaceState(notifyKey)
         Log.i(TAG, "updateDefaultInterface: $interfaceName index=$index")
@@ -579,6 +642,22 @@ object HydraBoxDefaultNetworkMonitor {
                 notificationGeneration.get(),
             )
         }
+    }
+
+    private fun resolveInterfaceIndex(interfaceName: String): Int {
+        var index = -1
+        for (attempt in 0 until 10) {
+            index = runCatching { NetworkInterface.getByName(interfaceName)?.index ?: -1 }
+                .getOrDefault(-1)
+            if (index >= 0) break
+            try {
+                Thread.sleep(100)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return -1
+            }
+        }
+        return index
     }
 
     private fun notifyListeners(
