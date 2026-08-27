@@ -828,7 +828,6 @@ class CoreRuntimeService : Service() {
     private fun awaitRuntimeServicesReleased(startedAt: Long, onComplete: (Boolean) -> Unit) {
         val stopped = !SingboxController.running && !HydraBoxService.hasActiveRuntimeOwner()
         if (stopped) {
-            HydraBoxApplication.clearServiceState()
             onComplete(true)
             return
         }
@@ -1486,6 +1485,19 @@ class CoreRuntimeService : Service() {
                 .addAllOutboundGroups(outboundGroups)
                 .addAllProbeSessions(probeSessions)
                 .setTransportHealth(transportHealth)
+            HydraBoxApplication.readDesiredRuntime()?.let { desired ->
+                builder.setDesiredRuntime(
+                    CoreRuntimeProtocol.DesiredRuntime.newBuilder()
+                        .setWantRunning(desired.wantRunning)
+                        .setMode(
+                            if (desired.mode == "proxy") CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_PROXY
+                            else CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_VPN,
+                        )
+                        .setConfigSha256(ByteString.copyFromUtf8(desired.configSha256))
+                        .setRecoveryAttempt(desired.recoveryAttempt)
+                        .setUpdatedAtMillis(desired.updatedAtMillis),
+                )
+            }
             lastError?.let(builder::setLastError)
             return builder.build()
         }

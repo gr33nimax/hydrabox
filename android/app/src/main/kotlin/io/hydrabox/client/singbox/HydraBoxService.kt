@@ -201,8 +201,7 @@ class HydraBoxService(
                 SingboxController.log(
                     "warning",
                     "sticky_restart_restore mode=$mode startId=$startId " +
-                        "intent=${HydraBoxApplication.describeRuntimeIntent()} " +
-                        "serviceState=${HydraBoxApplication.describeRecordedServiceState()}",
+                        "intent=${HydraBoxApplication.describeRuntimeIntent()}",
                 )
                 val token = nextStartToken("sticky_restart")
                 submitServiceTask("sticky_restart") { startInternal("sticky_restart", token) }
@@ -501,7 +500,6 @@ class HydraBoxService(
             HydraBoxDefaultNetworkMonitor.start()
             requestRuntimeRecovery("existing_runtime:$source")
             showForeground("Connecting")
-            HydraBoxApplication.writeServiceState(mode)
             HydraBoxQuickSettingsTileService.requestRefresh(service)
             return
         }
@@ -643,7 +641,6 @@ class HydraBoxService(
                 POST_START_INTERFACE_REASSERT_DELAY_MS,
             )
             showForeground("Connecting")
-            HydraBoxApplication.writeServiceState(mode)
             Log.i(TAG, "libbox service started mode=$mode")
             HydraBoxDiagnostics.log(
                 TAG,
@@ -776,7 +773,6 @@ class HydraBoxService(
 
         if (shouldStopRuntimeState) {
             SingboxController.markServiceStopped(generation, source)
-            HydraBoxApplication.clearServiceState()
             HydraBoxApplication.clearRuntimeIntent()
             foregroundNotification.clearSavedPresentation()
             HydraBoxQuickSettingsTileService.requestRefresh(service)

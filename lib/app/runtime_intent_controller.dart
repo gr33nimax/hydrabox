@@ -7,14 +7,10 @@ class RuntimeIntentController {
   bool _desiredByUser = false;
   bool _startAfterStopRequested = false;
   bool _queuedRestartSuppressed = false;
-  bool _retryOnResume = false;
-  bool _explicitStopInProgress = false;
   int _manualStartGeneration = 0;
 
   bool get desiredByUser => _desiredByUser;
   bool get startAfterStopRequested => _startAfterStopRequested;
-  bool get retryOnResume => _retryOnResume;
-  bool get explicitStopInProgress => _explicitStopInProgress;
 
   int beginManualStart() {
     return ++_manualStartGeneration;
@@ -28,9 +24,10 @@ class RuntimeIntentController {
     _desiredByUser = false;
   }
 
-  void restoreDesiredFromObservedRuntime() {
-    if (!_explicitStopInProgress) {
-      _desiredByUser = true;
+  void applySnapshot(Map<String, dynamic> snapshot) {
+    final desired = snapshot['desiredRuntime'];
+    if (desired is Map) {
+      _desiredByUser = desired['wantRunning'] == true;
     }
   }
 
@@ -58,33 +55,16 @@ class RuntimeIntentController {
   void restoreAfterStopFailure() {
     _desiredByUser = true;
     _startAfterStopRequested = false;
-    _explicitStopInProgress = false;
   }
 
   void beginExplicitStop() {
     _desiredByUser = false;
-    _explicitStopInProgress = true;
   }
 
   bool completeSuccessfulStop() {
     final shouldRestart = !_queuedRestartSuppressed && _startAfterStopRequested;
     _desiredByUser = false;
     _startAfterStopRequested = false;
-    _explicitStopInProgress = false;
     return shouldRestart;
-  }
-
-  void deferRetryUntilResume() {
-    _retryOnResume = true;
-  }
-
-  bool consumeRetryOnResume({required bool connected}) {
-    final shouldRetry = _retryOnResume && !connected && _desiredByUser;
-    _retryOnResume = false;
-    return shouldRetry;
-  }
-
-  void clearRetryOnResume() {
-    _retryOnResume = false;
   }
 }

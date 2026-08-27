@@ -125,6 +125,13 @@ internal fun CoreRuntimeProtocol.RuntimeSnapshot.toLegacyRuntimeMap(): Map<Strin
         "errorCode" to lastError.code,
         "processEpoch" to processEpoch,
         "sequence" to lastSequence,
+        "desiredRuntime" to if (hasDesiredRuntime()) mapOf(
+            "wantRunning" to desiredRuntime.wantRunning,
+            "mode" to when (desiredRuntime.mode) {
+                CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_PROXY -> "proxy"
+                else -> "vpn"
+            },
+        ) else null,
         "groups" to outboundGroupsList.map { group ->
             mapOf(
                 "tag" to group.groupId,
@@ -818,7 +825,7 @@ class MainActivity : FlutterFragmentActivity() {
         if (controllerMode == "vpn" || controllerMode == "proxy") {
             return controllerMode
         }
-        val recordedMode = HydraBoxApplication.readServiceState()?.mode?.trim()?.lowercase().orEmpty()
+        val recordedMode = HydraBoxApplication.readDesiredRuntime()?.mode?.trim()?.lowercase().orEmpty()
         return if (recordedMode == "proxy") "proxy" else "vpn"
     }
 
@@ -877,7 +884,6 @@ class MainActivity : FlutterFragmentActivity() {
                 HydraBoxDiagnostics.log(TAG, "stopService failed target=${serviceClass.simpleName}", it)
             }
         }
-        HydraBoxApplication.clearServiceState()
         HydraBoxApplication.clearRuntimeIntent()
         HydraBoxQuickSettingsTileService.requestRefresh(this)
         val stopped =
@@ -1218,7 +1224,7 @@ class MainActivity : FlutterFragmentActivity() {
             "networkHeartbeatEnabled" to HydraBoxApplication.networkHeartbeatEnabled,
             "networkHeartbeatIntervalSeconds" to HydraBoxApplication.networkHeartbeatIntervalSeconds,
             "memoryLimitEnabled" to HydraBoxApplication.memoryLimitEnabled,
-            "serviceState" to HydraBoxApplication.describeRecordedServiceState(),
+            "serviceState" to HydraBoxApplication.readDesiredRuntime()?.let { "wantRunning=${it.wantRunning} mode=${it.mode}" },
             "runtimeIntent" to HydraBoxApplication.describeRuntimeIntent(),
             "totalPssKb" to processMemory?.totalPss,
             "totalPrivateDirtyKb" to processMemory?.totalPrivateDirty,

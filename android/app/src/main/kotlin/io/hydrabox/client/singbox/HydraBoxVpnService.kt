@@ -14,6 +14,7 @@ import android.os.SystemClock
 import android.util.Log
 import io.hydrabox.client.HydraBoxApplication
 import io.hydrabox.client.runtime.CoreProcessIdentity
+import io.hydrabox.client.runtime.CoreRuntimeClient
 import java.net.Socket
 
 private fun shortVpnId(value: String): String = value.take(8).ifEmpty { "none" }
@@ -85,6 +86,7 @@ class HydraBoxVpnService : VpnService() {
     }
 
     private lateinit var boxService: HydraBoxService
+    private val coreRuntimeClient by lazy { CoreRuntimeClient(applicationContext) }
     private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
@@ -144,12 +146,9 @@ class HydraBoxVpnService : VpnService() {
             "ng" to HydraBoxDefaultNetworkMonitor.currentInterfaceState("revoke").generation,
             "stage" to "revoked",
         )
-        HydraBoxApplication.clearRuntimeIntent()
         cancelScheduledRestart("vpn_permission_revoked")
         try {
-            if (::boxService.isInitialized) {
-                boxService.serviceStop()
-            }
+            coreRuntimeClient.stop("vpn_revoked") { }
         } finally {
             super.onRevoke()
         }

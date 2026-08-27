@@ -199,6 +199,14 @@ message TransportHealthSnapshot {
   RuntimeChallenge challenge = 11;
 }
 
+message DesiredRuntime {
+  bool want_running = 1;
+  RuntimeMode mode = 2;
+  bytes config_sha256 = 3;
+  uint32 recovery_attempt = 4;
+  uint64 updated_at_millis = 5;
+}
+
 message RuntimeSnapshot {
   uint32 schema_version = 1;
   string process_epoch = 2;
@@ -216,6 +224,7 @@ message RuntimeSnapshot {
   repeated OutboundGroupSnapshot outbound_groups = 14;
   repeated ProbeSession probe_sessions = 15;
   TransportHealthSnapshot transport_health = 16;
+  DesiredRuntime desired_runtime = 17;
 }
 
 message RuntimeLog {

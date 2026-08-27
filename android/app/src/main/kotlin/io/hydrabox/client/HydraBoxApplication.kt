@@ -102,12 +102,6 @@ class HydraBoxApplication : Application(), Configuration.Provider {
     }
 
     companion object {
-        data class ServiceState(
-            val pid: Int,
-            val mode: String,
-            val updatedAtMillis: Long,
-        )
-
         data class RuntimeIntentState(
             val pid: Int,
             val mode: String,
@@ -129,8 +123,6 @@ class HydraBoxApplication : Application(), Configuration.Provider {
             get() = application.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val configFile: File
             get() = File(application.filesDir, "singbox-config.json")
-        val serviceStateFile: File
-            get() = File(application.filesDir, "singbox-service-state.txt")
         val runtimeIntentFile: File
             get() = File(application.filesDir, "singbox-runtime-intent.txt")
         val desiredRuntimeFile: File
@@ -217,29 +209,6 @@ class HydraBoxApplication : Application(), Configuration.Provider {
             }
         }
 
-        fun writeServiceState(mode: String) {
-            val pid = android.os.Process.myPid()
-            val updatedAtMillis = System.currentTimeMillis()
-            writeAtomicText(
-                serviceStateFile,
-                buildString {
-                    append("pid=")
-                    append(pid)
-                    append('\n')
-                    append("mode=")
-                    append(mode)
-                    append('\n')
-                    append("updatedAtMillis=")
-                    append(updatedAtMillis)
-                    append('\n')
-                },
-            )
-            HydraBoxDiagnostics.log(
-                "Application",
-                "writeServiceState pid=$pid mode=$mode updatedAtMillis=$updatedAtMillis",
-            )
-        }
-
         fun writeRuntimeIntent(mode: String, reason: String) {
             val pid = android.os.Process.myPid()
             val updatedAtMillis = System.currentTimeMillis()
@@ -281,45 +250,11 @@ class HydraBoxApplication : Application(), Configuration.Provider {
             writeAtomicText(desiredRuntimeFile, value.serialize())
         }
 
-        fun clearServiceState() {
-            val deleted = runCatching {
-                !serviceStateFile.exists() || serviceStateFile.delete()
-            }.getOrDefault(false)
-            HydraBoxDiagnostics.log("Application", "clearServiceState deleted=$deleted")
-        }
-
         fun clearRuntimeIntent() {
             val deleted = runCatching {
                 !runtimeIntentFile.exists() || runtimeIntentFile.delete()
             }.getOrDefault(false)
             HydraBoxDiagnostics.log("Application", "clearRuntimeIntent deleted=$deleted")
-        }
-
-        fun readServiceState(): ServiceState? {
-            return runCatching {
-                if (!serviceStateFile.exists()) {
-                    return null
-                }
-                var pid = -1
-                var mode = ""
-                var updatedAtMillis = 0L
-                for (line in serviceStateFile.readLines()) {
-                    val index = line.indexOf('=')
-                    if (index <= 0) continue
-                    val key = line.substring(0, index)
-                    val value = line.substring(index + 1)
-                    when (key) {
-                        "pid" -> pid = value.toIntOrNull() ?: -1
-                        "mode" -> mode = value
-                        "updatedAtMillis" -> updatedAtMillis = value.toLongOrNull() ?: 0L
-                    }
-                }
-                if (pid <= 0 || mode.isBlank()) {
-                    null
-                } else {
-                    ServiceState(pid = pid, mode = mode, updatedAtMillis = updatedAtMillis)
-                }
-            }.getOrNull()
         }
 
         fun readRuntimeIntent(): RuntimeIntentState? {
@@ -356,34 +291,6 @@ class HydraBoxApplication : Application(), Configuration.Provider {
             }.getOrNull()
         }
 
-        fun describeRecordedServiceState(): String {
-            val state = readServiceState()
-            if (state == null) {
-                return "state=missing"
-            }
-            val cmdline = runCatching {
-                File("/proc/${state.pid}/cmdline")
-                    .readText()
-                    .replace('\u0000', ' ')
-                    .trim()
-            }.getOrDefault("")
-            val alive = cmdline.contains(application.packageName)
-            return buildString {
-                append("statePid=")
-                append(state.pid)
-                append(" mode=")
-                append(state.mode)
-                append(" updatedAtMillis=")
-                append(state.updatedAtMillis)
-                append(" alive=")
-                append(alive)
-                if (cmdline.isNotEmpty()) {
-                    append(" cmdline=")
-                    append(cmdline)
-                }
-            }
-        }
-
         fun describeRuntimeIntent(): String {
             val state = readRuntimeIntent()
             if (state == null) {
@@ -404,20 +311,6 @@ class HydraBoxApplication : Application(), Configuration.Provider {
                 append(" fresh=")
                 append(ageMs >= 0L)
             }
-        }
-
-        fun isRecordedServiceAlive(mode: String? = null): Boolean {
-            val state = readServiceState() ?: return false
-            if (mode != null && state.mode != mode) {
-                return false
-            }
-            val cmdline = runCatching {
-                File("/proc/${state.pid}/cmdline")
-                    .readText()
-                    .replace('\u0000', ' ')
-                    .trim()
-            }.getOrDefault("")
-            return cmdline.contains(application.packageName)
         }
 
         fun isRuntimeIntentFresh(mode: String? = null): Boolean {

@@ -255,7 +255,6 @@ class _HydraBoxClientState extends State<HydraBoxClient>
   bool get _runtimeTransitionInProgress =>
       _runtimeConnection.transitionInProgress;
   bool get _runtimeDesiredByUser => _runtimeIntent.desiredByUser;
-  bool get _retryRuntimeOnResume => _runtimeIntent.retryOnResume;
   bool get _invalidOutboundRetryScheduled => _runtimeRecovery.retryScheduled;
   Set<String> get _excludedRuntimeOutboundTags =>
       _runtimeRecovery.excludedOutboundTags;
@@ -2999,9 +2998,6 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     _groupUrlTestScheduler.cancel();
     _latencyCoordinator.cancel();
     _cancelUniversalUrlTest(reason: 'background');
-    if (_invalidOutboundRetryScheduled && _runtimeDesiredByUser) {
-      _runtimeIntent.deferRetryUntilResume();
-    }
     _runtimeRecovery.cancelRetry();
   }
 
@@ -3040,9 +3036,6 @@ class _HydraBoxClientState extends State<HydraBoxClient>
           );
         }
       }
-      if (_runtimeIntent.consumeRetryOnResume(connected: _connected)) {
-        _scheduleInvalidOutboundRetry('resume lifecycle retry');
-      }
     });
   }
 
@@ -3068,7 +3061,6 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       reason: 'resume_reconcile',
     );
     if (!networkReady) {
-      _runtimeIntent.deferRetryUntilResume();
       AppLogStore.warning(
         'runtime',
         'resume reconcile postponed: no usable network interface',
@@ -5877,8 +5869,8 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     var shouldSyncQuickSettingsTile = false;
     var shouldCancelLatency = false;
     setState(() {
+      _runtimeIntent.applySnapshot(event.raw);
       if (running) {
-        _runtimeIntent.restoreDesiredFromObservedRuntime();
         _lastLocationLookupSignature = '';
       }
       _setConnectionPhase(
@@ -6076,7 +6068,6 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       _onRuntimeDiagnosticsReady();
     }
     if (!_foregroundLifecycleActive) {
-      _runtimeIntent.deferRetryUntilResume();
       return;
     }
     if (usable) {
@@ -6135,9 +6126,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
           )
           .status;
       setState(() {
-        if (running) {
-          _runtimeIntent.restoreDesiredFromObservedRuntime();
-        }
+        _runtimeIntent.applySnapshot(status);
         _setConnectionPhase(
           decision.phase,
           retryScheduled: decision.retryScheduled,
@@ -6322,10 +6311,8 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       return;
     }
     if (!_foregroundLifecycleActive) {
-      _runtimeIntent.deferRetryUntilResume();
       return;
     }
-    _runtimeIntent.clearRetryOnResume();
     if (mounted) {
       setState(() {
         _setConnectionPhase(
@@ -6422,9 +6409,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
   }
 
   void _cancelAutomaticRuntimeRecovery(String reason) {
-    final hadPendingRecovery =
-        _invalidOutboundRetryScheduled || _retryRuntimeOnResume;
-    _runtimeIntent.clearRetryOnResume();
+    final hadPendingRecovery = _invalidOutboundRetryScheduled;
     _runtimeRecovery.cancelRetry();
     if (hadPendingRecovery) {
       AppLogStore.info('runtime', 'automatic recovery cancelled: $reason');

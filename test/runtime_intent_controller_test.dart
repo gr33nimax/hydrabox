@@ -53,43 +53,20 @@ void main() {
 
     expect(controller.desiredByUser, isTrue);
     expect(controller.startAfterStopRequested, isFalse);
-    expect(controller.explicitStopInProgress, isFalse);
     expect(controller.completeSuccessfulStop(), isFalse);
   });
 
-  test('observed running state cannot override an explicit stop', () {
-    final controller = RuntimeIntentController()
-      ..markRuntimeDesired()
-      ..beginExplicitStop()
-      ..restoreDesiredFromObservedRuntime();
+  test('desired intent follows the runtime snapshot', () {
+    final controller = RuntimeIntentController();
 
-    expect(controller.desiredByUser, isFalse);
-    expect(controller.explicitStopInProgress, isTrue);
-
-    controller.completeSuccessfulStop();
-    controller.restoreDesiredFromObservedRuntime();
+    controller.applySnapshot({
+      'desiredRuntime': {'wantRunning': true},
+    });
     expect(controller.desiredByUser, isTrue);
+
+    controller.applySnapshot({
+      'desiredRuntime': {'wantRunning': false},
+    });
+    expect(controller.desiredByUser, isFalse);
   });
-
-  test(
-    'resume retry requires desired disconnected runtime and is one-shot',
-    () {
-      final controller = RuntimeIntentController()
-        ..markRuntimeDesired()
-        ..deferRetryUntilResume();
-
-      expect(controller.consumeRetryOnResume(connected: false), isTrue);
-      expect(controller.consumeRetryOnResume(connected: false), isFalse);
-
-      controller.deferRetryUntilResume();
-      expect(controller.consumeRetryOnResume(connected: true), isFalse);
-      expect(controller.retryOnResume, isFalse);
-
-      controller
-        ..clearRuntimeDesired()
-        ..deferRetryUntilResume();
-      expect(controller.consumeRetryOnResume(connected: false), isFalse);
-      expect(controller.retryOnResume, isFalse);
-    },
-  );
 }
