@@ -6,7 +6,6 @@ import android.net.ConnectivityManager
 import android.util.AtomicFile
 import androidx.work.Configuration
 import io.hydrabox.client.background.SubscriptionRefreshScheduler
-import io.hydrabox.client.core.CoreBundleManager
 import io.hydrabox.client.platform.AndroidProcessIdentity
 import io.hydrabox.client.singbox.HydraBoxDiagnostics
 import java.io.File
@@ -21,16 +20,6 @@ class HydraBoxApplication : Application(), Configuration.Provider {
         super.onCreate()
         application = this
         val processName = AndroidProcessIdentity.current(this)
-        when {
-            processName.endsWith(":core_probe") -> {
-                CoreBundleManager(this).configureCandidateLoaderForProbe()
-            }
-            processName.endsWith(":core") -> {
-                val bundleManager = CoreBundleManager(this)
-                bundleManager.noteCoreProcessStart()
-                bundleManager.configureNativeLoader()
-            }
-        }
         if (processName == packageName) {
             SubscriptionRefreshScheduler.ensureScheduled(this)
         }

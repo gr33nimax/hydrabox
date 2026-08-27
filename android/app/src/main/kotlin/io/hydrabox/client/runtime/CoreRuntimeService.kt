@@ -10,9 +10,7 @@ import android.util.AtomicFile
 import android.util.Log
 import com.google.protobuf.ByteString
 import com.google.protobuf.InvalidProtocolBufferException
-import go.HydraNativeLoader
 import io.hydrabox.client.HydraBoxApplication
-import io.hydrabox.client.core.CoreBundleManager
 import io.hydrabox.client.runtime.proto.CoreRuntimeProtocol
 import io.hydrabox.client.singbox.HydraBoxProxyService
 import io.hydrabox.client.singbox.HydraBoxService
@@ -41,6 +39,8 @@ internal object CoreProcessIdentity {
 }
 
 private fun shortId(value: String): String = value.take(8).ifEmpty { "none" }
+
+internal fun nativeSourceLabel(): String = "embedded"
 
 private fun shortHex(bytes: ByteArray): String =
     if (bytes.isEmpty()) "none" else bytes.take(4).joinToString("") { "%02x".format(it.toInt() and 0xff) }
@@ -155,10 +155,10 @@ class CoreRuntimeService : Service() {
         super.onCreate()
         val startupFailure = CoreStartupFailureStore(this)
         try {
-            startupFailure.markStage("native_setup", HydraNativeLoader.loadedSource())
+            startupFailure.markStage("native_setup", nativeSourceLabel())
             NativeCoreEnvironment.ensureSetup()
 
-            startupFailure.markStage("contract", HydraNativeLoader.loadedSource())
+            startupFailure.markStage("contract", nativeSourceLabel())
             coreContract = buildContract()
             HydraBoxDiagnostics.event(
                 "EPOCH",
@@ -166,11 +166,11 @@ class CoreRuntimeService : Service() {
                 "rg" to SingboxController.activeRuntimeGeneration,
                 "ng" to HydraBoxDefaultNetworkMonitor.currentInterfaceState("epoch").generation,
                 "prof" to shortHex(activeConfigSha256),
-                "native_source" to HydraNativeLoader.loadedSource(),
+                "native_source" to nativeSourceLabel(),
                 "api" to "${coreContract.apiMajor}.${coreContract.apiMinor}",
             )
 
-            startupFailure.markStage("controller", HydraNativeLoader.loadedSource())
+            startupFailure.markStage("controller", nativeSourceLabel())
             controllerRegistration = SingboxController.registerEventSink(
                 object : RuntimeEventConsumer {
                     override fun success(event: Any?) {
@@ -201,27 +201,22 @@ class CoreRuntimeService : Service() {
             // A stale 0.x or interrupted-write config is a configuration recovery,
             // not a broken native core. Keep the binder alive and quarantine the
             // invalid private file so the UI can compile a clean plan.
-            startupFailure.markStage("config_recovery", HydraNativeLoader.loadedSource())
+            startupFailure.markStage("config_recovery", nativeSourceLabel())
             recoverInvalidPersistedConfig()
 
-            startupFailure.markStage("snapshot", HydraNativeLoader.loadedSource())
+            startupFailure.markStage("snapshot", nativeSourceLabel())
             buildSnapshot()
             mainHandler.post(transportHealthPoll)
-            if (HydraNativeLoader.loadedSource() == "active") {
-                CoreBundleManager(this).readState().active?.let { active ->
-                    CoreBundleManager(this).markHealthy(active.releaseSequence)
-                }
-            }
             startupFailure.clear()
             Log.i(
                 TAG,
-                "startup_healthy source=${HydraNativeLoader.loadedSource()} api=${coreContract.apiMajor}.${coreContract.apiMinor}",
+                "startup_healthy source=${nativeSourceLabel()} api=${coreContract.apiMajor}.${coreContract.apiMinor}",
             )
         } catch (error: Throwable) {
-            Log.e(TAG, "startup_failed source=${HydraNativeLoader.loadedSource()}", error)
+            Log.e(TAG, "startup_failed source=${nativeSourceLabel()}", error)
             HydraBoxDiagnostics.log(
                 "CoreRuntimeService",
-                "startup failed source=${HydraNativeLoader.loadedSource()}",
+                "startup failed source=${nativeSourceLabel()}",
                 error,
             )
             throw error
@@ -735,10 +730,6 @@ class CoreRuntimeService : Service() {
     }
 
     private fun completeHealthyStart(commandId: String) {
-        val bundle = CoreBundleManager(this).readState().active
-        if (bundle != null) {
-            runCatching { CoreBundleManager(this).markHealthy(bundle.releaseSequence) }
-        }
         commandSucceeded(commandId, CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING)
         val health = synchronized(snapshotLock) { transportHealth }
         HydraBoxDiagnostics.event(
