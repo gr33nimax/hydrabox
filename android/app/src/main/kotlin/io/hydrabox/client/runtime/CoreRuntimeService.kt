@@ -60,6 +60,22 @@ internal fun selectProbeExecutionMode(
     else -> ProbeExecutionMode.REJECT_MISSING_PLAN
 }
 
+internal fun pruneAliases(
+    aliases: Map<String, String>,
+    sessions: Iterable<CoreRuntimeProtocol.ProbeSession>,
+): Map<String, String> {
+    val terminalSessionIds = sessions.asSequence()
+        .filter { it.state in setOf(
+            CoreRuntimeProtocol.ProbeSessionState.PROBE_SESSION_STATE_COMPLETED,
+            CoreRuntimeProtocol.ProbeSessionState.PROBE_SESSION_STATE_PARTIAL,
+            CoreRuntimeProtocol.ProbeSessionState.PROBE_SESSION_STATE_CANCELLED,
+            CoreRuntimeProtocol.ProbeSessionState.PROBE_SESSION_STATE_TIMED_OUT,
+        ) }
+        .map { it.sessionId }
+        .toSet()
+    return aliases.filterValues { it !in terminalSessionIds }
+}
+
 internal fun notificationStatusFor(
     state: CoreRuntimeProtocol.RuntimeState,
 ): String? = when (state) {
@@ -467,6 +483,7 @@ class CoreRuntimeService : Service() {
                             put(k, v)
                         }
                         put("notificationUpdateCount", HydraBoxForegroundNotification.updateCount())
+                        put("managedProbeAliasCount", synchronized(snapshotLock) { managedProbeAliases.size })
                     }
                     counters.toString().toByteArray(Charsets.UTF_8)
                 }
@@ -814,6 +831,7 @@ class CoreRuntimeService : Service() {
         transportHealthRequired = false
         synchronized(snapshotLock) {
             transportHealth = CoreRuntimeProtocol.TransportHealthSnapshot.getDefaultInstance()
+            managedProbeAliases.clear()
         }
     }
 
@@ -1108,6 +1126,7 @@ class CoreRuntimeService : Service() {
                     .setState(CoreRuntimeProtocol.ProbeSessionState.PROBE_SESSION_STATE_CANCELLED)
                     .setFinishedAtMillis(System.currentTimeMillis())
                     .build()
+                synchronized(snapshotLock) { managedProbeAliases.remove(nativeId) }
                 emit(eventBuilder().setProbeSession(session).build())
                 commandSucceeded(command.commandId, state.get())
             }.onFailure {
@@ -1339,6 +1358,9 @@ class CoreRuntimeService : Service() {
             result
         }.orEmpty()
         synchronized(snapshotLock) {
+            val aliases = pruneAliases(managedProbeAliases, parsed)
+            managedProbeAliases.clear()
+            managedProbeAliases.putAll(aliases)
             probeSessions = if (reset) parsed else {
                 (probeSessions.associateBy { it.sessionId } + parsed.associateBy { it.sessionId })
                     .values.toList()
