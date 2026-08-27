@@ -72,7 +72,6 @@ import 'package:hydrabox/models/proxy_runtime_visual_state.dart';
 import 'package:hydrabox/models/subscription.dart';
 import 'package:hydrabox/singbox/core_config_migration.dart';
 import 'package:hydrabox/singbox/hydra_proxy_chain_resolver.dart';
-import 'package:hydrabox/singbox/singbox_api.g.dart' as platform_bridge;
 import 'package:hydrabox/singbox/singbox_config_builder.dart';
 import 'package:hydrabox/singbox/singbox_runtime.dart';
 import 'package:hydrabox/theme/demo_app_theme.dart';

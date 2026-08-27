@@ -83,8 +83,8 @@ class HydraSubscriptionValidationException extends FormatException {
 }
 
 class SubscriptionHttpStatusException extends HttpException {
-  SubscriptionHttpStatusException(this.statusCode, {Uri? uri})
-    : super('Subscription server returned HTTP $statusCode', uri: uri);
+  SubscriptionHttpStatusException(this.statusCode, {super.uri})
+    : super('Subscription server returned HTTP $statusCode');
 
   final int statusCode;
 

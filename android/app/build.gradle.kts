@@ -91,6 +91,7 @@ val verifyPinnedLibbox by tasks.registering {
 android {
     namespace = "io.hydrabox.client"
     compileSdk = flutter.compileSdkVersion
+    buildToolsVersion = "36.0.0"
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
