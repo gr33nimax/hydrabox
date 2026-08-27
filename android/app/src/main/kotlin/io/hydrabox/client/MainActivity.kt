@@ -1010,6 +1010,7 @@ class MainActivity : FlutterFragmentActivity() {
 
     private fun dispatchStartAfterPreconnectCleanup(useVpn: Boolean, result: MethodChannel.Result) {
         SingboxController.clearRuntimeError()
+        coreRuntimeClient.reconnectFromUser()
         Log.i(TAG, "start requested useVpn=$useVpn running=${SingboxController.running} mode=${SingboxController.serviceMode}")
         SingboxController.log(
             "info",

@@ -24,6 +24,20 @@ class CoreRuntimeException(
     message: String,
 ) : IllegalStateException(message)
 
+private const val MAX_AUTOMATIC_REBIND_ATTEMPTS = 3
+
+internal fun shouldRebind(attempt: Int): Boolean = attempt in 1..MAX_AUTOMATIC_REBIND_ATTEMPTS
+
+internal class RebindAttemptCounter {
+    private var attempt = 0
+
+    fun next(): Boolean = shouldRebind(++attempt)
+
+    fun reset() {
+        attempt = 0
+    }
+}
+
 /** Main-process proxy for the :core binder. It contains no libbox references. */
 class CoreRuntimeClient(context: Context) {
     private data class PendingServiceCall(
@@ -34,6 +48,7 @@ class CoreRuntimeClient(context: Context) {
     private val appContext = context.applicationContext
     private val mainHandler = Handler(Looper.getMainLooper())
     private val lock = Any()
+    private val rebindAttempts = RebindAttemptCounter()
     private val waitingForService = ArrayDeque<PendingServiceCall>()
     private val resultCallbacks = ConcurrentHashMap<String, (Result<Unit>) -> Unit>()
     private val probeResultCallbacks =
@@ -102,6 +117,7 @@ class CoreRuntimeClient(context: Context) {
                 service = connected
                 binding = false
                 bound = true
+                rebindAttempts.reset()
                 pending = waitingForService.toList()
                 waitingForService.clear()
             }
@@ -123,8 +139,19 @@ class CoreRuntimeClient(context: Context) {
         override fun onBindingDied(name: ComponentName?) {
             runCatching { appContext.unbindService(connection) }
             synchronized(lock) { bound = false }
-            disconnect(CoreRuntimeException("runtime.ipc.binding_died", "ipc", true, "HydraCore binding died."))
-            connect()
+            if (synchronized(lock) { rebindAttempts.next() }) {
+                disconnect(CoreRuntimeException("runtime.ipc.binding_died", "ipc", true, "HydraCore binding died."))
+                connect()
+            } else {
+                val unavailable = CoreRuntimeException(
+                    "runtime.ipc.unavailable",
+                    "ipc",
+                    false,
+                    "HydraCore IPC remains unavailable after automatic rebind attempts.",
+                )
+                CoreStartupFailureStore(appContext).readFresh()?.toException()?.let(unavailable::initCause)
+                disconnect(unavailable, preferStartupFailure = false)
+            }
         }
 
         override fun onNullBinding(name: ComponentName?) {
@@ -175,6 +202,11 @@ class CoreRuntimeClient(context: Context) {
                 ),
             )
         }, SERVICE_BIND_DEADLINE_MILLIS)
+    }
+
+    fun reconnectFromUser() {
+        synchronized(lock) { rebindAttempts.reset() }
+        connect()
     }
 
     fun close() {
@@ -642,11 +674,12 @@ class CoreRuntimeClient(context: Context) {
         }
     }
 
-    private fun disconnect(error: Throwable) {
-        val reportedError = CoreStartupFailureStore(appContext)
-            .readFresh()
-            ?.toException()
-            ?: error
+    private fun disconnect(error: Throwable, preferStartupFailure: Boolean = true) {
+        val reportedError = if (preferStartupFailure) {
+            CoreStartupFailureStore(appContext).readFresh()?.toException() ?: error
+        } else {
+            error
+        }
         val pending = synchronized(lock) {
             val values = waitingForService.toList()
             waitingForService.clear()
