@@ -7,17 +7,31 @@ import android.content.Intent
 import android.graphics.drawable.Icon
 import android.net.VpnService
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import android.widget.Toast
 import io.hydrabox.client.runtime.CoreRuntimeClient
+import io.hydrabox.client.runtime.proto.CoreRuntimeProtocol
+import io.hydrabox.client.singbox.RuntimeEventConsumer
 import io.hydrabox.client.singbox.RuntimeServiceModeResolver
 import org.json.JSONObject
 
+internal fun tileActiveFor(state: CoreRuntimeProtocol.RuntimeState): Boolean = state in setOf(
+    CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING,
+    CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STARTING,
+    CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RECOVERING,
+)
+
 class HydraBoxQuickSettingsTileService : TileService() {
     private val coreRuntimeClient by lazy { CoreRuntimeClient(applicationContext) }
+    private val tileEventConsumer = object : RuntimeEventConsumer {
+        override fun success(event: Any?) = updateTile()
+
+        override fun error(code: String, message: String?, details: Any?) = Unit
+
+        override fun endOfStream() = Unit
+    }
+
     companion object {
         private const val QUICK_TILE_LABEL_FILE = "quick_tile_label.txt"
         private const val TILE_LABEL = "HydraBox"
@@ -34,16 +48,20 @@ class HydraBoxQuickSettingsTileService : TileService() {
     override fun onStartListening() {
         super.onStartListening()
         coreRuntimeClient.connect()
+        coreRuntimeClient.registerEventConsumer(tileEventConsumer)
         updateTile()
+    }
+
+    override fun onStopListening() {
+        coreRuntimeClient.unregisterEventConsumer(tileEventConsumer)
+        super.onStopListening()
     }
 
     override fun onClick() {
         super.onClick()
-        val activeMode = activeRuntimeMode()
-        if (activeMode != null) {
-            stopRuntime(activeMode)
-            renderTile(isActive = false)
-            scheduleRefreshes()
+        if (tileActiveFor(coreRuntimeClient.cachedSnapshot()?.state
+                ?: CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_UNSPECIFIED)) {
+            stopRuntime()
             return
         }
 
@@ -56,7 +74,7 @@ class HydraBoxQuickSettingsTileService : TileService() {
             return
         }
 
-        val targetMode = configuredMode()
+        val targetMode = snapshotMode() ?: configuredMode()
         if (targetMode == null) {
             Toast.makeText(this, "No VPN or proxy inbound enabled", Toast.LENGTH_SHORT).show()
             openApp()
@@ -71,21 +89,17 @@ class HydraBoxQuickSettingsTileService : TileService() {
         }
 
         startRuntime(targetMode)
-        renderTile(
-            isActive = true,
-            activeLabel = readActiveTileLabel(),
-        )
-        scheduleRefreshes()
     }
 
-    private fun activeRuntimeMode(): String? = RuntimeServiceModeResolver.activeMode(
-        runningMode = null,
-        vpnRecorded = HydraBoxApplication.isRecordedServiceAlive(RuntimeServiceModeResolver.VPN),
-        proxyRecorded = HydraBoxApplication.isRecordedServiceAlive(RuntimeServiceModeResolver.PROXY),
-    )
+    private fun snapshotMode(): String? = when (coreRuntimeClient.cachedSnapshot()?.mode) {
+        // Переводится на snapshot.desiredRuntime.mode в HB-RW-012.
+        CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_VPN -> RuntimeServiceModeResolver.VPN
+        CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_PROXY -> RuntimeServiceModeResolver.PROXY
+        else -> null
+    }
 
-    private fun stopRuntime(mode: String) {
-        coreRuntimeClient.stop("quick_tile") { requestRefresh(this) }
+    private fun stopRuntime() {
+        coreRuntimeClient.stop("quick_tile") { }
     }
 
     private fun startRuntime(targetMode: String) {
@@ -101,7 +115,6 @@ class HydraBoxQuickSettingsTileService : TileService() {
             if (result.isFailure) {
                 Toast.makeText(this, "HydraCore could not start", Toast.LENGTH_SHORT).show()
             }
-            requestRefresh(this)
         }
     }
 
@@ -154,7 +167,10 @@ class HydraBoxQuickSettingsTileService : TileService() {
 
     private fun updateTile() {
         renderTile(
-            isActive = activeRuntimeMode() != null,
+            isActive = tileActiveFor(
+                coreRuntimeClient.cachedSnapshot()?.state
+                    ?: CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_UNSPECIFIED,
+            ),
             activeLabel = readActiveTileLabel(),
         )
     }
@@ -169,12 +185,6 @@ class HydraBoxQuickSettingsTileService : TileService() {
         tile.icon = Icon.createWithResource(this, R.drawable.ic_hydrabox_status)
         tile.label = if (isActive) resolvedActiveLabel ?: TILE_LABEL else TILE_LABEL
         tile.updateTile()
-    }
-
-    private fun scheduleRefreshes() {
-        Handler(Looper.getMainLooper()).postDelayed({ requestRefresh(this) }, 350)
-        Handler(Looper.getMainLooper()).postDelayed({ requestRefresh(this) }, 1200)
-        Handler(Looper.getMainLooper()).postDelayed({ requestRefresh(this) }, 2500)
     }
 
     private fun formatActiveLabel(label: String?): String? {
