@@ -222,6 +222,7 @@ dependencies {
     implementation("androidx.datastore:datastore:1.2.1")
     implementation("androidx.work:work-runtime-ktx:2.11.2")
     implementation("androidx.concurrent:concurrent-futures-ktx:1.2.0")
+    implementation("androidx.tracing:tracing:1.2.0")
     ksp("androidx.room:room-compiler:2.8.4")
     baselineProfile(project(":benchmark"))
     testImplementation("junit:junit:4.13.2")
