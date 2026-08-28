@@ -28,7 +28,7 @@
 | HB-RW-019 | hydrabox | 267f320 | DONE |
 | HB-RW-016 | hydrabox | df78787 | DONE (+ одна строка в MainActivity по решению тимлида) |
 | HB-RW-012 | hydrabox | 7df8463 | DONE |
-| HB-RW-005 | hydrabox | — | BLOCKED(HB-EXP-E11 — нужен девайс) |
+| HB-RW-005 | hydrabox | 83f9f95 | DONE (P1: network_wait входит в 45 s; E1=P2 diagnostic CommandClient non-blocking) |
 | HB-RW-015 | hydrabox | 6b80169 | DONE |
 | HB-RW-015-FIX | hydrabox | — | DONE |
 | HB-RW-014 | hydrabox | d3339ae | DONE |
