@@ -1,0 +1,34 @@
+{
+  "log": { "level": "debug" },
+  "inbounds": [
+    {
+      "type": "tun",
+      "tag": "tun-in",
+      "interface_name": "hydrabox-exp2b",
+      "address": ["172.19.0.1/30"],
+      "auto_route": false,
+      "strict_route": false,
+      "stack": "system"
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "call",
+      "tag": "call-vk-blackhole",
+      "platform": "vk",
+      "mode": "vk_parasite",
+      "server": "203.0.113.1",
+      "server_port": 2443,
+      "join_links": [
+        "https://calls.example/join/exp2b-a",
+        "https://calls.example/join/exp2b-b",
+        "https://calls.example/join/exp2b-c",
+        "https://calls.example/join/exp2b-d"
+      ],
+      "user": "exp2b",
+      "password": "exp2b-password",
+      "obfs_password": "exp2b-obfs-password"
+    }
+  ],
+  "route": { "final": "call-vk-blackhole" }
+}

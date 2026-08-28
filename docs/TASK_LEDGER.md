@@ -35,3 +35,4 @@
 | HB-RW-013 | hydrabox | c3b3922 | DONE (_queuedRestartSuppressed оставлен — дефект плана, см. §8.3) |
 | HB-RW-002-FIX | hydrabox | b663a02 | DONE |
 | HB-RW-001-FIX | hydrabox | 7082e08 | DONE |
+| HB-EXP-E2B | hydrabox | — | DONE (P2) |
