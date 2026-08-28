@@ -163,7 +163,6 @@ class SingboxConfigCoordinator {
     required SingboxConfigRuntimeFailureNotifier showRuntimeFailure,
     required RuntimeLogHook logCall,
     required void Function(String reason) trimRuntimeStartMemory,
-    required RuntimeTimeoutHook onRuntimeLifecycleTimeout,
     required RuntimeVoidHook cacheStartedBuild,
     required Future<void> Function() syncRuntimeState,
     this.fullServiceRestartDebounce = const Duration(milliseconds: 450),
@@ -177,7 +176,6 @@ class SingboxConfigCoordinator {
        _showRuntimeFailure = showRuntimeFailure,
        _logCall = logCall,
        _trimRuntimeStartMemory = trimRuntimeStartMemory,
-       _onRuntimeLifecycleTimeout = onRuntimeLifecycleTimeout,
        _cacheStartedBuild = cacheStartedBuild,
        _syncRuntimeState = syncRuntimeState;
 
@@ -193,7 +191,6 @@ class SingboxConfigCoordinator {
   final SingboxConfigRuntimeFailureNotifier _showRuntimeFailure;
   final RuntimeLogHook _logCall;
   final void Function(String reason) _trimRuntimeStartMemory;
-  final RuntimeTimeoutHook _onRuntimeLifecycleTimeout;
   final RuntimeVoidHook _cacheStartedBuild;
   final Future<void> Function() _syncRuntimeState;
 
@@ -392,7 +389,6 @@ class SingboxConfigCoordinator {
         cacheStartedBuild: _cacheStartedBuild,
         logCall: _logCall,
         trimMemory: _trimRuntimeStartMemory,
-        onWatchdogTimeout: _onRuntimeLifecycleTimeout,
       );
       if (!_isMounted() || !_isCurrentApply(generation)) {
         return;
@@ -446,7 +442,6 @@ class SingboxConfigCoordinator {
       cacheStartedBuild: _cacheStartedBuild,
       logCall: _logCall,
       trimMemory: _trimRuntimeStartMemory,
-      onWatchdogTimeout: _onRuntimeLifecycleTimeout,
     );
   }
 

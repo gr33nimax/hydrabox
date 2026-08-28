@@ -47,6 +47,9 @@ private fun shortId(value: String): String = value.take(8).ifEmpty { "none" }
 
 internal fun nativeSourceLabel(): String = "embedded"
 
+internal const val START_DEADLINE_MILLIS = 45_000L
+internal const val CHALLENGE_DEADLINE_MILLIS = 120_000L
+
 private fun shortHex(bytes: ByteArray): String =
     if (bytes.isEmpty()) "none" else bytes.take(4).joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
@@ -92,6 +95,9 @@ internal fun notificationStatusFor(
     else -> null
 }
 
+internal fun deadlineFor(interactive: Boolean, waitingUser: Boolean): Long =
+    if (interactive && waitingUser) CHALLENGE_DEADLINE_MILLIS else START_DEADLINE_MILLIS
+
 /**
  * Sole binder owner of native runtime state. The UI process only exchanges
  * versioned protobuf bytes with this service and never initializes libbox.
@@ -118,6 +124,8 @@ class CoreRuntimeService : Service() {
     private var networkSnapshot = CoreRuntimeProtocol.NetworkSnapshot.getDefaultInstance()
     private var transportHealth = CoreRuntimeProtocol.TransportHealthSnapshot.getDefaultInstance()
     @Volatile private var transportHealthRequired = false
+    @Volatile private var interactiveStart = false
+    @Volatile private var startDeadlineStartedAt = 0L
     private var controllerRegistration = 0L
     private lateinit var coreContract: CoreRuntimeProtocol.CoreContract
     private val transportHealthPoll = object : Runnable {
@@ -575,6 +583,8 @@ class CoreRuntimeService : Service() {
         transportHealthRequired = TransportHealthBridge.configRequiresHealth(config)
         refreshTransportHealth(emitIfChanged = false)
         val commandGeneration = generation.incrementAndGet()
+        interactiveStart = request.interactiveDeadlineMillis > START_DEADLINE_MILLIS
+        startDeadlineStartedAt = System.currentTimeMillis()
         mode.set(request.mode)
         updateState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_PREPARING)
         val writeError = runCatching { writeConfigAtomically(config) }.exceptionOrNull()
@@ -694,7 +704,7 @@ class CoreRuntimeService : Service() {
             transportHealth.state ==
                 CoreRuntimeProtocol.TransportHealthState.TRANSPORT_HEALTH_STATE_WAITING_USER
         }
-        val startDeadline = if (waitingForUser) CHALLENGE_DEADLINE_MILLIS else START_DEADLINE_MILLIS
+        val startDeadline = deadlineFor(interactiveStart, waitingForUser)
         if (System.currentTimeMillis() - startedAt >= startDeadline) {
             failStartAndRollback(
                 commandId,
@@ -726,19 +736,24 @@ class CoreRuntimeService : Service() {
             result.onSuccess {
                 refreshNetworkSnapshotFromMonitor("runtime_start_complete")
                 if (transportHealthRequired) {
-                    awaitTransportReady(commandId, commandGeneration, System.currentTimeMillis())
+                    awaitTransportReady(commandId, commandGeneration, startDeadlineStartedAt)
                 } else {
                     completeHealthyStart(commandId)
                 }
             }.onFailure {
-                failStartAndRollback(
-                    commandId,
-                    commandGeneration,
-                    "runtime.start.snapshot",
-                    "runtime_snapshot",
-                    "HydraCore started but did not provide a valid runtime snapshot.",
-                    true,
+                HydraBoxDiagnostics.event(
+                    "START",
+                    "ep" to shortId(processEpoch), "cg" to commandGeneration,
+                    "rg" to SingboxController.activeRuntimeGeneration,
+                    "ng" to HydraBoxDefaultNetworkMonitor.currentInterfaceState("command_client").generation,
+                    "stage" to "command_client", "result" to "fail",
                 )
+                refreshNetworkSnapshotFromMonitor("runtime_start_snapshot_unavailable")
+                if (transportHealthRequired) {
+                    awaitTransportReady(commandId, commandGeneration, startDeadlineStartedAt)
+                } else {
+                    completeHealthyStart(commandId)
+                }
             }
         }
     }
@@ -754,7 +769,7 @@ class CoreRuntimeService : Service() {
         val elapsed = System.currentTimeMillis() - startedAt
         val waitingForUser = health.state ==
             CoreRuntimeProtocol.TransportHealthState.TRANSPORT_HEALTH_STATE_WAITING_USER
-        val deadline = if (waitingForUser) CHALLENGE_DEADLINE_MILLIS else TRANSPORT_START_DEADLINE_MILLIS
+        val deadline = deadlineFor(interactiveStart, waitingForUser)
         if (health.state == CoreRuntimeProtocol.TransportHealthState.TRANSPORT_HEALTH_STATE_FAILED ||
             elapsed >= deadline
         ) {
@@ -1707,9 +1722,6 @@ class CoreRuntimeService : Service() {
         // Binder's transaction buffer is finite and shared by the process.
         private const val MAX_COMMAND_BYTES = 768 * 1024
         private const val MAX_CONFIG_BYTES = 700 * 1024
-        private const val START_DEADLINE_MILLIS = 30_000L
-        private const val TRANSPORT_START_DEADLINE_MILLIS = 30_000L
-        private const val CHALLENGE_DEADLINE_MILLIS = 120_000L
         private const val RUNTIME_SHUTDOWN_DEADLINE_MILLIS = 5_000L
         private const val TRANSPORT_HEALTH_POLL_MILLIS = 250L
         private const val STATE_POLL_MILLIS = 100L

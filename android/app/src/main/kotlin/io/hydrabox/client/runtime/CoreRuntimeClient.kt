@@ -262,6 +262,7 @@ class CoreRuntimeClient(context: Context) {
         useVpn: Boolean,
         restartCore: Boolean = false,
         applyConfig: Boolean = false,
+        interactiveDeadlineMillis: Long = 0L,
         source: String = "ui",
         callback: (Result<Unit>) -> Unit,
     ) {
@@ -274,6 +275,7 @@ class CoreRuntimeClient(context: Context) {
             .setConfigSha256(ByteString.copyFrom(MessageDigest.getInstance("SHA-256").digest(config)))
             .setRestartCore(restartCore)
             .setApplyConfig(applyConfig)
+            .setInteractiveDeadlineMillis(interactiveDeadlineMillis)
             .setSource(source)
             .build()
         submit(
@@ -642,16 +644,20 @@ class CoreRuntimeClient(context: Context) {
             .build()
         val resultDeadline = if (
             command.kind == CoreRuntimeProtocol.CommandKind.COMMAND_KIND_START
-        ) START_COMMAND_RESULT_DEADLINE_MILLIS else COMMAND_RESULT_DEADLINE_MILLIS
+        ) IPC_LIVENESS_DEADLINE_MILLIS else COMMAND_RESULT_DEADLINE_MILLIS
         resultCallbacks[id] = callback
         mainHandler.postDelayed({
             resultCallbacks.remove(id)?.invoke(
                 Result.failure(
                     CoreRuntimeException(
-                        "runtime.command.deadline",
+                        if (command.kind == CoreRuntimeProtocol.CommandKind.COMMAND_KIND_START) {
+                            "runtime.ipc.lost"
+                        } else {
+                            "runtime.command.deadline"
+                        },
                         "command_result",
                         true,
-                        "HydraCore did not return a command result.",
+                        "HydraCore IPC did not return a command result.",
                     ),
                 ),
             )
@@ -882,10 +888,10 @@ class CoreRuntimeClient(context: Context) {
     companion object {
         private const val SCHEMA_VERSION = 2
         private const val COMMAND_RESULT_DEADLINE_MILLIS = 30_000L
-        // Binding may consume 10 seconds, followed by 30 seconds of native
-        // startup and a 120-second visible VK challenge. Keep IPC ownership
-        // beyond all bounded phases instead of timing out first.
-        private const val START_COMMAND_RESULT_DEADLINE_MILLIS = 165_000L
+        // Binding may consume 10 seconds, followed by the bounded start and
+        // visible challenge phases. This detects a lost IPC channel, not a
+        // failed runtime start.
+        private const val IPC_LIVENESS_DEADLINE_MILLIS = 180_000L
         private const val SERVICE_BIND_DEADLINE_MILLIS = 10_000L
         private const val ALL_OUTBOUNDS = "*"
     }

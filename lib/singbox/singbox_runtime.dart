@@ -194,20 +194,31 @@ class SingboxRuntime {
     return value['granted'] == true;
   }
 
-  Future<void> start({required String config, required bool useVpn}) {
+  Future<void> start({
+    required String config,
+    required bool useVpn,
+    required int interactiveDeadlineMillis,
+  }) {
     return _withMethodChannelFallback(
-      () => _hostApi.start(config, useVpn),
+      () => _hostApi.start(config, useVpn, interactiveDeadlineMillis),
       () => _methods.invokeMethod<void>('start', {
         'config': config,
         'useVpn': useVpn,
+        'interactiveDeadlineMillis': interactiveDeadlineMillis,
       }),
     );
   }
 
-  Future<void> startPrepared({required bool useVpn}) {
+  Future<void> startPrepared({
+    required bool useVpn,
+    required int interactiveDeadlineMillis,
+  }) {
     return _withMethodChannelFallback(
-      () => _hostApi.startPrepared(useVpn),
-      () => _methods.invokeMethod<void>('startPrepared', {'useVpn': useVpn}),
+      () => _hostApi.startPrepared(useVpn, interactiveDeadlineMillis),
+      () => _methods.invokeMethod<void>('startPrepared', {
+        'useVpn': useVpn,
+        'interactiveDeadlineMillis': interactiveDeadlineMillis,
+      }),
     );
   }
 
@@ -215,13 +226,20 @@ class SingboxRuntime {
     required String config,
     required bool useVpn,
     bool restartCore = false,
+    required int interactiveDeadlineMillis,
   }) {
     return _withMethodChannelFallback(
-      () => _hostApi.applyConfig(config, useVpn, restartCore),
+      () => _hostApi.applyConfig(
+        config,
+        useVpn,
+        restartCore,
+        interactiveDeadlineMillis,
+      ),
       () => _methods.invokeMethod<void>('applyConfig', {
         'config': config,
         'useVpn': useVpn,
         'restartCore': restartCore,
+        'interactiveDeadlineMillis': interactiveDeadlineMillis,
       }),
     );
   }
@@ -229,12 +247,18 @@ class SingboxRuntime {
   Future<void> applyPreparedConfig({
     required bool useVpn,
     bool restartCore = false,
+    required int interactiveDeadlineMillis,
   }) {
     return _withMethodChannelFallback(
-      () => _hostApi.applyPreparedConfig(useVpn, restartCore),
+      () => _hostApi.applyPreparedConfig(
+        useVpn,
+        restartCore,
+        interactiveDeadlineMillis,
+      ),
       () => _methods.invokeMethod<void>('applyPreparedConfig', {
         'useVpn': useVpn,
         'restartCore': restartCore,
+        'interactiveDeadlineMillis': interactiveDeadlineMillis,
       }),
     );
   }

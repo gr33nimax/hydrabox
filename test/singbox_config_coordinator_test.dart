@@ -172,7 +172,6 @@ SingboxConfigCoordinator _coordinator({
     showRuntimeFailure: ({required bool timedOut}) {},
     logCall: (_, _) {},
     trimRuntimeStartMemory: (_) {},
-    onRuntimeLifecycleTimeout: (_) {},
     cacheStartedBuild: (_) {},
     syncRuntimeState: () async {},
     fullServiceRestartDebounce: fullServiceRestartDebounce,
@@ -271,6 +270,7 @@ class _BlockingRuntime implements RuntimeLifecycleRuntime {
     required String config,
     required bool useVpn,
     required bool restartCore,
+    required int interactiveDeadlineMillis,
   }) async {
     await _trackConfigApply(config);
   }
@@ -295,6 +295,7 @@ class _BlockingRuntime implements RuntimeLifecycleRuntime {
   Future<void> applyPreparedConfig({
     required bool useVpn,
     required bool restartCore,
+    required int interactiveDeadlineMillis,
   }) async {}
 
   @override
@@ -313,7 +314,11 @@ class _BlockingRuntime implements RuntimeLifecycleRuntime {
   Future<bool> prepareVpn({required bool requiresVpn}) async => true;
 
   @override
-  Future<void> start({required String config, required bool useVpn}) {
+  Future<void> start({
+    required String config,
+    required bool useVpn,
+    required int interactiveDeadlineMillis,
+  }) {
     startCalls++;
     running = true;
     mode = useVpn ? 'vpn' : 'proxy';
@@ -327,7 +332,10 @@ class _BlockingRuntime implements RuntimeLifecycleRuntime {
   }
 
   @override
-  Future<void> startPrepared({required bool useVpn}) async {
+  Future<void> startPrepared({
+    required bool useVpn,
+    required int interactiveDeadlineMillis,
+  }) async {
     startCalls++;
     running = true;
     mode = useVpn ? 'vpn' : 'proxy';

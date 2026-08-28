@@ -63,6 +63,7 @@ message StartRuntime {
   bool restart_core = 5;
   bool apply_config = 6;
   string source = 7;
+  uint64 interactive_deadline_millis = 8;
 }
 
 message StopRuntime { string reason = 1; }

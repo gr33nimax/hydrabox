@@ -887,10 +887,10 @@ private open class SingboxApiPigeonCodec : StandardMessageCodec() {
 interface SingboxHostApi {
   fun prepareVpn(requiresVpn: Boolean, callback: (Result<Boolean>) -> Unit)
   fun vpnPermissionStatus(callback: (Result<Map<String?, Any?>>) -> Unit)
-  fun start(config: String, useVpn: Boolean, callback: (Result<Unit>) -> Unit)
-  fun startPrepared(useVpn: Boolean, callback: (Result<Unit>) -> Unit)
-  fun applyConfig(config: String, useVpn: Boolean, restartCore: Boolean, callback: (Result<Unit>) -> Unit)
-  fun applyPreparedConfig(useVpn: Boolean, restartCore: Boolean, callback: (Result<Unit>) -> Unit)
+  fun start(config: String, useVpn: Boolean, interactiveDeadlineMillis: Long, callback: (Result<Unit>) -> Unit)
+  fun startPrepared(useVpn: Boolean, interactiveDeadlineMillis: Long, callback: (Result<Unit>) -> Unit)
+  fun applyConfig(config: String, useVpn: Boolean, restartCore: Boolean, interactiveDeadlineMillis: Long, callback: (Result<Unit>) -> Unit)
+  fun applyPreparedConfig(useVpn: Boolean, restartCore: Boolean, interactiveDeadlineMillis: Long, callback: (Result<Unit>) -> Unit)
   fun getConfigPath(callback: (Result<String>) -> Unit)
   fun getRuntimeFlags(callback: (Result<Map<String?, Any?>>) -> Unit)
   fun setRuntimeFlags(flags: RuntimeFlagsMessage, callback: (Result<Unit>) -> Unit)
@@ -997,7 +997,8 @@ interface SingboxHostApi {
             val args = message as List<Any?>
             val configArg = args[0] as String
             val useVpnArg = args[1] as Boolean
-            api.start(configArg, useVpnArg) { result: Result<Unit> ->
+            val interactiveDeadlineMillisArg = args[2] as Long
+            api.start(configArg, useVpnArg, interactiveDeadlineMillisArg) { result: Result<Unit> ->
               val error = result.exceptionOrNull()
               if (error != null) {
                 reply.reply(SingboxApiPigeonUtils.wrapError(error))
@@ -1016,7 +1017,8 @@ interface SingboxHostApi {
           channel.setMessageHandler { message, reply ->
             val args = message as List<Any?>
             val useVpnArg = args[0] as Boolean
-            api.startPrepared(useVpnArg) { result: Result<Unit> ->
+            val interactiveDeadlineMillisArg = args[1] as Long
+            api.startPrepared(useVpnArg, interactiveDeadlineMillisArg) { result: Result<Unit> ->
               val error = result.exceptionOrNull()
               if (error != null) {
                 reply.reply(SingboxApiPigeonUtils.wrapError(error))
@@ -1037,7 +1039,8 @@ interface SingboxHostApi {
             val configArg = args[0] as String
             val useVpnArg = args[1] as Boolean
             val restartCoreArg = args[2] as Boolean
-            api.applyConfig(configArg, useVpnArg, restartCoreArg) { result: Result<Unit> ->
+            val interactiveDeadlineMillisArg = args[3] as Long
+            api.applyConfig(configArg, useVpnArg, restartCoreArg, interactiveDeadlineMillisArg) { result: Result<Unit> ->
               val error = result.exceptionOrNull()
               if (error != null) {
                 reply.reply(SingboxApiPigeonUtils.wrapError(error))
@@ -1057,7 +1060,8 @@ interface SingboxHostApi {
             val args = message as List<Any?>
             val useVpnArg = args[0] as Boolean
             val restartCoreArg = args[1] as Boolean
-            api.applyPreparedConfig(useVpnArg, restartCoreArg) { result: Result<Unit> ->
+            val interactiveDeadlineMillisArg = args[2] as Long
+            api.applyPreparedConfig(useVpnArg, restartCoreArg, interactiveDeadlineMillisArg) { result: Result<Unit> ->
               val error = result.exceptionOrNull()
               if (error != null) {
                 reply.reply(SingboxApiPigeonUtils.wrapError(error))

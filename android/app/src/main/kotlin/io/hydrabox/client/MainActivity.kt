@@ -1418,7 +1418,12 @@ class MainActivity : FlutterFragmentActivity() {
                     callback(Result.success(mapOf("granted" to (VpnService.prepare(this@MainActivity) == null))))
                 }
 
-                override fun start(config: String, useVpn: Boolean, callback: (Result<Unit>) -> Unit) {
+                override fun start(
+                    config: String,
+                    useVpn: Boolean,
+                    interactiveDeadlineMillis: Long,
+                    callback: (Result<Unit>) -> Unit,
+                ) {
                     if (config.isBlank()) {
                         callback(errorResult("empty_config", "Config is empty"))
                         return
@@ -1426,16 +1431,26 @@ class MainActivity : FlutterFragmentActivity() {
                     coreRuntimeClient.start(
                         config = config.toByteArray(Charsets.UTF_8),
                         useVpn = useVpn,
+                        interactiveDeadlineMillis = interactiveDeadlineMillis,
                         callback = callback,
                     )
                 }
 
-                override fun startPrepared(useVpn: Boolean, callback: (Result<Unit>) -> Unit) {
+                override fun startPrepared(
+                    useVpn: Boolean,
+                    interactiveDeadlineMillis: Long,
+                    callback: (Result<Unit>) -> Unit,
+                ) {
                     ioExecutor.execute {
                         runCatching { HydraBoxApplication.configFile.readBytes() }
                             .onSuccess { config ->
                                 mainHandler.post {
-                                    coreRuntimeClient.start(config, useVpn, callback = callback)
+                                    coreRuntimeClient.start(
+                                        config,
+                                        useVpn,
+                                        interactiveDeadlineMillis = interactiveDeadlineMillis,
+                                        callback = callback,
+                                    )
                                 }
                             }
                             .onFailure { error ->
@@ -1450,6 +1465,7 @@ class MainActivity : FlutterFragmentActivity() {
                     config: String,
                     useVpn: Boolean,
                     restartCore: Boolean,
+                    interactiveDeadlineMillis: Long,
                     callback: (Result<Unit>) -> Unit,
                 ) {
                     if (config.isBlank()) {
@@ -1461,6 +1477,7 @@ class MainActivity : FlutterFragmentActivity() {
                         useVpn = useVpn,
                         restartCore = restartCore,
                         applyConfig = true,
+                        interactiveDeadlineMillis = interactiveDeadlineMillis,
                         callback = callback,
                     )
                 }
@@ -1468,6 +1485,7 @@ class MainActivity : FlutterFragmentActivity() {
                 override fun applyPreparedConfig(
                     useVpn: Boolean,
                     restartCore: Boolean,
+                    interactiveDeadlineMillis: Long,
                     callback: (Result<Unit>) -> Unit,
                 ) {
                     ioExecutor.execute {
@@ -1479,6 +1497,7 @@ class MainActivity : FlutterFragmentActivity() {
                                         useVpn = useVpn,
                                         restartCore = restartCore,
                                         applyConfig = true,
+                                        interactiveDeadlineMillis = interactiveDeadlineMillis,
                                         callback = callback,
                                     )
                                 }

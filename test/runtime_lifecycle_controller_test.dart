@@ -21,7 +21,6 @@ void main() {
       cacheStartedBuild: (_) {},
       logCall: (_, _) {},
       trimMemory: (_) {},
-      onWatchdogTimeout: (_) {},
     );
 
     expect(result.success, isTrue);
@@ -50,7 +49,6 @@ void main() {
         cacheStartedBuild: (_) {},
         logCall: (_, _) {},
         trimMemory: (_) {},
-        onWatchdogTimeout: (_) {},
       );
 
       expect(result.success, isTrue);
@@ -82,7 +80,6 @@ void main() {
         cacheStartedBuild: (_) {},
         logCall: (_, _) {},
         trimMemory: (_) {},
-        onWatchdogTimeout: (_) {},
       );
 
       expect(result.success, isTrue);
@@ -93,43 +90,60 @@ void main() {
     },
   );
 
+  test('start passes the regular deadline to the native owner', () async {
+    final runtime = _FakeRuntime(running: false);
+    final controller = RuntimeLifecycleController(
+      runtime: runtime,
+      startTimeout: const Duration(milliseconds: 10),
+    );
+    addTearDown(controller.dispose);
+
+    final result = await controller.startRuntimeWithBuild(
+      build: _build(),
+      useVpn: true,
+      promotePreparedConfig: (_) {},
+      cacheStartedBuild: (_) {},
+      logCall: (_, _) {},
+      trimMemory: (_) {},
+    );
+
+    expect(result.success, isTrue);
+    expect(runtime.lastInteractiveDeadlineMillis, 10);
+    expect(runtime.stopCalls, 0);
+  });
+
+  test('start completion belongs to the native owner', () async {
+    final runtime = _FakeRuntime(running: false);
+    final controller = RuntimeLifecycleController(
+      runtime: runtime,
+      startTimeout: const Duration(seconds: 2),
+    );
+    addTearDown(controller.dispose);
+
+    final result = await controller.startRuntimeWithBuild(
+      build: _build(),
+      useVpn: true,
+      promotePreparedConfig: (_) {},
+      cacheStartedBuild: (_) {},
+      logCall: (_, _) {},
+      trimMemory: (_) {},
+    );
+
+    expect(result.success, isTrue);
+    expect(result.timedOut, isFalse);
+    expect(result.error, isNull);
+  });
+
   test(
-    'start watchdog timeout reports failure without localization context',
-    () async {
-      final runtime = _FakeRuntime(running: false, startCompletes: false);
-      final controller = RuntimeLifecycleController(
-        runtime: runtime,
-        startTimeout: const Duration(milliseconds: 10),
-      );
-      addTearDown(controller.dispose);
-
-      final result = await controller.startRuntimeWithBuild(
-        build: _build(),
-        useVpn: true,
-        promotePreparedConfig: (_) {},
-        cacheStartedBuild: (_) {},
-        logCall: (_, _) {},
-        trimMemory: (_) {},
-        onWatchdogTimeout: (_) {},
-      );
-
-      expect(result.success, isFalse);
-      expect(result.timedOut, isTrue);
-      expect(runtime.stopCalls, 1);
-    },
-  );
-
-  test(
-    'native startup error is returned without waiting for timeout',
+    'start returns the native command result without status polling',
     () async {
       final runtime = _FakeRuntime(
         running: false,
         confirmStartImmediately: false,
-        lastError: 'HydraBox VK WebView credentials are required',
       );
       final controller = RuntimeLifecycleController(
         runtime: runtime,
-        startTimeout: const Duration(seconds: 2),
+        startTimeout: const Duration(milliseconds: 500),
       );
       addTearDown(controller.dispose);
 
@@ -140,51 +154,12 @@ void main() {
         cacheStartedBuild: (_) {},
         logCall: (_, _) {},
         trimMemory: (_) {},
-        onWatchdogTimeout: (_) {},
       );
 
-      expect(result.success, isFalse);
-      expect(result.timedOut, isFalse);
-      expect(result.error, contains('VK WebView credentials'));
+      expect(result.success, isTrue);
+      expect(runtime.statusCalls, 0);
     },
   );
-
-  test('start waits for the native runtime owner before succeeding', () async {
-    final runtime = _FakeRuntime(
-      running: false,
-      confirmStartImmediately: false,
-    );
-    final controller = RuntimeLifecycleController(
-      runtime: runtime,
-      startTimeout: const Duration(milliseconds: 500),
-    );
-    addTearDown(controller.dispose);
-
-    var completed = false;
-    final resultFuture = controller
-        .startRuntimeWithBuild(
-          build: _build(),
-          useVpn: true,
-          promotePreparedConfig: (_) {},
-          cacheStartedBuild: (_) {},
-          logCall: (_, _) {},
-          trimMemory: (_) {},
-          onWatchdogTimeout: (_) {},
-        )
-        .then((result) {
-          completed = true;
-          return result;
-        });
-
-    await Future<void>.delayed(const Duration(milliseconds: 20));
-    expect(completed, isFalse);
-
-    runtime.confirmStarted(useVpn: true);
-    final result = await resultFuture;
-
-    expect(result.success, isTrue);
-    expect(runtime.statusCalls, greaterThanOrEqualTo(1));
-  });
 
   test('VK call build uses the interactive startup timeout', () async {
     final runtime = _FakeRuntime(
@@ -205,11 +180,11 @@ void main() {
       cacheStartedBuild: (_) {},
       logCall: (_, _) {},
       trimMemory: (_) {},
-      onWatchdogTimeout: (_) {},
     );
 
     expect(result.success, isTrue);
     expect(runtime.stopCalls, 0);
+    expect(runtime.lastInteractiveDeadlineMillis, 100);
   });
 
   test(
@@ -233,7 +208,6 @@ void main() {
         cacheStartedBuild: (_) {},
         logCall: (_, _) {},
         trimMemory: (_) {},
-        onWatchdogTimeout: (_) {},
       );
 
       expect(result.success, isTrue);
@@ -261,7 +235,6 @@ void main() {
         cacheStartedBuild: (_) {},
         logCall: (_, _) {},
         trimMemory: (_) {},
-        onWatchdogTimeout: (_) {},
       );
 
       expect(result.success, isFalse);
@@ -313,22 +286,18 @@ class _FakeRuntime implements RuntimeLifecycleRuntime {
   _FakeRuntime({
     this.running = true,
     this.interfaceUsable = true,
-    this.startCompletes = true,
     this.failApplyAndStopRuntime = false,
     this.ignoreStop = false,
     this.confirmStartImmediately = true,
-    this.lastError = '',
     this.startDelay = Duration.zero,
   }) : runtimeGeneration = running ? 1 : 0;
 
   bool running;
   String mode = 'vpn';
   bool interfaceUsable;
-  bool startCompletes;
   bool failApplyAndStopRuntime;
   bool ignoreStop;
   bool confirmStartImmediately;
-  String lastError;
   Duration startDelay;
   int runtimeGeneration;
   int applyPreparedConfigCalls = 0;
@@ -337,6 +306,7 @@ class _FakeRuntime implements RuntimeLifecycleRuntime {
   int prepareVpnCalls = 0;
   int startPreparedCalls = 0;
   int statusCalls = 0;
+  int? lastInteractiveDeadlineMillis;
   bool? lastRestartCore;
 
   @override
@@ -344,7 +314,9 @@ class _FakeRuntime implements RuntimeLifecycleRuntime {
     required String config,
     required bool useVpn,
     required bool restartCore,
+    required int interactiveDeadlineMillis,
   }) async {
+    lastInteractiveDeadlineMillis = interactiveDeadlineMillis;
     applyConfigCalls++;
     lastRestartCore = restartCore;
     running = true;
@@ -355,6 +327,7 @@ class _FakeRuntime implements RuntimeLifecycleRuntime {
   Future<void> applyPreparedConfig({
     required bool useVpn,
     required bool restartCore,
+    required int interactiveDeadlineMillis,
   }) async {
     applyPreparedConfigCalls++;
     lastRestartCore = restartCore;
@@ -389,10 +362,11 @@ class _FakeRuntime implements RuntimeLifecycleRuntime {
   }
 
   @override
-  Future<void> start({required String config, required bool useVpn}) async {
-    if (!startCompletes) {
-      await Future<void>.delayed(const Duration(minutes: 1));
-    }
+  Future<void> start({
+    required String config,
+    required bool useVpn,
+    required int interactiveDeadlineMillis,
+  }) async {
     if (startDelay > Duration.zero) {
       await Future<void>.delayed(startDelay);
     }
@@ -403,11 +377,12 @@ class _FakeRuntime implements RuntimeLifecycleRuntime {
   }
 
   @override
-  Future<void> startPrepared({required bool useVpn}) async {
+  Future<void> startPrepared({
+    required bool useVpn,
+    required int interactiveDeadlineMillis,
+  }) async {
     startPreparedCalls++;
-    if (!startCompletes) {
-      await Future<void>.delayed(const Duration(minutes: 1));
-    }
+    lastInteractiveDeadlineMillis = interactiveDeadlineMillis;
     if (startDelay > Duration.zero) {
       await Future<void>.delayed(startDelay);
     }
@@ -425,7 +400,6 @@ class _FakeRuntime implements RuntimeLifecycleRuntime {
       'state': running ? 'RUNTIME_STATE_RUNNING' : 'RUNTIME_STATE_STOPPED',
       'mode': mode,
       'runtimeGeneration': runtimeGeneration,
-      'lastError': lastError,
     };
   }
 

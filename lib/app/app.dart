@@ -1782,7 +1782,6 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       showRuntimeFailure: _showRuntimeConfigFailure,
       logCall: _logLibboxCall,
       trimRuntimeStartMemory: _trimRuntimeStartMemory,
-      onRuntimeLifecycleTimeout: _handleRuntimeLifecycleTimeout,
       cacheStartedBuild: _cacheLastStartedBuild,
       syncRuntimeState: _syncRuntimeState,
     );
@@ -2939,12 +2938,6 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       _runtimeOperations.beginRuntimeTransition();
     } else if (transition.transitionFinished) {
       _runtimeOperations.finishRuntimeTransition(running: _connected);
-    }
-    if (phase == AppConnectionPhase.connected ||
-        phase == AppConnectionPhase.idle ||
-        phase == AppConnectionPhase.failed ||
-        phase == AppConnectionPhase.stopping) {
-      _runtimeLifecycle.cancelStartWatchdog();
     }
     if (_runtimeTransitionInProgress) {
       _proxyRuntime.beginTransition();
@@ -5506,19 +5499,6 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     await _runUniversalUrlTests(reason: 'manual_target', targetRuntimeTag: tag);
   }
 
-  Future<void> _handleRuntimeLifecycleTimeout(
-    RuntimeLifecycleResult result,
-  ) async {
-    await _rollbackFailedRuntimeStart(reason: 'runtime_lifecycle_timeout');
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _setConnectionPhase(AppConnectionPhase.failed);
-    });
-    _showAppSnackBar(_vpnStartTimedOutMessage);
-  }
-
   Future<bool> _rollbackFailedRuntimeStart({required String reason}) async {
     _runtimeIntent.clearRuntimeDesired();
     final stopped = await _runtimeLifecycle.stopRuntime(reason: reason);
@@ -5841,13 +5821,6 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     final previouslyActive =
         _connected || _runtimeTransitionInProgress || _starting;
     final running = event.running;
-    if (running) {
-      // The service event is the authoritative start acknowledgement.  Cancel
-      // the UI-side watchdog immediately so its slightly later status poll
-      // cannot race this event and surface a false "startup stopped" error
-      // while the VPN is already carrying traffic.
-      _runtimeLifecycle.cancelStartWatchdog();
-    }
     final nativeRuntimeGeneration =
         (event.raw['runtimeGeneration'] as num?)?.toInt() ?? 0;
     _runtimeOperations.updateRuntimeState(
@@ -6105,9 +6078,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
           snapshotPhase == AppConnectionPhase.starting ||
           snapshotPhase == AppConnectionPhase.recovering;
       final localTransitionPending =
-          _starting ||
-          _invalidOutboundRetryScheduled ||
-          _runtimeLifecycle.startWatchdogActive;
+          _starting || _invalidOutboundRetryScheduled;
       final decision = _runtimeSession.decideStatus(
         running: running,
         hasError: hasRuntimeError,

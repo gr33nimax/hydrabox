@@ -6,15 +6,6 @@ import 'package:hydrabox/singbox/singbox_runtime.dart';
 
 enum RuntimeApplyPolicy { logOnly, safeCoreRestart, fullServiceRestart }
 
-class _NativeRuntimeStartFailure implements Exception {
-  const _NativeRuntimeStartFailure(this.message);
-
-  final String message;
-
-  @override
-  String toString() => message;
-}
-
 class RuntimeLifecycleResult {
   const RuntimeLifecycleResult({
     required this.success,
@@ -43,19 +34,28 @@ class RuntimeLifecycleResult {
 }
 
 abstract interface class RuntimeLifecycleRuntime {
-  Future<void> start({required String config, required bool useVpn});
+  Future<void> start({
+    required String config,
+    required bool useVpn,
+    required int interactiveDeadlineMillis,
+  });
 
-  Future<void> startPrepared({required bool useVpn});
+  Future<void> startPrepared({
+    required bool useVpn,
+    required int interactiveDeadlineMillis,
+  });
 
   Future<void> applyConfig({
     required String config,
     required bool useVpn,
     required bool restartCore,
+    required int interactiveDeadlineMillis,
   });
 
   Future<void> applyPreparedConfig({
     required bool useVpn,
     required bool restartCore,
+    required int interactiveDeadlineMillis,
   });
 
   Future<void> stop({required String reason});
@@ -78,11 +78,13 @@ class SingboxRuntimeLifecycleRuntime implements RuntimeLifecycleRuntime {
     required String config,
     required bool useVpn,
     required bool restartCore,
+    required int interactiveDeadlineMillis,
   }) {
     return _runtime.applyConfig(
       config: config,
       useVpn: useVpn,
       restartCore: restartCore,
+      interactiveDeadlineMillis: interactiveDeadlineMillis,
     );
   }
 
@@ -90,10 +92,12 @@ class SingboxRuntimeLifecycleRuntime implements RuntimeLifecycleRuntime {
   Future<void> applyPreparedConfig({
     required bool useVpn,
     required bool restartCore,
+    required int interactiveDeadlineMillis,
   }) {
     return _runtime.applyPreparedConfig(
       useVpn: useVpn,
       restartCore: restartCore,
+      interactiveDeadlineMillis: interactiveDeadlineMillis,
     );
   }
 
@@ -108,13 +112,27 @@ class SingboxRuntimeLifecycleRuntime implements RuntimeLifecycleRuntime {
   }
 
   @override
-  Future<void> start({required String config, required bool useVpn}) {
-    return _runtime.start(config: config, useVpn: useVpn);
+  Future<void> start({
+    required String config,
+    required bool useVpn,
+    required int interactiveDeadlineMillis,
+  }) {
+    return _runtime.start(
+      config: config,
+      useVpn: useVpn,
+      interactiveDeadlineMillis: interactiveDeadlineMillis,
+    );
   }
 
   @override
-  Future<void> startPrepared({required bool useVpn}) {
-    return _runtime.startPrepared(useVpn: useVpn);
+  Future<void> startPrepared({
+    required bool useVpn,
+    required int interactiveDeadlineMillis,
+  }) {
+    return _runtime.startPrepared(
+      useVpn: useVpn,
+      interactiveDeadlineMillis: interactiveDeadlineMillis,
+    );
   }
 
   @override
@@ -127,14 +145,12 @@ class SingboxRuntimeLifecycleRuntime implements RuntimeLifecycleRuntime {
 typedef RuntimeBuildHook = FutureOr<void> Function(SingboxConfigBuildResult);
 typedef RuntimeVoidHook = void Function(SingboxConfigBuildResult);
 typedef RuntimeLogHook = void Function(String method, String detail);
-typedef RuntimeTimeoutHook =
-    FutureOr<void> Function(RuntimeLifecycleResult result);
 
 class RuntimeLifecycleController {
   RuntimeLifecycleController({
     RuntimeLifecycleRuntime? runtime,
-    this.startTimeout = const Duration(seconds: 15),
-    this.interactiveStartTimeout = const Duration(minutes: 5, seconds: 15),
+    this.startTimeout = const Duration(seconds: 45),
+    this.interactiveStartTimeout = const Duration(seconds: 120),
     this.stopTimeout = const Duration(seconds: 7),
     this.stopVerificationTimeout = const Duration(seconds: 2),
     this.stopSettleDelay = const Duration(milliseconds: 200),
@@ -149,12 +165,6 @@ class RuntimeLifecycleController {
   final Duration stopSettleDelay;
   final Duration healthCheckTimeout;
 
-  Timer? _startWatchdogTimer;
-  int _startWatchdogGeneration = 0;
-  int _handledStartTimeoutGeneration = 0;
-
-  bool get startWatchdogActive => _startWatchdogTimer != null;
-
   Duration startTimeoutForBuild(SingboxConfigBuildResult build) {
     if (!build.hasInteractiveVkCall ||
         interactiveStartTimeout <= startTimeout) {
@@ -163,15 +173,7 @@ class RuntimeLifecycleController {
     return interactiveStartTimeout;
   }
 
-  void dispose() {
-    cancelStartWatchdog();
-  }
-
-  void cancelStartWatchdog() {
-    _startWatchdogGeneration++;
-    _startWatchdogTimer?.cancel();
-    _startWatchdogTimer = null;
-  }
+  void dispose() {}
 
   Future<RuntimeLifecycleResult> startRuntimeWithBuild({
     required SingboxConfigBuildResult build,
@@ -180,12 +182,10 @@ class RuntimeLifecycleController {
     required RuntimeVoidHook cacheStartedBuild,
     required RuntimeLogHook logCall,
     required void Function(String reason) trimMemory,
-    required RuntimeTimeoutHook onWatchdogTimeout,
   }) async {
     trimMemory('before_runtime_start_build');
     cacheStartedBuild(build);
     final effectiveStartTimeout = startTimeoutForBuild(build);
-    Future<void> startFuture;
     if (build.hasPreparedConfig) {
       await promotePreparedConfig(build);
       logCall(
@@ -193,17 +193,12 @@ class RuntimeLifecycleController {
         'reason=start runtime useVpn=$useVpn '
             'configOutbounds=${build.configOutboundCount}',
       );
-      final watchdogGeneration = _armStartWatchdog(
-        useVpn: useVpn,
-        timeout: effectiveStartTimeout,
-        onTimeout: onWatchdogTimeout,
-      );
-      startFuture = _runtime.startPrepared(useVpn: useVpn);
       return _waitForStartFuture(
-        startFuture,
-        watchdogGeneration: watchdogGeneration,
+        _runtime.startPrepared(
+          useVpn: useVpn,
+          interactiveDeadlineMillis: effectiveStartTimeout.inMilliseconds,
+        ),
         useVpn: useVpn,
-        timeout: effectiveStartTimeout,
       );
     } else {
       logCall(
@@ -212,54 +207,27 @@ class RuntimeLifecycleController {
             'configOutbounds=${build.configOutboundCount} '
             'configChars=${build.configLength}',
       );
-      final watchdogGeneration = _armStartWatchdog(
-        useVpn: useVpn,
-        timeout: effectiveStartTimeout,
-        onTimeout: onWatchdogTimeout,
-      );
-      startFuture = _runtime.start(config: build.configJson, useVpn: useVpn);
       return _waitForStartFuture(
-        startFuture,
-        watchdogGeneration: watchdogGeneration,
+        _runtime.start(
+          config: build.configJson,
+          useVpn: useVpn,
+          interactiveDeadlineMillis: effectiveStartTimeout.inMilliseconds,
+        ),
         useVpn: useVpn,
-        timeout: effectiveStartTimeout,
       );
     }
   }
 
   Future<RuntimeLifecycleResult> _waitForStartFuture(
     Future<void> startFuture, {
-    required int watchdogGeneration,
     required bool useVpn,
-    required Duration timeout,
   }) async {
-    final deadline = DateTime.now().add(timeout);
     try {
-      await startFuture.timeout(timeout);
-      final startConfirmed = await _waitForStartedRuntime(
-        useVpn: useVpn,
-        deadline: deadline,
-      );
-      if (!startConfirmed) {
-        throw TimeoutException(
-          'Native runtime start was not confirmed',
-          timeout,
-        );
-      }
-      cancelStartWatchdog();
+      await startFuture;
       return const RuntimeLifecycleResult.success(
         policy: RuntimeApplyPolicy.fullServiceRestart,
       );
-    } on TimeoutException catch (error, stackTrace) {
-      return _handleImmediateStartTimeout(
-        generation: watchdogGeneration,
-        useVpn: useVpn,
-        timeout: timeout,
-        error: error,
-        stackTrace: stackTrace,
-      );
     } catch (error, stackTrace) {
-      cancelStartWatchdog();
       AppLogStore.error(
         'sing-box',
         'runtime start failed useVpn=$useVpn error=$error\n$stackTrace',
@@ -271,68 +239,6 @@ class RuntimeLifecycleController {
     }
   }
 
-  Future<bool> _waitForStartedRuntime({
-    required bool useVpn,
-    required DateTime deadline,
-  }) async {
-    var lastStatus = const <String, dynamic>{};
-    do {
-      final remaining = deadline.difference(DateTime.now());
-      if (remaining <= Duration.zero) {
-        break;
-      }
-      final statusTimeout = remaining < const Duration(seconds: 2)
-          ? remaining
-          : const Duration(seconds: 2);
-      try {
-        lastStatus = await _runtime.status().timeout(statusTimeout);
-        final nativeError = lastStatus['lastError']?.toString().trim() ?? '';
-        if (nativeError.isNotEmpty && lastStatus['running'] != true) {
-          throw _NativeRuntimeStartFailure(nativeError);
-        }
-        if (_isStartedRuntimeStatus(lastStatus, useVpn: useVpn)) {
-          AppLogStore.info(
-            'runtime',
-            'runtime start confirmed mode=${lastStatus['mode']} '
-                'generation=${lastStatus['runtimeGeneration']}',
-          );
-          return true;
-        }
-      } catch (error) {
-        if (error is _NativeRuntimeStartFailure) rethrow;
-        AppLogStore.warning(
-          'runtime',
-          'failed to verify native start useVpn=$useVpn: $error',
-        );
-      }
-      final delayRemaining = deadline.difference(DateTime.now());
-      if (delayRemaining > Duration.zero) {
-        await Future<void>.delayed(
-          delayRemaining < const Duration(milliseconds: 100)
-              ? delayRemaining
-              : const Duration(milliseconds: 100),
-        );
-      }
-    } while (DateTime.now().isBefore(deadline));
-    AppLogStore.warning(
-      'runtime',
-      'runtime start was not confirmed useVpn=$useVpn '
-          'running=${lastStatus['running']} mode=${lastStatus['mode']} '
-          'state=${lastStatus['state']} '
-          'mode=${lastStatus['mode']}',
-    );
-    return false;
-  }
-
-  bool _isStartedRuntimeStatus(
-    Map<String, dynamic> status, {
-    required bool useVpn,
-  }) {
-    final expectedMode = useVpn ? 'vpn' : 'proxy';
-    return status['state'] == 'RUNTIME_STATE_RUNNING' &&
-        status['mode'] == expectedMode;
-  }
-
   Future<RuntimeLifecycleResult> applyRuntimeBuild({
     required SingboxConfigBuildResult build,
     required bool useVpn,
@@ -341,7 +247,6 @@ class RuntimeLifecycleController {
     required RuntimeVoidHook cacheStartedBuild,
     required RuntimeLogHook logCall,
     required void Function(String reason) trimMemory,
-    required RuntimeTimeoutHook onWatchdogTimeout,
   }) async {
     var preparedBuildPromoted = false;
 
@@ -375,7 +280,6 @@ class RuntimeLifecycleController {
         cacheStartedBuild: cacheStartedBuild,
         logCall: logCall,
         trimMemory: trimMemory,
-        onWatchdogTimeout: onWatchdogTimeout,
       );
     }
 
@@ -406,7 +310,6 @@ class RuntimeLifecycleController {
         cacheStartedBuild: cacheStartedBuild,
         logCall: logCall,
         trimMemory: trimMemory,
-        onWatchdogTimeout: onWatchdogTimeout,
       );
       if (!recovered.success) {
         return recovered;
@@ -436,7 +339,6 @@ class RuntimeLifecycleController {
             cacheStartedBuild: cacheStartedBuild,
             logCall: logCall,
             trimMemory: trimMemory,
-            onWatchdogTimeout: onWatchdogTimeout,
           );
           if (recovered.success) {
             return const RuntimeLifecycleResult.success(
@@ -461,7 +363,6 @@ class RuntimeLifecycleController {
     required RuntimeVoidHook cacheStartedBuild,
     required RuntimeLogHook logCall,
     required void Function(String reason) trimMemory,
-    required RuntimeTimeoutHook onWatchdogTimeout,
   }) async {
     try {
       logCall('stop', 'reason=$reason before runtime restart useVpn=$useVpn');
@@ -492,10 +393,8 @@ class RuntimeLifecycleController {
         cacheStartedBuild: cacheStartedBuild,
         logCall: logCall,
         trimMemory: trimMemory,
-        onWatchdogTimeout: onWatchdogTimeout,
       );
     } catch (error, stackTrace) {
-      cancelStartWatchdog();
       AppLogStore.error(
         'sing-box',
         'runtime full restart failed reason=$reason useVpn=$useVpn '
@@ -509,7 +408,6 @@ class RuntimeLifecycleController {
   }
 
   Future<bool> stopRuntime({required String reason}) async {
-    cancelStartWatchdog();
     try {
       await _runtime.stop(reason: reason).timeout(stopTimeout);
     } catch (error, stackTrace) {
@@ -575,6 +473,7 @@ class RuntimeLifecycleController {
       return _runtime.applyPreparedConfig(
         useVpn: useVpn,
         restartCore: restartCore,
+        interactiveDeadlineMillis: startTimeoutForBuild(build).inMilliseconds,
       );
     }
     logCall(
@@ -587,152 +486,7 @@ class RuntimeLifecycleController {
       config: build.configJson,
       useVpn: useVpn,
       restartCore: restartCore,
-    );
-  }
-
-  int _armStartWatchdog({
-    required bool useVpn,
-    required Duration timeout,
-    required RuntimeTimeoutHook onTimeout,
-  }) {
-    final generation = ++_startWatchdogGeneration;
-    _startWatchdogTimer?.cancel();
-    _startWatchdogTimer = Timer(
-      timeout + const Duration(milliseconds: 250),
-      () {
-        unawaited(
-          _handleStartWatchdogTimeout(generation, useVpn, timeout, onTimeout),
-        );
-      },
-    );
-    return generation;
-  }
-
-  bool _claimStartTimeoutHandling(int generation) {
-    if (generation != _startWatchdogGeneration) {
-      return false;
-    }
-    if (_handledStartTimeoutGeneration == generation) {
-      return false;
-    }
-    _handledStartTimeoutGeneration = generation;
-    return true;
-  }
-
-  Future<void> _handleStartWatchdogTimeout(
-    int generation,
-    bool useVpn,
-    Duration timeout,
-    RuntimeTimeoutHook onTimeout,
-  ) async {
-    if (generation != _startWatchdogGeneration) {
-      return;
-    }
-    if (!_claimStartTimeoutHandling(generation)) {
-      return;
-    }
-    AppLogStore.error(
-      'sing-box',
-      'runtime start watchdog timeout useVpn=$useVpn '
-          'timeoutMs=${timeout.inMilliseconds}',
-    );
-    final status = await _runtime
-        .status()
-        .timeout(
-          const Duration(seconds: 2),
-          onTimeout: () => const <String, dynamic>{'running': false},
-        )
-        .catchError((_) => const <String, dynamic>{'running': false});
-    if (generation != _startWatchdogGeneration) {
-      return;
-    }
-    if (_isStartedRuntimeStatus(status, useVpn: useVpn)) {
-      cancelStartWatchdog();
-      return;
-    }
-    try {
-      await _runtime
-          .stop(reason: 'start_timeout')
-          .timeout(const Duration(seconds: 3));
-    } catch (stopError) {
-      AppLogStore.warning(
-        'sing-box',
-        'runtime stop after watchdog timeout failed: $stopError',
-      );
-    }
-    if (generation != _startWatchdogGeneration) {
-      return;
-    }
-    cancelStartWatchdog();
-    await onTimeout(
-      const RuntimeLifecycleResult.failure(
-        policy: RuntimeApplyPolicy.fullServiceRestart,
-        timedOut: true,
-        error: 'start_timeout',
-      ),
-    );
-  }
-
-  Future<RuntimeLifecycleResult> _handleImmediateStartTimeout({
-    required int generation,
-    required bool useVpn,
-    required Duration timeout,
-    required TimeoutException error,
-    required StackTrace stackTrace,
-  }) async {
-    final claimed = _claimStartTimeoutHandling(generation);
-    cancelStartWatchdog();
-    if (!claimed) {
-      final status = await _runtime
-          .status()
-          .timeout(
-            const Duration(seconds: 2),
-            onTimeout: () => const <String, dynamic>{'running': false},
-          )
-          .catchError((_) => const <String, dynamic>{'running': false});
-      if (_isStartedRuntimeStatus(status, useVpn: useVpn)) {
-        return const RuntimeLifecycleResult.success(
-          policy: RuntimeApplyPolicy.fullServiceRestart,
-        );
-      }
-      return const RuntimeLifecycleResult.failure(
-        policy: RuntimeApplyPolicy.fullServiceRestart,
-        timedOut: true,
-        error: 'start_timeout',
-      );
-    }
-    AppLogStore.error(
-      'sing-box',
-      'runtime start timeout useVpn=$useVpn '
-          'timeoutMs=${timeout.inMilliseconds} error=$error\n'
-          '$stackTrace',
-    );
-    final status = await _runtime
-        .status()
-        .timeout(
-          const Duration(seconds: 2),
-          onTimeout: () => const <String, dynamic>{'running': false},
-        )
-        .catchError((_) => const <String, dynamic>{'running': false});
-    if (_isStartedRuntimeStatus(status, useVpn: useVpn)) {
-      return const RuntimeLifecycleResult.success(
-        policy: RuntimeApplyPolicy.fullServiceRestart,
-      );
-    }
-    try {
-      await _runtime
-          .stop(reason: 'start_timeout')
-          .timeout(const Duration(seconds: 3));
-    } catch (stopError) {
-      AppLogStore.warning(
-        'sing-box',
-        'runtime stop after start timeout failed: $stopError',
-      );
-    }
-    return const RuntimeLifecycleResult.failure(
-      policy: RuntimeApplyPolicy.fullServiceRestart,
-      timedOut: true,
-      error: 'start_timeout',
+      interactiveDeadlineMillis: startTimeoutForBuild(build).inMilliseconds,
     );
   }
 

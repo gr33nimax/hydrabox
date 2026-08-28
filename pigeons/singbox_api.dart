@@ -222,16 +222,25 @@ abstract class SingboxHostApi {
   Map<String?, Object?> vpnPermissionStatus();
 
   @async
-  void start(String config, bool useVpn);
+  void start(String config, bool useVpn, int interactiveDeadlineMillis);
 
   @async
-  void startPrepared(bool useVpn);
+  void startPrepared(bool useVpn, int interactiveDeadlineMillis);
 
   @async
-  void applyConfig(String config, bool useVpn, bool restartCore);
+  void applyConfig(
+    String config,
+    bool useVpn,
+    bool restartCore,
+    int interactiveDeadlineMillis,
+  );
 
   @async
-  void applyPreparedConfig(bool useVpn, bool restartCore);
+  void applyPreparedConfig(
+    bool useVpn,
+    bool restartCore,
+    int interactiveDeadlineMillis,
+  );
 
   @async
   String getConfigPath();
