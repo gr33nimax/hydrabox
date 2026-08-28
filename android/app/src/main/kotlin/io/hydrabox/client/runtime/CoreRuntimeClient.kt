@@ -262,6 +262,7 @@ class CoreRuntimeClient(context: Context) {
         useVpn: Boolean,
         restartCore: Boolean = false,
         applyConfig: Boolean = false,
+        source: String = "ui",
         callback: (Result<Unit>) -> Unit,
     ) {
         val start = CoreRuntimeProtocol.StartRuntime.newBuilder()
@@ -273,6 +274,7 @@ class CoreRuntimeClient(context: Context) {
             .setConfigSha256(ByteString.copyFrom(MessageDigest.getInstance("SHA-256").digest(config)))
             .setRestartCore(restartCore)
             .setApplyConfig(applyConfig)
+            .setSource(source)
             .build()
         submit(
             CoreRuntimeProtocol.RuntimeCommand.newBuilder()

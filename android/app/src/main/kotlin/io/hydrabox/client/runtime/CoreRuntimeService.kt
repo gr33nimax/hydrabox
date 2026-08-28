@@ -601,7 +601,11 @@ class CoreRuntimeService : Service() {
             "ng" to HydraBoxDefaultNetworkMonitor.currentInterfaceState("connect").generation,
             "prof" to shortHex(activeConfigSha256),
             "mode" to request.mode.name.lowercase().removePrefix("runtime_mode_"),
-            "source" to if (recovery) "recovery" else "ui",
+            "source" to when {
+                recovery -> "recovery"
+                request.source.isNotBlank() -> request.source
+                else -> "ui"
+            },
         )
         updateState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STARTING)
         mainHandler.post {

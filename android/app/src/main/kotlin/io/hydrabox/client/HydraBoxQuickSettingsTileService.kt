@@ -111,6 +111,7 @@ class HydraBoxQuickSettingsTileService : TileService() {
         coreRuntimeClient.start(
             config = config,
             useVpn = targetMode == RuntimeServiceModeResolver.VPN,
+            source = "tile",
         ) { result ->
             if (result.isFailure) {
                 Toast.makeText(this, "HydraCore could not start", Toast.LENGTH_SHORT).show()
