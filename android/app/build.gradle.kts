@@ -112,6 +112,7 @@ android {
         minSdk = 26
         targetSdk = flutter.targetSdkVersion
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testProguardFiles("proguard-test-rules.pro")
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         buildConfigField(
@@ -220,6 +221,7 @@ dependencies {
     implementation("androidx.room:room-runtime:2.8.4")
     implementation("androidx.datastore:datastore:1.2.1")
     implementation("androidx.work:work-runtime-ktx:2.11.2")
+    implementation("androidx.concurrent:concurrent-futures-ktx:1.2.0")
     ksp("androidx.room:room-compiler:2.8.4")
     baselineProfile(project(":benchmark"))
     testImplementation("junit:junit:4.13.2")
@@ -231,7 +233,7 @@ dependencies {
     // them from the production APK when the app itself does not reference them.
     androidTestImplementation("org.jetbrains.kotlin:kotlin-stdlib:2.2.20")
     androidTestImplementation("androidx.tracing:tracing:1.2.0")
-    androidTestImplementation("androidx.concurrent:concurrent-futures-ktx:1.1.0")
+    androidTestImplementation("androidx.concurrent:concurrent-futures-ktx:1.2.0")
     androidTestImplementation("com.google.errorprone:error_prone_annotations:2.36.0")
 }
 

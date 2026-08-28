@@ -13,3 +13,7 @@
 -keep class io.nekohasekai.libbox.Libbox { *; }
 -keep class go.Seq { *; }
 -keep class go.Universe { *; }
+
+# javax.lang.model существует только в JDK: ссылки приходят из
+# annotation-processor-аннотаций и в APK недостижимы.
+-dontwarn javax.lang.model.**
