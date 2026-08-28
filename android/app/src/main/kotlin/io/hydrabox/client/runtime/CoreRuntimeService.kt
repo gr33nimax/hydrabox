@@ -50,6 +50,124 @@ internal fun nativeSourceLabel(): String = "embedded"
 internal const val START_DEADLINE_MILLIS = 45_000L
 internal const val CHALLENGE_DEADLINE_MILLIS = 120_000L
 
+/** Additive, side-effect-free runtime transition model; production wiring follows separately. */
+internal sealed interface RuntimeInput {
+    sealed interface Command : RuntimeInput {
+        data object Start : Command
+        data object Stop : Command
+    }
+
+    sealed interface Event : RuntimeInput {
+        data class Launched(val commandGeneration: Long, val runtimeGeneration: Long) : Event
+        data class Health(
+            val commandGeneration: Long,
+            val runtimeGeneration: Long,
+            val ready: Boolean,
+            val challenge: Boolean = false,
+        ) : Event
+        data class Deadline(val commandGeneration: Long) : Event
+        data class Released(val commandGeneration: Long) : Event
+        data object Replay : Event
+        data class ControllerEvent(val value: Any?) : Event
+    }
+}
+
+internal data class RuntimeMachineState(
+    val value: CoreRuntimeProtocol.RuntimeState,
+    val commandGeneration: Long,
+    val runtimeGeneration: Long = 0L,
+)
+
+internal data class RuntimeReduceContext(
+    val startDeadlineMillis: Long = START_DEADLINE_MILLIS,
+    val challengeDeadlineMillis: Long = CHALLENGE_DEADLINE_MILLIS,
+)
+
+internal data class Decision(
+    val state: RuntimeMachineState,
+    val deadlineMillis: Long? = null,
+)
+
+internal fun reduce(
+    state: RuntimeMachineState,
+    input: RuntimeInput,
+    ctx: RuntimeReduceContext,
+): Decision = when (input) {
+    RuntimeInput.Command.Start -> when (state.value) {
+        CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPED,
+        CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_FAILED -> Decision(
+            state.copy(
+                value = CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STARTING,
+                commandGeneration = state.commandGeneration + 1,
+                runtimeGeneration = 0L,
+            ),
+            ctx.startDeadlineMillis,
+        )
+        else -> Decision(state)
+    }
+    RuntimeInput.Command.Stop -> when (state.value) {
+        CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPED -> Decision(state)
+        else -> Decision(
+            state.copy(
+                value = CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING,
+                commandGeneration = state.commandGeneration + 1,
+            ),
+        )
+    }
+    is RuntimeInput.Event.Launched -> if (
+        state.value in setOf(
+            CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STARTING,
+            CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RECOVERING,
+        ) && input.commandGeneration == state.commandGeneration
+    ) {
+        Decision(state.copy(runtimeGeneration = input.runtimeGeneration))
+    } else {
+        Decision(state)
+    }
+    is RuntimeInput.Event.Health -> if (
+        state.value in setOf(
+            CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STARTING,
+            CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RECOVERING,
+        ) && input.commandGeneration == state.commandGeneration &&
+        input.runtimeGeneration == state.runtimeGeneration
+    ) {
+        when {
+            input.challenge -> Decision(state, ctx.challengeDeadlineMillis)
+            input.ready -> Decision(
+                state.copy(value = CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING),
+            )
+            else -> Decision(state)
+        }
+    } else {
+        Decision(state)
+    }
+    is RuntimeInput.Event.Deadline -> if (
+        state.value in setOf(
+            CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STARTING,
+            CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RECOVERING,
+        ) && input.commandGeneration == state.commandGeneration
+    ) {
+        Decision(state.copy(value = CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_FAILED))
+    } else {
+        Decision(state)
+    }
+    is RuntimeInput.Event.Released -> if (
+        state.value == CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING &&
+        input.commandGeneration == state.commandGeneration
+    ) {
+        Decision(
+            state.copy(
+                value = CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPED,
+                runtimeGeneration = 0L,
+            ),
+        )
+    } else {
+        Decision(state)
+    }
+    RuntimeInput.Event.Replay,
+    is RuntimeInput.Event.ControllerEvent -> Decision(state)
+}
+
 private fun shortHex(bytes: ByteArray): String =
     if (bytes.isEmpty()) "none" else bytes.take(4).joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
