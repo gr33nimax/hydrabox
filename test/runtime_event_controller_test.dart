@@ -157,7 +157,10 @@ void main() {
     expect(health?.challengeId, 'challenge-2');
     expect(health?.challengeUri, isNull);
     expect(AppLogStore.entries.value.last.title, 'vk-parasite transport');
-    expect(AppLogStore.entries.value.last.message, contains('captcha_pending=true'));
+    expect(
+      AppLogStore.entries.value.last.message,
+      contains('captcha_pending=true'),
+    );
   });
 
   test('nativeLog normalizes warn and records through AppLogStore', () {

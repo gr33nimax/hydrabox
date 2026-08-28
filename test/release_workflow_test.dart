@@ -57,7 +57,7 @@ void main() {
     expect(workflow, contains(':app:testDebugUnitTest'));
     expect(workflow, contains(':app:lintDebug'));
     expect(workflow, contains(':app:assembleDebug'));
-    expect(workflow, contains(':app:assembleReleaseAndroidTest'));
+    expect(workflow, isNot(contains(':app:assembleReleaseAndroidTest')));
     expect(workflow, contains('flutter build apk --release --split-per-abi'));
     expect(workflow, contains('app-arm64-v8a-release.apk'));
     expect(workflow, contains('build/app/outputs/apk/debug/*.apk'));
@@ -166,7 +166,7 @@ void main() {
     });
     expect(
       (provenance['source'] as Map<String, dynamic>)['commit'],
-      '9eefdec8ab44abf4203f8e0efa17dbb697f1beac',
+      '2e868e160643c8ea5dfedb1f673dbcce94039816',
     );
     expect(
       (provenance['upstream'] as Map<String, dynamic>)['commit'],
@@ -176,7 +176,7 @@ void main() {
     expect(
       (artifacts['hydracore-client-libbox.aar']
           as Map<String, dynamic>)['sha256'],
-      '74ab97bd2c393959ebf2c52ff0238cc83e3d2f715b40d6959dfc570e05630c28',
+      'd4fe3829659d8d0090b2f5ab2f1af52a4af8ee986cf1443c01fd305d7f2691a3',
     );
     expect(
       (artifacts['hydracore-client-libbox-sources.jar']

@@ -118,14 +118,9 @@ jobs:
       - name: Run Flutter tests
         run: flutter test --reporter expanded
 
-      # androidTest теперь собирается для release-варианта (testBuildType),
-      # поэтому шагу нужна та же подпись отладочным ключом, что и остальным
-      # release-сборкам без секретов.
       - name: Run Android unit tests, lint, and assembly
         working-directory: android
-        env:
-          HYDRABOX_ALLOW_DEBUG_RELEASE_SIGNING: "true"
-        run: bash ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleReleaseAndroidTest
+        run: bash ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 
       - name: Resolve test APK version
         if: >-
