@@ -164,7 +164,6 @@ class SingboxConfigCoordinator {
     required RuntimeLogHook logCall,
     required void Function(String reason) trimRuntimeStartMemory,
     required RuntimeVoidHook cacheStartedBuild,
-    required Future<void> Function() syncRuntimeState,
     this.fullServiceRestartDebounce = const Duration(milliseconds: 450),
   }) : _readSnapshot = readSnapshot,
        _isMounted = isMounted,
@@ -176,8 +175,7 @@ class SingboxConfigCoordinator {
        _showRuntimeFailure = showRuntimeFailure,
        _logCall = logCall,
        _trimRuntimeStartMemory = trimRuntimeStartMemory,
-       _cacheStartedBuild = cacheStartedBuild,
-       _syncRuntimeState = syncRuntimeState;
+       _cacheStartedBuild = cacheStartedBuild;
 
   final Duration fullServiceRestartDebounce;
 
@@ -192,7 +190,6 @@ class SingboxConfigCoordinator {
   final RuntimeLogHook _logCall;
   final void Function(String reason) _trimRuntimeStartMemory;
   final RuntimeVoidHook _cacheStartedBuild;
-  final Future<void> Function() _syncRuntimeState;
 
   int _runtimeConfigApplyGeneration = 0;
   int _singboxConfigBuildGeneration = 0;
@@ -407,12 +404,6 @@ class SingboxConfigCoordinator {
           );
         }
       }
-      unawaited(
-        Future<void>.delayed(
-          const Duration(milliseconds: 500),
-          _syncRuntimeState,
-        ),
-      );
     } catch (error, stackTrace) {
       AppLogStore.error(
         'sing-box',

@@ -690,7 +690,10 @@ class CoreRuntimeService : Service() {
         startedAt: Long,
         previousNativeGeneration: Long = -1L,
     ) {
-        if (generation.get() != commandGeneration) return
+        if (generation.get() != commandGeneration) {
+            commandFailed(commandId, "runtime.start.superseded", "runtime_start", "The runtime start was superseded by a newer command.", false)
+            return
+        }
         val expectedName = if (expectedMode == CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_VPN) "vpn" else "proxy"
         if (SingboxController.running && SingboxController.serviceMode == expectedName &&
             (previousNativeGeneration < 0L || SingboxController.activeRuntimeGeneration > previousNativeGeneration)
@@ -732,7 +735,10 @@ class CoreRuntimeService : Service() {
 
     private fun verifyHealthAndCompleteStart(commandId: String, commandGeneration: Long) {
         SingboxController.getRuntimeSnapshot { result ->
-            if (generation.get() != commandGeneration) return@getRuntimeSnapshot
+            if (generation.get() != commandGeneration) {
+                commandFailed(commandId, "runtime.start.superseded", "runtime_start", "The runtime start was superseded by a newer command.", false)
+                return@getRuntimeSnapshot
+            }
             result.onSuccess {
                 refreshNetworkSnapshotFromMonitor("runtime_start_complete")
                 if (transportHealthRequired) {
@@ -759,7 +765,10 @@ class CoreRuntimeService : Service() {
     }
 
     private fun awaitTransportReady(commandId: String, commandGeneration: Long, startedAt: Long) {
-        if (generation.get() != commandGeneration) return
+        if (generation.get() != commandGeneration) {
+            commandFailed(commandId, "runtime.start.superseded", "runtime_start", "The runtime start was superseded by a newer command.", false)
+            return
+        }
         refreshTransportHealth(emitIfChanged = true)
         val health = synchronized(snapshotLock) { transportHealth }
         if (TransportHealthBridge.isConnected(health)) {
@@ -815,7 +824,10 @@ class CoreRuntimeService : Service() {
         if (generation.get() != commandGeneration) return
         updateState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING)
         shutdownRuntimeServices("failed_start:$code") { stopped ->
-            if (generation.get() != commandGeneration) return@shutdownRuntimeServices
+            if (generation.get() != commandGeneration) {
+                commandFailed(commandId, "runtime.start.superseded", "runtime_start", "The runtime start was superseded by a newer command.", false)
+                return@shutdownRuntimeServices
+            }
             if (stopped) {
                 resetStoppedRuntimeState()
                 failRuntime(commandId, code, stage, safeMessage, retryable)

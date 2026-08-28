@@ -173,7 +173,6 @@ SingboxConfigCoordinator _coordinator({
     logCall: (_, _) {},
     trimRuntimeStartMemory: (_) {},
     cacheStartedBuild: (_) {},
-    syncRuntimeState: () async {},
     fullServiceRestartDebounce: fullServiceRestartDebounce,
   );
 }

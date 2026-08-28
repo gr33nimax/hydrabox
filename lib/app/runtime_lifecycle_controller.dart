@@ -292,31 +292,8 @@ class RuntimeLifecycleController {
         cacheStartedBuild: cacheStartedBuild,
         logCall: logCall,
       );
-      final healthy = await _waitForHealthyRuntime();
-      if (healthy) {
-        return const RuntimeLifecycleResult.success(
-          policy: RuntimeApplyPolicy.safeCoreRestart,
-        );
-      }
-      AppLogStore.warning(
-        'runtime',
-        'runtime_interface_recovery reason=safe_core_restart_health_failed',
-      );
-      final recovered = await fullServiceRestart(
-        build: build,
-        useVpn: useVpn,
-        reason: 'runtime_interface_recovery',
-        promotePreparedConfig: promotePreparedConfigOnce,
-        cacheStartedBuild: cacheStartedBuild,
-        logCall: logCall,
-        trimMemory: trimMemory,
-      );
-      if (!recovered.success) {
-        return recovered;
-      }
       return const RuntimeLifecycleResult.success(
         policy: RuntimeApplyPolicy.safeCoreRestart,
-        recovered: true,
       );
     } catch (error, stackTrace) {
       AppLogStore.error(
@@ -324,30 +301,6 @@ class RuntimeLifecycleController {
         'Failed to apply runtime config policy=${policy.name}: '
             '$error\n$stackTrace',
       );
-      if (policy == RuntimeApplyPolicy.safeCoreRestart) {
-        final runtimeStillHealthy = await _waitForHealthyRuntime();
-        if (!runtimeStillHealthy) {
-          AppLogStore.warning(
-            'runtime',
-            'runtime_interface_recovery reason=safe_core_restart_exception',
-          );
-          final recovered = await fullServiceRestart(
-            build: build,
-            useVpn: useVpn,
-            reason: 'safe_core_restart_exception',
-            promotePreparedConfig: promotePreparedConfigOnce,
-            cacheStartedBuild: cacheStartedBuild,
-            logCall: logCall,
-            trimMemory: trimMemory,
-          );
-          if (recovered.success) {
-            return const RuntimeLifecycleResult.success(
-              policy: RuntimeApplyPolicy.safeCoreRestart,
-              recovered: true,
-            );
-          }
-        }
-      }
       return RuntimeLifecycleResult.failure(
         policy: policy,
         error: error.toString(),
@@ -409,49 +362,16 @@ class RuntimeLifecycleController {
 
   Future<bool> stopRuntime({required String reason}) async {
     try {
-      await _runtime.stop(reason: reason).timeout(stopTimeout);
+      await _runtime.stop(reason: reason);
+      return true;
     } catch (error, stackTrace) {
       AppLogStore.warning(
         'runtime',
         'native runtime stop call failed reason=$reason error=$error\n'
             '$stackTrace',
       );
+      return false;
     }
-    final stopped = await _waitForStoppedRuntime();
-    if (!stopped) {
-      AppLogStore.error(
-        'runtime',
-        'native runtime stop was not confirmed reason=$reason',
-      );
-    }
-    return stopped;
-  }
-
-  Future<bool> _waitForStoppedRuntime() async {
-    if (stopSettleDelay > Duration.zero) {
-      await Future<void>.delayed(stopSettleDelay);
-    }
-    final deadline = DateTime.now().add(stopVerificationTimeout);
-    do {
-      try {
-        final remaining = deadline.difference(DateTime.now());
-        final status = await _runtime.status().timeout(
-          remaining > Duration.zero
-              ? remaining
-              : const Duration(milliseconds: 1),
-        );
-        final stopped = status['state'] == 'RUNTIME_STATE_STOPPED';
-        if (stopped) {
-          return true;
-        }
-      } catch (error) {
-        AppLogStore.warning('runtime', 'failed to verify native stop: $error');
-      }
-      if (DateTime.now().isBefore(deadline)) {
-        await Future<void>.delayed(const Duration(milliseconds: 100));
-      }
-    } while (DateTime.now().isBefore(deadline));
-    return false;
   }
 
   Future<void> _applyBuild({
@@ -490,48 +410,4 @@ class RuntimeLifecycleController {
     );
   }
 
-  Future<bool> _waitForHealthyRuntime() async {
-    final deadline = DateTime.now().add(healthCheckTimeout);
-    var lastStatus = const <String, dynamic>{};
-    var lastInterface = NetworkInterfaceSnapshot.unavailable;
-    while (DateTime.now().isBefore(deadline)) {
-      lastStatus = await _runtime
-          .status()
-          .timeout(
-            const Duration(seconds: 2),
-            onTimeout: () => const <String, dynamic>{'running': false},
-          )
-          .catchError((_) => const <String, dynamic>{'running': false});
-      lastInterface = await _runtime
-          .getNetworkInterfaceState()
-          .timeout(
-            const Duration(seconds: 2),
-            onTimeout: () => NetworkInterfaceSnapshot.unavailable,
-          )
-          .catchError((_) => NetworkInterfaceSnapshot.unavailable);
-      final running = lastStatus['running'] == true;
-      AppLogStore.info(
-        'runtime',
-        'runtime health check running=$running '
-            'interfaceUsable=${lastInterface.usable} '
-            'interface=${lastInterface.interfaceName} '
-            'index=${lastInterface.interfaceIndex} '
-            'reason=${lastInterface.reason}',
-      );
-      if (running && lastInterface.usable) {
-        return true;
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 350));
-    }
-    final running = lastStatus['running'] == true;
-    AppLogStore.warning(
-      'runtime',
-      'runtime health check failed running=$running '
-          'interfaceUsable=${lastInterface.usable} '
-          'interface=${lastInterface.interfaceName} '
-          'index=${lastInterface.interfaceIndex} '
-          'reason=${lastInterface.reason}',
-    );
-    return false;
-  }
 }

@@ -110,29 +110,6 @@ void main() {
     expect(decision.clearDisconnectedState, isFalse);
   });
 
-  test('authoritative failed snapshot remains failed during status sync', () {
-    final decision = RuntimeSessionCoordinator().decideStatus(
-      running: false,
-      hasError: true,
-      nativeRecoveryPending: false,
-      localTransitionPending: false,
-      retryScheduled: false,
-    );
-
-    expect(decision.phase, AppConnectionPhase.failed);
-  });
-
-  test('local transition can recover from an authoritative error', () {
-    final decision = RuntimeSessionCoordinator().decideStatus(
-      running: false,
-      hasError: true,
-      nativeRecoveryPending: true,
-      localTransitionPending: true,
-      retryScheduled: false,
-    );
-
-    expect(decision.phase, AppConnectionPhase.recovering);
-  });
 
   test('late successful cancelled start requires native cleanup', () {
     final disposition = RuntimeSessionCoordinator().classifyStartResult(
@@ -147,30 +124,4 @@ void main() {
     expect(disposition, RuntimeStartDisposition.cancelledNeedsCleanup);
   });
 
-  test('recovery status logs are throttled', () {
-    final coordinator = RuntimeSessionCoordinator();
-    final now = DateTime(2026, 7, 28);
-
-    expect(
-      coordinator.shouldLogRecoveryStatus(
-        now: now,
-        interval: const Duration(seconds: 5),
-      ),
-      isTrue,
-    );
-    expect(
-      coordinator.shouldLogRecoveryStatus(
-        now: now.add(const Duration(seconds: 4)),
-        interval: const Duration(seconds: 5),
-      ),
-      isFalse,
-    );
-    expect(
-      coordinator.shouldLogRecoveryStatus(
-        now: now.add(const Duration(seconds: 5)),
-        interval: const Duration(seconds: 5),
-      ),
-      isTrue,
-    );
-  });
 }

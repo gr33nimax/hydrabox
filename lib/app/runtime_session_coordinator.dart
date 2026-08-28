@@ -22,16 +22,6 @@ class RuntimeStateDecision {
   final bool retryScheduled;
 }
 
-class RuntimeSyncDecision {
-  const RuntimeSyncDecision({
-    required this.phase,
-    required this.retryScheduled,
-  });
-
-  final AppConnectionPhase phase;
-  final bool retryScheduled;
-}
-
 /// Coordinates root-level runtime operations that must have a single owner.
 ///
 /// Native lifecycle work remains in [RuntimeLifecycleController]. This class
@@ -39,7 +29,6 @@ class RuntimeSyncDecision {
 /// UI decisions without depending on a widget.
 class RuntimeSessionCoordinator {
   Future<bool>? _stopInFlight;
-  DateTime? _lastRecoveryStatusLogAt;
 
   Future<bool> stop({
     required bool activeOrRequested,
@@ -122,37 +111,4 @@ class RuntimeSessionCoordinator {
     );
   }
 
-  RuntimeSyncDecision decideStatus({
-    required bool running,
-    required bool hasError,
-    required bool nativeRecoveryPending,
-    required bool localTransitionPending,
-    required bool retryScheduled,
-  }) {
-    final transitionPending = localTransitionPending || retryScheduled;
-    final phase = switch ((running, hasError, transitionPending)) {
-      (true, _, _) => AppConnectionPhase.connected,
-      (false, true, false) => AppConnectionPhase.failed,
-      (false, _, true) => AppConnectionPhase.recovering,
-      (false, _, false) when nativeRecoveryPending =>
-        AppConnectionPhase.recovering,
-      _ => AppConnectionPhase.idle,
-    };
-    return RuntimeSyncDecision(
-      phase: phase,
-      retryScheduled: !running && retryScheduled,
-    );
-  }
-
-  bool shouldLogRecoveryStatus({
-    required DateTime now,
-    required Duration interval,
-  }) {
-    final previous = _lastRecoveryStatusLogAt;
-    if (previous != null && now.difference(previous) < interval) {
-      return false;
-    }
-    _lastRecoveryStatusLogAt = now;
-    return true;
-  }
 }

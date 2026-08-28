@@ -29,7 +29,6 @@ import 'package:hydrabox/app/runtime_intent_controller.dart';
 import 'package:hydrabox/app/runtime_operation_coordinator.dart';
 import 'package:hydrabox/app/runtime_recovery_controller.dart';
 import 'package:hydrabox/app/runtime_session_coordinator.dart';
-import 'package:hydrabox/app/runtime_snapshot_reducer.dart';
 import 'package:hydrabox/app/singbox_config_coordinator.dart';
 import 'package:hydrabox/app/subscription_coordinator.dart';
 import 'package:hydrabox/app/subscription_runtime_controller.dart';
@@ -99,7 +98,6 @@ class _HydraBoxClientState extends State<HydraBoxClient>
   static const _economyNetworkHeartbeatIntervalSeconds = 300;
   static const _responsiveTrafficUiUpdateInterval = Duration(milliseconds: 250);
   static const _balancedTrafficUiUpdateInterval = Duration(seconds: 1);
-  static const _runtimeRecoveryStatusLogInterval = Duration(seconds: 5);
   static const _subscriptionOperationSoftWarningDelay = Duration(seconds: 15);
   static const _subscriptionOperationTimeout = Duration(seconds: 30);
   static const _androidImageCacheMaximumBytes = 32 * 1024 * 1024;
@@ -1783,7 +1781,6 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       logCall: _logLibboxCall,
       trimRuntimeStartMemory: _trimRuntimeStartMemory,
       cacheStartedBuild: _cacheLastStartedBuild,
-      syncRuntimeState: _syncRuntimeState,
     );
     _runtimeEvents = RuntimeEventController(
       events: SingboxRuntime.instance.events,
@@ -3046,7 +3043,6 @@ class _HydraBoxClientState extends State<HydraBoxClient>
   Future<void> _reconcileRuntimeAfterResume() async {
     AppLogStore.info('runtime', 'resume reconcile start');
     await _syncRuntimePerformanceFlags();
-    await _syncRuntimeState();
     if (!_connected || !_foregroundLifecycleActive) {
       return;
     }
@@ -5814,7 +5810,6 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       unawaited(_syncRuntimeUiForeground(true));
       _scheduleVpnNotificationSync();
     }
-    unawaited(_syncRuntimeState());
   }
 
   void _handleRuntimeStateEvent(RuntimeStateEvent event) {
@@ -6053,93 +6048,6 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       );
       return;
     }
-  }
-
-  Future<void> _syncRuntimeState() async {
-    try {
-      final status = await SingboxRuntime.instance.status();
-      if (!mounted || !_foregroundLifecycleActive) return;
-      final snapshotPhase = runtimeSnapshotPhase(
-        status,
-        currentPhase: _connectionPhase,
-      );
-      if (status['state'] == 'RUNTIME_STATE_UNKNOWN') return;
-      final running = snapshotPhase == AppConnectionPhase.connected;
-      _runtimeOperations.updateRuntimeState(
-        running: running,
-        nativeRuntimeGeneration:
-            (status['runtimeGeneration'] as num?)?.toInt() ?? 0,
-      );
-      final runtimeState = status['state']?.toString();
-      final hasRuntimeError =
-          runtimeState == 'RUNTIME_STATE_FAILED' ||
-          status['errorCode']?.toString().trim().isNotEmpty == true;
-      final snapshotRecoveryPending =
-          snapshotPhase == AppConnectionPhase.starting ||
-          snapshotPhase == AppConnectionPhase.recovering;
-      final localTransitionPending =
-          _starting || _invalidOutboundRetryScheduled;
-      final decision = _runtimeSession.decideStatus(
-        running: running,
-        hasError: hasRuntimeError,
-        nativeRecoveryPending: snapshotRecoveryPending,
-        localTransitionPending: localTransitionPending,
-        retryScheduled: _invalidOutboundRetryScheduled,
-      );
-      if (snapshotRecoveryPending) {
-        _logRuntimeRecoveryStatus(status);
-      }
-      final now = DateTime.now();
-      final syncedTraffic = _trafficStatusReducer
-          .reduce(
-            current: _currentTrafficStatus(),
-            event: RuntimeTrafficEvent.fromMap(status),
-          )
-          .status;
-      setState(() {
-        _runtimeIntent.applySnapshot(status);
-        _setConnectionPhase(
-          decision.phase,
-          retryScheduled: decision.retryScheduled,
-        );
-        _applyTrafficStatus(syncedTraffic);
-        if (running) {
-          _recordTrafficSample(now);
-        } else if (!snapshotRecoveryPending) {
-          _resetTrafficDashboardData();
-          _groupUrlTestScheduler.cancel();
-          _runtimeStartupUrlTestGate.reset();
-        }
-      });
-      _publishTrafficDashboardSnapshot();
-      if (running &&
-          await _networkInterfaceUsable(reason: 'runtime_sync_running')) {
-        _scheduleActiveOutboundIpRefresh();
-      } else if (running) {
-        AppLogStore.warning(
-          'runtime',
-          'runtime sync running but interface is not usable yet',
-        );
-      }
-    } catch (_) {
-      // Ignore transient sync failures: live EventChannel events still drive state.
-    }
-  }
-
-  void _logRuntimeRecoveryStatus(Map<String, dynamic> status) {
-    final now = DateTime.now();
-    if (!_runtimeSession.shouldLogRecoveryStatus(
-      now: now,
-      interval: _runtimeRecoveryStatusLogInterval,
-    )) {
-      return;
-    }
-    AppLogStore.warning(
-      'runtime',
-      'runtime sync pending native recovery '
-          'state=${status['state']} '
-          'mode=${status['mode'] ?? ''}',
-    );
   }
 
   Future<void> _handleRuntimeError(String error, bool wasRetryScheduled) async {
