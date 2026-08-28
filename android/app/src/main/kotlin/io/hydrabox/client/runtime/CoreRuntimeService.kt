@@ -53,6 +53,7 @@ internal const val CHALLENGE_DEADLINE_MILLIS = 120_000L
 /** Additive, side-effect-free runtime transition model; production wiring follows separately. */
 internal sealed interface RuntimeInput {
     sealed interface Command : RuntimeInput {
+        data class Submitted(val value: CoreRuntimeProtocol.RuntimeCommand) : Command
         data object Start : Command
         data object Stop : Command
     }
@@ -67,7 +68,7 @@ internal sealed interface RuntimeInput {
         ) : Event
         data class Deadline(val commandGeneration: Long) : Event
         data class Released(val commandGeneration: Long) : Event
-        data object Replay : Event
+        data class Replay(val listener: ICoreRuntimeListener) : Event
         data class ControllerEvent(val value: Any?) : Event
     }
 }
@@ -93,6 +94,7 @@ internal fun reduce(
     input: RuntimeInput,
     ctx: RuntimeReduceContext,
 ): Decision = when (input) {
+    is RuntimeInput.Command.Submitted -> Decision(state)
     RuntimeInput.Command.Start -> when (state.value) {
         CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPED,
         CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_FAILED -> Decision(
@@ -164,7 +166,7 @@ internal fun reduce(
     } else {
         Decision(state)
     }
-    RuntimeInput.Event.Replay,
+    is RuntimeInput.Event.Replay,
     is RuntimeInput.Event.ControllerEvent -> Decision(state)
 }
 
@@ -227,8 +229,12 @@ class CoreRuntimeService : Service() {
     private val state = AtomicReference(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPED)
     private val mode = AtomicReference(CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_UNSPECIFIED)
     private val listeners = RemoteCallbackList<ICoreRuntimeListener>()
+    private val commandThread = AtomicReference<Thread?>()
     private val commandExecutor = Executors.newSingleThreadExecutor { runnable ->
-        Thread(runnable, "HydraCoreRuntimeCommands").apply { isDaemon = true }
+        Thread(runnable, "HydraCoreRuntimeCommands").apply {
+            commandThread.set(this)
+            isDaemon = true
+        }
     }
     private val mainHandler = Handler(Looper.getMainLooper())
     private val selectedOutbounds = linkedMapOf<String, String>()
@@ -286,7 +292,7 @@ class CoreRuntimeService : Service() {
                 .setGeneration(generation.get())
                 .setAcceptedAtMillis(System.currentTimeMillis())
                 .build()
-            commandExecutor.execute { execute(command) }
+            submitInternal(RuntimeInput.Command.Submitted(command))
             return receipt.toByteArray()
         }
 
@@ -296,7 +302,7 @@ class CoreRuntimeService : Service() {
         override fun registerListener(listener: ICoreRuntimeListener?) {
             if (listener != null) {
                 listeners.register(listener)
-                runCatching { listener.onEvent(snapshotEvent().toByteArray()) }
+                submitInternal(RuntimeInput.Event.Replay(listener))
             }
         }
 
@@ -334,7 +340,7 @@ class CoreRuntimeService : Service() {
                     override fun success(event: Any?) {
                         // The legacy controller still produces maps internally. No map crosses
                         // the binder boundary: clients receive a typed authoritative snapshot.
-                        handleControllerEvent(event)
+                        submitInternal(RuntimeInput.Event.ControllerEvent(event))
                     }
 
                     override fun error(code: String, message: String?, details: Any?) {
@@ -348,8 +354,7 @@ class CoreRuntimeService : Service() {
                     }
 
                     override fun endOfStream() {
-                        refreshFromController()
-                        emit(snapshotEvent())
+                        submitInternal(RuntimeInput.Event.ControllerEvent(null))
                     }
                 },
             )
@@ -491,6 +496,25 @@ class CoreRuntimeService : Service() {
             else -> Unit
         }
     }
+
+    private fun submitInternal(input: RuntimeInput) {
+        commandExecutor.execute {
+            when (input) {
+                is RuntimeInput.Command.Submitted -> execute(input.value)
+                RuntimeInput.Command.Start,
+                RuntimeInput.Command.Stop,
+                is RuntimeInput.Event.Launched,
+                is RuntimeInput.Event.Deadline,
+                is RuntimeInput.Event.Released -> Unit
+                is RuntimeInput.Event.Health -> emit(snapshotEvent())
+                is RuntimeInput.Event.Replay ->
+                    runCatching { input.listener.onEvent(snapshotEvent().toByteArray()) }
+                is RuntimeInput.Event.ControllerEvent -> handleControllerEvent(input.value)
+            }
+        }
+    }
+
+    private fun isOnCommandThread(): Boolean = Thread.currentThread() === commandThread.get()
 
     private fun cancelRuntimeChallenge(command: CoreRuntimeProtocol.RuntimeCommand) {
         val challengeId = command.cancelRuntimeChallenge.challengeId
@@ -1599,7 +1623,15 @@ class CoreRuntimeService : Service() {
                     "failureKind=${failure.kind} failureCode=${failure.code}",
             )
         }
-        if (changed && emitIfChanged) emit(snapshotEvent())
+        if (changed && emitIfChanged) {
+            submitInternal(
+                RuntimeInput.Event.Health(
+                    commandGeneration = generation.get(),
+                    runtimeGeneration = SingboxController.activeRuntimeGeneration,
+                    ready = false,
+                ),
+            )
+        }
     }
 
     private fun buildSnapshot(): CoreRuntimeProtocol.RuntimeSnapshot {
@@ -1653,6 +1685,10 @@ class CoreRuntimeService : Service() {
     }
 
     private fun updateState(value: CoreRuntimeProtocol.RuntimeState) {
+        if (!isOnCommandThread()) {
+            commandExecutor.execute { updateState(value) }
+            return
+        }
         state.set(value)
         notificationStatusFor(value)?.let(HydraBoxService::applyRuntimeStatus)
         emit(snapshotEvent())
@@ -1682,6 +1718,10 @@ class CoreRuntimeService : Service() {
     }
 
     private fun commandSucceeded(commandId: String, finalState: CoreRuntimeProtocol.RuntimeState) {
+        if (!isOnCommandThread()) {
+            commandExecutor.execute { commandSucceeded(commandId, finalState) }
+            return
+        }
         synchronized(snapshotLock) { lastError = null }
         val result = CoreRuntimeProtocol.CommandResult.newBuilder()
             .setSchemaVersion(SCHEMA_VERSION)
@@ -1712,6 +1752,10 @@ class CoreRuntimeService : Service() {
         safeMessage: String,
         retryable: Boolean,
     ) {
+        if (!isOnCommandThread()) {
+            commandExecutor.execute { failRuntime(commandId, code, stage, safeMessage, retryable) }
+            return
+        }
         val error = coreError(code, stage, safeMessage, retryable, commandId.ifBlank { UUID.randomUUID().toString() })
         synchronized(snapshotLock) { lastError = error }
         if (!stage.startsWith("probe") && stage != "selector") {
