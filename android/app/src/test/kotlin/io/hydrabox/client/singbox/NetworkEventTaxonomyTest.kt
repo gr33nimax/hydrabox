@@ -7,6 +7,13 @@ import org.junit.Test
 class NetworkEventTaxonomyTest {
     @Test
     fun `network event branch covers the telemetry dictionary`() {
+        assertEquals(
+            setOf(
+                "changed", "noop", "none", "index_unavailable", "divergence",
+                "lost_selectable", "lost_active", "stale_iface",
+            ),
+            NetworkEventBranch.values().map(NetworkEventBranch::telemetryValue).toSet(),
+        )
         assertEquals(NetworkEventBranch.DIVERGENCE, branch(bestPresent = true, bestMatchesCached = false))
         assertEquals(NetworkEventBranch.LOST_SELECTABLE, branch(cachedPresent = true))
         assertEquals(NetworkEventBranch.LOST_ACTIVE, branch(bestPresent = true, cachedPresent = true, activePresent = false))

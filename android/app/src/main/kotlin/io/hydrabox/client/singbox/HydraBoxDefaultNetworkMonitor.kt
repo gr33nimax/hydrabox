@@ -38,6 +38,7 @@ internal enum class NetworkEventBranch(val telemetryValue: String) {
     NOOP("noop"),
     CHANGED("changed"),
     NONE("none"),
+    INDEX_UNAVAILABLE("index_unavailable"),
 }
 
 internal fun decideNetworkEventBranch(
@@ -445,27 +446,24 @@ object HydraBoxDefaultNetworkMonitor {
     }
 
     private fun updateNetwork(network: Network) {
-        HydraBoxDiagnostics.event(
-            "NETWORK", "ep" to shortMonitorId(CoreProcessIdentity.epoch), "cg" to CoreProcessIdentity.generation.get(),
-            "rg" to SingboxController.activeRuntimeGeneration, "ng" to notificationGeneration.get(),
-            "trigger" to NetworkEventTrigger.CALLBACK.telemetryValue,
-            "branch" to decideNetworkEventBranch(
-                trigger = NetworkEventTrigger.CALLBACK,
-                bestNetworkPresent = false,
-                bestMatchesCached = true,
-                cachedNetworkPresent = false,
-                activeNetworkPresent = true,
-                cachedInterfaceStale = false,
-                changed = true,
-            ).telemetryValue,
-            "ms_since_last_callback" to msSinceLastCallback(SystemClock.elapsedRealtime(), lastAndroidCallbackElapsedMs.get()),
-        )
         if (!isBaseUsableNetwork(network)) {
             Log.i(TAG, "ignore unusable network=$network")
             HydraBoxDiagnostics.log(TAG, "ignore unusable ${describeNetwork(network)}")
+            var changed = false
             synchronized(lock) {
-                if (currentNetwork == network) currentNetwork = resolveBestNetwork(exclude = network)
+                if (currentNetwork == network) {
+                    val replacement = resolveBestNetwork(exclude = network)
+                    changed = currentNetwork != replacement
+                    currentNetwork = replacement
+                }
             }
+            HydraBoxDiagnostics.event(
+                "NETWORK", "ep" to shortMonitorId(CoreProcessIdentity.epoch), "cg" to CoreProcessIdentity.generation.get(),
+                "rg" to SingboxController.activeRuntimeGeneration, "ng" to notificationGeneration.get(),
+                "trigger" to NetworkEventTrigger.CALLBACK.telemetryValue,
+                "branch" to if (changed) NetworkEventBranch.CHANGED.telemetryValue else NetworkEventBranch.NOOP.telemetryValue,
+                "ms_since_last_callback" to msSinceLastCallback(SystemClock.elapsedRealtime(), lastAndroidCallbackElapsedMs.get()),
+            )
             notifyListener(force = true)
             return
         }
@@ -497,6 +495,21 @@ object HydraBoxDefaultNetworkMonitor {
             TAG,
             "updateNetwork event=${describeNetwork(network)} preferred=${describeNetwork(preferredNetwork)} " +
                 "previous=${describeNetwork(previousNetwork)} notify=$shouldNotify force=$shouldForceNotify",
+        )
+        HydraBoxDiagnostics.event(
+            "NETWORK", "ep" to shortMonitorId(CoreProcessIdentity.epoch), "cg" to CoreProcessIdentity.generation.get(),
+            "rg" to SingboxController.activeRuntimeGeneration, "ng" to notificationGeneration.get(),
+            "trigger" to NetworkEventTrigger.CALLBACK.telemetryValue,
+            "branch" to decideNetworkEventBranch(
+                trigger = NetworkEventTrigger.CALLBACK,
+                bestNetworkPresent = false,
+                bestMatchesCached = true,
+                cachedNetworkPresent = false,
+                activeNetworkPresent = true,
+                cachedInterfaceStale = false,
+                changed = shouldNotify,
+            ).telemetryValue,
+            "ms_since_last_callback" to msSinceLastCallback(SystemClock.elapsedRealtime(), lastAndroidCallbackElapsedMs.get()),
         )
         if (shouldForceNotify) {
             notifyListener(force = true)
@@ -650,14 +663,7 @@ object HydraBoxDefaultNetworkMonitor {
                 "NETWORK", "ep" to shortMonitorId(CoreProcessIdentity.epoch), "cg" to CoreProcessIdentity.generation.get(),
                 "rg" to SingboxController.activeRuntimeGeneration, "ng" to notificationGeneration.get(),
                 "trigger" to NetworkEventTrigger.CALLBACK.telemetryValue,
-                "branch" to decideNetworkEventBranch(
-                    trigger = NetworkEventTrigger.CALLBACK,
-                    bestNetworkPresent = true,
-                    bestMatchesCached = true,
-                    cachedNetworkPresent = true,
-                    activeNetworkPresent = true,
-                    cachedInterfaceStale = true,
-                ).telemetryValue,
+                "branch" to NetworkEventBranch.INDEX_UNAVAILABLE.telemetryValue,
                 "result" to "skip",
             )
             notifyListener(notifyDuplicate = notifyDuplicate, targetListener = targetListener)
