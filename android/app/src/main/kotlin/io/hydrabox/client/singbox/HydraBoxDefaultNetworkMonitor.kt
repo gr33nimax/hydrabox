@@ -24,6 +24,42 @@ import java.util.concurrent.atomic.AtomicLong
 internal fun msSinceLastCallback(nowMs: Long, lastMs: Long): Long =
     if (lastMs < 0L) -1L else (nowMs - lastMs).coerceAtLeast(0L)
 
+internal enum class NetworkEventTrigger(val telemetryValue: String) {
+    CALLBACK("callback"),
+    HEARTBEAT("heartbeat"),
+    LAUNCH("launch"),
+}
+
+internal enum class NetworkEventBranch(val telemetryValue: String) {
+    DIVERGENCE("divergence"),
+    LOST_SELECTABLE("lost_selectable"),
+    LOST_ACTIVE("lost_active"),
+    STALE_IFACE("stale_iface"),
+    NOOP("noop"),
+    CHANGED("changed"),
+    NONE("none"),
+}
+
+internal fun decideNetworkEventBranch(
+    trigger: NetworkEventTrigger,
+    bestNetworkPresent: Boolean,
+    bestMatchesCached: Boolean,
+    cachedNetworkPresent: Boolean,
+    activeNetworkPresent: Boolean,
+    cachedInterfaceStale: Boolean,
+    changed: Boolean = false,
+    none: Boolean = false,
+): NetworkEventBranch = when {
+    trigger == NetworkEventTrigger.LAUNCH -> NetworkEventBranch.NOOP
+    none -> NetworkEventBranch.NONE
+    changed -> NetworkEventBranch.CHANGED
+    bestNetworkPresent && !bestMatchesCached -> NetworkEventBranch.DIVERGENCE
+    !bestNetworkPresent && cachedNetworkPresent -> NetworkEventBranch.LOST_SELECTABLE
+    !activeNetworkPresent && cachedNetworkPresent -> NetworkEventBranch.LOST_ACTIVE
+    cachedInterfaceStale -> NetworkEventBranch.STALE_IFACE
+    else -> NetworkEventBranch.NOOP
+}
+
 private fun shortMonitorId(value: String): String = value.take(8).ifEmpty { "none" }
 
 internal enum class InterfacePublication {
@@ -145,6 +181,20 @@ object HydraBoxDefaultNetworkMonitor {
         Log.i(TAG, "start")
         HydraBoxDiagnostics.log(TAG, "start current=${describeCurrentState()}")
         register()
+        HydraBoxDiagnostics.event(
+            "NETWORK", "ep" to shortMonitorId(CoreProcessIdentity.epoch), "cg" to CoreProcessIdentity.generation.get(),
+            "rg" to SingboxController.activeRuntimeGeneration, "ng" to notificationGeneration.get(),
+            "trigger" to NetworkEventTrigger.LAUNCH.telemetryValue,
+            "branch" to decideNetworkEventBranch(
+                trigger = NetworkEventTrigger.LAUNCH,
+                bestNetworkPresent = false,
+                bestMatchesCached = true,
+                cachedNetworkPresent = false,
+                activeNetworkPresent = true,
+                cachedInterfaceStale = false,
+            ).telemetryValue,
+            "ms_since_last_callback" to msSinceLastCallback(SystemClock.elapsedRealtime(), lastAndroidCallbackElapsedMs.get()),
+        )
         startHeartbeat()
     }
 
@@ -202,10 +252,20 @@ object HydraBoxDefaultNetworkMonitor {
         val active = HydraBoxApplication.connectivity.activeNetwork
         val cached = synchronized(lock) { currentNetwork }
         val best = resolveBestNetwork()
+        val cachedInterfaceStale =
+            cached != null && best == cached && active != null && listenerInterfaceLikelyStale(cached)
         HydraBoxDiagnostics.event(
             "NETWORK", "ep" to shortMonitorId(CoreProcessIdentity.epoch), "cg" to CoreProcessIdentity.generation.get(),
             "rg" to SingboxController.activeRuntimeGeneration, "ng" to notificationGeneration.get(),
-            "trigger" to "heartbeat", "branch" to "tick",
+            "trigger" to NetworkEventTrigger.HEARTBEAT.telemetryValue,
+            "branch" to decideNetworkEventBranch(
+                trigger = NetworkEventTrigger.HEARTBEAT,
+                bestNetworkPresent = best != null,
+                bestMatchesCached = best == cached,
+                cachedNetworkPresent = cached != null,
+                activeNetworkPresent = active != null,
+                cachedInterfaceStale = cachedInterfaceStale,
+            ).telemetryValue,
             "ms_since_last_callback" to msSinceLastCallback(SystemClock.elapsedRealtime(), lastAndroidCallbackElapsedMs.get()),
         )
         if (best != null && best != cached) {
@@ -227,7 +287,7 @@ object HydraBoxDefaultNetworkMonitor {
                 if (started) currentNetwork = replacement
             }
             notifyListener(force = true)
-        } else if (cached != null && listenerInterfaceLikelyStale(cached)) {
+        } else if (cached != null && cachedInterfaceStale) {
             Log.i(TAG, "heartbeat re-assert cached=$cached")
             notifyListener(force = true)
         } else if (cached != null) {
@@ -388,7 +448,16 @@ object HydraBoxDefaultNetworkMonitor {
         HydraBoxDiagnostics.event(
             "NETWORK", "ep" to shortMonitorId(CoreProcessIdentity.epoch), "cg" to CoreProcessIdentity.generation.get(),
             "rg" to SingboxController.activeRuntimeGeneration, "ng" to notificationGeneration.get(),
-            "trigger" to "callback", "branch" to "update",
+            "trigger" to NetworkEventTrigger.CALLBACK.telemetryValue,
+            "branch" to decideNetworkEventBranch(
+                trigger = NetworkEventTrigger.CALLBACK,
+                bestNetworkPresent = false,
+                bestMatchesCached = true,
+                cachedNetworkPresent = false,
+                activeNetworkPresent = true,
+                cachedInterfaceStale = false,
+                changed = true,
+            ).telemetryValue,
             "ms_since_last_callback" to msSinceLastCallback(SystemClock.elapsedRealtime(), lastAndroidCallbackElapsedMs.get()),
         )
         if (!isBaseUsableNetwork(network)) {
@@ -580,7 +649,16 @@ object HydraBoxDefaultNetworkMonitor {
             HydraBoxDiagnostics.event(
                 "NETWORK", "ep" to shortMonitorId(CoreProcessIdentity.epoch), "cg" to CoreProcessIdentity.generation.get(),
                 "rg" to SingboxController.activeRuntimeGeneration, "ng" to notificationGeneration.get(),
-                "trigger" to "callback", "branch" to "index_unavailable", "result" to "skip",
+                "trigger" to NetworkEventTrigger.CALLBACK.telemetryValue,
+                "branch" to decideNetworkEventBranch(
+                    trigger = NetworkEventTrigger.CALLBACK,
+                    bestNetworkPresent = true,
+                    bestMatchesCached = true,
+                    cachedNetworkPresent = true,
+                    activeNetworkPresent = true,
+                    cachedInterfaceStale = true,
+                ).telemetryValue,
+                "result" to "skip",
             )
             notifyListener(notifyDuplicate = notifyDuplicate, targetListener = targetListener)
             return

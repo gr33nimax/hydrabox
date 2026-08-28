@@ -1,12 +1,28 @@
 package io.hydrabox.client.singbox
 
 import java.lang.reflect.Modifier
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 
 class HydraBoxEventFormatTest {
+    private lateinit var originalLogcat: (String, String) -> Unit
+    private val messages = mutableListOf<Pair<String, String>>()
+
+    @Before
+    fun setUp() {
+        originalLogcat = HydraBoxDiagnostics.logcat
+        HydraBoxDiagnostics.logcat = { tag, message -> messages += tag to message }
+    }
+
+    @After
+    fun tearDown() {
+        HydraBoxDiagnostics.logcat = originalLogcat
+    }
+
     @Test
     fun `event omits null fields and normalizes values`() {
         HydraBoxDiagnostics.event(
@@ -15,7 +31,7 @@ class HydraBoxEventFormatTest {
             "missing" to null,
         )
 
-        val line = pendingLine().substringAfter("HB1: ")
+        val line = messages.single().second
 
         assertTrue(line.startsWith("HB1 "))
         assertTrue(line.contains("text=has_spaces"))
@@ -31,14 +47,5 @@ class HydraBoxEventFormatTest {
 
         assertEquals(codes.toSet(), HydraBoxEventCodes.ALL)
         assertEquals(codes.size, HydraBoxEventCodes.ALL.size)
-    }
-
-    private fun pendingLine(): String {
-        val field = HydraBoxDiagnostics::class.java.getDeclaredField("pendingLines")
-        field.isAccessible = true
-        val pendingLines = field.get(null) as StringBuilder
-        return synchronized(pendingLines) {
-            pendingLines.toString().also { pendingLines.setLength(0) }
-        }
     }
 }
