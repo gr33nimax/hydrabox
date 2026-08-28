@@ -86,4 +86,42 @@ class RuntimeStateMachineTest {
         assertEquals(state, decision.state)
         assertNull(decision.deadlineMillis)
     }
+
+    @Test
+    fun `released success stops stopping runtime`() {
+        val decision = reduce(
+            RuntimeMachineState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING, commandGeneration = 4),
+            RuntimeInput.Event.Released(commandGeneration = 4, success = true),
+            RuntimeReduceContext(),
+        )
+
+        assertEquals(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPED, decision.state.value)
+    }
+
+    @Test
+    fun `released failure follows shutdown deadline path`() {
+        val decision = reduce(
+            RuntimeMachineState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING, commandGeneration = 4),
+            RuntimeInput.Event.Released(commandGeneration = 4, success = false),
+            RuntimeReduceContext(),
+        )
+
+        assertEquals(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_FAILED, decision.state.value)
+    }
+
+    @Test
+    fun `stale released event is ignored`() {
+        val state = RuntimeMachineState(
+            CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING,
+            commandGeneration = 4,
+        )
+
+        val decision = reduce(
+            state,
+            RuntimeInput.Event.Released(commandGeneration = 3, success = true),
+            RuntimeReduceContext(),
+        )
+
+        assertEquals(state, decision.state)
+    }
 }

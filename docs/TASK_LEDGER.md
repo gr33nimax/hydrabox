@@ -36,3 +36,8 @@
 | HB-RW-002-FIX | hydrabox | b663a02 | DONE |
 | HB-RW-001-FIX | hydrabox | 7082e08 | DONE |
 | HB-EXP-E2B | hydrabox | — | DONE (P2) |
+| E2B-BUILD-FIX | hydrabox | c74030b | DONE (+9e2ac06, eeb9b3e, 9d624fe, 5c15625 — R8 для release-инструментации) |
+| HB-RW-007 | hydrabox | 593df55 | DONE |
+| HB-RW-008a | hydrabox | 44d68da | DONE |
+| HB-RW-008b | hydrabox | 53e2773 | DONE |
+| HB-RW-008 | hydrabox | 44d68da, 53e2773, a9c2e9a | DONE |

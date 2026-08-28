@@ -34,6 +34,7 @@ import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
@@ -67,7 +68,7 @@ internal sealed interface RuntimeInput {
             val challenge: Boolean = false,
         ) : Event
         data class Deadline(val commandGeneration: Long) : Event
-        data class Released(val commandGeneration: Long) : Event
+        data class Released(val commandGeneration: Long, val success: Boolean) : Event
         data class Replay(val listener: ICoreRuntimeListener) : Event
         data class ControllerEvent(val value: Any?) : Event
     }
@@ -159,7 +160,11 @@ internal fun reduce(
     ) {
         Decision(
             state.copy(
-                value = CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPED,
+                value = if (input.success) {
+                    CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPED
+                } else {
+                    CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_FAILED
+                },
                 runtimeGeneration = 0L,
             ),
         )
@@ -236,6 +241,9 @@ class CoreRuntimeService : Service() {
             isDaemon = true
         }
     }
+    private val scheduler = Executors.newSingleThreadScheduledExecutor { runnable ->
+        Thread(runnable, "HydraCoreRuntimeTimers").apply { isDaemon = true }
+    }
     private val mainHandler = Handler(Looper.getMainLooper())
     private val selectedOutbounds = linkedMapOf<String, String>()
     private val snapshotLock = Any()
@@ -250,14 +258,13 @@ class CoreRuntimeService : Service() {
     @Volatile private var transportHealthRequired = false
     @Volatile private var interactiveStart = false
     @Volatile private var startDeadlineStartedAt = 0L
+    @Volatile private var activeRuntimeGeneration = 0L
+    @Volatile private var activeStartCommandId = ""
+    private var transportHealthPoll: ScheduledFuture<*>? = null
+    private var pendingRelease: PendingRelease? = null
     private var controllerRegistration = 0L
     private lateinit var coreContract: CoreRuntimeProtocol.CoreContract
-    private val transportHealthPoll = object : Runnable {
-        override fun run() {
-            refreshTransportHealth(emitIfChanged = true)
-            mainHandler.postDelayed(this, TRANSPORT_HEALTH_POLL_MILLIS)
-        }
-    }
+    private data class PendingRelease(val commandGeneration: Long, val onComplete: (Boolean) -> Unit)
 
     private val binder = object : ICoreRuntimeService.Stub() {
         override fun getContract(): ByteArray = coreContract.toByteArray()
@@ -358,7 +365,6 @@ class CoreRuntimeService : Service() {
                     }
                 },
             )
-            refreshFromController()
             refreshNetworkSnapshotFromMonitor("core_service_start")
 
             // A stale 0.x or interrupted-write config is a configuration recovery,
@@ -369,7 +375,12 @@ class CoreRuntimeService : Service() {
 
             startupFailure.markStage("snapshot", nativeSourceLabel())
             buildSnapshot()
-            mainHandler.post(transportHealthPoll)
+            transportHealthPoll = scheduler.scheduleAtFixedRate(
+                { refreshTransportHealth(emitEvent = true) },
+                0L,
+                TRANSPORT_HEALTH_POLL_MILLIS,
+                TimeUnit.MILLISECONDS,
+            )
             startupFailure.clear()
             Log.i(
                 TAG,
@@ -439,7 +450,8 @@ class CoreRuntimeService : Service() {
     }
 
     override fun onDestroy() {
-        mainHandler.removeCallbacks(transportHealthPoll)
+        transportHealthPoll?.cancel(true)
+        scheduler.shutdownNow()
         SingboxController.clearEventSink(controllerRegistration)
         listeners.kill()
         commandExecutor.shutdownNow()
@@ -502,11 +514,11 @@ class CoreRuntimeService : Service() {
             when (input) {
                 is RuntimeInput.Command.Submitted -> execute(input.value)
                 RuntimeInput.Command.Start,
-                RuntimeInput.Command.Stop,
-                is RuntimeInput.Event.Launched,
-                is RuntimeInput.Event.Deadline,
-                is RuntimeInput.Event.Released -> Unit
-                is RuntimeInput.Event.Health -> emit(snapshotEvent())
+                RuntimeInput.Command.Stop -> Unit
+                is RuntimeInput.Event.Launched -> handleLaunched(input)
+                is RuntimeInput.Event.Deadline -> handleDeadline(input)
+                is RuntimeInput.Event.Released -> handleReleased(input)
+                is RuntimeInput.Event.Health -> handleHealth(input)
                 is RuntimeInput.Event.Replay ->
                     runCatching { input.listener.onEvent(snapshotEvent().toByteArray()) }
                 is RuntimeInput.Event.ControllerEvent -> handleControllerEvent(input.value)
@@ -528,7 +540,7 @@ class CoreRuntimeService : Service() {
             )
             return
         }
-        refreshTransportHealth(emitIfChanged = true)
+        refreshTransportHealth(emitEvent = true)
         commandSucceeded(command.commandId, state.get())
     }
 
@@ -723,12 +735,12 @@ class CoreRuntimeService : Service() {
             return
         }
         transportHealthRequired = TransportHealthBridge.configRequiresHealth(config)
-        refreshTransportHealth(emitIfChanged = false)
+        refreshTransportHealth(emitEvent = false)
         val commandGeneration = generation.incrementAndGet()
+        activeStartCommandId = command.commandId
         interactiveStart = request.interactiveDeadlineMillis > START_DEADLINE_MILLIS
         startDeadlineStartedAt = System.currentTimeMillis()
         mode.set(request.mode)
-        updateState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_PREPARING)
         val writeError = runCatching { writeConfigAtomically(config) }.exceptionOrNull()
         if (writeError != null) {
             commandFailed(
@@ -760,28 +772,25 @@ class CoreRuntimeService : Service() {
             },
         )
         updateState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STARTING)
+        scheduleDeadline(commandGeneration, START_DEADLINE_MILLIS)
         mainHandler.post {
             val targetName = if (request.mode == CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_VPN) "vpn" else "proxy"
             val sameRunningMode = SingboxController.running && SingboxController.serviceMode == targetName
             when {
                 sameRunningMode && request.restartCore -> {
-                    val previousNativeGeneration = SingboxController.activeRuntimeGeneration
                     val serviceClass = serviceClass(request.mode)
                     updateState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RECOVERING)
                     startService(Intent(this, serviceClass).setAction(HydraBoxService.ACTION_RESTART_CORE))
-                    awaitRunning(
-                        command.commandId,
-                        commandGeneration,
-                        request.mode,
-                        System.currentTimeMillis(),
-                        previousNativeGeneration,
-                    )
                 }
                 sameRunningMode && request.applyConfig -> {
                     SingboxController.reloadService { result ->
                         result.onSuccess {
-                            updateState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING)
-                            verifyHealthAndCompleteStart(command.commandId, commandGeneration)
+                            submitInternal(
+                                RuntimeInput.Event.Launched(
+                                    commandGeneration,
+                                    SingboxController.activeRuntimeGeneration,
+                                ),
+                            )
                         }.onFailure {
                             failStartAndRollback(
                                 command.commandId,
@@ -794,10 +803,11 @@ class CoreRuntimeService : Service() {
                         }
                     }
                 }
-                sameRunningMode -> verifyHealthAndCompleteStart(command.commandId, commandGeneration)
+                sameRunningMode -> submitInternal(
+                    RuntimeInput.Event.Launched(commandGeneration, SingboxController.activeRuntimeGeneration),
+                )
                 else -> {
                     dispatchStart(request.mode)
-                    awaitRunning(command.commandId, commandGeneration, request.mode, System.currentTimeMillis())
                 }
             }
         }
@@ -825,120 +835,6 @@ class CoreRuntimeService : Service() {
         startForegroundService(Intent(this, serviceClass).setAction(HydraBoxService.ACTION_START))
     }
 
-    private fun awaitRunning(
-        commandId: String,
-        commandGeneration: Long,
-        expectedMode: CoreRuntimeProtocol.RuntimeMode,
-        startedAt: Long,
-        previousNativeGeneration: Long = -1L,
-    ) {
-        if (generation.get() != commandGeneration) {
-            commandFailed(commandId, "runtime.start.superseded", "runtime_start", "The runtime start was superseded by a newer command.", false)
-            return
-        }
-        val expectedName = if (expectedMode == CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_VPN) "vpn" else "proxy"
-        if (SingboxController.running && SingboxController.serviceMode == expectedName &&
-            (previousNativeGeneration < 0L || SingboxController.activeRuntimeGeneration > previousNativeGeneration)
-        ) {
-            updateState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING)
-            verifyHealthAndCompleteStart(commandId, commandGeneration)
-            return
-        }
-        refreshTransportHealth(emitIfChanged = true)
-        val waitingForUser = synchronized(snapshotLock) {
-            transportHealth.state ==
-                CoreRuntimeProtocol.TransportHealthState.TRANSPORT_HEALTH_STATE_WAITING_USER
-        }
-        val startDeadline = deadlineFor(interactiveStart, waitingForUser)
-        if (System.currentTimeMillis() - startedAt >= startDeadline) {
-            failStartAndRollback(
-                commandId,
-                commandGeneration,
-                "runtime.start.deadline",
-                "runtime_start",
-                "HydraCore did not reach the running state before the deadline.",
-                true,
-            )
-            return
-        }
-        mainHandler.postDelayed(
-            {
-                awaitRunning(
-                    commandId,
-                    commandGeneration,
-                    expectedMode,
-                    startedAt,
-                    previousNativeGeneration,
-                )
-            },
-            STATE_POLL_MILLIS,
-        )
-    }
-
-    private fun verifyHealthAndCompleteStart(commandId: String, commandGeneration: Long) {
-        SingboxController.getRuntimeSnapshot { result ->
-            if (generation.get() != commandGeneration) {
-                commandFailed(commandId, "runtime.start.superseded", "runtime_start", "The runtime start was superseded by a newer command.", false)
-                return@getRuntimeSnapshot
-            }
-            result.onSuccess {
-                refreshNetworkSnapshotFromMonitor("runtime_start_complete")
-                if (transportHealthRequired) {
-                    awaitTransportReady(commandId, commandGeneration, startDeadlineStartedAt)
-                } else {
-                    completeHealthyStart(commandId)
-                }
-            }.onFailure {
-                HydraBoxDiagnostics.event(
-                    "START",
-                    "ep" to shortId(processEpoch), "cg" to commandGeneration,
-                    "rg" to SingboxController.activeRuntimeGeneration,
-                    "ng" to HydraBoxDefaultNetworkMonitor.currentInterfaceState("command_client").generation,
-                    "stage" to "command_client", "result" to "fail",
-                )
-                refreshNetworkSnapshotFromMonitor("runtime_start_snapshot_unavailable")
-                if (transportHealthRequired) {
-                    awaitTransportReady(commandId, commandGeneration, startDeadlineStartedAt)
-                } else {
-                    completeHealthyStart(commandId)
-                }
-            }
-        }
-    }
-
-    private fun awaitTransportReady(commandId: String, commandGeneration: Long, startedAt: Long) {
-        if (generation.get() != commandGeneration) {
-            commandFailed(commandId, "runtime.start.superseded", "runtime_start", "The runtime start was superseded by a newer command.", false)
-            return
-        }
-        refreshTransportHealth(emitIfChanged = true)
-        val health = synchronized(snapshotLock) { transportHealth }
-        if (TransportHealthBridge.isConnected(health)) {
-            completeHealthyStart(commandId)
-            return
-        }
-        val elapsed = System.currentTimeMillis() - startedAt
-        val waitingForUser = health.state ==
-            CoreRuntimeProtocol.TransportHealthState.TRANSPORT_HEALTH_STATE_WAITING_USER
-        val deadline = deadlineFor(interactiveStart, waitingForUser)
-        if (health.state == CoreRuntimeProtocol.TransportHealthState.TRANSPORT_HEALTH_STATE_FAILED ||
-            elapsed >= deadline
-        ) {
-            failStartAndRollback(
-                commandId,
-                commandGeneration,
-                "runtime.transport.unhealthy",
-                "transport_health",
-                "HydraCore did not establish a usable transport.",
-                true,
-            )
-            return
-        }
-        mainHandler.postDelayed(
-            { awaitTransportReady(commandId, commandGeneration, startedAt) },
-            TRANSPORT_HEALTH_POLL_MILLIS,
-        )
-    }
 
     private fun completeHealthyStart(commandId: String) {
         HydraBoxApplication.readDesiredRuntime()?.let {
@@ -953,6 +849,95 @@ class CoreRuntimeService : Service() {
             "prof" to synchronized(snapshotLock) { shortHex(activeConfigSha256) },
             "active_lanes" to health.activeLanes, "target_lanes" to health.totalLanes, "elapsed_ms_from_connect" to 0,
         )
+    }
+
+    private fun scheduleDeadline(commandGeneration: Long, delayMillis: Long) {
+        scheduler.schedule(
+            { submitInternal(RuntimeInput.Event.Deadline(commandGeneration)) },
+            delayMillis,
+            TimeUnit.MILLISECONDS,
+        )
+    }
+
+    private fun handleLaunched(input: RuntimeInput.Event.Launched) {
+        val decision = reduce(
+            RuntimeMachineState(state.get(), generation.get(), activeRuntimeGeneration),
+            input,
+            RuntimeReduceContext(),
+        )
+        if (decision.state == RuntimeMachineState(state.get(), generation.get(), activeRuntimeGeneration)) return
+        activeRuntimeGeneration = decision.state.runtimeGeneration
+        refreshNetworkSnapshotFromMonitor("runtime_start_complete")
+        refreshTransportHealth(emitEvent = true)
+    }
+
+    private fun handleHealth(input: RuntimeInput.Event.Health) {
+        val current = RuntimeMachineState(state.get(), generation.get(), activeRuntimeGeneration)
+        val decision = reduce(current, input, RuntimeReduceContext())
+        if (input.challenge && decision.deadlineMillis != null) {
+            scheduleDeadline(input.commandGeneration, decision.deadlineMillis)
+        }
+        if (decision.state.value != current.value) {
+            updateState(decision.state.value)
+            if (decision.state.value == CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING) {
+                completeHealthyStart(activeStartCommandId)
+            }
+        } else if (current.value in setOf(
+                CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STARTING,
+                CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RECOVERING,
+            ) && synchronized(snapshotLock) {
+                transportHealth.state ==
+                    CoreRuntimeProtocol.TransportHealthState.TRANSPORT_HEALTH_STATE_FAILED
+            }
+        ) {
+            failStartAndRollback(
+                activeStartCommandId,
+                input.commandGeneration,
+                "runtime.transport.unhealthy",
+                "transport_health",
+                "HydraCore did not establish a usable transport.",
+                true,
+            )
+        }
+        emit(snapshotEvent())
+    }
+
+    private fun handleDeadline(input: RuntimeInput.Event.Deadline) {
+        val current = RuntimeMachineState(state.get(), generation.get(), activeRuntimeGeneration)
+        val health = synchronized(snapshotLock) { transportHealth }
+        val deadline = deadlineFor(
+            interactiveStart,
+            health.state == CoreRuntimeProtocol.TransportHealthState.TRANSPORT_HEALTH_STATE_WAITING_USER,
+        )
+        val remaining = deadline - (System.currentTimeMillis() - startDeadlineStartedAt)
+        if (remaining > 0L) {
+            scheduleDeadline(input.commandGeneration, remaining)
+            return
+        }
+        val decision = reduce(current, input, RuntimeReduceContext())
+        if (decision.state.value != CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_FAILED) return
+        val transportFailed = health.state ==
+            CoreRuntimeProtocol.TransportHealthState.TRANSPORT_HEALTH_STATE_FAILED
+        failStartAndRollback(
+            activeStartCommandId,
+            input.commandGeneration,
+            if (transportFailed) "runtime.transport.unhealthy" else "runtime.start.deadline",
+            if (transportFailed) "transport_health" else "runtime_start",
+            if (transportFailed) "HydraCore did not establish a usable transport."
+            else "HydraCore did not reach the running state before the deadline.",
+            true,
+        )
+    }
+
+    private fun handleReleased(input: RuntimeInput.Event.Released) {
+        val current = RuntimeMachineState(state.get(), generation.get(), activeRuntimeGeneration)
+        val decision = reduce(current, input, RuntimeReduceContext())
+        if (decision.state == current) return
+        val pending = pendingRelease ?: return
+        if (pending.commandGeneration != input.commandGeneration) return
+        pendingRelease = null
+        updateState(decision.state.value)
+        pending.onComplete(input.success)
     }
 
     private fun failStartAndRollback(
@@ -987,6 +972,8 @@ class CoreRuntimeService : Service() {
 
     private fun shutdownRuntimeServices(reason: String, onComplete: (Boolean) -> Unit) {
         HydraBoxApplication.clearRuntimeIntent()
+        val commandGeneration = generation.get()
+        pendingRelease = PendingRelease(commandGeneration, onComplete)
         mainHandler.post {
             HydraBoxService.requestStopAll(reason)
             // Destroy both possible owners as part of the same transaction. A
@@ -994,24 +981,11 @@ class CoreRuntimeService : Service() {
             // alive while the runtime is reported as failed.
             stopService(Intent(this, HydraBoxVpnService::class.java))
             stopService(Intent(this, HydraBoxProxyService::class.java))
-            awaitRuntimeServicesReleased(System.currentTimeMillis(), onComplete)
+            // Transitions to ControllerEvent in HB-RW-032.
+            SingboxController.awaitStopped(timeoutMs = RUNTIME_SHUTDOWN_DEADLINE_MILLIS) { success ->
+                submitInternal(RuntimeInput.Event.Released(commandGeneration, success))
+            }
         }
-    }
-
-    private fun awaitRuntimeServicesReleased(startedAt: Long, onComplete: (Boolean) -> Unit) {
-        val stopped = !SingboxController.running && !HydraBoxService.hasActiveRuntimeOwner()
-        if (stopped) {
-            onComplete(true)
-            return
-        }
-        if (System.currentTimeMillis() - startedAt >= RUNTIME_SHUTDOWN_DEADLINE_MILLIS) {
-            onComplete(false)
-            return
-        }
-        mainHandler.postDelayed(
-            { awaitRuntimeServicesReleased(startedAt, onComplete) },
-            STATE_POLL_MILLIS,
-        )
     }
 
     private fun resetStoppedRuntimeState() {
@@ -1037,7 +1011,6 @@ class CoreRuntimeService : Service() {
         shutdownRuntimeServices(command.stop.reason.ifBlank { "runtime_command" }) { stopped ->
             if (stopped) {
                 resetStoppedRuntimeState()
-                updateState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPED)
                 commandSucceeded(command.commandId, CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPED)
             } else {
                 commandFailed(
@@ -1338,10 +1311,14 @@ class CoreRuntimeService : Service() {
             "reason" to "transport_lost", "elapsed_ms" to 0,
         )
         HydraBoxService.requestStopAll("recovery:${command.requestRecovery.reason}")
-        mainHandler.postDelayed({
-            dispatchStart(mode.get())
-            awaitRunning(command.commandId, generation.incrementAndGet(), mode.get(), System.currentTimeMillis())
-        }, STATE_POLL_MILLIS)
+        val commandGeneration = generation.incrementAndGet()
+        activeStartCommandId = command.commandId
+        scheduleDeadline(commandGeneration, START_DEADLINE_MILLIS)
+        scheduler.schedule(
+            { mainHandler.post { dispatchStart(mode.get()) } },
+            STATE_POLL_MILLIS,
+            TimeUnit.MILLISECONDS,
+        )
     }
 
     private fun buildContract(): CoreRuntimeProtocol.CoreContract {
@@ -1382,29 +1359,17 @@ class CoreRuntimeService : Service() {
             .build()
     }
 
-    private fun refreshFromController() {
-        val newState = when {
-            SingboxController.running -> CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING
-            state.get() == CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STARTING -> state.get()
-            state.get() == CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING -> state.get()
-            else -> CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPED
-        }
-        state.set(newState)
-        mode.set(
-            when (SingboxController.serviceMode) {
-                "vpn" -> CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_VPN
-                "proxy" -> CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_PROXY
-                else -> if (newState == CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPED) {
-                    CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_UNSPECIFIED
-                } else mode.get()
-            },
-        )
-    }
-
     private fun handleControllerEvent(value: Any?) {
-        refreshFromController()
         val event = value as? Map<*, *>
         when (event?.get("type")?.toString()) {
+            "state" -> if (event["running"] == true) {
+                submitInternal(
+                    RuntimeInput.Event.Launched(
+                        generation.get(),
+                        (event["runtimeGeneration"] as? Number)?.toLong() ?: 0L,
+                    ),
+                )
+            }
             "groups" -> updateOutboundGroups(event)
             "urlTestSessions" -> updateProbeSessions(event)
             "network" -> updateNetworkSnapshot(event)
@@ -1580,7 +1545,7 @@ class CoreRuntimeService : Service() {
         return if (raw in 1..9_999_999_999L) raw * 1000L else raw
     }
 
-    private fun refreshTransportHealth(emitIfChanged: Boolean) {
+    private fun refreshTransportHealth(emitEvent: Boolean) {
         val applicable = transportHealthRequired && state.get() !in setOf(
             CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPED,
             CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING,
@@ -1623,12 +1588,15 @@ class CoreRuntimeService : Service() {
                     "failureKind=${failure.kind} failureCode=${failure.code}",
             )
         }
-        if (changed && emitIfChanged) {
+        if (emitEvent) {
+            val health = synchronized(snapshotLock) { transportHealth }
             submitInternal(
                 RuntimeInput.Event.Health(
                     commandGeneration = generation.get(),
                     runtimeGeneration = SingboxController.activeRuntimeGeneration,
-                    ready = false,
+                    ready = !transportHealthRequired || TransportHealthBridge.isConnected(health),
+                    challenge = health.state ==
+                        CoreRuntimeProtocol.TransportHealthState.TRANSPORT_HEALTH_STATE_WAITING_USER,
                 ),
             )
         }
