@@ -17,3 +17,12 @@
 # javax.lang.model существует только в JDK: ссылки приходят из
 # annotation-processor-аннотаций и в APK недостижимы.
 -dontwarn javax.lang.model.**
+
+# AndroidJUnitRunner resolves this class before test code starts.
+-keep class androidx.tracing.Trace { *; }
+
+# Инструментальные тесты исполняются против минифицированного release-APK
+# (testBuildType = "release"). AndroidJUnitRunner и его зависимости обращаются
+# к Kotlin stdlib напрямую, поэтому stdlib сохраняется целиком. Размер APK
+# определяют нативные библиотеки, вклад stdlib пренебрежим.
+-keep class kotlin.** { *; }
