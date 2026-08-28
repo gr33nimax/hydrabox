@@ -24,6 +24,7 @@ object HydraBoxDiagnostics {
         Thread(runnable, "HydraBoxDiagnosticsWriter").apply { isDaemon = true }
     }
     private val timestampFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ", Locale.US)
+    internal var logcat: (String, String) -> Unit = { tag, safeMessage -> Log.i(tag, safeMessage) }
 
     private val diagnosticsFile: File
         get() = File(HydraBoxApplication.application.filesDir, "hydrabox-native-diagnostics.log")
@@ -49,6 +50,7 @@ object HydraBoxDiagnostics {
         runCatching {
             val flushNow = synchronized(pendingLock) {
                 val safeMessage = HydraBoxLogSanitizer.redact(message)
+                logcat(tag, safeMessage)
                 val line = buildString {
                     append('[')
                     append(timestampFormat.format(Date()))
