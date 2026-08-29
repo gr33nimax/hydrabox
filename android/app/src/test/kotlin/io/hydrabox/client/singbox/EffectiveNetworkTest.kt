@@ -1,11 +1,23 @@
 package io.hydrabox.client.singbox
 
+import io.hydrabox.client.runtime.setNetworkGenerationBeforeRebind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class EffectiveNetworkTest {
+    @Test
+    fun `generation is passed before updateDefaultInterface`() {
+        val calls = mutableListOf<String>()
+
+        setNetworkGenerationBeforeRebind(5, { calls += "generation:$it" }) {
+            calls += "updateDefaultInterface"
+        }
+
+        assertEquals(listOf("generation:5", "updateDefaultInterface"), calls)
+    }
+
     @Test
     fun `identical snapshots do not advance generation or publish`() {
         val wifi = NetworkIdentity("wifi", "wlan0", 1)

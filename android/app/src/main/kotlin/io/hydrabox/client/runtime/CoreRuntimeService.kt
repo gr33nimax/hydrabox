@@ -61,6 +61,15 @@ internal fun startSourceFor(recovery: Boolean, requestSource: String, sticky: Bo
     else -> "ui"
 }
 
+internal fun setNetworkGenerationBeforeRebind(
+    generation: Long,
+    setGeneration: (Long) -> Unit,
+    rebind: () -> Unit,
+) {
+    runCatching { setGeneration(generation) }
+    rebind()
+}
+
 /** Additive, side-effect-free runtime transition model; production wiring follows separately. */
 internal sealed interface RuntimeInput {
     sealed interface Command : RuntimeInput {
@@ -766,15 +775,20 @@ class CoreRuntimeService : Service() {
             updatedAtMillis = System.currentTimeMillis(),
         )
         if (decision.networkChangeAction == NetworkChangeAction.ApplyUnderlyingAndRebind) {
-            input.listeners.forEach { listener ->
-                runCatching {
-                    listener.updateDefaultInterface(
-                        input.payload.interfaceName,
-                        input.payload.interfaceIndex,
-                        false,
-                        false,
-                    )
-                }.onFailure { Log.e(TAG, "updateDefaultInterface failed", it) }
+            setNetworkGenerationBeforeRebind(
+                input.payload.networkGeneration,
+                { Libbox.hydraCoreSetNetworkGeneration(it) },
+            ) {
+                input.listeners.forEach { listener ->
+                    runCatching {
+                        listener.updateDefaultInterface(
+                            input.payload.interfaceName,
+                            input.payload.interfaceIndex,
+                            false,
+                            false,
+                        )
+                    }.onFailure { Log.e(TAG, "updateDefaultInterface failed", it) }
+                }
             }
             HydraBoxDiagnostics.event(
                 "REBIND", "ep" to shortId(processEpoch), "cg" to generation.get(),
