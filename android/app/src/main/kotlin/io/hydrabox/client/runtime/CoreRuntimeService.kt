@@ -193,6 +193,19 @@ internal fun reduce(
                 state.activeCommand.mode == input.mode -> Decision(state, commandDecision = RuntimeCommandDecision.NoOp)
             else -> Decision(state, commandDecision = RuntimeCommandDecision.Supersede)
         }
+        CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING -> if (
+            state.activeCommand?.mode == input.mode
+        ) {
+            Decision(state, commandDecision = RuntimeCommandDecision.NoOp)
+        } else {
+            Decision(
+                state.copy(
+                    value = CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING,
+                    commandGeneration = state.commandGeneration + 1,
+                ),
+                commandDecision = RuntimeCommandDecision.Supersede,
+            )
+        }
         CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING -> Decision(state, commandDecision = RuntimeCommandDecision.Queue)
         else -> Decision(state, commandDecision = RuntimeCommandDecision.Reject)
     }
@@ -1180,20 +1193,6 @@ class CoreRuntimeService : Service() {
 
     private fun dispatchStart(targetMode: CoreRuntimeProtocol.RuntimeMode, commandGeneration: Long) {
         val serviceClass = serviceClass(targetMode)
-        val targetName = if (targetMode == CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_VPN) "vpn" else "proxy"
-        if (SingboxController.running && SingboxController.serviceMode != targetName) {
-            RuntimeSession.requestStopAll("runtime_mode_switch")
-            SingboxController.awaitStopped { stopped ->
-                if (stopped) {
-                    startForegroundService(
-                        Intent(this, serviceClass)
-                            .setAction(RuntimeSession.ACTION_START)
-                            .putExtra(RuntimeSession.EXTRA_COMMAND_GENERATION, commandGeneration),
-                    )
-                }
-            }
-            return
-        }
         startForegroundService(
             Intent(this, serviceClass)
                 .setAction(RuntimeSession.ACTION_START)
@@ -1303,6 +1302,12 @@ class CoreRuntimeService : Service() {
         if (pending.commandGeneration != input.commandGeneration) return
         pendingRelease = null
         updateState(decision.state.value)
+        HydraBoxDiagnostics.event(
+            "STOP",
+            "cg" to input.commandGeneration,
+            "prof" to synchronized(snapshotLock) { shortHex(activeConfigSha256) },
+            "stage" to "released",
+        )
         pending.onComplete(input.success)
     }
 
@@ -1346,10 +1351,11 @@ class CoreRuntimeService : Service() {
             // alive while the runtime is reported as failed.
             stopService(Intent(this, HydraBoxVpnService::class.java))
             stopService(Intent(this, HydraBoxProxyService::class.java))
-            // Transitions to ControllerEvent in HB-RW-032.
-            SingboxController.awaitStopped(timeoutMs = RUNTIME_SHUTDOWN_DEADLINE_MILLIS) { success ->
-                submitInternal(RuntimeInput.Event.Released(commandGeneration, success))
-            }
+            scheduler.schedule(
+                { submitInternal(RuntimeInput.Event.Released(commandGeneration, false)) },
+                CLOSE_DEADLINE_MILLIS,
+                TimeUnit.MILLISECONDS,
+            )
         }
     }
 
@@ -1754,6 +1760,8 @@ class CoreRuntimeService : Service() {
                         (event["runtimeGeneration"] as? Number)?.toLong() ?: 0L,
                     ),
                 )
+            } else {
+                submitInternal(RuntimeInput.Event.Released(generation.get(), true))
             }
             "groups" -> updateOutboundGroups(event)
             "urlTestSessions" -> updateProbeSessions(event)
@@ -2426,7 +2434,7 @@ class CoreRuntimeService : Service() {
         // Binder's transaction buffer is finite and shared by the process.
         private const val MAX_COMMAND_BYTES = 768 * 1024
         private const val MAX_CONFIG_BYTES = 700 * 1024
-        private const val RUNTIME_SHUTDOWN_DEADLINE_MILLIS = 5_000L
+        private const val CLOSE_DEADLINE_MILLIS = 5_000L
         private const val TRANSPORT_HEALTH_POLL_MILLIS = 250L
         private const val STATE_POLL_MILLIS = 100L
         private const val ALL_OUTBOUNDS = "*"

@@ -970,40 +970,14 @@ class MainActivity : FlutterFragmentActivity() {
             onComplete(true)
             return
         }
-        SingboxController.awaitStopped { stopped ->
-            if (!stopped) {
-                cleanupStoppedRuntimeState(
-                    reason = reason,
-                    source = "await_timeout",
-                    stopRequestedAtMillis = stopRequestedAtMillis,
-                    targets = cleanupTargets,
-                    force = true,
-                )
-                // Give Service.onDestroy() and the native cleanup worker a short
-                // final window, but never turn a timeout into a fake success.
-                mainHandler.postDelayed({
-                    val verifiedStopped =
-                        !SingboxController.running &&
-                            !RuntimeSession.hasActiveRuntimeOwner()
-                    HydraBoxDiagnostics.log(
-                        TAG,
-                        "dispatchStopRuntime timeout verification reason=$reason " +
-                            "stopped=$verifiedStopped running=${SingboxController.running} " +
-                            "activeOwner=${RuntimeSession.hasActiveRuntimeOwner()}",
-                    )
-                    onComplete(verifiedStopped)
-                }, 750L)
-                return@awaitStopped
-            }
-            cleanupStoppedRuntimeState(
-                reason = reason,
-                source = "await_stopped",
-                stopRequestedAtMillis = stopRequestedAtMillis,
-                targets = cleanupTargets,
-                force = false,
-            )
-            onComplete(true)
-        }
+        cleanupStoppedRuntimeState(
+            reason = reason,
+            source = "await_stopped",
+            stopRequestedAtMillis = stopRequestedAtMillis,
+            targets = cleanupTargets,
+            force = false,
+        )
+        onComplete(true)
     }
 
     private fun dispatchStartAfterConfigWrite(useVpn: Boolean, result: MethodChannel.Result) {
@@ -1063,36 +1037,13 @@ class MainActivity : FlutterFragmentActivity() {
                     .setAction(RuntimeSession.ACTION_STOP)
                     .putExtra(RuntimeSession.EXTRA_STOP_REASON, "mode_switch_to_$targetMode"),
             )
-            SingboxController.awaitStopped { stopped ->
-                if (!stopped) {
-                    val cleaned = cleanupStoppedRuntimeState(
-                        reason = "mode_switch_to_$targetMode",
-                        source = "await_timeout",
-                        stopRequestedAtMillis = stopRequestedAtMillis,
-                        targets = cleanupTargets,
-                        force = true,
-                    )
-                    if (!cleaned) {
-                        SingboxController.log(
-                            "error",
-                            "mode switch aborted: previous VPN stop was not confirmed target=$targetMode",
-                        )
-                        HydraBoxDiagnostics.log(
-                            TAG,
-                            "mode switch start blocked target=$targetMode running=${SingboxController.running} " +
-                                "activeOwner=${RuntimeSession.hasActiveRuntimeOwner()}",
-                        )
-                        return@awaitStopped
-                    }
-                }
-                val serviceIntent = Intent(this, targetService).setAction(RuntimeSession.ACTION_START)
-                Log.i(TAG, "starting target service after mode switch target=${targetService.simpleName} stopped=$stopped")
-                HydraBoxDiagnostics.log(
-                    TAG,
-                    "starting target service after mode switch target=${targetService.simpleName} stopped=$stopped",
-                )
-                startForegroundService(serviceIntent)
-            }
+            val serviceIntent = Intent(this, targetService).setAction(RuntimeSession.ACTION_START)
+            Log.i(TAG, "starting target service after mode switch target=${targetService.simpleName} stopped=true")
+            HydraBoxDiagnostics.log(
+                TAG,
+                "starting target service after mode switch target=${targetService.simpleName} stopped=true",
+            )
+            startForegroundService(serviceIntent)
         } else {
             val serviceIntent = Intent(this, targetService).setAction(RuntimeSession.ACTION_START)
             Log.i(TAG, "starting target service target=${targetService.simpleName}")

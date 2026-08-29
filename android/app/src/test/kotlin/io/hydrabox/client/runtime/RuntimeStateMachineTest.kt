@@ -6,10 +6,14 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class RuntimeStateMachineTest {
-    private fun start(commandId: String, digest: String = "a") = RuntimeInput.Command.Start(
+    private fun start(
+        commandId: String,
+        digest: String = "a",
+        mode: CoreRuntimeProtocol.RuntimeMode = CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_VPN,
+    ) = RuntimeInput.Command.Start(
         commandId = commandId,
         configSha256 = digest,
-        mode = CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_VPN,
+        mode = mode,
     )
 
     private fun activeStart(vararg commandIds: String) = ActiveCommand(
@@ -83,6 +87,39 @@ class RuntimeStateMachineTest {
         )
 
         assertEquals(RuntimeCommandDecision.Supersede, decision.commandDecision)
+    }
+
+    @Test
+    fun `different mode start during running stops before deferred start`() {
+        val decision = reduce(
+            RuntimeMachineState(
+                CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING,
+                4,
+                activeCommand = activeStart("start-1"),
+            ),
+            start("start-2", mode = CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_PROXY),
+            RuntimeReduceContext(),
+        )
+
+        assertEquals(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING, decision.state.value)
+        assertEquals(5L, decision.state.commandGeneration)
+        assertEquals(RuntimeCommandDecision.Supersede, decision.commandDecision)
+    }
+
+    @Test
+    fun `same mode start during running does not stop`() {
+        val decision = reduce(
+            RuntimeMachineState(
+                CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING,
+                4,
+                activeCommand = activeStart("start-1"),
+            ),
+            start("start-2"),
+            RuntimeReduceContext(),
+        )
+
+        assertEquals(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING, decision.state.value)
+        assertEquals(RuntimeCommandDecision.NoOp, decision.commandDecision)
     }
 
     @Test

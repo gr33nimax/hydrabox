@@ -85,8 +85,6 @@ object SingboxController {
     private val lastNoInterfaceReassertUptimeMs = AtomicLong(0L)
     private val interfaceFailureLock = Any()
     private val interfaceDialFailureUptimes = ArrayDeque<Long>()
-    private val stopWaiterLock = Any()
-    private val stopWaiters = mutableListOf<(Boolean) -> Unit>()
 
     private val eventSinkRegistry = RuntimeEventSinkRegistry<RuntimeEventConsumer>()
     private val eventSink: RuntimeEventConsumer?
@@ -526,7 +524,6 @@ object SingboxController {
         activeRuntimeGeneration = 0
         setRunning(false)
         HydraBoxDiagnostics.log(TAG, "markServiceStopped generation=$generation reason=$reason")
-        notifyStopWaiters(true)
     }
 
     fun forceMarkServiceStopped(reason: String) {
@@ -537,42 +534,6 @@ object SingboxController {
             TAG,
             "forceMarkServiceStopped previousGeneration=$previousGeneration reason=$reason",
         )
-        notifyStopWaiters(true)
-    }
-
-    fun awaitStopped(timeoutMs: Long = 5_000L, callback: (Boolean) -> Unit) {
-        if (!running) {
-            mainHandler.post { callback(true) }
-            return
-        }
-        var fired = false
-        lateinit var waiter: (Boolean) -> Unit
-        waiter = { success ->
-            if (!fired) {
-                fired = true
-                callback(success)
-            }
-        }
-        synchronized(stopWaiterLock) {
-            stopWaiters += waiter
-        }
-        mainHandler.postDelayed({
-            val removed = synchronized(stopWaiterLock) {
-                stopWaiters.remove(waiter)
-            }
-            if (removed) {
-                waiter(false)
-            }
-        }, timeoutMs)
-    }
-
-    private fun notifyStopWaiters(success: Boolean) {
-        val waiters = synchronized(stopWaiterLock) {
-            stopWaiters.toList().also { stopWaiters.clear() }
-        }
-        for (waiter in waiters) {
-            mainHandler.post { waiter(success) }
-        }
     }
 
     fun log(level: String, message: String) {
