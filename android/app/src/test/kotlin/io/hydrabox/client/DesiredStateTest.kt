@@ -3,6 +3,7 @@ package io.hydrabox.client
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import java.security.MessageDigest
 
 class DesiredStateTest {
     private val initial = DesiredRuntime(
@@ -28,6 +29,16 @@ class DesiredStateTest {
             DesiredRuntimeDecision.Failed("runtime.recovery.exhausted"),
             desiredRuntimeDecision(initial.copy(recoveryAttempt = 3), initial.configSha256),
         )
+    }
+
+    @Test
+    fun `reconciliation compares the config sha256`() {
+        val config = "config".toByteArray()
+        val sha256 = MessageDigest.getInstance("SHA-256").digest(config).joinToString("") { "%02x".format(it) }
+        val desired = initial.copy(configSha256 = sha256)
+
+        assertEquals(DesiredRuntimeDecision.Recover(desired.copy(recoveryAttempt = 1)), desiredRuntimeDecision(desired, sha256))
+        assertEquals(DesiredRuntimeDecision.Failed("config.stale"), desiredRuntimeDecision(desired, "b".repeat(64)))
     }
 
     @Test

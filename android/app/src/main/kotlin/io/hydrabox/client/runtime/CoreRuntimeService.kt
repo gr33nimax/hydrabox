@@ -2170,7 +2170,7 @@ class CoreRuntimeService : Service() {
             failRuntime("", "config.quarantined", "config_validation", "The stored runtime configuration is invalid.", false)
             return
         }
-        when (val decision = desiredRuntimeDecision(desired, config.toHex())) {
+        when (val decision = desiredRuntimeDecision(desired, config.toSha256Bytes().toHex())) {
             DesiredRuntimeDecision.None -> updateState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPED)
             is DesiredRuntimeDecision.Failed ->
                 failRuntime("", decision.code, "reconciliation", "The stored runtime configuration cannot be recovered.", false)
@@ -2204,7 +2204,7 @@ class CoreRuntimeService : Service() {
     }
 
     private fun currentConfigSha256(): String = runCatching {
-        HydraBoxApplication.configFile.readBytes().toHex()
+        HydraBoxApplication.configFile.readBytes().toSha256Bytes().toHex()
     }.getOrDefault("0".repeat(64))
 
     private fun modeName(value: CoreRuntimeProtocol.RuntimeMode): String =
