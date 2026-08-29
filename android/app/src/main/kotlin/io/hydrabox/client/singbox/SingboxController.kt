@@ -235,7 +235,7 @@ object SingboxController {
                     // A notification action can outlive Flutter's event sink.
                     // Feed its targeted URLTest from the same native stream that
                     // backs the proxy list, never from a synthetic TCP probe.
-                    HydraBoxService.publishNotificationUrlTestResult(
+                    RuntimeSession.publishNotificationUrlTestResult(
                         tag = item.tag,
                         delayMillis = delay.toLong(),
                         timeSeconds = time,
@@ -314,7 +314,7 @@ object SingboxController {
                 downlink > 0L ||
                 uplinkTotal > 0L ||
                 downlinkTotal > 0L
-            HydraBoxService.publishNotificationTraffic(
+            RuntimeSession.publishNotificationTraffic(
                 uplink = uplink,
                 downlink = downlink,
                 uplinkTotal = uplinkTotal,

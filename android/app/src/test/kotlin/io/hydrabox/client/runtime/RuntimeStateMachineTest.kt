@@ -71,6 +71,23 @@ class RuntimeStateMachineTest {
     }
 
     @Test
+    fun `stop during starting enters stopping and released stops`() {
+        val stopping = reduce(
+            RuntimeMachineState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STARTING, commandGeneration = 4),
+            RuntimeInput.Command.Stop,
+            RuntimeReduceContext(),
+        )
+        val stopped = reduce(
+            stopping.state,
+            RuntimeInput.Event.Released(commandGeneration = 5, success = true),
+            RuntimeReduceContext(),
+        )
+
+        assertEquals(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING, stopping.state.value)
+        assertEquals(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPED, stopped.state.value)
+    }
+
+    @Test
     fun `stale launched event is ignored`() {
         val state = RuntimeMachineState(
             CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STARTING,

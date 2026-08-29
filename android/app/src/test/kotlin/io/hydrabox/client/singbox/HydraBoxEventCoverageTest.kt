@@ -6,7 +6,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HydraBoxEventCoverageTest {
-    private val sources = listOf("runtime/CoreRuntimeService.kt", "singbox/HydraBoxService.kt", "singbox/HydraBoxDefaultNetworkMonitor.kt", "singbox/HydraBoxVpnService.kt").associateWith(::source)
+    private val sources = listOf("runtime/CoreRuntimeService.kt", "singbox/RuntimeSession.kt", "singbox/HydraBoxDefaultNetworkMonitor.kt", "singbox/HydraBoxVpnService.kt").associateWith(::source)
 
     @Test fun `required events are present`() {
         val text = sources.values.joinToString("\n")

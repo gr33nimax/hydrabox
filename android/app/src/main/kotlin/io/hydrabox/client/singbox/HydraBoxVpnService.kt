@@ -85,7 +85,7 @@ class HydraBoxVpnService : VpnService() {
         }
     }
 
-    private lateinit var boxService: HydraBoxService
+    private lateinit var boxService: RuntimeSession
     private val coreRuntimeClient by lazy { CoreRuntimeClient(applicationContext) }
     private var wakeLock: PowerManager.WakeLock? = null
 
@@ -93,7 +93,7 @@ class HydraBoxVpnService : VpnService() {
         super.onCreate()
         Log.i(TAG, "onCreate")
         HydraBoxDiagnostics.log(TAG, "onCreate")
-        boxService = HydraBoxService(
+        boxService = RuntimeSession(
             this,
             HydraBoxVpnPlatformInterface(this),
         )
@@ -197,7 +197,7 @@ class HydraBoxVpnService : VpnService() {
         super.onTaskRemoved(rootIntent)
         val action = VpnServiceLifecyclePolicy.taskRemovalAction(
             runtimeRunning = SingboxController.running,
-            activeRuntimeOwner = HydraBoxService.hasActiveRuntimeOwner("vpn"),
+            activeRuntimeOwner = RuntimeSession.hasActiveRuntimeOwner("vpn"),
         )
         HydraBoxDiagnostics.event(
             "STOP", "ep" to shortVpnId(CoreProcessIdentity.epoch), "cg" to CoreProcessIdentity.generation.get(),
@@ -220,7 +220,7 @@ class HydraBoxVpnService : VpnService() {
         // the process together with the task. If the service stayed alive,
         // startInternal() wakes the existing runtime and re-applies its physical
         // upstream without rebuilding TUN.
-        val restartIntent = Intent(HydraBoxService.ACTION_START).setComponent(
+        val restartIntent = Intent(RuntimeSession.ACTION_START).setComponent(
             ComponentName(this, HydraBoxVpnService::class.java),
         )
         val pending = PendingIntent.getForegroundService(
@@ -239,7 +239,7 @@ class HydraBoxVpnService : VpnService() {
     }
 
     private fun cancelScheduledRestart(reason: String) {
-        val restartIntent = Intent(HydraBoxService.ACTION_START).setComponent(
+        val restartIntent = Intent(RuntimeSession.ACTION_START).setComponent(
             ComponentName(this, HydraBoxVpnService::class.java),
         )
         val pending = PendingIntent.getForegroundService(

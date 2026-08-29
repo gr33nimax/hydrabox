@@ -27,7 +27,7 @@ import io.hydrabox.client.generated.InstalledAppMessage
 import io.hydrabox.client.generated.NotificationPresentationMessage
 import io.hydrabox.client.generated.UnderlyingHttpRequestMessage
 import io.hydrabox.client.generated.UnderlyingHttpResponseMessage
-import io.hydrabox.client.singbox.HydraBoxService
+import io.hydrabox.client.singbox.RuntimeSession
 import io.hydrabox.client.singbox.HydraBoxDefaultNetworkMonitor
 import io.hydrabox.client.singbox.HydraBoxDiagnostics
 import io.hydrabox.client.singbox.HydraBoxForegroundNotification
@@ -872,9 +872,9 @@ class MainActivity : FlutterFragmentActivity() {
                 "warning",
                 "force runtime cleanup reason=$reason source=$source " +
                     "running=${SingboxController.running} mode=${SingboxController.serviceMode} " +
-                    "activeOwner=${HydraBoxService.hasActiveRuntimeOwner(SingboxController.serviceMode)}",
+                    "activeOwner=${RuntimeSession.hasActiveRuntimeOwner(SingboxController.serviceMode)}",
             )
-            HydraBoxService.requestStopAll("force_cleanup:$reason:$source")
+            RuntimeSession.requestStopAll("force_cleanup:$reason:$source")
             HydraBoxDefaultNetworkMonitor.stop()
         }
         for (serviceClass in targets) {
@@ -888,7 +888,7 @@ class MainActivity : FlutterFragmentActivity() {
         HydraBoxQuickSettingsTileService.requestRefresh(this)
         val stopped =
             !SingboxController.running &&
-                !HydraBoxService.hasActiveRuntimeOwner()
+                !RuntimeSession.hasActiveRuntimeOwner()
         HydraBoxDiagnostics.log(
             TAG,
             "cleanupStoppedRuntimeState completed reason=$reason source=$source force=$force " +
@@ -918,7 +918,7 @@ class MainActivity : FlutterFragmentActivity() {
         // VPN the user has just stopped.
         HydraBoxApplication.clearRuntimeIntent()
 
-        val stopRequestedDirectly = HydraBoxService.requestStopForMode(
+        val stopRequestedDirectly = RuntimeSession.requestStopForMode(
             modeAtRequest,
             "main_activity_stop:$reason",
         )
@@ -927,8 +927,8 @@ class MainActivity : FlutterFragmentActivity() {
             runCatching {
                 startService(
                     Intent(this, primaryTarget)
-                        .setAction(HydraBoxService.ACTION_STOP)
-                        .putExtra(HydraBoxService.EXTRA_STOP_REASON, reason),
+                        .setAction(RuntimeSession.ACTION_STOP)
+                        .putExtra(RuntimeSession.EXTRA_STOP_REASON, reason),
                 )
             }.onFailure {
                 HydraBoxDiagnostics.log(
@@ -952,7 +952,7 @@ class MainActivity : FlutterFragmentActivity() {
                     TAG,
                     "dispatchStopRuntime safety stopService skipped reason=$reason " +
                         "running=${SingboxController.running} " +
-                        "activeOwner=${HydraBoxService.hasActiveRuntimeOwner(modeAtRequest)} " +
+                        "activeOwner=${RuntimeSession.hasActiveRuntimeOwner(modeAtRequest)} " +
                         "intent=${HydraBoxApplication.describeRuntimeIntent()}",
                 )
             }
@@ -982,12 +982,12 @@ class MainActivity : FlutterFragmentActivity() {
                 mainHandler.postDelayed({
                     val verifiedStopped =
                         !SingboxController.running &&
-                            !HydraBoxService.hasActiveRuntimeOwner()
+                            !RuntimeSession.hasActiveRuntimeOwner()
                     HydraBoxDiagnostics.log(
                         TAG,
                         "dispatchStopRuntime timeout verification reason=$reason " +
                             "stopped=$verifiedStopped running=${SingboxController.running} " +
-                            "activeOwner=${HydraBoxService.hasActiveRuntimeOwner()}",
+                            "activeOwner=${RuntimeSession.hasActiveRuntimeOwner()}",
                     )
                     onComplete(verifiedStopped)
                 }, 750L)
@@ -1033,7 +1033,7 @@ class MainActivity : FlutterFragmentActivity() {
             HydraBoxProxyService::class.java
         }
         if (SingboxController.running && SingboxController.serviceMode == targetMode) {
-            val serviceIntent = Intent(this, targetService).setAction(HydraBoxService.ACTION_START)
+            val serviceIntent = Intent(this, targetService).setAction(RuntimeSession.ACTION_START)
             Log.i(TAG, "start forwarding idempotent ACTION_START mode=$targetMode")
             HydraBoxDiagnostics.log(TAG, "start forwarding idempotent ACTION_START mode=$targetMode")
             startForegroundService(serviceIntent)
@@ -1052,14 +1052,14 @@ class MainActivity : FlutterFragmentActivity() {
                 TAG,
                 "issuing ACTION_STOP for mode switch currentMode=${SingboxController.serviceMode} targetMode=$targetMode currentService=${currentService.simpleName}",
             )
-            HydraBoxService.requestStopForMode(
+            RuntimeSession.requestStopForMode(
                 SingboxController.serviceMode,
                 "mode_switch_to_$targetMode",
             )
             startService(
                 Intent(this, currentService)
-                    .setAction(HydraBoxService.ACTION_STOP)
-                    .putExtra(HydraBoxService.EXTRA_STOP_REASON, "mode_switch_to_$targetMode"),
+                    .setAction(RuntimeSession.ACTION_STOP)
+                    .putExtra(RuntimeSession.EXTRA_STOP_REASON, "mode_switch_to_$targetMode"),
             )
             SingboxController.awaitStopped { stopped ->
                 if (!stopped) {
@@ -1078,12 +1078,12 @@ class MainActivity : FlutterFragmentActivity() {
                         HydraBoxDiagnostics.log(
                             TAG,
                             "mode switch start blocked target=$targetMode running=${SingboxController.running} " +
-                                "activeOwner=${HydraBoxService.hasActiveRuntimeOwner()}",
+                                "activeOwner=${RuntimeSession.hasActiveRuntimeOwner()}",
                         )
                         return@awaitStopped
                     }
                 }
-                val serviceIntent = Intent(this, targetService).setAction(HydraBoxService.ACTION_START)
+                val serviceIntent = Intent(this, targetService).setAction(RuntimeSession.ACTION_START)
                 Log.i(TAG, "starting target service after mode switch target=${targetService.simpleName} stopped=$stopped")
                 HydraBoxDiagnostics.log(
                     TAG,
@@ -1092,7 +1092,7 @@ class MainActivity : FlutterFragmentActivity() {
                 startForegroundService(serviceIntent)
             }
         } else {
-            val serviceIntent = Intent(this, targetService).setAction(HydraBoxService.ACTION_START)
+            val serviceIntent = Intent(this, targetService).setAction(RuntimeSession.ACTION_START)
             Log.i(TAG, "starting target service target=${targetService.simpleName}")
             HydraBoxDiagnostics.log(TAG, "starting target service target=${targetService.simpleName}")
             startForegroundService(serviceIntent)
@@ -1136,7 +1136,7 @@ class MainActivity : FlutterFragmentActivity() {
         )
         if (SingboxController.running && SingboxController.serviceMode == targetMode) {
             if (restartCore) {
-                startService(Intent(this, serviceClass).setAction(HydraBoxService.ACTION_RESTART_CORE))
+                startService(Intent(this, serviceClass).setAction(RuntimeSession.ACTION_RESTART_CORE))
                 result.success(true)
             } else {
                 SingboxController.reloadService { reloadResult ->
@@ -1148,7 +1148,7 @@ class MainActivity : FlutterFragmentActivity() {
                 }
             }
         } else {
-            val serviceIntent = Intent(this, serviceClass).setAction(HydraBoxService.ACTION_START)
+            val serviceIntent = Intent(this, serviceClass).setAction(RuntimeSession.ACTION_START)
             startForegroundService(serviceIntent)
             result.success(true)
         }
@@ -2531,7 +2531,7 @@ class MainActivity : FlutterFragmentActivity() {
                         "proxy" -> HydraBoxProxyService::class.java
                         else -> HydraBoxVpnService::class.java
                     }
-                    startService(Intent(this, serviceClass).setAction(HydraBoxService.ACTION_RELOAD))
+                    startService(Intent(this, serviceClass).setAction(RuntimeSession.ACTION_RELOAD))
                     result.success(true)
                 }
 

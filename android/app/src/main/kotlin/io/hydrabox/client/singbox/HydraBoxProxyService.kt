@@ -6,7 +6,7 @@ import android.os.IBinder
 
 class HydraBoxProxyService : Service() {
     private val boxService by lazy {
-        HydraBoxService(this, HydraBoxProxyPlatformInterface(this))
+        RuntimeSession(this, HydraBoxProxyPlatformInterface(this))
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

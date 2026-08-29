@@ -501,8 +501,8 @@ internal class HydraBoxForegroundNotification(
                 Icon.createWithResource(service, android.R.drawable.ic_menu_close_clear_cancel),
                 presentation.stopLabel,
                 // The stop path removes the foreground notification only after
-                // runtime cleanup is confirmed by HydraBoxService.
-                serviceIntent(HydraBoxService.ACTION_STOP, ACTION_STOP_REQUEST_CODE),
+                // runtime cleanup is confirmed by RuntimeSession.
+                serviceIntent(RuntimeSession.ACTION_STOP, ACTION_STOP_REQUEST_CODE),
             ).build(),
         )
         return builder.build()
@@ -536,8 +536,8 @@ internal class HydraBoxForegroundNotification(
     private fun serviceIntent(action: String, requestCode: Int): PendingIntent {
         val intent = Intent(service, service.javaClass).apply {
             this.action = action
-            if (action == HydraBoxService.ACTION_STOP) {
-                putExtra(HydraBoxService.EXTRA_STOP_REASON, "notification_action")
+            if (action == RuntimeSession.ACTION_STOP) {
+                putExtra(RuntimeSession.EXTRA_STOP_REASON, "notification_action")
             }
         }
         return PendingIntent.getService(

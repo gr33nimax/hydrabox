@@ -18,7 +18,7 @@ import io.hydrabox.client.desiredRuntimeDecision
 import io.hydrabox.client.desiredRuntimeTransition
 import io.hydrabox.client.runtime.proto.CoreRuntimeProtocol
 import io.hydrabox.client.singbox.HydraBoxProxyService
-import io.hydrabox.client.singbox.HydraBoxService
+import io.hydrabox.client.singbox.RuntimeSession
 import io.hydrabox.client.singbox.HydraBoxDiagnostics
 import io.hydrabox.client.singbox.HydraBoxVpnService
 import io.hydrabox.client.singbox.HydraBoxForegroundNotification
@@ -612,7 +612,7 @@ class CoreRuntimeService : Service() {
                         request.getArguments(0),
                     )
                     check(
-                        HydraBoxService.updateNotificationPresentation(
+                        RuntimeSession.updateNotificationPresentation(
                             buildMap<String, Any?> {
                                 put("detailed", value.detailed)
                                 put("trafficDisplayMode", value.trafficDisplayMode)
@@ -780,7 +780,7 @@ class CoreRuntimeService : Service() {
                 sameRunningMode && request.restartCore -> {
                     val serviceClass = serviceClass(request.mode)
                     updateState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RECOVERING)
-                    startService(Intent(this, serviceClass).setAction(HydraBoxService.ACTION_RESTART_CORE))
+                    startService(Intent(this, serviceClass).setAction(RuntimeSession.ACTION_RESTART_CORE))
                 }
                 sameRunningMode && request.applyConfig -> {
                     SingboxController.reloadService { result ->
@@ -824,15 +824,15 @@ class CoreRuntimeService : Service() {
         val serviceClass = serviceClass(targetMode)
         val targetName = if (targetMode == CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_VPN) "vpn" else "proxy"
         if (SingboxController.running && SingboxController.serviceMode != targetName) {
-            HydraBoxService.requestStopAll("runtime_mode_switch")
+            RuntimeSession.requestStopAll("runtime_mode_switch")
             SingboxController.awaitStopped { stopped ->
                 if (stopped) {
-                    startForegroundService(Intent(this, serviceClass).setAction(HydraBoxService.ACTION_START))
+                    startForegroundService(Intent(this, serviceClass).setAction(RuntimeSession.ACTION_START))
                 }
             }
             return
         }
-        startForegroundService(Intent(this, serviceClass).setAction(HydraBoxService.ACTION_START))
+        startForegroundService(Intent(this, serviceClass).setAction(RuntimeSession.ACTION_START))
     }
 
 
@@ -975,7 +975,7 @@ class CoreRuntimeService : Service() {
         val commandGeneration = generation.get()
         pendingRelease = PendingRelease(commandGeneration, onComplete)
         mainHandler.post {
-            HydraBoxService.requestStopAll(reason)
+            RuntimeSession.requestStopAll(reason)
             // Destroy both possible owners as part of the same transaction. A
             // failed start must not leave Android's VPN service and its TUN
             // alive while the runtime is reported as failed.
@@ -1310,7 +1310,7 @@ class CoreRuntimeService : Service() {
             "prof" to synchronized(snapshotLock) { shortHex(activeConfigSha256) },
             "reason" to "transport_lost", "elapsed_ms" to 0,
         )
-        HydraBoxService.requestStopAll("recovery:${command.requestRecovery.reason}")
+        RuntimeSession.requestStopAll("recovery:${command.requestRecovery.reason}")
         val commandGeneration = generation.incrementAndGet()
         activeStartCommandId = command.commandId
         scheduleDeadline(commandGeneration, START_DEADLINE_MILLIS)
@@ -1658,7 +1658,7 @@ class CoreRuntimeService : Service() {
             return
         }
         state.set(value)
-        notificationStatusFor(value)?.let(HydraBoxService::applyRuntimeStatus)
+        notificationStatusFor(value)?.let(RuntimeSession::applyRuntimeStatus)
         emit(snapshotEvent())
     }
 
