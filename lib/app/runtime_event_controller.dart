@@ -36,6 +36,8 @@ class RuntimeTransportHealthEvent {
     required this.totalLanes,
     required this.demand,
     this.failureCode,
+    this.failureDomain,
+    this.terminal = false,
     this.challengeId,
     this.challengeUri,
   });
@@ -46,6 +48,8 @@ class RuntimeTransportHealthEvent {
   final int totalLanes;
   final bool demand;
   final String? failureCode;
+  final String? failureDomain;
+  final bool terminal;
   final String? challengeId;
   final Uri? challengeUri;
 
@@ -342,6 +346,8 @@ class RuntimeEventController {
       totalLanes: (event['totalLanes'] as num?)?.toInt() ?? 0,
       demand: event['demand'] == true,
       failureCode: failureMap['code']?.toString(),
+      failureDomain: failureMap['domain']?.toString(),
+      terminal: failureMap['terminal'] == true,
       challengeId: challengeMap['id']?.toString(),
       challengeUri: safeChallengeUri,
     );

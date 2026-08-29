@@ -185,6 +185,8 @@ message TransportFailure {
   string code = 3;
   uint64 retry_after_millis = 4;
   string challenge_id = 5;
+  string failure_domain = 6;
+  bool failure_terminal = 7;
 }
 
 message RuntimeChallenge {
@@ -207,6 +209,8 @@ message TransportHealthSnapshot {
   uint64 observed_at_millis = 9;
   TransportFailure failure = 10;
   RuntimeChallenge challenge = 11;
+  uint64 runtime_generation = 12;
+  uint64 network_generation = 13;
 }
 
 message DesiredRuntime {

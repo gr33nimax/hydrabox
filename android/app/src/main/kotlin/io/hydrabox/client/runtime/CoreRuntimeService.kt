@@ -52,6 +52,8 @@ internal fun nativeSourceLabel(): String = "embedded"
 
 internal const val START_DEADLINE_MILLIS = 45_000L
 internal const val CHALLENGE_DEADLINE_MILLIS = 120_000L
+internal const val LOST_GRACE_MILLIS = 10_000L
+internal const val RECOVERY_DEADLINE_MILLIS = 60_000L
 internal const val UTILITY_DEADLINE_MILLIS = 10_000L
 
 internal fun startSourceFor(recovery: Boolean, requestSource: String, sticky: Boolean): String = when {
@@ -96,6 +98,9 @@ internal sealed interface RuntimeInput {
             val runtimeGeneration: Long,
             val ready: Boolean,
             val challenge: Boolean = false,
+            val activeLanes: Int = 0,
+            val applicable: Boolean = false,
+            val lostForMillis: Long = 0L,
         ) : Event
         data class Deadline(val commandGeneration: Long) : Event
         data class Released(val commandGeneration: Long, val success: Boolean) : Event
@@ -253,6 +258,19 @@ internal fun reduce(
             )
             else -> Decision(state)
         }
+    } else if (
+        state.value == CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING &&
+        input.commandGeneration == state.commandGeneration &&
+        input.runtimeGeneration == state.runtimeGeneration
+    ) {
+        when {
+            input.activeLanes > 0 || !input.applicable -> Decision(state)
+            input.lostForMillis >= LOST_GRACE_MILLIS -> Decision(
+                state.copy(value = CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RECOVERING),
+                RECOVERY_DEADLINE_MILLIS,
+            )
+            else -> Decision(state)
+        }
     } else {
         Decision(state)
     }
@@ -336,6 +354,14 @@ internal fun notificationStatusFor(
 internal fun deadlineFor(interactive: Boolean, waitingUser: Boolean): Long =
     if (interactive && waitingUser) CHALLENGE_DEADLINE_MILLIS else START_DEADLINE_MILLIS
 
+internal fun isReady(health: CoreRuntimeProtocol.TransportHealthSnapshot): Boolean =
+    !health.applicable || (
+        health.activeLanes >= 1 && health.state in setOf(
+            CoreRuntimeProtocol.TransportHealthState.TRANSPORT_HEALTH_STATE_HEALTHY,
+            CoreRuntimeProtocol.TransportHealthState.TRANSPORT_HEALTH_STATE_DEGRADED,
+        )
+    )
+
 /**
  * Sole binder owner of native runtime state. The UI process only exchanges
  * versioned protobuf bytes with this service and never initializes libbox.
@@ -379,6 +405,7 @@ class CoreRuntimeService : Service() {
     private var activeCommand: ActiveCommand? = null
     private var deferredStart: CoreRuntimeProtocol.RuntimeCommand? = null
     private var transportHealthPoll: ScheduledFuture<*>? = null
+    private var transportLostSinceMillis = 0L
     private var pendingRelease: PendingRelease? = null
     private var controllerRegistration = 0L
     private lateinit var coreContract: CoreRuntimeProtocol.CoreContract
@@ -494,12 +521,6 @@ class CoreRuntimeService : Service() {
 
             startupFailure.markStage("snapshot", nativeSourceLabel())
             buildSnapshot()
-            transportHealthPoll = scheduler.scheduleAtFixedRate(
-                { refreshTransportHealth(emitEvent = true) },
-                0L,
-                TRANSPORT_HEALTH_POLL_MILLIS,
-                TimeUnit.MILLISECONDS,
-            )
             startupFailure.clear()
             Log.i(
                 TAG,
@@ -1200,7 +1221,7 @@ class CoreRuntimeService : Service() {
     private fun handleHealth(input: RuntimeInput.Event.Health) {
         val current = RuntimeMachineState(state.get(), generation.get(), activeRuntimeGeneration)
         val decision = reduce(current, input, RuntimeReduceContext())
-        if (input.challenge && decision.deadlineMillis != null) {
+        if (decision.deadlineMillis != null) {
             scheduleDeadline(input.commandGeneration, decision.deadlineMillis)
         }
         if (decision.state.value != current.value) {
@@ -1906,7 +1927,7 @@ class CoreRuntimeService : Service() {
                 .build()
         } else {
             runCatching {
-                TransportHealthBridge.parse(Libbox.hydraCoreTransportState(), true)
+                TransportHealthBridge.parse(Libbox.hydraCoreTransportState(), transportHealthRequired)
             }.getOrElse {
                 CoreRuntimeProtocol.TransportHealthSnapshot.newBuilder()
                     .setApplicable(true)
@@ -1929,6 +1950,15 @@ class CoreRuntimeService : Service() {
                 true
             }
         }
+        val now = System.currentTimeMillis()
+        val health = synchronized(snapshotLock) { transportHealth }
+        val lostForMillis = if (health.applicable && health.activeLanes == 0) {
+            if (transportLostSinceMillis == 0L) transportLostSinceMillis = now
+            now - transportLostSinceMillis
+        } else {
+            transportLostSinceMillis = 0L
+            0L
+        }
         if (changed) {
             val failure = parsed.failure
             HydraBoxDiagnostics.log(
@@ -1939,14 +1969,16 @@ class CoreRuntimeService : Service() {
             )
         }
         if (emitEvent) {
-            val health = synchronized(snapshotLock) { transportHealth }
             submitInternal(
                 RuntimeInput.Event.Health(
                     commandGeneration = generation.get(),
                     runtimeGeneration = SingboxController.activeRuntimeGeneration,
-                    ready = !transportHealthRequired || TransportHealthBridge.isConnected(health),
+                    ready = isReady(health),
                     challenge = health.state ==
                         CoreRuntimeProtocol.TransportHealthState.TRANSPORT_HEALTH_STATE_WAITING_USER,
+                    activeLanes = health.activeLanes,
+                    applicable = health.applicable,
+                    lostForMillis = lostForMillis,
                 ),
             )
         }
@@ -1954,10 +1986,6 @@ class CoreRuntimeService : Service() {
 
     private fun buildSnapshot(): CoreRuntimeProtocol.RuntimeSnapshot {
         synchronized(snapshotLock) {
-            val effectiveState = TransportHealthBridge.effectiveRuntimeState(
-                state.get(),
-                transportHealth,
-            )
             val traffic = CoreRuntimeProtocol.TrafficSnapshot.newBuilder()
                 .setUplinkBytesPerSecond(SingboxController.uplink)
                 .setDownlinkBytesPerSecond(SingboxController.downlink)
@@ -1970,7 +1998,7 @@ class CoreRuntimeService : Service() {
                 .setProcessEpoch(processEpoch)
                 .setGeneration(generation.get())
                 .setLastSequence(sequence.get())
-                .setState(effectiveState)
+                .setState(state.get())
                 .setMode(mode.get())
                 .setActiveConfigSha256(ByteString.copyFrom(activeConfigSha256))
                 .putAllSelectedOutboundIds(selectedOutbounds)
@@ -1979,8 +2007,7 @@ class CoreRuntimeService : Service() {
                 .setNetwork(networkSnapshot)
                 .setUpdatedAtMillis(System.currentTimeMillis())
                 .setHealthy(
-                    effectiveState == CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING &&
-                        TransportHealthBridge.isConnected(transportHealth),
+                    state.get() == CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING && isReady(transportHealth),
                 )
                 .addAllOutboundGroups(outboundGroups)
                 .addAllProbeSessions(probeSessions)
@@ -2009,6 +2036,24 @@ class CoreRuntimeService : Service() {
             return
         }
         state.set(value)
+        if (value in setOf(
+                CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STARTING,
+                CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RECOVERING,
+                CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING,
+            )
+        ) {
+            if (transportHealthPoll == null || transportHealthPoll?.isCancelled == true) {
+                transportHealthPoll = scheduler.scheduleAtFixedRate(
+                    { refreshTransportHealth(emitEvent = true) },
+                    0L,
+                    TRANSPORT_HEALTH_POLL_MILLIS,
+                    TimeUnit.MILLISECONDS,
+                )
+            }
+        } else {
+            transportHealthPoll?.cancel(false)
+            transportHealthPoll = null
+        }
         notificationStatusFor(value)?.let(RuntimeSession::applyRuntimeStatus)
         emit(snapshotEvent())
     }

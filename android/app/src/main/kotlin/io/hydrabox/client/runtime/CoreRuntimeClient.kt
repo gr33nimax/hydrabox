@@ -965,12 +965,16 @@ class CoreRuntimeClient(context: Context) {
             "lastAggregateProgressAt" to lastAggregateProgressAtMillis,
             "lastInboundAt" to lastInboundAtMillis,
             "observedAt" to observedAtMillis,
+            "runtimeGeneration" to runtimeGeneration,
+            "networkGeneration" to networkGeneration,
             "failure" to if (hasFailure()) mapOf(
                 "stage" to failure.stage,
                 "kind" to failure.kind,
                 "code" to failure.code,
                 "retryAfterMillis" to failure.retryAfterMillis,
                 "challengeId" to failure.challengeId,
+                "domain" to failure.failureDomain,
+                "terminal" to failure.failureTerminal,
             ) else null,
             "challenge" to if (hasChallenge()) mapOf(
                 "id" to challenge.challengeId,

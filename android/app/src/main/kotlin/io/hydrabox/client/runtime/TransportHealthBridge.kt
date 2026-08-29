@@ -23,15 +23,16 @@ internal object TransportHealthBridge {
         false
     }.getOrDefault(false)
 
-    fun parse(raw: String, applicable: Boolean): CoreRuntimeProtocol.TransportHealthSnapshot {
-        val builder = CoreRuntimeProtocol.TransportHealthSnapshot.newBuilder()
-            .setApplicable(applicable)
-        if (!applicable) return builder.build()
+    fun parse(raw: String, fallbackApplicable: Boolean): CoreRuntimeProtocol.TransportHealthSnapshot {
         val root = JSONObject(raw)
         require(root.getInt("schema_version") == 2) {
             "HydraCore transport schema is unsupported"
         }
         val health = root.getJSONObject("health")
+        val applicable = if (health.has("applicable")) health.optBoolean("applicable") else fallbackApplicable
+        val builder = CoreRuntimeProtocol.TransportHealthSnapshot.newBuilder()
+            .setApplicable(applicable)
+        if (!applicable) return builder.build()
         builder
             .setState(parseState(health.getString("state")))
             .setActiveLanes(health.optInt("active_lanes").coerceAtLeast(0))
@@ -43,6 +44,8 @@ internal object TransportHealthBridge {
             )
             .setLastInboundAtMillis(health.optLong("last_inbound_at").coerceAtLeast(0L))
             .setObservedAtMillis(health.optLong("observed_at").coerceAtLeast(0L))
+            .setRuntimeGeneration(health.optLong("runtime_generation").coerceAtLeast(0L))
+            .setNetworkGeneration(health.optLong("network_generation").coerceAtLeast(0L))
         health.optJSONObject("failure")?.let { failure ->
             builder.setFailure(
                 CoreRuntimeProtocol.TransportFailure.newBuilder()
@@ -50,7 +53,9 @@ internal object TransportHealthBridge {
                     .setKind(failure.optString("kind"))
                     .setCode(failure.optString("code"))
                     .setRetryAfterMillis(failure.optLong("retry_after_ms").coerceAtLeast(0L))
-                    .setChallengeId(failure.optString("challenge_id")),
+                    .setChallengeId(failure.optString("challenge_id"))
+                    .setFailureDomain(failure.optString("domain", "INTERNAL"))
+                    .setFailureTerminal(failure.optBoolean("terminal")),
             )
         }
         root.optJSONObject("challenge")?.let { challenge ->
@@ -64,31 +69,6 @@ internal object TransportHealthBridge {
             )
         }
         return builder.build()
-    }
-
-    fun isConnected(health: CoreRuntimeProtocol.TransportHealthSnapshot): Boolean =
-        !health.applicable || health.state in setOf(
-            CoreRuntimeProtocol.TransportHealthState.TRANSPORT_HEALTH_STATE_HEALTHY,
-            CoreRuntimeProtocol.TransportHealthState.TRANSPORT_HEALTH_STATE_DEGRADED,
-        )
-
-    fun effectiveRuntimeState(
-        base: CoreRuntimeProtocol.RuntimeState,
-        health: CoreRuntimeProtocol.TransportHealthSnapshot,
-    ): CoreRuntimeProtocol.RuntimeState {
-        if (base != CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING || !health.applicable) {
-            return base
-        }
-        return when (health.state) {
-            CoreRuntimeProtocol.TransportHealthState.TRANSPORT_HEALTH_STATE_HEALTHY,
-            CoreRuntimeProtocol.TransportHealthState.TRANSPORT_HEALTH_STATE_DEGRADED -> base
-            CoreRuntimeProtocol.TransportHealthState.TRANSPORT_HEALTH_STATE_FAILED ->
-                CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_FAILED
-            CoreRuntimeProtocol.TransportHealthState.TRANSPORT_HEALTH_STATE_WAITING_USER,
-            CoreRuntimeProtocol.TransportHealthState.TRANSPORT_HEALTH_STATE_STARTING ->
-                CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STARTING
-            else -> CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RECOVERING
-        }
     }
 
     private fun parseState(value: String): CoreRuntimeProtocol.TransportHealthState = when (value) {

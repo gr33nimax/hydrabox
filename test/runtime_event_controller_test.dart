@@ -142,12 +142,15 @@ void main() {
         'kind': 'captcha',
         'url': 'http://127.0.0.1:35887/session',
       },
+      'failure': {'domain': 'AUTH', 'terminal': true},
     });
 
     expect(health?.state, 'waiting_user');
     expect(health?.connected, isFalse);
     expect(health?.challengeId, 'challenge-1');
     expect(health?.challengeUri, Uri.parse('http://127.0.0.1:35887/session'));
+    expect(health?.failureDomain, 'AUTH');
+    expect(health?.terminal, isTrue);
 
     controller.dispatch({
       'type': 'transportHealth',

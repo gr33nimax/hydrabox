@@ -189,6 +189,28 @@ class RuntimeStateMachineTest {
     }
 
     @Test
+    fun `running health with active lanes stays running`() {
+        val state = RuntimeMachineState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING, 4, 9)
+        val decision = reduce(state, RuntimeInput.Event.Health(4, 9, ready = true, activeLanes = 1, applicable = true), RuntimeReduceContext())
+        assertEquals(state, decision.state)
+    }
+
+    @Test
+    fun `running health loss inside grace stays running`() {
+        val state = RuntimeMachineState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING, 4, 9)
+        val decision = reduce(state, RuntimeInput.Event.Health(4, 9, ready = false, applicable = true, lostForMillis = LOST_GRACE_MILLIS - 1), RuntimeReduceContext())
+        assertEquals(state, decision.state)
+    }
+
+    @Test
+    fun `running health loss after grace enters recovering with recovery deadline`() {
+        val state = RuntimeMachineState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING, 4, 9)
+        val decision = reduce(state, RuntimeInput.Event.Health(4, 9, ready = false, applicable = true, lostForMillis = LOST_GRACE_MILLIS), RuntimeReduceContext())
+        assertEquals(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RECOVERING, decision.state.value)
+        assertEquals(RECOVERY_DEADLINE_MILLIS, decision.deadlineMillis)
+    }
+
+    @Test
     fun `deadline fails active start`() {
         val decision = reduce(
             RuntimeMachineState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STARTING, commandGeneration = 4),
