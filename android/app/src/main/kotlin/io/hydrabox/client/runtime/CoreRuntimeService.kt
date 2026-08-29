@@ -56,8 +56,15 @@ internal const val UTILITY_DEADLINE_MILLIS = 10_000L
 internal sealed interface RuntimeInput {
     sealed interface Command : RuntimeInput {
         data class Submitted(val value: CoreRuntimeProtocol.RuntimeCommand) : Command
-        data object Start : Command
-        data object Stop : Command
+        data class Start(
+            val commandId: String = "",
+            val configSha256: String = "",
+            val mode: CoreRuntimeProtocol.RuntimeMode = CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_UNSPECIFIED,
+        ) : Command
+        data class Stop(val commandId: String = "") : Command
+        data object NetworkChanged : Command
+        data object Reload : Command
+        data object SelectOutbound : Command
     }
 
     sealed interface Event : RuntimeInput {
@@ -75,10 +82,21 @@ internal sealed interface RuntimeInput {
     }
 }
 
+internal data class ActiveCommand(
+    val kind: CoreRuntimeProtocol.CommandKind,
+    val configSha256: String,
+    val mode: CoreRuntimeProtocol.RuntimeMode,
+    val commandGeneration: Long,
+    val commandIds: MutableList<String>,
+)
+
+internal enum class RuntimeCommandDecision { NoOp, Join, Supersede, Reject, Queue }
+
 internal data class RuntimeMachineState(
     val value: CoreRuntimeProtocol.RuntimeState,
     val commandGeneration: Long,
     val runtimeGeneration: Long = 0L,
+    val activeCommand: ActiveCommand? = null,
 )
 
 internal data class RuntimeReduceContext(
@@ -89,6 +107,7 @@ internal data class RuntimeReduceContext(
 internal data class Decision(
     val state: RuntimeMachineState,
     val deadlineMillis: Long? = null,
+    val commandDecision: RuntimeCommandDecision? = null,
 )
 
 internal fun reduce(
@@ -97,27 +116,64 @@ internal fun reduce(
     ctx: RuntimeReduceContext,
 ): Decision = when (input) {
     is RuntimeInput.Command.Submitted -> Decision(state)
-    RuntimeInput.Command.Start -> when (state.value) {
+    is RuntimeInput.Command.Start -> when (state.value) {
         CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPED,
         CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_FAILED -> Decision(
             state.copy(
                 value = CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STARTING,
                 commandGeneration = state.commandGeneration + 1,
                 runtimeGeneration = 0L,
+                activeCommand = ActiveCommand(
+                    CoreRuntimeProtocol.CommandKind.COMMAND_KIND_START,
+                    input.configSha256,
+                    input.mode,
+                    state.commandGeneration + 1,
+                    mutableListOf(input.commandId),
+                ),
             ),
             ctx.startDeadlineMillis,
         )
-        else -> Decision(state)
+        CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STARTING,
+        CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RECOVERING -> when {
+            state.activeCommand?.kind == CoreRuntimeProtocol.CommandKind.COMMAND_KIND_START &&
+                state.activeCommand.configSha256 == input.configSha256 &&
+                state.activeCommand.mode == input.mode -> Decision(state, commandDecision = RuntimeCommandDecision.NoOp)
+            else -> Decision(state, commandDecision = RuntimeCommandDecision.Supersede)
+        }
+        CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING -> Decision(state, commandDecision = RuntimeCommandDecision.Queue)
+        else -> Decision(state, commandDecision = RuntimeCommandDecision.Reject)
     }
-    RuntimeInput.Command.Stop -> when (state.value) {
-        CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPED -> Decision(state)
+    is RuntimeInput.Command.Stop -> when (state.value) {
+        CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPED -> Decision(state, commandDecision = RuntimeCommandDecision.Reject)
+        CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING -> if (
+            state.activeCommand?.kind == CoreRuntimeProtocol.CommandKind.COMMAND_KIND_STOP
+        ) {
+            Decision(state, commandDecision = RuntimeCommandDecision.Join)
+        } else {
+            Decision(state, commandDecision = RuntimeCommandDecision.Reject)
+        }
         else -> Decision(
             state.copy(
                 value = CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING,
                 commandGeneration = state.commandGeneration + 1,
+                activeCommand = ActiveCommand(
+                    CoreRuntimeProtocol.CommandKind.COMMAND_KIND_STOP,
+                    "",
+                    CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_UNSPECIFIED,
+                    state.commandGeneration + 1,
+                    mutableListOf(input.commandId),
+                ),
             ),
+            commandDecision = RuntimeCommandDecision.Queue,
         )
     }
+    RuntimeInput.Command.NetworkChanged -> if (
+        state.value == CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING
+    ) Decision(state, commandDecision = RuntimeCommandDecision.Reject) else Decision(state)
+    RuntimeInput.Command.Reload,
+    RuntimeInput.Command.SelectOutbound -> if (
+        state.value != CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING
+    ) Decision(state, commandDecision = RuntimeCommandDecision.Reject) else Decision(state)
     is RuntimeInput.Event.Launched -> if (
         state.value in setOf(
             CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STARTING,
@@ -262,6 +318,8 @@ class CoreRuntimeService : Service() {
     @Volatile private var startDeadlineStartedAt = 0L
     @Volatile private var activeRuntimeGeneration = 0L
     @Volatile private var activeStartCommandId = ""
+    private var activeCommand: ActiveCommand? = null
+    private var deferredStart: CoreRuntimeProtocol.RuntimeCommand? = null
     private var transportHealthPoll: ScheduledFuture<*>? = null
     private var pendingRelease: PendingRelease? = null
     private var controllerRegistration = 0L
@@ -498,10 +556,10 @@ class CoreRuntimeService : Service() {
 
     private fun execute(command: CoreRuntimeProtocol.RuntimeCommand) {
         when (command.kind) {
-            CoreRuntimeProtocol.CommandKind.COMMAND_KIND_START -> start(command)
-            CoreRuntimeProtocol.CommandKind.COMMAND_KIND_STOP -> stop(command)
-            CoreRuntimeProtocol.CommandKind.COMMAND_KIND_RELOAD -> reload(command)
-            CoreRuntimeProtocol.CommandKind.COMMAND_KIND_SELECT_OUTBOUND -> selectOutbound(command)
+            CoreRuntimeProtocol.CommandKind.COMMAND_KIND_START -> executeStart(command)
+            CoreRuntimeProtocol.CommandKind.COMMAND_KIND_STOP -> executeStop(command)
+            CoreRuntimeProtocol.CommandKind.COMMAND_KIND_RELOAD -> executeReload(command)
+            CoreRuntimeProtocol.CommandKind.COMMAND_KIND_SELECT_OUTBOUND -> executeSelectOutbound(command)
             CoreRuntimeProtocol.CommandKind.COMMAND_KIND_START_PROBE -> startProbe(command)
             CoreRuntimeProtocol.CommandKind.COMMAND_KIND_CANCEL_PROBE -> cancelProbe(command)
             CoreRuntimeProtocol.CommandKind.COMMAND_KIND_REQUEST_RECOVERY -> recover(command)
@@ -511,12 +569,94 @@ class CoreRuntimeService : Service() {
         }
     }
 
+    private fun executeStart(command: CoreRuntimeProtocol.RuntimeCommand) {
+        val request = command.start
+        when (reduce(
+            RuntimeMachineState(state.get(), generation.get(), activeRuntimeGeneration, activeCommand),
+            RuntimeInput.Command.Start(command.commandId, request.configSha256.toByteArray().toHex(), request.mode),
+            RuntimeReduceContext(),
+        ).commandDecision) {
+            RuntimeCommandDecision.NoOp -> activeCommand?.commandIds?.add(command.commandId)
+            RuntimeCommandDecision.Supersede -> {
+                activeCommand?.let(::commandSuperseded)
+                activeCommand = null
+                deferredStart = command
+                stopForSupersededStart()
+            }
+            RuntimeCommandDecision.Queue -> {
+                deferredStart?.let { commandSuperseded(listOf(it.commandId)) }
+                deferredStart = command
+            }
+            else -> start(command)
+        }
+    }
+
+    private fun executeStop(command: CoreRuntimeProtocol.RuntimeCommand) {
+        if (state.get() == CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING &&
+            activeCommand?.kind == CoreRuntimeProtocol.CommandKind.COMMAND_KIND_STOP
+        ) {
+            activeCommand?.commandIds?.add(command.commandId)
+            return
+        }
+        activeCommand?.takeIf { it.kind == CoreRuntimeProtocol.CommandKind.COMMAND_KIND_START }
+            ?.let(::commandCancelled)
+        activeCommand = null
+        stop(command)
+    }
+
+    private fun executeReload(command: CoreRuntimeProtocol.RuntimeCommand) {
+        if (state.get() != CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING) {
+            commandFailed(command.commandId, "runtime.reload.not_running", "reload", "HydraCore is not running.", false)
+            return
+        }
+        reload(command)
+    }
+
+    private fun executeSelectOutbound(command: CoreRuntimeProtocol.RuntimeCommand) {
+        if (state.get() != CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING) {
+            commandFailed(command.commandId, "runtime.selector.not_running", "selector", "HydraCore is not running.", false)
+            return
+        }
+        selectOutbound(command)
+    }
+
+    // HB-RW-010 uses the existing start/shutdownRuntimeServices flow; this baseline has no LaunchTask.
+    private fun stopForSupersededStart() {
+        generation.incrementAndGet()
+        updateState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING)
+        HydraBoxDiagnostics.event(
+            "STOP",
+            "prof" to synchronized(snapshotLock) { shortHex(activeConfigSha256) },
+            "reason" to "superseded",
+        )
+        shutdownRuntimeServices("superseded") { stopped ->
+            if (stopped) {
+                resetStoppedRuntimeState()
+                deferredStart?.also { deferredStart = null; start(it) }
+            } else {
+                deferredStart?.also {
+                    deferredStart = null
+                    commandFailed(
+                        it.commandId,
+                        "runtime.stop.deadline",
+                        "runtime_stop",
+                        "HydraCore did not confirm that it stopped.",
+                        true,
+                    )
+                }
+            }
+        }
+    }
+
     private fun submitInternal(input: RuntimeInput) {
         commandExecutor.execute {
             when (input) {
                 is RuntimeInput.Command.Submitted -> execute(input.value)
-                RuntimeInput.Command.Start,
-                RuntimeInput.Command.Stop -> Unit
+                is RuntimeInput.Command.Start,
+                is RuntimeInput.Command.Stop,
+                RuntimeInput.Command.NetworkChanged,
+                RuntimeInput.Command.Reload,
+                RuntimeInput.Command.SelectOutbound -> Unit
                 is RuntimeInput.Event.Launched -> handleLaunched(input)
                 is RuntimeInput.Event.Deadline -> handleDeadline(input)
                 is RuntimeInput.Event.Released -> handleReleased(input)
@@ -768,6 +908,13 @@ class CoreRuntimeService : Service() {
         refreshTransportHealth(emitEvent = false)
         val commandGeneration = generation.incrementAndGet()
         activeStartCommandId = command.commandId
+        activeCommand = ActiveCommand(
+            CoreRuntimeProtocol.CommandKind.COMMAND_KIND_START,
+            expectedDigest.toHex(),
+            request.mode,
+            commandGeneration,
+            mutableListOf(command.commandId),
+        )
         interactiveStart = request.interactiveDeadlineMillis > START_DEADLINE_MILLIS
         startDeadlineStartedAt = System.currentTimeMillis()
         mode.set(request.mode)
@@ -982,7 +1129,6 @@ class CoreRuntimeService : Service() {
         updateState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING)
         shutdownRuntimeServices("failed_start:$code") { stopped ->
             if (generation.get() != commandGeneration) {
-                commandFailed(commandId, "runtime.start.superseded", "runtime_start", "The runtime start was superseded by a newer command.", false)
                 return@shutdownRuntimeServices
             }
             if (stopped) {
@@ -1029,6 +1175,13 @@ class CoreRuntimeService : Service() {
 
     private fun stop(command: CoreRuntimeProtocol.RuntimeCommand) {
         generation.incrementAndGet()
+        activeCommand = ActiveCommand(
+            CoreRuntimeProtocol.CommandKind.COMMAND_KIND_STOP,
+            "",
+            CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_UNSPECIFIED,
+            generation.get(),
+            mutableListOf(command.commandId),
+        )
         writeStoppedDesiredRuntime()
         HydraBoxDiagnostics.event(
             "STOP",
@@ -1720,6 +1873,18 @@ class CoreRuntimeService : Service() {
             commandExecutor.execute { commandSucceeded(commandId, finalState) }
             return
         }
+        val commandIds = activeCommand
+            ?.takeIf { commandId in it.commandIds }
+            ?.commandIds
+            ?.toList()
+            ?: listOf(commandId)
+        if (commandIds.size > 1 || activeCommand?.commandIds?.contains(commandId) == true) activeCommand = null
+        commandIds.forEach { completedCommandId ->
+            emitCommandSuccess(completedCommandId, finalState)
+        }
+    }
+
+    private fun emitCommandSuccess(commandId: String, finalState: CoreRuntimeProtocol.RuntimeState) {
         synchronized(snapshotLock) { lastError = null }
         val result = CoreRuntimeProtocol.CommandResult.newBuilder()
             .setSchemaVersion(SCHEMA_VERSION)
@@ -1740,7 +1905,44 @@ class CoreRuntimeService : Service() {
         safeMessage: String,
         retryable: Boolean,
     ) {
-        failRuntime(commandId, code, stage, safeMessage, retryable)
+        if (!isOnCommandThread()) {
+            commandExecutor.execute { commandFailed(commandId, code, stage, safeMessage, retryable) }
+            return
+        }
+        val commandIds = activeCommand
+            ?.takeIf { commandId in it.commandIds }
+            ?.commandIds
+            ?.toList()
+            ?: listOf(commandId)
+        if (activeCommand?.commandIds?.contains(commandId) == true) activeCommand = null
+        commandIds.forEach { failedCommandId ->
+            failRuntime(failedCommandId, code, stage, safeMessage, retryable)
+        }
+    }
+
+    private fun commandSuperseded(command: ActiveCommand) = commandSuperseded(command.commandIds)
+
+    private fun commandSuperseded(commandIds: List<String>) =
+        emitTerminalFailures(commandIds, "runtime.superseded", "runtime_command", "The runtime command was superseded.")
+
+    private fun commandCancelled(command: ActiveCommand) =
+        emitTerminalFailures(command.commandIds, "runtime.cancelled", "runtime_command", "The runtime command was cancelled.")
+
+    private fun emitTerminalFailures(commandIds: List<String>, code: String, stage: String, safeMessage: String) {
+        commandIds.forEach { commandId ->
+            val error = coreError(code, stage, safeMessage, false, commandId)
+            val result = CoreRuntimeProtocol.CommandResult.newBuilder()
+                .setSchemaVersion(SCHEMA_VERSION)
+                .setCommandId(commandId)
+                .setOutcome(CoreRuntimeProtocol.CommandOutcome.COMMAND_OUTCOME_FAILED)
+                .setFinalState(state.get())
+                .setGeneration(generation.get())
+                .setCompletedAtMillis(System.currentTimeMillis())
+                .setError(error)
+                .build()
+            emit(eventBuilder().setCommandResult(result).build())
+        }
+        emit(snapshotEvent())
     }
 
     private fun failRuntime(

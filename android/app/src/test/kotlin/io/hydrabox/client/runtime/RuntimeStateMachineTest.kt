@@ -6,11 +6,101 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class RuntimeStateMachineTest {
+    private fun start(commandId: String, digest: String = "a") = RuntimeInput.Command.Start(
+        commandId = commandId,
+        configSha256 = digest,
+        mode = CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_VPN,
+    )
+
+    private fun activeStart(vararg commandIds: String) = ActiveCommand(
+        kind = CoreRuntimeProtocol.CommandKind.COMMAND_KIND_START,
+        configSha256 = "a",
+        mode = CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_VPN,
+        commandGeneration = 4,
+        commandIds = commandIds.toMutableList(),
+    )
+
+    @Test
+    fun `start stop start leaves no command without a decision`() {
+        val starting = reduce(
+            RuntimeMachineState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPED, 3),
+            start("start-1"),
+            RuntimeReduceContext(),
+        )
+        val stopping = reduce(starting.state, RuntimeInput.Command.Stop("stop-1"), RuntimeReduceContext())
+        val nextStart = reduce(stopping.state, start("start-2", "b"), RuntimeReduceContext())
+
+        assertEquals(RuntimeCommandDecision.Queue, nextStart.commandDecision)
+    }
+
+    @Test
+    fun `double stop joins the active stop`() {
+        val decision = reduce(
+            RuntimeMachineState(
+                CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING,
+                4,
+                activeCommand = ActiveCommand(
+                    CoreRuntimeProtocol.CommandKind.COMMAND_KIND_STOP,
+                    "",
+                    CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_UNSPECIFIED,
+                    4,
+                    mutableListOf("stop-1"),
+                ),
+            ),
+            RuntimeInput.Command.Stop("stop-2"),
+            RuntimeReduceContext(),
+        )
+
+        assertEquals(RuntimeCommandDecision.Join, decision.commandDecision)
+    }
+
+    @Test
+    fun `same digest start during starting joins without another launch`() {
+        val decision = reduce(
+            RuntimeMachineState(
+                CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STARTING,
+                4,
+                activeCommand = activeStart("start-1"),
+            ),
+            start("start-2"),
+            RuntimeReduceContext(),
+        )
+
+        assertEquals(RuntimeCommandDecision.NoOp, decision.commandDecision)
+        assertEquals(activeStart("start-1"), decision.state.activeCommand)
+    }
+
+    @Test
+    fun `changed profile during starting supersedes the first start`() {
+        val decision = reduce(
+            RuntimeMachineState(
+                CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STARTING,
+                4,
+                activeCommand = activeStart("start-1"),
+            ),
+            start("start-2", "b"),
+            RuntimeReduceContext(),
+        )
+
+        assertEquals(RuntimeCommandDecision.Supersede, decision.commandDecision)
+    }
+
+    @Test
+    fun `network change during stopping is rejected`() {
+        val decision = reduce(
+            RuntimeMachineState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING, 4),
+            RuntimeInput.Command.NetworkChanged,
+            RuntimeReduceContext(),
+        )
+
+        assertEquals(RuntimeCommandDecision.Reject, decision.commandDecision)
+    }
+
     @Test
     fun `start from stopped enters starting`() {
         val decision = reduce(
             RuntimeMachineState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPED, commandGeneration = 4),
-            RuntimeInput.Command.Start,
+            RuntimeInput.Command.Start(),
             RuntimeReduceContext(),
         )
 
@@ -74,7 +164,7 @@ class RuntimeStateMachineTest {
     fun `stop during starting enters stopping and released stops`() {
         val stopping = reduce(
             RuntimeMachineState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STARTING, commandGeneration = 4),
-            RuntimeInput.Command.Stop,
+            RuntimeInput.Command.Stop(),
             RuntimeReduceContext(),
         )
         val stopped = reduce(
