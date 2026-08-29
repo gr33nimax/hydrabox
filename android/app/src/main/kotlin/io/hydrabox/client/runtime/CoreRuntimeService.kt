@@ -262,6 +262,7 @@ internal fun reduce(
             CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STARTING,
             CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RECOVERING,
         ) && input.commandGeneration == state.commandGeneration &&
+        state.runtimeGeneration != 0L &&
         input.runtimeGeneration == state.runtimeGeneration
     ) {
         when {
