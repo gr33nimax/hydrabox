@@ -40,6 +40,17 @@ internal fun epochChangedEvent(
     }
 }
 
+internal fun CoreRuntimeProtocol.RuntimeSnapshot.toLegacyDesiredRuntimeMap(): Map<String, Any?>? =
+    if (!hasDesiredRuntime()) null else mapOf(
+        "wantRunning" to desiredRuntime.wantRunning,
+        "mode" to when (desiredRuntime.mode) {
+            CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_PROXY -> "proxy"
+            else -> "vpn"
+        },
+        "configSha256" to desiredRuntime.configSha256.toStringUtf8(),
+        "recoveryAttempt" to desiredRuntime.recoveryAttempt,
+    )
+
 internal class RebindAttemptCounter {
     private var attempt = 0
 
@@ -1005,6 +1016,7 @@ class CoreRuntimeClient(context: Context) {
         "probeErrorCode" to probeLastError.code,
         "sequence" to lastSequence,
         "processEpoch" to processEpoch,
+        "desiredRuntime" to toLegacyDesiredRuntimeMap(),
     )
 
     companion object {

@@ -56,8 +56,16 @@ void main() {
     expect(controller.completeSuccessfulStop(), isFalse);
   });
 
+  test('snapshot without desired runtime preserves user intent', () {
+    final controller = RuntimeIntentController()..markRuntimeDesired();
+
+    controller.applySnapshot({});
+
+    expect(controller.desiredByUser, isTrue);
+  });
+
   test('desired intent follows the runtime snapshot', () {
-    final controller = RuntimeIntentController();
+    final controller = RuntimeIntentController()..markRuntimeDesired();
 
     controller.applySnapshot({
       'desiredRuntime': {'wantRunning': true},

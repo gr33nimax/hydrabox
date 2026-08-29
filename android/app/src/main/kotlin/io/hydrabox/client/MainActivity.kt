@@ -41,6 +41,7 @@ import io.hydrabox.client.runtime.CoreRuntimeClient
 import io.hydrabox.client.runtime.CoreRuntimeException
 import io.hydrabox.client.runtime.CoreRuntimeService
 import io.hydrabox.client.runtime.proto.CoreRuntimeProtocol
+import io.hydrabox.client.runtime.toLegacyDesiredRuntimeMap
 import io.hydrabox.client.storage.DomainCrypto
 import io.hydrabox.client.storage.HydraDatabase
 import io.hydrabox.client.storage.IncidentRepository
@@ -127,13 +128,7 @@ internal fun CoreRuntimeProtocol.RuntimeSnapshot.toLegacyRuntimeMap(): Map<Strin
         "probeErrorCode" to probeLastError.code,
         "processEpoch" to processEpoch,
         "sequence" to lastSequence,
-        "desiredRuntime" to if (hasDesiredRuntime()) mapOf(
-            "wantRunning" to desiredRuntime.wantRunning,
-            "mode" to when (desiredRuntime.mode) {
-                CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_PROXY -> "proxy"
-                else -> "vpn"
-            },
-        ) else null,
+        "desiredRuntime" to toLegacyDesiredRuntimeMap(),
         "groups" to outboundGroupsList.map { group ->
             mapOf(
                 "tag" to group.groupId,
