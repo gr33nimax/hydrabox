@@ -18,6 +18,7 @@ import io.nekohasekai.libbox.SystemProxyStatus
 import io.hydrabox.client.HydraBoxApplication
 import io.hydrabox.client.HydraBoxQuickSettingsTileService
 import io.hydrabox.client.runtime.CoreProcessIdentity
+import io.hydrabox.client.runtime.CoreRuntimeService
 import org.json.JSONObject
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.Executors
@@ -205,29 +206,15 @@ class RuntimeSession(
         HydraBoxDiagnostics.log(TAG, "onStartCommand action=$action startId=$startId")
         if (action == null) {
             val mode = currentMode()
-            if (shouldRestoreStickyStart(mode)) {
-                // A service started with startForegroundService() must enter the
-                // foreground before any queued native work. JNI cleanup/startup
-                // can legitimately take several seconds during a VPN restart.
-                showForeground("Connecting")
-                Log.w(TAG, "restoring sticky restart mode=$mode")
-                SingboxController.log(
-                    "warning",
-                    "sticky_restart_restore mode=$mode startId=$startId " +
-                        "intent=${HydraBoxApplication.describeRuntimeIntent()}",
-                )
-                // переводится на команду в HB-RW-012B
-                run("sticky_restart", currentCommandGeneration())
-                return Service.START_STICKY
-            }
-            Log.w(TAG, "ignoring sticky restart without fresh runtime intent")
-            HydraBoxDiagnostics.log(
-                TAG,
-                "ignoring sticky restart without fresh runtime intent mode=$mode " +
-                    "intent=${HydraBoxApplication.describeRuntimeIntent()}",
+            // A service started with startForegroundService() must enter the foreground before async work.
+            showForeground("Connecting")
+            CoreRuntimeService.markStickyRestart()
+            service.startService(
+                Intent(service, CoreRuntimeService::class.java)
+                    .setAction(CoreRuntimeService.ACTION_STICKY_RESTART)
+                    .putExtra(CoreRuntimeService.EXTRA_STICKY_MODE, mode),
             )
-            close("sticky_null_intent", startId = startId)
-            return Service.START_NOT_STICKY
+            return Service.START_STICKY
         }
         var sticky = false
         when (action) {
@@ -398,11 +385,6 @@ class RuntimeSession(
 
     private fun currentConfigHash(): Int? =
         runCatching { HydraBoxApplication.configFile.readText().hashCode() }.getOrNull()
-
-    private fun shouldRestoreStickyStart(mode: String): Boolean =
-        HydraBoxApplication.isRuntimeIntentFresh(mode) &&
-            HydraBoxApplication.configFile.exists() &&
-            HydraBoxApplication.configFile.length() > 0L
 
     private fun currentCommandGeneration(): Long = CoreProcessIdentity.generation.get()
 

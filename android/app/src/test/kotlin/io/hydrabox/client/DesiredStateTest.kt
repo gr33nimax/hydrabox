@@ -1,5 +1,6 @@
 package io.hydrabox.client
 
+import io.hydrabox.client.runtime.CoreRuntimeService
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -15,8 +16,16 @@ class DesiredStateTest {
     )
 
     @Test
-    fun `reconciliation does not launch when recovery is not allowed`() {
+    fun `sticky reconciliation does not launch when recovery is not allowed`() {
         assertEquals(DesiredRuntimeDecision.None, desiredRuntimeDecision(initial.copy(wantRunning = false), initial.configSha256))
+    }
+
+    @Test
+    fun `sticky source marker is consumed once`() {
+        CoreRuntimeService.markStickyRestart()
+
+        assertEquals("sticky", CoreRuntimeService.consumeReconcileSource())
+        assertEquals("recovery", CoreRuntimeService.consumeReconcileSource())
     }
 
     @Test

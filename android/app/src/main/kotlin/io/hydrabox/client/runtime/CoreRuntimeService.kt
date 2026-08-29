@@ -83,6 +83,7 @@ internal sealed interface RuntimeInput {
         ) : Event
         data class Deadline(val commandGeneration: Long) : Event
         data class Released(val commandGeneration: Long, val success: Boolean) : Event
+        data class StickyRestart(val mode: String) : Event
         data class Replay(val listener: ICoreRuntimeListener) : Event
         data class ControllerEvent(val value: Any?) : Event
     }
@@ -266,6 +267,7 @@ internal fun reduce(
     } else {
         Decision(state)
     }
+    is RuntimeInput.Event.StickyRestart,
     is RuntimeInput.Event.Replay,
     is RuntimeInput.Event.ControllerEvent -> Decision(state)
 }
@@ -502,6 +504,13 @@ class CoreRuntimeService : Service() {
 
     override fun onBind(intent: Intent?): IBinder = binder
 
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STICKY_RESTART) {
+            submitInternal(RuntimeInput.Event.StickyRestart(intent.getStringExtra(EXTRA_STICKY_MODE).orEmpty()))
+        }
+        return START_NOT_STICKY
+    }
+
     private fun recoverInvalidPersistedConfig() {
         val configFile = HydraBoxApplication.configFile
         if (!configFile.isFile) return
@@ -703,6 +712,12 @@ class CoreRuntimeService : Service() {
                 is RuntimeInput.Event.Deadline -> handleDeadline(input)
                 is RuntimeInput.Event.Released -> handleReleased(input)
                 is RuntimeInput.Event.Health -> handleHealth(input)
+                is RuntimeInput.Event.StickyRestart -> if (
+                    state.get() !in setOf(
+                        CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STARTING,
+                        CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING,
+                    )
+                ) reconcile("sticky")
                 is RuntimeInput.Event.Replay ->
                     runCatching { input.listener.onEvent(snapshotEvent().toByteArray()) }
                 is RuntimeInput.Event.ControllerEvent -> handleControllerEvent(input.value)
@@ -982,7 +997,12 @@ class CoreRuntimeService : Service() {
             .setError(coreError(code, stage, safeMessage, false, requestId))
             .build()
 
-    private fun start(command: CoreRuntimeProtocol.RuntimeCommand, recovery: Boolean = false) {
+    private fun start(
+        command: CoreRuntimeProtocol.RuntimeCommand,
+        recovery: Boolean = false,
+        recoverySource: String = "recovery",
+        recoveryAttempt: Int = 0,
+    ) {
         val request = command.start
         val expectedDigest = request.configSha256.toByteArray()
         val config = request.compiledConfig.toByteArray()
@@ -1038,10 +1058,11 @@ class CoreRuntimeService : Service() {
             "prof" to shortHex(activeConfigSha256),
             "mode" to request.mode.name.lowercase().removePrefix("runtime_mode_"),
             "source" to when {
-                recovery -> "recovery"
+                recovery -> recoverySource
                 request.source.isNotBlank() -> request.source
                 else -> "ui"
             },
+            "attempt" to recoveryAttempt,
         )
         updateState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STARTING)
         scheduleDeadline(commandGeneration, START_DEADLINE_MILLIS)
@@ -2152,7 +2173,7 @@ class CoreRuntimeService : Service() {
         }
     }
 
-    private fun reconcile() {
+    private fun reconcile(source: String = consumeReconcileSource()) {
         val desired = HydraBoxApplication.readDesiredRuntime()
         if (desired != null && !HydraBoxApplication.desiredRuntimeFile.exists()) {
             HydraBoxApplication.writeDesiredRuntime(desired)
@@ -2192,7 +2213,12 @@ class CoreRuntimeService : Service() {
                             .setConfigSha256(ByteString.copyFrom(config.toSha256Bytes()))
                     )
                     .build()
-                start(command, recovery = true)
+                start(
+                    command,
+                    recovery = true,
+                    recoverySource = source,
+                    recoveryAttempt = decision.next.recoveryAttempt,
+                )
             }
         }
     }
@@ -2216,6 +2242,16 @@ class CoreRuntimeService : Service() {
 
     companion object {
         @Volatile private var currentService: CoreRuntimeService? = null
+        private val stickyRestartSource = AtomicReference<String?>(null)
+
+        const val ACTION_STICKY_RESTART = "io.hydrabox.client.runtime.STICKY_RESTART"
+        const val EXTRA_STICKY_MODE = "sticky_mode"
+
+        fun markStickyRestart() {
+            stickyRestartSource.set("sticky")
+        }
+
+        fun consumeReconcileSource(): String = stickyRestartSource.getAndSet(null) ?: "recovery"
 
         fun submitInternalNetwork(
             network: Network?,
