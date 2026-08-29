@@ -1,4 +1,3 @@
-import 'package:hydrabox/app/runtime_connection_controller.dart';
 import 'package:hydrabox/app/runtime_lifecycle_controller.dart';
 
 enum RuntimeStartDisposition {
@@ -10,14 +9,10 @@ enum RuntimeStartDisposition {
 
 class RuntimeStateDecision {
   const RuntimeStateDecision({
-    required this.phase,
-    required this.keepConnecting,
     required this.clearDisconnectedState,
     required this.retryScheduled,
   });
 
-  final AppConnectionPhase phase;
-  final bool keepConnecting;
   final bool clearDisconnectedState;
   final bool retryScheduled;
 }
@@ -90,24 +85,13 @@ class RuntimeSessionCoordinator {
         !running &&
         (!hasError || keepStateDuringError) &&
         (transitionInProgress || retryScheduled || starting);
-    final phase = switch ((running, hasError, keepStateDuringError)) {
-      (true, _, _) => AppConnectionPhase.connected,
-      (false, true, true) => AppConnectionPhase.recovering,
-      (false, true, false) => AppConnectionPhase.failed,
-      (false, false, _) when keepConnecting && retryScheduled =>
-        AppConnectionPhase.recovering,
-      (false, false, _) when keepConnecting => AppConnectionPhase.starting,
-      _ => AppConnectionPhase.idle,
-    };
     return RuntimeStateDecision(
-      phase: phase,
-      keepConnecting: keepConnecting,
       // Runtime snapshots are level-triggered. A stopped snapshot can be
       // emitted after an unrelated command (for example an ephemeral probe),
       // so only tear down runtime-owned presentation state on an actual
       // active/transitioning -> stopped edge.
       clearDisconnectedState: !running && !keepConnecting && previouslyActive,
-      retryScheduled: phase == AppConnectionPhase.recovering && retryScheduled,
+      retryScheduled: !running && retryScheduled,
     );
   }
 }

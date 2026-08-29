@@ -29,6 +29,7 @@ import 'package:hydrabox/app/runtime_intent_controller.dart';
 import 'package:hydrabox/app/runtime_operation_coordinator.dart';
 import 'package:hydrabox/app/runtime_recovery_controller.dart';
 import 'package:hydrabox/app/runtime_session_coordinator.dart';
+import 'package:hydrabox/app/runtime_snapshot_reducer.dart';
 import 'package:hydrabox/app/singbox_config_coordinator.dart';
 import 'package:hydrabox/app/subscription_coordinator.dart';
 import 'package:hydrabox/app/subscription_runtime_controller.dart';
@@ -2594,7 +2595,6 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       );
       _adBlockStatus = adBlockStatus;
       _russiaRouteDataStatus = russiaRouteDataStatus;
-      _setConnectionPhase(AppConnectionPhase.idle);
       _refreshThemeCache();
       _applyMetadataActiveProfile(
         subscriptions,
@@ -3275,23 +3275,12 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     _cancelAutomaticRuntimeRecovery('stop:$reason');
     _cancelManualRuntimeStart('stop:$reason');
     _runtimeIntent.beginExplicitStop();
-    if (mounted) {
-      setState(() {
-        _setConnectionPhase(AppConnectionPhase.stopping);
-      });
-    } else {
-      _setConnectionPhase(AppConnectionPhase.stopping);
-    }
-
     final stopped = await _runtimeLifecycle.stopRuntime(reason: reason);
     if (!mounted) {
       return stopped;
     }
     if (!stopped) {
       _runtimeIntent.restoreAfterStopFailure();
-      setState(() {
-        _setConnectionPhase(AppConnectionPhase.connected);
-      });
       _showAppSnackBar(_vpnStopFailedMessage);
       return false;
     }
@@ -3301,7 +3290,6 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     _cancelUniversalUrlTest(reason: 'runtime_stop');
     _groupUrlTestScheduler.cancel();
     setState(() {
-      _setConnectionPhase(AppConnectionPhase.idle);
       _resetActiveProxyIpState();
       _locationLookupGeneration++;
       _locationLookupTimer?.cancel();
@@ -3374,9 +3362,6 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       }
       if (!granted) {
         _runtimeIntent.clearRuntimeDesired();
-        setState(() {
-          _setConnectionPhase(AppConnectionPhase.idle);
-        });
         return;
       }
 
@@ -3399,23 +3384,14 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       }
       if (build == null) {
         _runtimeIntent.clearRuntimeDesired();
-        setState(() {
-          _setConnectionPhase(AppConnectionPhase.idle);
-        });
         return;
       }
       if (!_applyStartupValidationResult(build, 'manual start')) {
         _configCoordinator.discardPreparedConfigCandidate(build);
         _runtimeIntent.clearRuntimeDesired();
-        setState(() {
-          _setConnectionPhase(AppConnectionPhase.failed);
-        });
         _showNoValidOutboundsWarning();
         return;
       }
-      setState(() {
-        _setConnectionPhase(AppConnectionPhase.starting);
-      });
       final selectedTagForStart = _selectedProxyTag.trim();
       if (selectedTagForStart.isNotEmpty) {
         _proxySelection.guardCurrentSelectionForRuntime(
@@ -5564,9 +5540,6 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       if (!mounted) {
         return;
       }
-      setState(() {
-        _setConnectionPhase(AppConnectionPhase.failed);
-      });
       _showAppSnackBar(
         result.timedOut ? _vpnStartTimedOutMessage : _vpnStartFailedMessage,
       );
@@ -5584,15 +5557,6 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       _activeProxyIpController.cancelPending();
       _groupUrlTestScheduler.cancel();
     }
-    setState(() {
-      _setConnectionPhase(switch (phase) {
-        SingboxConfigCoordinatorPhase.reconfiguring =>
-          AppConnectionPhase.reconfiguring,
-        SingboxConfigCoordinatorPhase.stopping => AppConnectionPhase.stopping,
-        SingboxConfigCoordinatorPhase.connected => AppConnectionPhase.connected,
-        SingboxConfigCoordinatorPhase.failed => AppConnectionPhase.failed,
-      });
-    });
   }
 
   void _showRuntimeConfigFailure({required bool timedOut}) {
@@ -5827,6 +5791,10 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     final error = event.error;
     final hasError = event.hasError;
     final wasRetryScheduled = _invalidOutboundRetryScheduled;
+    final snapshotPhase = runtimeSnapshotPhase(
+      event.raw,
+      currentPhase: _connectionPhase,
+    );
     final decision = _runtimeSession.decideStateEvent(
       running: running,
       hasError: hasError,
@@ -5844,7 +5812,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
         _lastLocationLookupSignature = '';
       }
       _setConnectionPhase(
-        decision.phase,
+        snapshotPhase,
         retryScheduled: decision.retryScheduled,
       );
       if (decision.clearDisconnectedState) {
@@ -6059,11 +6027,6 @@ class _HydraBoxClientState extends State<HydraBoxClient>
         'runtime',
         'ignored runtime error after explicit stop: $error',
       );
-      if (mounted && _connectionPhase != AppConnectionPhase.stopping) {
-        setState(() {
-          _setConnectionPhase(AppConnectionPhase.idle);
-        });
-      }
       return;
     }
     if (wasRetryScheduled &&
@@ -6082,24 +6045,15 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       _runtimeRecovery.cancelRetry();
     }
     if (await _tryRecoverFromInvalidOutbound(error)) {
-      if (mounted) {
-        setState(() {
-          _setConnectionPhase(
-            AppConnectionPhase.recovering,
-            retryScheduled: true,
-          );
-        });
-      }
+      _runtimeRecovery.setRetryScheduled(true);
       return;
     }
     if (mounted) {
       setState(() {
         _runtimeIntent.clearRuntimeDesired();
-        _setConnectionPhase(AppConnectionPhase.failed);
       });
     } else {
       _runtimeIntent.clearRuntimeDesired();
-      _setConnectionPhase(AppConnectionPhase.failed);
     }
     if (_runtimeRecovery.shouldPresentRuntimeError(error)) {
       unawaited(_showCoreStartFailedDialog(error));
@@ -6194,16 +6148,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     if (!_foregroundLifecycleActive) {
       return;
     }
-    if (mounted) {
-      setState(() {
-        _setConnectionPhase(
-          AppConnectionPhase.recovering,
-          retryScheduled: true,
-        );
-      });
-    } else {
-      _setConnectionPhase(AppConnectionPhase.recovering, retryScheduled: true);
-    }
+    _runtimeRecovery.setRetryScheduled(true);
     _runtimeRecovery.scheduleRetry((retryGeneration) {
       unawaited(_runInvalidOutboundRetry(reason, retryGeneration));
     });
@@ -6240,13 +6185,6 @@ class _HydraBoxClientState extends State<HydraBoxClient>
             returnConfig: true,
           );
       if (build == null) {
-        if (mounted) {
-          setState(() {
-            _setConnectionPhase(AppConnectionPhase.failed);
-          });
-        } else {
-          _setConnectionPhase(AppConnectionPhase.failed);
-        }
         return;
       }
       if (!_automaticRuntimeRecoveryCurrent(retryGeneration)) {
@@ -6255,13 +6193,6 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       }
       if (!_applyStartupValidationResult(build, reason)) {
         _configCoordinator.discardPreparedConfigCandidate(build);
-        if (mounted) {
-          setState(() {
-            _setConnectionPhase(AppConnectionPhase.failed);
-          });
-        } else {
-          _setConnectionPhase(AppConnectionPhase.failed);
-        }
         _showNoValidOutboundsWarning();
         return;
       }
@@ -6332,13 +6263,6 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     _runtimeRecovery.applyMutation(mutation);
     if (mutation.startableProxyCount == 0 &&
         !mutation.allowsZeroSelectableEntries) {
-      if (mounted) {
-        setState(() {
-          _setConnectionPhase(AppConnectionPhase.failed);
-        });
-      } else {
-        _setConnectionPhase(AppConnectionPhase.failed);
-      }
       _showNoValidOutboundsWarning();
       return true;
     }

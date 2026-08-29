@@ -9,6 +9,7 @@ void main() {
       'RUNTIME_STATE_PREPARING': AppConnectionPhase.preparing,
       'RUNTIME_STATE_STARTING': AppConnectionPhase.starting,
       'RUNTIME_STATE_RUNNING': AppConnectionPhase.connected,
+      'RUNTIME_STATE_STOPPING': AppConnectionPhase.stopping,
       'RUNTIME_STATE_RECOVERING': AppConnectionPhase.recovering,
       'RUNTIME_STATE_FAILED': AppConnectionPhase.failed,
     };
@@ -42,5 +43,22 @@ void main() {
         phase,
       );
     }
+  });
+
+  test('running followed by stopped ends disconnected', () {
+    final controller = RuntimeConnectionController();
+    controller.transitionTo(
+      runtimeSnapshotPhase(<String, dynamic>{
+        'state': 'RUNTIME_STATE_RUNNING',
+      }, currentPhase: controller.phase),
+    );
+    controller.transitionTo(
+      runtimeSnapshotPhase(<String, dynamic>{
+        'state': 'RUNTIME_STATE_STOPPED',
+      }, currentPhase: controller.phase),
+    );
+
+    expect(controller.phase, AppConnectionPhase.idle);
+    expect(controller.connected, isFalse);
   });
 }

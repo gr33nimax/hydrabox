@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hydrabox/app/runtime_connection_controller.dart';
 import 'package:hydrabox/app/runtime_lifecycle_controller.dart';
 import 'package:hydrabox/app/runtime_session_coordinator.dart';
 
@@ -75,8 +74,6 @@ void main() {
       previouslyActive: true,
     );
 
-    expect(decision.phase, AppConnectionPhase.recovering);
-    expect(decision.keepConnecting, isTrue);
     expect(decision.clearDisconnectedState, isFalse);
     expect(decision.retryScheduled, isTrue);
   });
@@ -91,8 +88,6 @@ void main() {
       previouslyActive: true,
     );
 
-    expect(decision.phase, AppConnectionPhase.idle);
-    expect(decision.keepConnecting, isFalse);
     expect(decision.clearDisconnectedState, isTrue);
   });
 
@@ -106,7 +101,6 @@ void main() {
       previouslyActive: false,
     );
 
-    expect(decision.phase, AppConnectionPhase.idle);
     expect(decision.clearDisconnectedState, isFalse);
   });
 

@@ -9,6 +9,7 @@ AppConnectionPhase runtimeSnapshotPhase(
     'RUNTIME_STATE_PREPARING' => AppConnectionPhase.preparing,
     'RUNTIME_STATE_STARTING' => AppConnectionPhase.starting,
     'RUNTIME_STATE_RUNNING' => AppConnectionPhase.connected,
+    'RUNTIME_STATE_STOPPING' => AppConnectionPhase.stopping,
     'RUNTIME_STATE_RECOVERING' => AppConnectionPhase.recovering,
     'RUNTIME_STATE_FAILED' => AppConnectionPhase.failed,
     _ => AppConnectionPhase.idle,
