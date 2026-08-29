@@ -22,7 +22,6 @@ import org.json.JSONObject
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
-import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicBoolean
 
 private fun shortServiceId(value: String): String = value.take(8).ifEmpty { "none" }
@@ -35,8 +34,15 @@ internal enum class RuntimeSessionOutcome { CONTINUE, CANCELLED }
 
 internal fun runtimeSessionOutcome(
     stage: RuntimeSessionStage,
+    launchGeneration: Long,
+    currentCommandGeneration: Long,
     cancelled: Boolean,
-): RuntimeSessionOutcome = if (cancelled) RuntimeSessionOutcome.CANCELLED else RuntimeSessionOutcome.CONTINUE
+): RuntimeSessionOutcome =
+    if (cancelled || launchGeneration != currentCommandGeneration) {
+        RuntimeSessionOutcome.CANCELLED
+    } else {
+        RuntimeSessionOutcome.CONTINUE
+    }
 
 class RuntimeSession(
     private val service: Service,
@@ -45,6 +51,7 @@ class RuntimeSession(
     companion object {
         private const val TAG = "RuntimeSession"
         const val ACTION_START = "io.hydrabox.client.singbox.START"
+        const val EXTRA_COMMAND_GENERATION = "command_generation"
         const val ACTION_STOP = "io.hydrabox.client.singbox.STOP"
         const val ACTION_RELOAD = "io.hydrabox.client.singbox.RELOAD"
         const val ACTION_RESTART_CORE = "io.hydrabox.client.singbox.RESTART_CORE"
@@ -158,13 +165,8 @@ class RuntimeSession(
     @Volatile
     private var serviceGeneration = 0L
 
-    private val startRequestGeneration = AtomicLong(0L)
-
     @Volatile
     private var activeLaunch: LaunchTask? = null
-
-    @Volatile
-    private var pendingStartRetry: Thread? = null
 
     @Volatile
     private var destroyed = false
@@ -214,8 +216,8 @@ class RuntimeSession(
                     "sticky_restart_restore mode=$mode startId=$startId " +
                         "intent=${HydraBoxApplication.describeRuntimeIntent()}",
                 )
-                val token = nextStartToken("sticky_restart")
-                run("sticky_restart", token)
+                // переводится на команду в HB-RW-012B
+                run("sticky_restart", currentCommandGeneration())
                 return Service.START_STICKY
             }
             Log.w(TAG, "ignoring sticky restart without fresh runtime intent")
@@ -232,15 +234,15 @@ class RuntimeSession(
             ACTION_START -> {
                 showForeground("Connecting")
                 sticky = true
-                val token = nextStartToken("action_start")
-                run("action_start", token)
+                val generation = intent.commandGeneration(action) ?: return Service.START_NOT_STICKY
+                run("action_start", generation)
             }
             ACTION_STOP -> {
                 val reason = intent.getStringExtra(EXTRA_STOP_REASON)?.takeIf { it.isNotBlank() }
                     ?: "unspecified"
                 HydraBoxApplication.clearRuntimeIntent()
                 showForeground("Disconnecting")
-                cancel(token = startRequestGeneration.get())
+                cancel()
                 close("action_stop:$reason", startId = startId)
             }
             HydraBoxForegroundNotification.ACTION_REFRESH_LATENCY -> {
@@ -254,14 +256,14 @@ class RuntimeSession(
             ACTION_RESTART_CORE -> {
                 showForeground("Connecting")
                 sticky = true
-                val token = nextStartToken("action_restart_core")
-                run("action_restart_core", token)
+                val generation = intent.commandGeneration(action) ?: return Service.START_NOT_STICKY
+                run("action_restart_core", generation)
             }
             ACTION_RELOAD -> {
                 showForeground("Connecting")
                 sticky = true
-                val token = nextStartToken("action_reload")
-                run("action_reload", token)
+                val generation = intent.commandGeneration(action) ?: return Service.START_NOT_STICKY
+                run("action_reload", generation)
             }
             else -> {
                 Log.w(TAG, "ignoring unknown action=$action")
@@ -280,9 +282,7 @@ class RuntimeSession(
         destroyed = true
         HydraBoxDiagnostics.log(TAG, "onDestroy")
         activeServices -= this
-        startRequestGeneration.set(Long.MIN_VALUE)
-        cancelPendingStartRetry("service_onDestroy")
-        cancel(startRequestGeneration.get())
+        cancel()
         recoveryGate.reset()
         recoveryExecutor.shutdownNow()
         close("service_onDestroy", stopSelf = false)
@@ -290,7 +290,7 @@ class RuntimeSession(
     }
 
     fun requestStop(source: String) {
-        cancel(startRequestGeneration.get())
+        cancel()
         close(source)
     }
 
@@ -368,13 +368,13 @@ class RuntimeSession(
         }
 
     override fun serviceReload() {
-        val token = nextStartToken("handler_serviceReload")
-        run("handler_serviceReload", token)
+        // переводится на команду в HB-RW-012B
+        run("handler_serviceReload", currentCommandGeneration())
     }
 
     override fun serviceStop() {
         HydraBoxDiagnostics.log(TAG, "serviceStop requested by libbox/platform")
-        cancel(startRequestGeneration.get())
+        cancel()
         close("handler_serviceStop")
     }
 
@@ -404,37 +404,25 @@ class RuntimeSession(
             HydraBoxApplication.configFile.exists() &&
             HydraBoxApplication.configFile.length() > 0L
 
-    private fun nextStartToken(reason: String): Long {
-        if (destroyed) {
-            HydraBoxDiagnostics.log(TAG, "start token ignored after destroy reason=$reason")
-            return Long.MIN_VALUE
-        }
-        val token = SingboxController.nextStartToken("${service.javaClass.simpleName}:$reason")
-        startRequestGeneration.set(token)
-        return token
+    private fun currentCommandGeneration(): Long = CoreProcessIdentity.generation.get()
+
+    private fun Intent.commandGeneration(action: String): Long? {
+        val generation = getLongExtra(EXTRA_COMMAND_GENERATION, 0L)
+        if (generation > 0L) return generation
+        val message = "runtime start rejected action=$action commandGeneration=$generation"
+        Log.w(TAG, message)
+        HydraBoxDiagnostics.log(TAG, message)
+        SingboxController.log("error", message)
+        return null
     }
 
-    private fun cancelStartRequests(reason: String): Long {
-        val token = SingboxController.cancelStartTokens("${service.javaClass.simpleName}:$reason")
-        startRequestGeneration.set(token)
-        cancelPendingStartRetry(reason)
-        return token
-    }
-
-    private fun startTokenCurrent(token: Long): Boolean =
-        !destroyed &&
-            startRequestGeneration.get() == token &&
-            SingboxController.isStartTokenCurrent(token)
-
-    private fun cancelPendingStartRetry(reason: String) {
-        val pending = pendingStartRetry ?: return
-        pendingStartRetry = null
-        pending.interrupt()
-        SingboxController.log(
-            "info",
-            "service_start_retry_cancelled reason=$reason service=${service.javaClass.simpleName}",
-        )
-    }
+    private fun launchCurrent(stage: RuntimeSessionStage, launch: LaunchTask): Boolean =
+        !destroyed && runtimeSessionOutcome(
+            stage,
+            launch.generation,
+            currentCommandGeneration(),
+            launch.cancelled.get(),
+        ) == RuntimeSessionOutcome.CONTINUE
 
     private fun submitServiceTask(
         source: String,
@@ -479,7 +467,17 @@ class RuntimeSession(
     }
 
     fun run(plan: String, generation: Long) {
-        if (destroyed) return
+        if (destroyed || generation <= 0L || generation != currentCommandGeneration()) {
+            val message =
+                "runtime start rejected plan=$plan commandGeneration=$generation current=${currentCommandGeneration()}"
+            HydraBoxDiagnostics.log(
+                TAG,
+                message,
+            )
+            SingboxController.log("error", message)
+            return
+        }
+        activeLaunch?.cancelled?.set(true)
         lateinit var task: LaunchTask
         val thread = Thread(
             { startInternal(plan, generation, task) },
@@ -490,8 +488,8 @@ class RuntimeSession(
         thread.start()
     }
 
-    fun cancel(token: Long) {
-        activeLaunch?.takeIf { it.generation == token }?.cancelled?.set(true)
+    fun cancel() {
+        activeLaunch?.cancelled?.set(true)
     }
 
     fun close(source: String, stopSelf: Boolean = true, startId: Int? = null) {
@@ -507,9 +505,9 @@ class RuntimeSession(
         thread.start()
     }
 
-    private fun startInternal(source: String, token: Long, task: LaunchTask) {
-        if (task.cancelled.get() || !startTokenCurrent(token)) {
-            HydraBoxDiagnostics.log(TAG, "start ignored for stale token=$token source=$source")
+    private fun startInternal(source: String, generation: Long, task: LaunchTask) {
+        if (!launchCurrent(RuntimeSessionStage.FOREGROUND, task)) {
+            HydraBoxDiagnostics.log(TAG, "start ignored for stale commandGeneration=$generation source=$source")
             return
         }
         val mode = currentMode()
@@ -527,7 +525,7 @@ class RuntimeSession(
                     TAG,
                     "startInternal reload requested source=$source mode=$mode configHash=$configHash runningConfigHash=$runningConfigHash",
                 )
-                startOrReloadInternal(token, task = task)
+                startOrReloadInternal(generation, task = task)
                 return
             }
             Log.i(TAG, "startInternal ignored source=$source already running mode=$mode")
@@ -543,17 +541,18 @@ class RuntimeSession(
             HydraBoxQuickSettingsTileService.requestRefresh(service)
             return
         }
-        startOrReloadInternal(token, task = task)
+        startOrReloadInternal(generation, task = task)
     }
 
     private fun startOrReloadInternal(
-        token: Long = nextStartToken("startOrReloadInternal"),
+        generation: Long,
         networkWaitAttempt: Int = 0,
         task: LaunchTask? = null,
     ) {
-        if (task?.cancelled?.get() == true || !startTokenCurrent(token)) {
-            Log.i(TAG, "startOrReloadInternal ignored stale token=$token")
-            HydraBoxDiagnostics.log(TAG, "startOrReloadInternal ignored stale token=$token")
+        val launch = task ?: return
+        if (!launchCurrent(RuntimeSessionStage.FOREGROUND, launch)) {
+            Log.i(TAG, "startOrReloadInternal ignored stale commandGeneration=$generation")
+            HydraBoxDiagnostics.log(TAG, "startOrReloadInternal ignored stale commandGeneration=$generation")
             return
         }
         Log.i(TAG, "startOrReloadInternal begin service=${service.javaClass.simpleName}")
@@ -572,7 +571,7 @@ class RuntimeSession(
                 "current=${HydraBoxDefaultNetworkMonitor.describeCurrentState()}",
         )
         try {
-            if (task?.cancelled?.get() == true) return
+            if (!launchCurrent(RuntimeSessionStage.NATIVE_SETUP, launch)) return
             NativeCoreEnvironment.ensureSetup()
             showForeground("Connecting")
         } catch (error: Throwable) {
@@ -581,7 +580,7 @@ class RuntimeSession(
             fail("Native service setup failed: ${error.message ?: error}")
             return
         }
-        if (task?.cancelled?.get() == true) return
+        if (!launchCurrent(RuntimeSessionStage.NETWORK_WAIT, launch)) return
         registerRuntimeReceiver()
         HydraBoxDefaultNetworkMonitor.start()
         if (!HydraBoxDefaultNetworkMonitor.awaitUsableDefaultInterface(NETWORK_WAIT_TIMEOUT_MS)) {
@@ -594,18 +593,17 @@ class RuntimeSession(
             )
             SingboxController.log(
                 "warning",
-                "network_interface_wait_timeout attempt=$networkWaitAttempt token=$token " +
+                "network_interface_wait_timeout attempt=$networkWaitAttempt commandGeneration=$generation " +
                     "current=${HydraBoxDefaultNetworkMonitor.describeCurrentState()}",
             )
             if (networkWaitAttempt < NETWORK_WAIT_MAX_RETRIES) {
                 showForeground("Waiting for network")
-                cancelPendingStartRetry("replace_network_wait_retry")
-                pendingStartRetry = scheduleRetry(
+                scheduleRetry(
                     "network_wait",
                     {
-                        if (startTokenCurrent(token)) {
+                        if (launch.generation == currentCommandGeneration() && !launch.cancelled.get()) {
                             submitServiceTask("network_wait_retry") {
-                                startOrReloadInternal(token, networkWaitAttempt + 1, task)
+                                startOrReloadInternal(generation, networkWaitAttempt + 1, launch)
                             }
                         }
                     },
@@ -614,7 +612,7 @@ class RuntimeSession(
                 SingboxController.log(
                     "info",
                     "service_start_retry_scheduled attempt=${networkWaitAttempt + 1} " +
-                        "token=$token service=${service.javaClass.simpleName}",
+                        "commandGeneration=$generation service=${service.javaClass.simpleName}",
                 )
                 return
             }
@@ -623,7 +621,7 @@ class RuntimeSession(
         }
         SingboxController.log(
             "info",
-            "network_interface_ready token=$token current=${HydraBoxDefaultNetworkMonitor.describeCurrentState()}",
+            "network_interface_ready commandGeneration=$generation current=${HydraBoxDefaultNetworkMonitor.describeCurrentState()}",
         )
         HydraBoxDiagnostics.event(
             "START", "ep" to shortServiceId(CoreProcessIdentity.epoch), "cg" to CoreProcessIdentity.generation.get(),
@@ -632,8 +630,8 @@ class RuntimeSession(
             "stage" to "network_wait", "result" to "ok",
             "elapsed_ms" to SystemClock.elapsedRealtime() - startedAt, "attempt" to networkWaitAttempt,
         )
-        if (task?.cancelled?.get() == true || !startTokenCurrent(token)) {
-            HydraBoxDiagnostics.log(TAG, "start cancelled after network wait token=$token")
+        if (!launchCurrent(RuntimeSessionStage.NETWORK_WAIT, launch)) {
+            HydraBoxDiagnostics.log(TAG, "start cancelled after network wait commandGeneration=$generation")
             return
         }
         val config = runCatching { HydraBoxApplication.configFile.readText() }.getOrElse {
@@ -648,12 +646,12 @@ class RuntimeSession(
         }
         val configHash = config.hashCode()
         val preparedRuntimeConfig = prepareRuntimeConfig(config)
-        if (task?.cancelled?.get() == true || !startTokenCurrent(token)) {
-            HydraBoxDiagnostics.log(TAG, "start cancelled before command server token=$token")
+        if (!launchCurrent(RuntimeSessionStage.COMMAND_SERVER, launch)) {
+            HydraBoxDiagnostics.log(TAG, "start cancelled before command server commandGeneration=$generation")
             return
         }
         try {
-            if (task?.cancelled?.get() == true) return
+            if (!launchCurrent(RuntimeSessionStage.COMMAND_SERVER, launch)) return
             val server = commandServer ?: createCommandServer()
             Log.i(TAG, "starting/reloading libbox service")
             HydraBoxDiagnostics.log(
@@ -661,11 +659,12 @@ class RuntimeSession(
                 "starting/reloading libbox service current=${HydraBoxDefaultNetworkMonitor.describeCurrentState()}",
             )
             val startedAt = System.currentTimeMillis()
-            if (task?.cancelled?.get() == true) return
+            if (!launchCurrent(RuntimeSessionStage.LIBBOX_START, launch)) return
             server.startOrReloadService(
                 preparedRuntimeConfig.config,
                 preparedRuntimeConfig.overrideOptions,
             )
+            if (!launchCurrent(RuntimeSessionStage.COMMAND_CLIENT, launch)) return
             val elapsedMs = System.currentTimeMillis() - startedAt
             HydraBoxDiagnostics.event(
                 "START", "ep" to shortServiceId(CoreProcessIdentity.epoch), "cg" to CoreProcessIdentity.generation.get(),
@@ -677,7 +676,7 @@ class RuntimeSession(
             scheduleRetry(
                 "post_start_interface_reassert",
                 {
-                    if (startTokenCurrent(token) && commandServer != null) {
+                    if (launch.generation == currentCommandGeneration() && !launch.cancelled.get() && commandServer != null) {
                         HydraBoxDefaultNetworkMonitor.reassertDefaultInterface(
                             "after_start_or_reload_service_delayed",
                         )
@@ -697,7 +696,6 @@ class RuntimeSession(
                 "info",
                 "VPN service running mode=$mode generation=$serviceGeneration hasCommandServer=${commandServer != null}",
             )
-            cancelPendingStartRetry("start_success")
             HydraBoxQuickSettingsTileService.requestRefresh(service)
         } catch (error: Throwable) {
             Log.e(TAG, "startOrReloadInternal failed", error)
@@ -718,12 +716,9 @@ class RuntimeSession(
         val staleRuntimeStop = generation != 0L && generation != activeGeneration
         val ownsRuntime = generation != 0L && !staleRuntimeStop
         val hasLocalRuntime = generation != 0L || server != null
-        val shouldCancelStartRequests = cancelStarts && ownsRuntime
         val shouldStopRuntimeState = ownsRuntime || (cancelStarts && !SingboxController.running)
-        if (shouldCancelStartRequests) {
-            cancelStartRequests("stop:$source")
-        } else {
-            cancelPendingStartRetry("stop:$source")
+        if (cancelStarts && ownsRuntime) {
+            cancel()
         }
         Log.i(TAG, "stopInternal source=$source service=${service.javaClass.simpleName}")
         SingboxController.log(

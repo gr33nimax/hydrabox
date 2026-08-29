@@ -980,7 +980,11 @@ class CoreRuntimeService : Service() {
                 sameRunningMode && request.restartCore -> {
                     val serviceClass = serviceClass(request.mode)
                     updateState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RECOVERING)
-                    startService(Intent(this, serviceClass).setAction(RuntimeSession.ACTION_RESTART_CORE))
+                    startService(
+                        Intent(this, serviceClass)
+                            .setAction(RuntimeSession.ACTION_RESTART_CORE)
+                            .putExtra(RuntimeSession.EXTRA_COMMAND_GENERATION, commandGeneration),
+                    )
                 }
                 sameRunningMode && request.applyConfig -> {
                     SingboxController.reloadService { result ->
@@ -1007,7 +1011,7 @@ class CoreRuntimeService : Service() {
                     RuntimeInput.Event.Launched(commandGeneration, SingboxController.activeRuntimeGeneration),
                 )
                 else -> {
-                    dispatchStart(request.mode)
+                    dispatchStart(request.mode, commandGeneration)
                 }
             }
         }
@@ -1020,19 +1024,27 @@ class CoreRuntimeService : Service() {
             HydraBoxProxyService::class.java
         }
 
-    private fun dispatchStart(targetMode: CoreRuntimeProtocol.RuntimeMode) {
+    private fun dispatchStart(targetMode: CoreRuntimeProtocol.RuntimeMode, commandGeneration: Long) {
         val serviceClass = serviceClass(targetMode)
         val targetName = if (targetMode == CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_VPN) "vpn" else "proxy"
         if (SingboxController.running && SingboxController.serviceMode != targetName) {
             RuntimeSession.requestStopAll("runtime_mode_switch")
             SingboxController.awaitStopped { stopped ->
                 if (stopped) {
-                    startForegroundService(Intent(this, serviceClass).setAction(RuntimeSession.ACTION_START))
+                    startForegroundService(
+                        Intent(this, serviceClass)
+                            .setAction(RuntimeSession.ACTION_START)
+                            .putExtra(RuntimeSession.EXTRA_COMMAND_GENERATION, commandGeneration),
+                    )
                 }
             }
             return
         }
-        startForegroundService(Intent(this, serviceClass).setAction(RuntimeSession.ACTION_START))
+        startForegroundService(
+            Intent(this, serviceClass)
+                .setAction(RuntimeSession.ACTION_START)
+                .putExtra(RuntimeSession.EXTRA_COMMAND_GENERATION, commandGeneration),
+        )
     }
 
 
@@ -1534,7 +1546,7 @@ class CoreRuntimeService : Service() {
         activeStartCommandId = command.commandId
         scheduleDeadline(commandGeneration, START_DEADLINE_MILLIS)
         scheduler.schedule(
-            { mainHandler.post { dispatchStart(mode.get()) } },
+            { mainHandler.post { dispatchStart(mode.get(), commandGeneration) } },
             STATE_POLL_MILLIS,
             TimeUnit.MILLISECONDS,
         )

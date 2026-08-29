@@ -82,7 +82,6 @@ object SingboxController {
     private val statusCallbackCount = AtomicLong(0L)
     private val groupsCallbackCount = AtomicLong(0L)
     private val runtimeGeneration = AtomicLong(0)
-    private val runtimeStartGeneration = AtomicLong(0)
     private val lastNoInterfaceReassertUptimeMs = AtomicLong(0L)
     private val interfaceFailureLock = Any()
     private val interfaceDialFailureUptimes = ArrayDeque<Long>()
@@ -514,20 +513,6 @@ object SingboxController {
         HydraBoxDiagnostics.log(TAG, "markServiceStarted generation=$generation mode=$mode")
         return generation
     }
-
-    fun nextStartToken(reason: String): Long {
-        val token = runtimeStartGeneration.incrementAndGet()
-        HydraBoxDiagnostics.log(TAG, "nextStartToken token=$token reason=$reason")
-        return token
-    }
-
-    fun cancelStartTokens(reason: String): Long {
-        val token = runtimeStartGeneration.incrementAndGet()
-        HydraBoxDiagnostics.log(TAG, "cancelStartTokens token=$token reason=$reason")
-        return token
-    }
-
-    fun isStartTokenCurrent(token: Long): Boolean = runtimeStartGeneration.get() == token
 
     fun markServiceStopped(generation: Long, reason: String) {
         val currentGeneration = activeRuntimeGeneration

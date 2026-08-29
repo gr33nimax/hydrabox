@@ -7,7 +7,20 @@ class RuntimeSessionStageTest {
     @Test
     fun `cancellation before every stage is cancelled`() {
         RuntimeSessionStage.entries.forEach { stage ->
-            assertEquals(RuntimeSessionOutcome.CANCELLED, runtimeSessionOutcome(stage, cancelled = true))
+            assertEquals(
+                RuntimeSessionOutcome.CANCELLED,
+                runtimeSessionOutcome(stage, launchGeneration = 7, currentCommandGeneration = 7, cancelled = true),
+            )
+        }
+    }
+
+    @Test
+    fun `command generation change interrupts every stage`() {
+        RuntimeSessionStage.entries.forEach { stage ->
+            assertEquals(
+                RuntimeSessionOutcome.CANCELLED,
+                runtimeSessionOutcome(stage, launchGeneration = 7, currentCommandGeneration = 8, cancelled = false),
+            )
         }
     }
 }
