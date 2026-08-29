@@ -240,6 +240,7 @@ message RuntimeSnapshot {
   TransportHealthSnapshot transport_health = 16;
   DesiredRuntime desired_runtime = 17;
   map<string, string> pending_selected_outbound_ids = 18;
+  CoreError probe_last_error = 19;
 }
 
 message RuntimeLog {

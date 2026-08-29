@@ -123,6 +123,8 @@ internal fun CoreRuntimeProtocol.RuntimeSnapshot.toLegacyRuntimeMap(): Map<Strin
         "downlinkTotal" to traffic.downlinkTotalBytes,
         "lastError" to lastError.safeMessage,
         "errorCode" to lastError.code,
+        "probeLastError" to probeLastError.safeMessage,
+        "probeErrorCode" to probeLastError.code,
         "processEpoch" to processEpoch,
         "sequence" to lastSequence,
         "desiredRuntime" to if (hasDesiredRuntime()) mapOf(

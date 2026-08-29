@@ -1001,6 +1001,8 @@ class CoreRuntimeClient(context: Context) {
         "downlinkTotal" to traffic.downlinkTotalBytes,
         "lastError" to lastError.safeMessage,
         "errorCode" to lastError.code,
+        "probeLastError" to probeLastError.safeMessage,
+        "probeErrorCode" to probeLastError.code,
         "sequence" to lastSequence,
         "processEpoch" to processEpoch,
     )

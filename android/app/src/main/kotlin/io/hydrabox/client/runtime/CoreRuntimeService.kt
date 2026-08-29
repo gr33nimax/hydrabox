@@ -380,6 +380,13 @@ class CoreRuntimeService : Service() {
             isDaemon = true
         }
     }
+    private val probeThread = AtomicReference<Thread?>()
+    private val probeExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "HydraCoreProbe").apply {
+            probeThread.set(this)
+            isDaemon = true
+        }
+    }
     private val scheduler = Executors.newSingleThreadScheduledExecutor { runnable ->
         Thread(runnable, "HydraCoreRuntimeTimers").apply { isDaemon = true }
     }
@@ -390,6 +397,7 @@ class CoreRuntimeService : Service() {
     private val snapshotLock = Any()
     private var activeConfigSha256 = ByteArray(0)
     private var lastError: CoreRuntimeProtocol.CoreError? = null
+    private var probeLastError: CoreRuntimeProtocol.CoreError? = null
     private var outboundGroups = emptyList<CoreRuntimeProtocol.OutboundGroupSnapshot>()
     private var probeSessions = emptyList<CoreRuntimeProtocol.ProbeSession>()
     private val managedProbeAliases = linkedMapOf<String, String>()
@@ -444,7 +452,15 @@ class CoreRuntimeService : Service() {
                 .setGeneration(generation.get())
                 .setAcceptedAtMillis(System.currentTimeMillis())
                 .build()
-            submitInternal(RuntimeInput.Command.Submitted(command))
+            if (command.kind in setOf(
+                    CoreRuntimeProtocol.CommandKind.COMMAND_KIND_START_PROBE,
+                    CoreRuntimeProtocol.CommandKind.COMMAND_KIND_CANCEL_PROBE,
+                )
+            ) {
+                probeExecutor.execute { execute(command) }
+            } else {
+                submitInternal(RuntimeInput.Command.Submitted(command))
+            }
             return receipt.toByteArray()
         }
 
@@ -603,6 +619,7 @@ class CoreRuntimeService : Service() {
         SingboxController.clearEventSink(controllerRegistration)
         listeners.kill()
         commandExecutor.shutdownNow()
+        probeExecutor.shutdownNow()
         super.onDestroy()
     }
 
@@ -702,7 +719,7 @@ class CoreRuntimeService : Service() {
 
     private fun executeSelectOutbound(command: CoreRuntimeProtocol.RuntimeCommand) {
         if (state.get() != CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING) {
-            commandFailed(command.commandId, "runtime.selector.not_running", "selector", "HydraCore is not running.", false)
+            failCommand(command.commandId, "runtime.selector.not_running", "selector", "HydraCore is not running.", false)
             return
         }
         selectOutbound(command)
@@ -763,6 +780,8 @@ class CoreRuntimeService : Service() {
     }
 
     private fun isOnCommandThread(): Boolean = Thread.currentThread() === commandThread.get()
+
+    private fun isOnProbeThread(): Boolean = Thread.currentThread() === probeThread.get()
 
     private fun handleNetworkChanged(input: RuntimeInput.Command.NetworkChanged) {
         val commandId = "network:${input.payload.networkGeneration}"
@@ -1396,7 +1415,7 @@ class CoreRuntimeService : Service() {
     private fun selectOutbound(command: CoreRuntimeProtocol.RuntimeCommand) {
         val request = command.selectOutbound
         if (request.groupId.isBlank() || request.outboundId.isBlank()) {
-            commandFailed(command.commandId, "runtime.selector.invalid", "selector", "The outbound selection is invalid.", false)
+            failCommand(command.commandId, "runtime.selector.invalid", "selector", "The outbound selection is invalid.", false)
             return
         }
         val commandGeneration = generation.incrementAndGet()
@@ -1415,7 +1434,7 @@ class CoreRuntimeService : Service() {
                     }
                     commandSucceeded(command.commandId, state.get())
                 }.onFailure {
-                    commandFailed(command.commandId, "runtime.selector.failed", "selector", "HydraCore rejected the outbound selection.", true)
+                    failCommand(command.commandId, "runtime.selector.failed", "selector", "HydraCore rejected the outbound selection.", true)
                 }
             }
         }
@@ -1427,7 +1446,7 @@ class CoreRuntimeService : Service() {
             request.url.isBlank() || request.concurrency !in 1..32 ||
             request.timeoutMillis !in 500..120_000
         ) {
-            commandFailed(command.commandId, "probe.request.invalid", "probe", "The probe request is invalid.", false)
+            failProbe(command.commandId, "probe.request.invalid", "probe", "The probe request is invalid.", false)
             return
         }
         // A compiled config means the caller requested an isolated probe plan.
@@ -1440,7 +1459,7 @@ class CoreRuntimeService : Service() {
                 return
             }
             ProbeExecutionMode.REJECT_MISSING_PLAN -> {
-                commandFailed(
+                failProbe(
                     command.commandId,
                     "probe.ephemeral.missing_plan",
                     "probe_bootstrap",
@@ -1464,7 +1483,7 @@ class CoreRuntimeService : Service() {
             deadlineMillis = (request.deadlineAtMillis - System.currentTimeMillis())
                 .coerceIn(request.timeoutMillis.toLong(), 120_000L).toInt(),
             force = true,
-        ) { result ->
+        ) { result -> probeExecutor.execute callback@{
             result.onSuccess { nativeSession ->
                 val nativeId = nativeSession["id"]?.toString().orEmpty()
                 if (nativeId.isNotBlank()) {
@@ -1477,12 +1496,12 @@ class CoreRuntimeService : Service() {
                     .setStartedAtMillis(System.currentTimeMillis())
                     .setNetworkFingerprint(request.networkFingerprint)
                     .build()
-                emit(eventBuilder().setProbeSession(session).build())
-                commandSucceeded(command.commandId, state.get())
+                emitProbe { eventBuilder().setProbeSession(session).build() }
+                probeSucceeded(command.commandId)
             }.onFailure {
-                commandFailed(command.commandId, "probe.start.failed", "probe_start", "HydraCore could not start the probe session.", true)
+                failProbe(command.commandId, "probe.start.failed", "probe_start", "HydraCore could not start the probe session.", true)
             }
-        }
+        } }
     }
 
     private fun startEphemeralProbe(
@@ -1496,7 +1515,7 @@ class CoreRuntimeService : Service() {
             config.isEmpty() || config.size > MAX_CONFIG_BYTES || digest.size != SHA256_BYTES ||
             !MessageDigest.isEqual(MessageDigest.getInstance("SHA-256").digest(config), digest)
         ) {
-            commandFailed(
+            failProbe(
                 command.commandId,
                 "probe.ephemeral.invalid_plan",
                 "probe_bootstrap",
@@ -1517,11 +1536,11 @@ class CoreRuntimeService : Service() {
             ephemeralProbeSessionId = request.sessionId
             probeSessions = probeSessions.filterNot { it.sessionId == request.sessionId } + runningSession
         }
-        emit(eventBuilder().setProbeSession(runningSession).build())
-        commandSucceeded(command.commandId, state.get())
+        emitProbe { eventBuilder().setProbeSession(runningSession).build() }
+        probeSucceeded(command.commandId)
         val deadlineDelay = (request.deadlineAtMillis - System.currentTimeMillis())
             .coerceIn(request.timeoutMillis.toLong(), 120_000L)
-        mainHandler.postDelayed({
+        mainHandler.postDelayed({ probeExecutor.execute {
             val timedOut = synchronized(snapshotLock) {
                 if (ephemeralProbeSessionId == request.sessionId) {
                     ephemeralProbeSessionId = null
@@ -1537,7 +1556,7 @@ class CoreRuntimeService : Service() {
                     System.currentTimeMillis(),
                 )
             }
-        }, deadlineDelay)
+        } }, deadlineDelay)
         SingboxController.preconnectUrlTest(
             config = config.toString(Charsets.UTF_8),
             groupTag = request.groupId,
@@ -1546,11 +1565,11 @@ class CoreRuntimeService : Service() {
             timeoutMillis = request.timeoutMillis.toInt(),
             deadlineMillis = (request.deadlineAtMillis - System.currentTimeMillis())
                 .coerceIn(request.timeoutMillis.toLong(), 120_000L).toInt(),
-        ) { result ->
+        ) { result -> probeExecutor.execute callback@{
             val stillCurrent = synchronized(snapshotLock) {
                 ephemeralProbeSessionId == request.sessionId
             }
-            if (!stillCurrent) return@preconnectUrlTest
+            if (!stillCurrent) return@callback
             val finishedAt = System.currentTimeMillis()
             result.onSuccess { value ->
                 val probe = CoreRuntimeProtocol.ProbeResult.newBuilder()
@@ -1570,7 +1589,7 @@ class CoreRuntimeService : Service() {
                         ),
                     )
                 }
-                emit(eventBuilder().setProbeResult(probe).build())
+                emitProbe { eventBuilder().setProbeResult(probe).build() }
                 finishEphemeralProbe(
                     request,
                     if (value.delayMillis > 0L) {
@@ -1589,7 +1608,7 @@ class CoreRuntimeService : Service() {
                     finishedAt,
                 )
             }
-        }
+        } }
     }
 
     private fun finishEphemeralProbe(
@@ -1611,15 +1630,15 @@ class CoreRuntimeService : Service() {
             ephemeralProbeSessionId = null
             probeSessions = probeSessions.filterNot { it.sessionId == request.sessionId } + session
         }
-        emit(eventBuilder().setProbeSession(session).build())
-        emit(snapshotEvent())
+        emitProbe { eventBuilder().setProbeSession(session).build() }
+        emitProbe(::snapshotEvent)
     }
 
     private fun cancelProbe(command: CoreRuntimeProtocol.RuntimeCommand) {
         val requestedId = command.cancelProbe.sessionId
         val isEphemeral = synchronized(snapshotLock) { ephemeralProbeSessionId == requestedId }
         if (isEphemeral) {
-            SingboxController.cancelPreconnectUrlTest("probe_cancel") { result ->
+            SingboxController.cancelPreconnectUrlTest("probe_cancel") { result -> probeExecutor.execute {
                 result.onSuccess {
                     val session = CoreRuntimeProtocol.ProbeSession.newBuilder()
                         .setSessionId(requestedId)
@@ -1630,10 +1649,10 @@ class CoreRuntimeService : Service() {
                         ephemeralProbeSessionId = null
                         probeSessions = probeSessions.filterNot { it.sessionId == requestedId } + session
                     }
-                    emit(eventBuilder().setProbeSession(session).build())
-                    commandSucceeded(command.commandId, state.get())
+                    emitProbe { eventBuilder().setProbeSession(session).build() }
+                    probeSucceeded(command.commandId)
                 }.onFailure {
-                    commandFailed(
+                    failProbe(
                         command.commandId,
                         "probe.cancel.failed",
                         "probe_cancel",
@@ -1641,13 +1660,13 @@ class CoreRuntimeService : Service() {
                         true,
                     )
                 }
-            }
+            } }
             return
         }
         val nativeId = synchronized(snapshotLock) {
             managedProbeAliases.entries.firstOrNull { it.value == requestedId }?.key ?: requestedId
         }
-        SingboxController.cancelManagedUrlTest(nativeId) { result ->
+        SingboxController.cancelManagedUrlTest(nativeId) { result -> probeExecutor.execute {
             result.onSuccess {
                 val session = CoreRuntimeProtocol.ProbeSession.newBuilder()
                     .setSessionId(requestedId)
@@ -1655,12 +1674,12 @@ class CoreRuntimeService : Service() {
                     .setFinishedAtMillis(System.currentTimeMillis())
                     .build()
                 synchronized(snapshotLock) { managedProbeAliases.remove(nativeId) }
-                emit(eventBuilder().setProbeSession(session).build())
-                commandSucceeded(command.commandId, state.get())
+                emitProbe { eventBuilder().setProbeSession(session).build() }
+                probeSucceeded(command.commandId)
             }.onFailure {
-                commandFailed(command.commandId, "probe.cancel.failed", "probe_cancel", "HydraCore could not cancel the probe session.", true)
+                failProbe(command.commandId, "probe.cancel.failed", "probe_cancel", "HydraCore could not cancel the probe session.", true)
             }
-        }
+        } }
     }
 
     private fun recover(command: CoreRuntimeProtocol.RuntimeCommand) {
@@ -2026,6 +2045,7 @@ class CoreRuntimeService : Service() {
                 )
             }
             lastError?.let(builder::setLastError)
+            probeLastError?.let(builder::setProbeLastError)
             return builder.build()
         }
     }
@@ -2081,6 +2101,58 @@ class CoreRuntimeService : Service() {
         }
     }
 
+    private fun emitProbe(buildEvent: () -> CoreRuntimeProtocol.RuntimeEvent) {
+        commandExecutor.execute { emit(buildEvent()) }
+    }
+
+    private fun probeSucceeded(commandId: String) {
+        if (!isOnProbeThread()) {
+            probeExecutor.execute { probeSucceeded(commandId) }
+            return
+        }
+        emitProbe {
+            eventBuilder().setCommandResult(
+                CoreRuntimeProtocol.CommandResult.newBuilder()
+                    .setSchemaVersion(SCHEMA_VERSION)
+                    .setCommandId(commandId)
+                    .setOutcome(CoreRuntimeProtocol.CommandOutcome.COMMAND_OUTCOME_SUCCEEDED)
+                    .setFinalState(state.get())
+                    .setGeneration(generation.get())
+                    .setCompletedAtMillis(System.currentTimeMillis())
+                    .build(),
+            ).build()
+        }
+    }
+
+    private fun failProbe(
+        commandId: String,
+        code: String,
+        stage: String,
+        safeMessage: String,
+        retryable: Boolean,
+    ) {
+        if (!isOnProbeThread()) {
+            probeExecutor.execute { failProbe(commandId, code, stage, safeMessage, retryable) }
+            return
+        }
+        val error = coreError(code, stage, safeMessage, retryable, commandId.ifBlank { UUID.randomUUID().toString() })
+        synchronized(snapshotLock) { probeLastError = error }
+        emitProbe {
+            eventBuilder().setCommandResult(
+                CoreRuntimeProtocol.CommandResult.newBuilder()
+                    .setSchemaVersion(SCHEMA_VERSION)
+                    .setCommandId(commandId)
+                    .setOutcome(CoreRuntimeProtocol.CommandOutcome.COMMAND_OUTCOME_FAILED)
+                    .setFinalState(state.get())
+                    .setGeneration(generation.get())
+                    .setCompletedAtMillis(System.currentTimeMillis())
+                    .setError(error)
+                    .build(),
+            ).build()
+        }
+        emitProbe(::snapshotEvent)
+    }
+
     private fun commandSucceeded(commandId: String, finalState: CoreRuntimeProtocol.RuntimeState) {
         if (!isOnCommandThread()) {
             commandExecutor.execute { commandSucceeded(commandId, finalState) }
@@ -2133,6 +2205,28 @@ class CoreRuntimeService : Service() {
         }
     }
 
+    private fun failCommand(
+        commandId: String,
+        code: String,
+        stage: String,
+        safeMessage: String,
+        retryable: Boolean,
+    ) {
+        val error = coreError(code, stage, safeMessage, retryable, commandId)
+        synchronized(snapshotLock) { lastError = error }
+        val result = CoreRuntimeProtocol.CommandResult.newBuilder()
+            .setSchemaVersion(SCHEMA_VERSION)
+            .setCommandId(commandId)
+            .setOutcome(CoreRuntimeProtocol.CommandOutcome.COMMAND_OUTCOME_FAILED)
+            .setFinalState(state.get())
+            .setGeneration(generation.get())
+            .setCompletedAtMillis(System.currentTimeMillis())
+            .setError(error)
+            .build()
+        emit(eventBuilder().setCommandResult(result).build())
+        emit(snapshotEvent())
+    }
+
     private fun commandSuperseded(command: ActiveCommand) = commandSuperseded(command.commandIds)
 
     private fun commandSuperseded(commandIds: List<String>) =
@@ -2171,12 +2265,10 @@ class CoreRuntimeService : Service() {
         }
         val error = coreError(code, stage, safeMessage, retryable, commandId.ifBlank { UUID.randomUUID().toString() })
         synchronized(snapshotLock) { lastError = error }
-        if (!stage.startsWith("probe") && stage != "selector") {
-            HydraBoxApplication.readDesiredRuntime()?.let {
-                HydraBoxApplication.writeDesiredRuntime(desiredRuntimeTransition(it, DesiredRuntimeEvent.FAILED))
-            }
-            state.set(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_FAILED)
+        HydraBoxApplication.readDesiredRuntime()?.let {
+            HydraBoxApplication.writeDesiredRuntime(desiredRuntimeTransition(it, DesiredRuntimeEvent.FAILED))
         }
+        state.set(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_FAILED)
         val result = CoreRuntimeProtocol.CommandResult.newBuilder()
             .setSchemaVersion(SCHEMA_VERSION)
             .setCommandId(commandId)
