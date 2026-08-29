@@ -54,18 +54,6 @@ class HydraBoxVpnService : VpnService() {
                         TAG,
                         "underlying_network_rejected reason=$reason network=$network",
                     )
-                    if (network != null) {
-                        // Do not leave a dead Wi-Fi network pinned after Android
-                        // rejects the requested cellular network. Returning to
-                        // system-managed selection is the safest fallback.
-                        val fallbackApplied = service.setUnderlyingNetworks(null)
-                        HydraBoxDiagnostics.log(
-                            TAG,
-                            "underlying_network_fallback_default reason=$reason " +
-                                "applied=$fallbackApplied",
-                        )
-                        return@runCatching fallbackApplied
-                    }
                     return@runCatching false
                 }
                 HydraBoxDiagnostics.log(

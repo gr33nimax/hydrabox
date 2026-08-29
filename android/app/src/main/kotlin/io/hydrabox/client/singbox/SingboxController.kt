@@ -1349,27 +1349,6 @@ object SingboxController {
         }
     }
 
-    fun emitNetworkChanged(
-        reason: String,
-        description: String,
-        interfaceName: String?,
-        interfaceIndex: Int,
-        networkGeneration: Long,
-    ) {
-        cancelPreconnectUrlTest("network_changed")
-        emit(
-            mapOf(
-                "type" to "network",
-                "reason" to reason,
-                "description" to description,
-                "interfaceName" to interfaceName,
-                "interfaceIndex" to interfaceIndex,
-                "networkGeneration" to networkGeneration,
-                "uptimeMs" to SystemClock.uptimeMillis(),
-            ),
-        )
-    }
-
     private fun emit(payload: Map<String, Any?>) {
         mainHandler.post {
             eventSink?.success(payload)

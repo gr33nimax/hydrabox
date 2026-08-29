@@ -2,6 +2,7 @@ package io.hydrabox.client.runtime
 
 import android.app.Service
 import android.content.Intent
+import android.net.Network
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -27,6 +28,7 @@ import io.hydrabox.client.singbox.SingboxController
 import io.hydrabox.client.singbox.NativeCoreEnvironment
 import io.hydrabox.client.singbox.HydraBoxDefaultNetworkMonitor
 import io.nekohasekai.libbox.Libbox
+import io.nekohasekai.libbox.InterfaceUpdateListener
 import org.json.JSONObject
 import java.io.FileOutputStream
 import java.security.MessageDigest
@@ -62,7 +64,11 @@ internal sealed interface RuntimeInput {
             val mode: CoreRuntimeProtocol.RuntimeMode = CoreRuntimeProtocol.RuntimeMode.RUNTIME_MODE_UNSPECIFIED,
         ) : Command
         data class Stop(val commandId: String = "") : Command
-        data object NetworkChanged : Command
+        data class NetworkChanged(
+            val payload: CoreRuntimeProtocol.NetworkChanged = CoreRuntimeProtocol.NetworkChanged.getDefaultInstance(),
+            val network: Network? = null,
+            val listeners: List<InterfaceUpdateListener> = emptyList(),
+        ) : Command
         data object Reload : Command
         data object SelectOutbound : Command
     }
@@ -92,6 +98,8 @@ internal data class ActiveCommand(
 
 internal enum class RuntimeCommandDecision { NoOp, Join, Supersede, Reject, Queue }
 
+internal enum class NetworkChangeAction { ApplyUnderlying, ApplyUnderlyingAndRebind }
+
 internal data class RuntimeMachineState(
     val value: CoreRuntimeProtocol.RuntimeState,
     val commandGeneration: Long,
@@ -108,6 +116,7 @@ internal data class Decision(
     val state: RuntimeMachineState,
     val deadlineMillis: Long? = null,
     val commandDecision: RuntimeCommandDecision? = null,
+    val networkChangeAction: NetworkChangeAction? = null,
 )
 
 internal data class PendingSelection(
@@ -189,9 +198,16 @@ internal fun reduce(
             commandDecision = RuntimeCommandDecision.Queue,
         )
     }
-    RuntimeInput.Command.NetworkChanged -> if (
-        state.value == CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING
-    ) Decision(state, commandDecision = RuntimeCommandDecision.Reject) else Decision(state)
+    is RuntimeInput.Command.NetworkChanged -> when (state.value) {
+        CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING ->
+            Decision(state, commandDecision = RuntimeCommandDecision.Reject)
+        CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STARTING,
+        CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RECOVERING ->
+            Decision(state, networkChangeAction = NetworkChangeAction.ApplyUnderlying)
+        CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING ->
+            Decision(state, networkChangeAction = NetworkChangeAction.ApplyUnderlyingAndRebind)
+        else -> Decision(state, commandDecision = RuntimeCommandDecision.Reject)
+    }
     RuntimeInput.Command.Reload,
     RuntimeInput.Command.SelectOutbound -> if (
         state.value != CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING
@@ -335,6 +351,7 @@ class CoreRuntimeService : Service() {
     private val managedProbeAliases = linkedMapOf<String, String>()
     private var ephemeralProbeSessionId: String? = null
     private var networkSnapshot = CoreRuntimeProtocol.NetworkSnapshot.getDefaultInstance()
+    private var appliedNetworkGeneration = 0L
     private var transportHealth = CoreRuntimeProtocol.TransportHealthSnapshot.getDefaultInstance()
     @Volatile private var transportHealthRequired = false
     @Volatile private var interactiveStart = false
@@ -407,6 +424,7 @@ class CoreRuntimeService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        currentService = this
         val startupFailure = CoreStartupFailureStore(this)
         try {
             startupFailure.markStage("native_setup", nativeSourceLabel())
@@ -533,6 +551,7 @@ class CoreRuntimeService : Service() {
     }
 
     override fun onDestroy() {
+        if (currentService === this) currentService = null
         transportHealthPoll?.cancel(true)
         scheduler.shutdownNow()
         SingboxController.clearEventSink(controllerRegistration)
@@ -676,8 +695,8 @@ class CoreRuntimeService : Service() {
             when (input) {
                 is RuntimeInput.Command.Submitted -> execute(input.value)
                 is RuntimeInput.Command.Start,
-                is RuntimeInput.Command.Stop,
-                RuntimeInput.Command.NetworkChanged,
+                is RuntimeInput.Command.Stop -> Unit
+                is RuntimeInput.Command.NetworkChanged -> handleNetworkChanged(input)
                 RuntimeInput.Command.Reload,
                 RuntimeInput.Command.SelectOutbound -> Unit
                 is RuntimeInput.Event.Launched -> handleLaunched(input)
@@ -692,6 +711,59 @@ class CoreRuntimeService : Service() {
     }
 
     private fun isOnCommandThread(): Boolean = Thread.currentThread() === commandThread.get()
+
+    private fun handleNetworkChanged(input: RuntimeInput.Command.NetworkChanged) {
+        val commandId = "network:${input.payload.networkGeneration}"
+        val decision = reduce(
+            RuntimeMachineState(state.get(), generation.get(), activeRuntimeGeneration, activeCommand),
+            input,
+            RuntimeReduceContext(),
+        )
+        if (decision.commandDecision == RuntimeCommandDecision.Reject ||
+            input.payload.networkGeneration <= appliedNetworkGeneration
+        ) {
+            commandFailed(
+                commandId,
+                "runtime.network.rejected",
+                "network_changed",
+                "The network update is no longer applicable.",
+                false,
+            )
+            return
+        }
+        appliedNetworkGeneration = input.payload.networkGeneration
+        val applied = HydraBoxVpnService.setUnderlyingNetwork(input.network, "network_changed")
+        if (!applied && input.network != null) {
+            HydraBoxVpnService.setUnderlyingNetwork(null, "network_changed_fallback")
+        }
+        writeNetworkSnapshot(
+            available = input.payload.available,
+            interfaceName = input.payload.interfaceName,
+            interfaceIndex = input.payload.interfaceIndex,
+            generation = input.payload.networkGeneration,
+            updatedAtMillis = System.currentTimeMillis(),
+        )
+        if (decision.networkChangeAction == NetworkChangeAction.ApplyUnderlyingAndRebind) {
+            input.listeners.forEach { listener ->
+                runCatching {
+                    listener.updateDefaultInterface(
+                        input.payload.interfaceName,
+                        input.payload.interfaceIndex,
+                        false,
+                        false,
+                    )
+                }.onFailure { Log.e(TAG, "updateDefaultInterface failed", it) }
+            }
+            HydraBoxDiagnostics.event(
+                "REBIND", "ep" to shortId(processEpoch), "cg" to generation.get(),
+                "rg" to activeRuntimeGeneration, "ng" to input.payload.networkGeneration,
+                "prof" to synchronized(snapshotLock) { shortHex(activeConfigSha256) },
+                "paths_closed" to 0,
+            )
+        }
+        SingboxController.cancelPreconnectUrlTest("network_changed")
+        commandSucceeded(commandId, state.get())
+    }
 
     private fun cancelRuntimeChallenge(command: CoreRuntimeProtocol.RuntimeCommand) {
         val challengeId = command.cancelRuntimeChallenge.challengeId
@@ -2143,6 +2215,16 @@ class CoreRuntimeService : Service() {
     private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
     companion object {
+        @Volatile private var currentService: CoreRuntimeService? = null
+
+        fun submitInternalNetwork(
+            network: Network?,
+            payload: CoreRuntimeProtocol.NetworkChanged,
+            listeners: List<InterfaceUpdateListener>,
+        ) {
+            currentService?.submitInternal(RuntimeInput.Command.NetworkChanged(payload, network, listeners))
+        }
+
         private const val TAG = "HydraCoreRuntime"
         private const val SCHEMA_VERSION = 2
         private const val CORE_API_MINOR = 1

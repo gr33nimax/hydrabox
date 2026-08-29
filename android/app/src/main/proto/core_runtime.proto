@@ -53,6 +53,7 @@ enum CommandKind {
   COMMAND_KIND_CANCEL_PROBE = 6;
   COMMAND_KIND_REQUEST_RECOVERY = 7;
   COMMAND_KIND_CANCEL_RUNTIME_CHALLENGE = 8;
+  COMMAND_KIND_NETWORK_CHANGED = 9;
 }
 
 message StartRuntime {
@@ -72,6 +73,12 @@ message SelectOutbound { string group_id = 1; string outbound_id = 2; }
 message CancelProbe { string session_id = 1; }
 message RequestRecovery { string reason = 1; }
 message CancelRuntimeChallenge { string challenge_id = 1; }
+message NetworkChanged {
+  uint64 network_generation = 1;
+  string interface_name = 2;
+  int32 interface_index = 3;
+  bool available = 4;
+}
 
 message RuntimeCommand {
   uint32 schema_version = 1;
@@ -88,6 +95,7 @@ message RuntimeCommand {
     CancelProbe cancel_probe = 15;
     RequestRecovery request_recovery = 16;
     CancelRuntimeChallenge cancel_runtime_challenge = 17;
+    NetworkChanged network_changed = 18;
   }
 }
 

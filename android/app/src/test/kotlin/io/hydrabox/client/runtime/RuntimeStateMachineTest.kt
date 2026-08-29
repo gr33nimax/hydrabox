@@ -89,11 +89,51 @@ class RuntimeStateMachineTest {
     fun `network change during stopping is rejected`() {
         val decision = reduce(
             RuntimeMachineState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING, 4),
-            RuntimeInput.Command.NetworkChanged,
+            RuntimeInput.Command.NetworkChanged(),
             RuntimeReduceContext(),
         )
 
         assertEquals(RuntimeCommandDecision.Reject, decision.commandDecision)
+    }
+
+    @Test
+    fun `network change during starting applies underlying without rebind`() {
+        val decision = reduce(
+            RuntimeMachineState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STARTING, 4),
+            RuntimeInput.Command.NetworkChanged(),
+            RuntimeReduceContext(),
+        )
+
+        assertEquals(NetworkChangeAction.ApplyUnderlying, decision.networkChangeAction)
+        assertEquals(4L, decision.state.commandGeneration)
+    }
+
+    @Test
+    fun `network change during running applies underlying and rebind`() {
+        val decision = reduce(
+            RuntimeMachineState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING, 4),
+            RuntimeInput.Command.NetworkChanged(),
+            RuntimeReduceContext(),
+        )
+
+        assertEquals(NetworkChangeAction.ApplyUnderlyingAndRebind, decision.networkChangeAction)
+        assertEquals(4L, decision.state.commandGeneration)
+    }
+
+    @Test
+    fun `network change during starting keeps launch generation current`() {
+        val afterNetwork = reduce(
+            RuntimeMachineState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STARTING, 4),
+            RuntimeInput.Command.NetworkChanged(),
+            RuntimeReduceContext(),
+        )
+        val launched = reduce(
+            afterNetwork.state,
+            RuntimeInput.Event.Launched(commandGeneration = 4, runtimeGeneration = 9),
+            RuntimeReduceContext(),
+        )
+
+        assertEquals(9L, launched.state.runtimeGeneration)
     }
 
     @Test

@@ -13,6 +13,8 @@ import android.os.SystemClock
 import android.util.Log
 import io.hydrabox.client.HydraBoxApplication
 import io.hydrabox.client.runtime.CoreProcessIdentity
+import io.hydrabox.client.runtime.CoreRuntimeService
+import io.hydrabox.client.runtime.proto.CoreRuntimeProtocol
 import io.nekohasekai.libbox.InterfaceUpdateListener
 import java.net.NetworkInterface
 import java.util.concurrent.CountDownLatch
@@ -214,8 +216,8 @@ object HydraBoxDefaultNetworkMonitor {
         }
         Log.i(TAG, "stop")
         HydraBoxDiagnostics.log(TAG, "stop current=${describeCurrentState()}")
-        notificationGeneration.incrementAndGet()
-        HydraBoxVpnService.setUnderlyingNetwork(null, "monitor_stop")
+        val generation = notificationGeneration.incrementAndGet()
+        publishNetworkChanged(emptyList(), null, "", -1, generation)
         stopHeartbeat()
         runCatching {
             HydraBoxApplication.connectivity.unregisterNetworkCallback(callback)
@@ -556,6 +558,25 @@ object HydraBoxDefaultNetworkMonitor {
         }
     }
 
+    private fun publishNetworkChanged(
+        listeners: List<InterfaceUpdateListener>,
+        network: Network?,
+        interfaceName: String,
+        interfaceIndex: Int,
+        generation: Long,
+    ) {
+        CoreRuntimeService.submitInternalNetwork(
+            network,
+            CoreRuntimeProtocol.NetworkChanged.newBuilder()
+                .setNetworkGeneration(generation)
+                .setInterfaceName(interfaceName)
+                .setInterfaceIndex(interfaceIndex)
+                .setAvailable(interfaceName.isNotBlank() && interfaceIndex >= 0)
+                .build(),
+            listeners,
+        )
+    }
+
     private fun markInterfaceState(key: String): Boolean {
         synchronized(lock) {
             val duplicate = lastNotificationKey == key
@@ -603,21 +624,8 @@ object HydraBoxDefaultNetworkMonitor {
             val duplicate = markInterfaceState("none")
             Log.i(TAG, "updateDefaultInterface: none")
             HydraBoxDiagnostics.log(TAG, "updateDefaultInterface none current=${describeCurrentState()}")
-            HydraBoxVpnService.setUnderlyingNetwork(
-                null,
-                if (force) "default_interface_lost_forced" else "default_interface_lost",
-            )
+            publishNetworkChanged(currentListeners, null, "", -1, notificationGeneration.get())
             if (duplicate && !notifyDuplicate) return
-            notifyListeners(currentListeners, "", -1)
-            if (shouldBroadcastNetworkChange(duplicate, targetListener != null)) {
-                SingboxController.emitNetworkChanged(
-                    "default_interface_lost",
-                    describeCurrentState(),
-                    null,
-                    -1,
-                    notificationGeneration.get(),
-                )
-            }
             return
         }
         synchronized(lock) {
@@ -629,21 +637,8 @@ object HydraBoxDefaultNetworkMonitor {
             if (notificationGeneration.get() != generation) return
             val duplicate = markInterfaceState("missing:$effectiveNetwork")
             Log.w(TAG, "updateDefaultInterface: missing link properties for $effectiveNetwork")
-            HydraBoxVpnService.setUnderlyingNetwork(
-                null,
-                if (force) "default_interface_missing_forced" else "default_interface_missing",
-            )
+            publishNetworkChanged(currentListeners, null, "", -1, notificationGeneration.get())
             if (duplicate && !notifyDuplicate) return
-            notifyListeners(currentListeners, "", -1)
-            if (shouldBroadcastNetworkChange(duplicate, targetListener != null)) {
-                SingboxController.emitNetworkChanged(
-                    "default_interface_missing",
-                    describeNetwork(effectiveNetwork),
-                    null,
-                    -1,
-                    notificationGeneration.get(),
-                )
-            }
             return
         }
         val index = resolveInterfaceIndex(interfaceName)
@@ -672,18 +667,8 @@ object HydraBoxDefaultNetworkMonitor {
         if (publication == InterfacePublication.PUBLISH_NONE) {
             val duplicate = markInterfaceState("none")
             Log.w(TAG, "updateDefaultInterface: interface index unavailable")
-            HydraBoxVpnService.setUnderlyingNetwork(null, "default_interface_index_unavailable")
+            publishNetworkChanged(currentListeners, null, "", -1, notificationGeneration.get())
             if (duplicate && !notifyDuplicate) return
-            notifyListeners(currentListeners, "", -1)
-            if (shouldBroadcastNetworkChange(duplicate, targetListener != null)) {
-                SingboxController.emitNetworkChanged(
-                    "default_interface_index_unavailable",
-                    describeNetwork(effectiveNetwork),
-                    null,
-                    -1,
-                    notificationGeneration.get(),
-                )
-            }
             return
         }
         val notifyKey = "$effectiveNetwork:$interfaceName:$index"
@@ -694,15 +679,12 @@ object HydraBoxDefaultNetworkMonitor {
             "updateDefaultInterface interface=$interfaceName index=$index force=$force duplicate=$duplicate " +
                 "current=${describeNetwork(effectiveNetwork)}",
         )
-        HydraBoxVpnService.setUnderlyingNetwork(
+        publishNetworkChanged(
+            currentListeners,
             effectiveNetwork,
-            if (force && duplicate) {
-                "default_interface_reassert"
-            } else if (force) {
-                "default_interface_forced"
-            } else {
-                "default_interface"
-            },
+            interfaceName,
+            index,
+            notificationGeneration.get(),
         )
         if (duplicate && !notifyDuplicate) {
             HydraBoxDiagnostics.log(
@@ -710,21 +692,6 @@ object HydraBoxDefaultNetworkMonitor {
                 "skip duplicate core interface update interface=$interfaceName index=$index",
             )
             return
-        }
-        notifyListeners(currentListeners, interfaceName, index)
-        HydraBoxDiagnostics.event(
-            "REBIND", "ep" to shortMonitorId(CoreProcessIdentity.epoch), "cg" to CoreProcessIdentity.generation.get(),
-            "rg" to SingboxController.activeRuntimeGeneration, "ng" to notificationGeneration.get(),
-            "paths_closed" to 0,
-        )
-        if (shouldBroadcastNetworkChange(duplicate, targetListener != null)) {
-            SingboxController.emitNetworkChanged(
-                "default_interface",
-                describeNetwork(effectiveNetwork),
-                interfaceName,
-                index,
-                notificationGeneration.get(),
-            )
         }
     }
 
@@ -742,25 +709,6 @@ object HydraBoxDefaultNetworkMonitor {
             }
         }
         return index
-    }
-
-    private fun notifyListeners(
-        snapshot: List<InterfaceUpdateListener>,
-        interfaceName: String,
-        interfaceIndex: Int,
-    ) {
-        snapshot.forEach { currentListener ->
-            val stillAttached = synchronized(lock) { listeners.contains(currentListener) }
-            if (!stillAttached) return@forEach
-            runCatching {
-                currentListener.updateDefaultInterface(
-                    interfaceName,
-                    interfaceIndex,
-                    false,
-                    false,
-                )
-            }.onFailure { Log.e(TAG, "updateDefaultInterface failed", it) }
-        }
     }
 
     private fun resolveBestNetwork(
