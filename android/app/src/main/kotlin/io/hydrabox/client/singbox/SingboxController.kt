@@ -610,7 +610,6 @@ object SingboxController {
                 "index=${state.interfaceIndex} generation=${state.generation} " +
                 "failures=$failureCount message=$shortMessage",
         )
-        HydraBoxDefaultNetworkMonitor.reassertDefaultInterface("core_$reason")
     }
 
     private fun classifyCoreInterfaceFailure(message: String): String? {

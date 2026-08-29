@@ -26,6 +26,36 @@ import java.util.concurrent.atomic.AtomicLong
 internal fun msSinceLastCallback(nowMs: Long, lastMs: Long): Long =
     if (lastMs < 0L) -1L else (nowMs - lastMs).coerceAtLeast(0L)
 
+internal data class NetworkIdentity(
+    val androidNetworkId: String?,
+    val interfaceName: String,
+    val interfaceIndex: Int,
+)
+
+internal data class PhysicalNetworkSnapshot(
+    val network: Network?,
+    val identity: NetworkIdentity,
+)
+
+internal data class NetworkTransition(
+    val generation: Long,
+    val changed: Boolean,
+    val publishUpdate: Boolean,
+)
+
+internal fun nextNetworkTransition(
+    previous: NetworkIdentity?,
+    current: NetworkIdentity,
+    generation: Long,
+): NetworkTransition {
+    val changed = previous != current
+    return NetworkTransition(
+        generation = if (changed) generation + 1 else generation,
+        changed = changed,
+        publishUpdate = changed,
+    )
+}
+
 internal enum class NetworkEventTrigger(val telemetryValue: String) {
     CALLBACK("callback"),
     HEARTBEAT("heartbeat"),
@@ -95,7 +125,7 @@ object HydraBoxDefaultNetworkMonitor {
     private val heartbeatExecutor = Executors.newSingleThreadScheduledExecutor { runnable ->
         Thread(runnable, "HydraBoxNetworkHeartbeat").apply { isDaemon = true }
     }
-    private val notificationGeneration = AtomicLong(0L)
+    private val networkGeneration = AtomicLong(0L)
     private val lastAndroidCallbackElapsedMs = AtomicLong(NO_CALLBACK_YET)
     private val request = NetworkRequest.Builder()
         .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
@@ -106,10 +136,8 @@ object HydraBoxDefaultNetworkMonitor {
     private var currentNetwork: Network? = null
     private val listeners = IdentityListenerRegistry<InterfaceUpdateListener>()
     private var heartbeatFuture: ScheduledFuture<*>? = null
-    private var pendingNotifyRunnable: Runnable? = null
-    private var lastNotificationKey: String? = null
-    private var unresolvedInterfaceNetwork: Network? = null
-    private var consecutiveUnresolvedInterfaceSnapshots = 0
+    private var pendingSnapshotRunnable: Runnable? = null
+    private var currentSnapshot: PhysicalNetworkSnapshot? = null
 
     private data class NetworkCandidate(
         val network: Network,
@@ -133,7 +161,7 @@ object HydraBoxDefaultNetworkMonitor {
             lastAndroidCallbackElapsedMs.set(SystemClock.elapsedRealtime())
             Log.i(TAG, "onAvailable network=$network")
             HydraBoxDiagnostics.log(TAG, "onAvailable ${describeNetwork(network)}")
-            updateNetwork(network)
+            scheduleSnapshot(NetworkEventTrigger.CALLBACK.telemetryValue)
         }
 
         override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
@@ -146,7 +174,7 @@ object HydraBoxDefaultNetworkMonitor {
                 TAG,
                 "onCapabilitiesChanged ${describeNetwork(network, networkCapabilities)}",
             )
-            updateNetwork(network)
+            scheduleSnapshot(NetworkEventTrigger.CALLBACK.telemetryValue)
         }
 
         override fun onLinkPropertiesChanged(network: Network, linkProperties: LinkProperties) {
@@ -155,19 +183,14 @@ object HydraBoxDefaultNetworkMonitor {
                 TAG,
                 "onLinkPropertiesChanged network=$network interface=${linkProperties.interfaceName}",
             )
-            updateNetwork(network)
+            scheduleSnapshot(NetworkEventTrigger.CALLBACK.telemetryValue)
         }
 
         override fun onLost(network: Network) {
             lastAndroidCallbackElapsedMs.set(SystemClock.elapsedRealtime())
             Log.w(TAG, "onLost network=$network")
             HydraBoxDiagnostics.log(TAG, "onLost ${describeNetwork(network)}")
-            synchronized(lock) {
-                if (currentNetwork == network) {
-                    currentNetwork = resolveBestNetwork(exclude = network)
-                }
-            }
-            notifyListener()
+            scheduleSnapshot(NetworkEventTrigger.CALLBACK.telemetryValue)
         }
     }
 
@@ -177,16 +200,14 @@ object HydraBoxDefaultNetworkMonitor {
                 return
             }
             started = true
-            lastNotificationKey = null
-            unresolvedInterfaceNetwork = null
-            consecutiveUnresolvedInterfaceSnapshots = 0
+            currentSnapshot = null
         }
         Log.i(TAG, "start")
         HydraBoxDiagnostics.log(TAG, "start current=${describeCurrentState()}")
         register()
         HydraBoxDiagnostics.event(
             "NETWORK", "ep" to shortMonitorId(CoreProcessIdentity.epoch), "cg" to CoreProcessIdentity.generation.get(),
-            "rg" to SingboxController.activeRuntimeGeneration, "ng" to notificationGeneration.get(),
+            "rg" to SingboxController.activeRuntimeGeneration, "ng" to networkGeneration.get(),
             "trigger" to NetworkEventTrigger.LAUNCH.telemetryValue,
             "branch" to decideNetworkEventBranch(
                 trigger = NetworkEventTrigger.LAUNCH,
@@ -199,6 +220,7 @@ object HydraBoxDefaultNetworkMonitor {
             "ms_since_last_callback" to msSinceLastCallback(SystemClock.elapsedRealtime(), lastAndroidCallbackElapsedMs.get()),
         )
         startHeartbeat()
+        scheduleSnapshot(NetworkEventTrigger.LAUNCH.telemetryValue, immediate = true)
     }
 
     fun stop() {
@@ -208,16 +230,13 @@ object HydraBoxDefaultNetworkMonitor {
             }
             started = false
             currentNetwork = null
-            lastNotificationKey = null
-            unresolvedInterfaceNetwork = null
-            consecutiveUnresolvedInterfaceSnapshots = 0
-            pendingNotifyRunnable?.let(networkHandler::removeCallbacks)
-            pendingNotifyRunnable = null
+            currentSnapshot = null
+            pendingSnapshotRunnable?.let(networkHandler::removeCallbacks)
+            pendingSnapshotRunnable = null
         }
         Log.i(TAG, "stop")
         HydraBoxDiagnostics.log(TAG, "stop current=${describeCurrentState()}")
-        val generation = notificationGeneration.incrementAndGet()
-        publishNetworkChanged(emptyList(), null, "", -1, generation)
+        publishNetworkChanged(emptyList(), null, "", -1, networkGeneration.get())
         stopHeartbeat()
         runCatching {
             HydraBoxApplication.connectivity.unregisterNetworkCallback(callback)
@@ -252,55 +271,7 @@ object HydraBoxDefaultNetworkMonitor {
     private fun heartbeatTick() {
         val currentlyStarted = synchronized(lock) { started }
         if (!currentlyStarted) return
-        val active = HydraBoxApplication.connectivity.activeNetwork
-        val cached = synchronized(lock) { currentNetwork }
-        val best = resolveBestNetwork()
-        val cachedInterfaceStale =
-            cached != null && best == cached && active != null && listenerInterfaceLikelyStale(cached)
-        HydraBoxDiagnostics.event(
-            "NETWORK", "ep" to shortMonitorId(CoreProcessIdentity.epoch), "cg" to CoreProcessIdentity.generation.get(),
-            "rg" to SingboxController.activeRuntimeGeneration, "ng" to notificationGeneration.get(),
-            "trigger" to NetworkEventTrigger.HEARTBEAT.telemetryValue,
-            "branch" to decideNetworkEventBranch(
-                trigger = NetworkEventTrigger.HEARTBEAT,
-                bestNetworkPresent = best != null,
-                bestMatchesCached = best == cached,
-                cachedNetworkPresent = cached != null,
-                activeNetworkPresent = active != null,
-                cachedInterfaceStale = cachedInterfaceStale,
-            ).telemetryValue,
-            "ms_since_last_callback" to msSinceLastCallback(SystemClock.elapsedRealtime(), lastAndroidCallbackElapsedMs.get()),
-        )
-        if (best != null && best != cached) {
-            Log.i(TAG, "heartbeat divergence cached=$cached best=$best")
-            synchronized(lock) {
-                if (started) currentNetwork = best
-            }
-            notifyListener()
-        } else if (best == null && cached != null) {
-            Log.i(TAG, "heartbeat lost selectable default cached=$cached")
-            synchronized(lock) {
-                if (started) currentNetwork = null
-            }
-            notifyListener(force = true)
-        } else if (active == null && cached != null) {
-            Log.i(TAG, "heartbeat lost cached=$cached")
-            val replacement = resolveBestNetwork(exclude = cached)
-            synchronized(lock) {
-                if (started) currentNetwork = replacement
-            }
-            notifyListener(force = true)
-        } else if (cached != null && cachedInterfaceStale) {
-            Log.i(TAG, "heartbeat re-assert cached=$cached")
-            notifyListener(force = true)
-        } else if (cached != null) {
-            Log.d(TAG, "heartbeat current network remains valid cached=$cached")
-        }
-    }
-
-    private fun listenerInterfaceLikelyStale(network: Network): Boolean {
-        val name = HydraBoxApplication.connectivity.getLinkProperties(network)?.interfaceName ?: return true
-        return runCatching { NetworkInterface.getByName(name)?.index ?: -1 }.getOrDefault(-1) < 0
+        scheduleSnapshot(NetworkEventTrigger.HEARTBEAT.telemetryValue)
     }
 
     fun require(): Network {
@@ -395,7 +366,7 @@ object HydraBoxDefaultNetworkMonitor {
             available = interfaceName.isNotEmpty() && index >= 0,
             interfaceName = interfaceName,
             interfaceIndex = index,
-            generation = notificationGeneration.get(),
+            generation = networkGeneration.get(),
             reason = reason,
             updatedAtMillis = System.currentTimeMillis(),
         )
@@ -405,20 +376,11 @@ object HydraBoxDefaultNetworkMonitor {
         synchronized(lock) {
             listeners.add(newListener)
         }
-        notificationGeneration.incrementAndGet()
         HydraBoxDiagnostics.log(
             TAG,
             "listener_attached count=${listenerCount()} current=${describeCurrentState()}",
         )
-        // A newly attached libbox runtime must receive the current interface
-        // even if the physical network did not change. Limit that forced
-        // delivery to the new listener so an existing runtime is not reset.
-        notifyListener(
-            immediate = true,
-            force = true,
-            notifyDuplicate = true,
-            targetListener = newListener,
-        )
+        replayTo(newListener)
     }
 
     fun removeListener(listener: InterfaceUpdateListener) {
@@ -433,128 +395,13 @@ object HydraBoxDefaultNetworkMonitor {
 
     internal fun listenerCount(): Int = synchronized(lock) { listeners.size() }
 
-    fun reassertDefaultInterface(reason: String) {
-        val hasListener = synchronized(lock) { !listeners.isEmpty() }
-        HydraBoxDiagnostics.log(
-            TAG,
-            "reassertDefaultInterface reason=$reason listener=$hasListener current=${describeCurrentState()}",
-        )
-        if (!hasListener) return
-        // Re-apply VpnService.setUnderlyingNetworks(), but do not send the same
-        // interface to libbox again. Android emits repeated capability/link
-        // callbacks for one Network and every duplicate core notification
-        // resets all outbound transports.
-        notifyListener(immediate = true, force = true)
-    }
-
-    private fun updateNetwork(network: Network) {
-        if (!isBaseUsableNetwork(network)) {
-            Log.i(TAG, "ignore unusable network=$network")
-            HydraBoxDiagnostics.log(TAG, "ignore unusable ${describeNetwork(network)}")
-            var changed = false
-            synchronized(lock) {
-                if (currentNetwork == network) {
-                    val replacement = resolveBestNetwork(exclude = network)
-                    changed = currentNetwork != replacement
-                    currentNetwork = replacement
-                }
-            }
-            HydraBoxDiagnostics.event(
-                "NETWORK", "ep" to shortMonitorId(CoreProcessIdentity.epoch), "cg" to CoreProcessIdentity.generation.get(),
-                "rg" to SingboxController.activeRuntimeGeneration, "ng" to notificationGeneration.get(),
-                "trigger" to NetworkEventTrigger.CALLBACK.telemetryValue,
-                "branch" to if (changed) NetworkEventBranch.CHANGED.telemetryValue else NetworkEventBranch.NOOP.telemetryValue,
-                "ms_since_last_callback" to msSinceLastCallback(SystemClock.elapsedRealtime(), lastAndroidCallbackElapsedMs.get()),
-            )
-            notifyListener(force = true)
-            return
-        }
-        // A callback for a newly available physical transport must be allowed
-        // to replace an old, no-longer-validated interface. While a VPN is
-        // active ConnectivityManager.activeNetwork is often the VPN itself,
-        // so keeping currentNetwork unconditionally can pin libbox to dead
-        // Wi-Fi after a Wi-Fi -> cellular handover.
-        val preferredNetwork = resolveBestNetwork(preferred = network)
-        var shouldNotify = false
-        var shouldForceNotify = false
-        var previousNetwork: Network? = null
-        synchronized(lock) {
-            previousNetwork = currentNetwork
-            if (preferredNetwork == null) {
-                if (currentNetwork == network) {
-                    currentNetwork = null
-                    shouldNotify = true
-                }
-            } else if (currentNetwork == preferredNetwork) {
-                shouldForceNotify = network == preferredNetwork
-            } else {
-                shouldNotify = true
-                currentNetwork = preferredNetwork
-            }
-        }
-        Log.i(TAG, "updateNetwork network=$network preferred=$preferredNetwork notify=$shouldNotify")
-        HydraBoxDiagnostics.log(
-            TAG,
-            "updateNetwork event=${describeNetwork(network)} preferred=${describeNetwork(preferredNetwork)} " +
-                "previous=${describeNetwork(previousNetwork)} notify=$shouldNotify force=$shouldForceNotify",
-        )
-        HydraBoxDiagnostics.event(
-            "NETWORK", "ep" to shortMonitorId(CoreProcessIdentity.epoch), "cg" to CoreProcessIdentity.generation.get(),
-            "rg" to SingboxController.activeRuntimeGeneration, "ng" to notificationGeneration.get(),
-            "trigger" to NetworkEventTrigger.CALLBACK.telemetryValue,
-            "branch" to decideNetworkEventBranch(
-                trigger = NetworkEventTrigger.CALLBACK,
-                bestNetworkPresent = false,
-                bestMatchesCached = true,
-                cachedNetworkPresent = false,
-                activeNetworkPresent = true,
-                cachedInterfaceStale = false,
-                changed = shouldNotify,
-            ).telemetryValue,
-            "ms_since_last_callback" to msSinceLastCallback(SystemClock.elapsedRealtime(), lastAndroidCallbackElapsedMs.get()),
-        )
-        if (shouldForceNotify) {
-            notifyListener(force = true)
-            return
-        }
-        if (shouldNotify) {
-            notifyListener()
-        }
-    }
-
-    private fun notifyListener(
-        immediate: Boolean = false,
-        force: Boolean = false,
-        notifyDuplicate: Boolean = false,
-        targetListener: InterfaceUpdateListener? = null,
-    ) {
-        val generation = notificationGeneration.incrementAndGet()
-        val capturedNetwork = synchronized(lock) {
-            if (listeners.isEmpty()) return
-            currentNetwork
-        }
-        val runnable = Runnable {
-            notifyExecutor.execute {
-                runCatching {
-                    notifyListenerInternal(
-                        generation,
-                        capturedNetwork,
-                        force,
-                        notifyDuplicate,
-                        targetListener,
-                    )
-                }
-                    .onFailure { Log.e(TAG, "notifyListenerInternal failed", it) }
-            }
-        }
+    private fun scheduleSnapshot(trigger: String, immediate: Boolean = false) {
+        val runnable = Runnable { notifyExecutor.execute { onSnapshot(trigger) } }
         networkHandler.post {
-            pendingNotifyRunnable?.let(networkHandler::removeCallbacks)
-            pendingNotifyRunnable = runnable
-            if (immediate) {
-                networkHandler.post(runnable)
-            } else {
-                networkHandler.postDelayed(runnable, NETWORK_CHANGE_DEBOUNCE_MS)
-            }
+            pendingSnapshotRunnable?.let(networkHandler::removeCallbacks)
+            pendingSnapshotRunnable = runnable
+            if (immediate) networkHandler.post(runnable)
+            else networkHandler.postDelayed(runnable, NETWORK_CHANGE_DEBOUNCE_MS)
         }
     }
 
@@ -577,122 +424,59 @@ object HydraBoxDefaultNetworkMonitor {
         )
     }
 
-    private fun markInterfaceState(key: String): Boolean {
+    private fun onSnapshot(trigger: String) {
+        val network = resolveBestNetwork()
+        val interfaceName = network?.let {
+            HydraBoxApplication.connectivity.getLinkProperties(it)?.interfaceName?.trim()
+        }.orEmpty()
+        val interfaceIndex = if (interfaceName.isEmpty()) -1 else resolveInterfaceIndex(interfaceName)
+        val snapshot = PhysicalNetworkSnapshot(
+            network,
+            NetworkIdentity(network?.toString(), interfaceName, interfaceIndex),
+        )
+        val previous: PhysicalNetworkSnapshot?
+        val currentListeners: List<InterfaceUpdateListener>
         synchronized(lock) {
-            val duplicate = lastNotificationKey == key
-            lastNotificationKey = key
-            return duplicate
-        }
-    }
-
-    private fun recordUnresolvedInterfaceSnapshot(network: Network): Int = synchronized(lock) {
-        if (unresolvedInterfaceNetwork != network) {
-            unresolvedInterfaceNetwork = network
-            consecutiveUnresolvedInterfaceSnapshots = 0
-        }
-        ++consecutiveUnresolvedInterfaceSnapshots
-    }
-
-    private fun clearUnresolvedInterfaceSnapshots() {
-        synchronized(lock) {
-            unresolvedInterfaceNetwork = null
-            consecutiveUnresolvedInterfaceSnapshots = 0
-        }
-    }
-
-    private fun notifyListenerInternal(
-        generation: Long,
-        capturedNetwork: Network?,
-        force: Boolean,
-        notifyDuplicate: Boolean,
-        targetListener: InterfaceUpdateListener?,
-    ) {
-        if (notificationGeneration.get() != generation) return
-        val currentListeners = synchronized(lock) {
-            if (targetListener != null) {
-                if (listeners.contains(targetListener)) listOf(targetListener) else emptyList()
-            } else {
-                listeners.snapshot()
+            if (!started) return
+            previous = currentSnapshot
+            val transition = nextNetworkTransition(previous?.identity, snapshot.identity, networkGeneration.get())
+            if (!transition.changed) {
+                logNetworkSnapshot(trigger, NetworkEventBranch.NOOP, transition.generation)
+                return
             }
+            currentSnapshot = snapshot
+            currentNetwork = network
+            networkGeneration.set(transition.generation)
+            currentListeners = listeners.snapshot()
         }
-        if (currentListeners.isEmpty()) return
-        val bestNetwork = resolveBestNetwork(preferred = capturedNetwork)
-        val effectiveNetwork = bestNetwork ?: capturedNetwork?.takeIf(::isSelectableNetwork)
-        if (effectiveNetwork == null) {
-            if (notificationGeneration.get() != generation) return
-            clearUnresolvedInterfaceSnapshots()
-            val duplicate = markInterfaceState("none")
-            Log.i(TAG, "updateDefaultInterface: none")
-            HydraBoxDiagnostics.log(TAG, "updateDefaultInterface none current=${describeCurrentState()}")
-            publishNetworkChanged(currentListeners, null, "", -1, notificationGeneration.get())
-            if (duplicate && !notifyDuplicate) return
-            return
-        }
-        synchronized(lock) {
-            if (started) currentNetwork = effectiveNetwork
-        }
-        val interfaceName =
-            HydraBoxApplication.connectivity.getLinkProperties(effectiveNetwork)?.interfaceName
-        if (interfaceName.isNullOrBlank()) {
-            if (notificationGeneration.get() != generation) return
-            val duplicate = markInterfaceState("missing:$effectiveNetwork")
-            Log.w(TAG, "updateDefaultInterface: missing link properties for $effectiveNetwork")
-            publishNetworkChanged(currentListeners, null, "", -1, notificationGeneration.get())
-            if (duplicate && !notifyDuplicate) return
-            return
-        }
-        val index = resolveInterfaceIndex(interfaceName)
-        if (notificationGeneration.get() != generation) return
-        val publication = decideInterfacePublication(
-            effectiveNetworkPresent = true,
-            interfaceIndex = index,
-            consecutiveUnresolvedSnapshots = if (index < 0) {
-                recordUnresolvedInterfaceSnapshot(effectiveNetwork)
-            } else {
-                clearUnresolvedInterfaceSnapshots()
-                0
-            },
-        )
-        if (publication == InterfacePublication.RETRY_SNAPSHOT) {
-            HydraBoxDiagnostics.event(
-                "NETWORK", "ep" to shortMonitorId(CoreProcessIdentity.epoch), "cg" to CoreProcessIdentity.generation.get(),
-                "rg" to SingboxController.activeRuntimeGeneration, "ng" to notificationGeneration.get(),
-                "trigger" to NetworkEventTrigger.CALLBACK.telemetryValue,
-                "branch" to NetworkEventBranch.INDEX_UNAVAILABLE.telemetryValue,
-                "result" to "skip",
+        val branch = if (network == null) NetworkEventBranch.NONE else NetworkEventBranch.CHANGED
+        logNetworkSnapshot(trigger, branch, networkGeneration.get())
+        publishNetworkChanged(currentListeners, network, interfaceName, interfaceIndex, networkGeneration.get())
+    }
+
+    private fun replayTo(listener: InterfaceUpdateListener) {
+        notifyExecutor.execute {
+            val snapshot = synchronized(lock) {
+                if (listeners.contains(listener)) currentSnapshot else null
+            } ?: return@execute
+            publishNetworkChanged(
+                listOf(listener),
+                snapshot.network,
+                snapshot.identity.interfaceName,
+                snapshot.identity.interfaceIndex,
+                networkGeneration.get(),
             )
-            notifyListener(notifyDuplicate = notifyDuplicate, targetListener = targetListener)
-            return
         }
-        if (publication == InterfacePublication.PUBLISH_NONE) {
-            val duplicate = markInterfaceState("none")
-            Log.w(TAG, "updateDefaultInterface: interface index unavailable")
-            publishNetworkChanged(currentListeners, null, "", -1, notificationGeneration.get())
-            if (duplicate && !notifyDuplicate) return
-            return
-        }
-        val notifyKey = "$effectiveNetwork:$interfaceName:$index"
-        val duplicate = markInterfaceState(notifyKey)
-        Log.i(TAG, "updateDefaultInterface: $interfaceName index=$index")
-        HydraBoxDiagnostics.log(
-            TAG,
-            "updateDefaultInterface interface=$interfaceName index=$index force=$force duplicate=$duplicate " +
-                "current=${describeNetwork(effectiveNetwork)}",
+    }
+
+    private fun logNetworkSnapshot(trigger: String, branch: NetworkEventBranch, generation: Long) {
+        HydraBoxDiagnostics.event(
+            "NETWORK", "ep" to shortMonitorId(CoreProcessIdentity.epoch), "cg" to CoreProcessIdentity.generation.get(),
+            "rg" to SingboxController.activeRuntimeGeneration, "ng" to generation,
+            "trigger" to trigger,
+            "branch" to branch.telemetryValue,
+            "ms_since_last_callback" to msSinceLastCallback(SystemClock.elapsedRealtime(), lastAndroidCallbackElapsedMs.get()),
         )
-        publishNetworkChanged(
-            currentListeners,
-            effectiveNetwork,
-            interfaceName,
-            index,
-            notificationGeneration.get(),
-        )
-        if (duplicate && !notifyDuplicate) {
-            HydraBoxDiagnostics.log(
-                TAG,
-                "skip duplicate core interface update interface=$interfaceName index=$index",
-            )
-            return
-        }
     }
 
     private fun resolveInterfaceIndex(interfaceName: String): Int {
@@ -730,7 +514,7 @@ object HydraBoxDefaultNetworkMonitor {
                     capabilities = capabilities,
                     isActive = isActive,
                     isValidated = isValidated,
-                    score = networkScore(capabilities, isActive, isValidated),
+                    score = networkScore(capabilities, isValidated),
                 )
             }
         val current = synchronized(lock) { currentNetwork }
@@ -738,7 +522,6 @@ object HydraBoxDefaultNetworkMonitor {
             candidates = candidates.map { candidate ->
                 DefaultNetworkCandidate(
                     value = candidate.network,
-                    isActive = candidate.isActive,
                     isValidated = candidate.isValidated,
                     hasUsableInterface = hasUsableNetworkInterface(candidate.network),
                     score = candidate.score,
@@ -805,15 +588,11 @@ object HydraBoxDefaultNetworkMonitor {
 
     private fun networkScore(
         capabilities: NetworkCapabilities,
-        isActive: Boolean,
         isValidated: Boolean,
     ): Int {
         var score = 0
         if (isValidated) {
             score += 100
-        }
-        if (isActive) {
-            score += 40
         }
         if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
             score += 30

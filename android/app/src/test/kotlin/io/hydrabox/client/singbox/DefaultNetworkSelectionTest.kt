@@ -11,7 +11,7 @@ class DefaultNetworkSelectionTest {
     fun `validated network wins`() {
         val selected = selectDefaultNetworkCandidate(
             candidates = listOf(
-                candidate("cell", active = true, score = 40),
+                candidate("cell", score = 40),
                 candidate("wifi", validated = true, hasInterface = true, score = 130),
             ),
             current = "cell",
@@ -134,13 +134,11 @@ class DefaultNetworkSelectionTest {
 
     private fun candidate(
         value: String,
-        active: Boolean = false,
         validated: Boolean = false,
         hasInterface: Boolean = false,
         score: Int,
     ) = DefaultNetworkCandidate(
         value = value,
-        isActive = active,
         isValidated = validated,
         hasUsableInterface = hasInterface,
         score = score,

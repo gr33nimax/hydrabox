@@ -2,7 +2,6 @@ package io.hydrabox.client.singbox
 
 internal data class DefaultNetworkCandidate<T>(
     val value: T,
-    val isActive: Boolean,
     val isValidated: Boolean,
     val hasUsableInterface: Boolean,
     val score: Int,

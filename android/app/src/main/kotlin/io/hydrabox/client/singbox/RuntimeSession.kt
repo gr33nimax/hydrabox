@@ -63,7 +63,6 @@ class RuntimeSession(
         private const val NETWORK_WAIT_TIMEOUT_MS = 2_500L
         private const val NETWORK_WAIT_RETRY_DELAY_MS = 1_500L
         private const val NETWORK_WAIT_MAX_RETRIES = 5
-        private const val POST_START_INTERFACE_REASSERT_DELAY_MS = 500L
         private const val RUNTIME_RECOVERY_MIN_INTERVAL_MS = 1_000L
         private val activeServices = CopyOnWriteArraySet<RuntimeSession>()
 
@@ -307,9 +306,6 @@ class RuntimeSession(
         // owned by the foreground service and therefore does not depend on a
         // Flutter Activity or command-event subscription being attached.
         HydraBoxDefaultNetworkMonitor.start()
-        HydraBoxDefaultNetworkMonitor.reassertDefaultInterface(
-            "runtime_recovery_before_wake:$source",
-        )
 
         try {
             recoveryExecutor.execute {
@@ -331,9 +327,6 @@ class RuntimeSession(
                     HydraBoxDiagnostics.log(
                         TAG,
                         "runtime recovery completed source=$source",
-                    )
-                    HydraBoxDefaultNetworkMonitor.reassertDefaultInterface(
-                        "runtime_recovery_after_wake:$source",
                     )
                 }.onFailure { error ->
                     HydraBoxDiagnostics.log(TAG, "runtime recovery wake failed source=$source", error)
@@ -653,18 +646,6 @@ class RuntimeSession(
                 "rg" to SingboxController.activeRuntimeGeneration,
                 "ng" to HydraBoxDefaultNetworkMonitor.currentInterfaceState("libbox_start").generation,
                 "stage" to "libbox_start", "result" to "ok", "elapsed_ms" to elapsedMs,
-            )
-            HydraBoxDefaultNetworkMonitor.reassertDefaultInterface("after_start_or_reload_service")
-            scheduleRetry(
-                "post_start_interface_reassert",
-                {
-                    if (launch.generation == currentCommandGeneration() && !launch.cancelled.get() && commandServer != null) {
-                        HydraBoxDefaultNetworkMonitor.reassertDefaultInterface(
-                            "after_start_or_reload_service_delayed",
-                        )
-                    }
-                },
-                POST_START_INTERFACE_REASSERT_DELAY_MS,
             )
             showForeground("Connecting")
             Log.i(TAG, "libbox service started mode=$mode")
