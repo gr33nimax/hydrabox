@@ -417,6 +417,25 @@ class RuntimeStateMachineTest {
         )
 
         assertEquals(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_FAILED, decision.state.value)
+        assertEquals("runtime.stop.unconfirmed", decision.errorCode)
+    }
+
+    @Test
+    fun `released failure is terminal exactly once`() {
+        val stopping = RuntimeMachineState(
+            CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING,
+            commandGeneration = 4,
+        )
+        val released = RuntimeInput.Event.Released(commandGeneration = 4, success = false)
+        val first = reduce(stopping, released, RuntimeReduceContext())
+        val duplicate = reduce(first.state, released, RuntimeReduceContext())
+        val commandResults = listOf(stopping to first, first.state to duplicate)
+            .count { (before, decision) -> decision.state != before }
+
+        assertEquals(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_FAILED, first.state.value)
+        assertEquals("runtime.stop.unconfirmed", first.errorCode)
+        assertEquals(first.state, duplicate.state)
+        assertEquals(1, commandResults)
     }
 
     @Test

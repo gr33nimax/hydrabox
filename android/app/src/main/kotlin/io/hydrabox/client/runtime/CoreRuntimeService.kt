@@ -139,6 +139,7 @@ internal data class Decision(
     val deadlineMillis: Long? = null,
     val commandDecision: RuntimeCommandDecision? = null,
     val networkChangeAction: NetworkChangeAction? = null,
+    val errorCode: String? = null,
 )
 
 internal data class PendingSelection(
@@ -311,6 +312,7 @@ internal fun reduce(
                 },
                 runtimeGeneration = 0L,
             ),
+            errorCode = if (input.success) null else "runtime.stop.unconfirmed",
         )
     } else {
         Decision(state)
@@ -1324,6 +1326,18 @@ class CoreRuntimeService : Service() {
             "prof" to synchronized(snapshotLock) { shortHex(activeConfigSha256) },
             "stage" to "released",
         )
+        if (!input.success &&
+            activeCommand?.kind == CoreRuntimeProtocol.CommandKind.COMMAND_KIND_STOP
+        ) {
+            commandFailed(
+                activeCommand?.commandIds?.firstOrNull().orEmpty(),
+                checkNotNull(decision.errorCode),
+                "runtime_stop",
+                "HydraCore did not confirm that it stopped.",
+                true,
+            )
+            return
+        }
         pending.onComplete(input.success)
     }
 
@@ -1773,13 +1787,16 @@ class CoreRuntimeService : Service() {
     private fun handleControllerEvent(value: Any?) {
         val event = value as? Map<*, *>
         when (event?.get("type")?.toString()) {
-            "state" -> if (event["running"] == true) {
-                submitInternal(
+            "state" -> when {
+                event["running"] == true -> submitInternal(
                     RuntimeInput.Event.Launched(
                         generation.get(),
                         (event["runtimeGeneration"] as? Number)?.toLong() ?: 0L,
                     ),
                 )
+                event["error"] == "runtime.stop.unconfirmed" -> pendingRelease?.let { close ->
+                    submitInternal(RuntimeInput.Event.Released(close.commandGeneration, false))
+                }
             }
             "released" -> pendingRelease?.takeIf {
                 state.get() == CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING

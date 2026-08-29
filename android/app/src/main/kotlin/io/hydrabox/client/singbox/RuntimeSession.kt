@@ -45,6 +45,22 @@ internal fun runtimeSessionOutcome(
         RuntimeSessionOutcome.CONTINUE
     }
 
+internal fun runtimeCleanupComplete(
+    initiallyComplete: Boolean,
+    closeService: () -> Unit,
+    closeServer: () -> Unit,
+    onFailure: (String, Throwable) -> Unit,
+): Boolean {
+    var complete = initiallyComplete
+    complete = runCatching(closeService).onFailure {
+        onFailure("closeService", it)
+    }.isSuccess && complete
+    complete = runCatching(closeServer).onFailure {
+        onFailure("close", it)
+    }.isSuccess && complete
+    return complete
+}
+
 class RuntimeSession(
     private val service: Service,
     private val platformInterface: PlatformInterface,
@@ -746,13 +762,13 @@ class RuntimeSession(
 
         // Затем закрываем native runtime и CommandServer.
         if (server != null) {
-            cleanupComplete = runCatching { server.closeService() }.onFailure {
-                HydraBoxDiagnostics.log(TAG, "closeService failed source=$source", it)
-            }.isSuccess && cleanupComplete
-
-            cleanupComplete = runCatching { server.close() }.onFailure {
-                HydraBoxDiagnostics.log(TAG, "close command server failed source=$source", it)
-            }.isSuccess && cleanupComplete
+            cleanupComplete = runtimeCleanupComplete(
+                initiallyComplete = cleanupComplete,
+                closeService = server::closeService,
+                closeServer = server::close,
+            ) { step, error ->
+                HydraBoxDiagnostics.log(TAG, "$step failed source=$source", error)
+            }
         }
 
         if (!cleanupComplete) {
@@ -768,6 +784,10 @@ class RuntimeSession(
                     "cleanupComplete=false",
             )
 
+            SingboxController.setRunning(
+                false,
+                error = HydraBoxEventCodes.RUNTIME_STOP_UNCONFIRMED,
+            )
             showForeground("Disconnecting")
             return
         }
