@@ -1967,32 +1967,19 @@ class CoreRuntimeService : Service() {
     }
 
     private fun refreshTransportHealth(emitEvent: Boolean) {
-        val applicable = transportHealthRequired && state.get() !in setOf(
+        val stopped = state.get() in setOf(
             CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPED,
             CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING,
         )
-        val parsed = if (!applicable) {
+        val parsed = if (stopped) {
             CoreRuntimeProtocol.TransportHealthSnapshot.newBuilder()
                 .setApplicable(false)
                 .build()
         } else {
-            runCatching {
-                TransportHealthBridge.parse(Libbox.hydraCoreTransportState(), transportHealthRequired)
-            }.getOrElse {
-                CoreRuntimeProtocol.TransportHealthSnapshot.newBuilder()
-                    .setApplicable(true)
-                    .setState(
-                        CoreRuntimeProtocol.TransportHealthState.TRANSPORT_HEALTH_STATE_FAILED,
-                    )
-                    .setObservedAtMillis(System.currentTimeMillis())
-                    .setFailure(
-                        CoreRuntimeProtocol.TransportFailure.newBuilder()
-                            .setStage("transport_snapshot")
-                            .setKind("runtime")
-                            .setCode("runtime.transport.snapshot"),
-                    )
-                    .build()
-            }
+            readTransportHealth(
+                readSnapshot = Libbox::hydraCoreTransportState,
+                fallbackApplicable = transportHealthRequired,
+            )
         }
         val changed = synchronized(snapshotLock) {
             if (transportHealth == parsed) false else {

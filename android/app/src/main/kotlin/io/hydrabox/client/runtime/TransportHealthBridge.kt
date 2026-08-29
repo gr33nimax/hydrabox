@@ -81,3 +81,24 @@ internal object TransportHealthBridge {
         else -> throw IllegalArgumentException("Unknown HydraCore transport state")
     }
 }
+
+internal fun readTransportHealth(
+    readSnapshot: () -> String,
+    fallbackApplicable: Boolean,
+): CoreRuntimeProtocol.TransportHealthSnapshot = runCatching {
+    TransportHealthBridge.parse(readSnapshot(), fallbackApplicable)
+}.getOrElse {
+    CoreRuntimeProtocol.TransportHealthSnapshot.newBuilder()
+        .setApplicable(true)
+        .setState(
+            CoreRuntimeProtocol.TransportHealthState.TRANSPORT_HEALTH_STATE_FAILED,
+        )
+        .setObservedAtMillis(System.currentTimeMillis())
+        .setFailure(
+            CoreRuntimeProtocol.TransportFailure.newBuilder()
+                .setStage("transport_snapshot")
+                .setKind("runtime")
+                .setCode("runtime.transport.snapshot"),
+        )
+        .build()
+}
