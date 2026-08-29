@@ -41,3 +41,21 @@
 | HB-RW-008a | hydrabox | 44d68da | DONE |
 | HB-RW-008b | hydrabox | 53e2773 | DONE |
 | HB-RW-008 | hydrabox | 44d68da, 53e2773, a9c2e9a | DONE |
+| HB-RW-034 | hydrabox | 8b1ce84 | DONE |
+| HB-RW-009 | hydrabox | 9584767 | DONE |
+| HB-RW-010 | hydrabox | 69cd538 | DONE |
+| HC-RW-007 | hydracore | — | CANCELLED решением тимлида: ConnectClient поднимает QUICRelay и healthLoop и возвращается, дозвоны фоновые, поэтому в call.Connect нечего ограничивать; ветка P2 карточки HB-EXP-E2B унаследовала ложную посылку E2A о синхронном ожидании линий (сам E2A = P1). Ветка P2 HB-RW-009 реализуется без изменений ядра. STOP CONDITION HB-RW-009 про несмерженный HC-RW-007 снят. |
+| HB-RW-035 | hydrabox | a30161b | DONE |
+| HB-RW-011 | hydrabox | 2a7bfa3 | DONE |
+| §2.4 AMEND | hydrabox | — | Решение тимлида: NETWORK_CHANGED НЕ инкрементирует commandGeneration. Причина: cg означает вытеснение намерения (после HB-RW-011 launch.generation == currentCommandGeneration отменяет старт), а смена сети намерения не вытесняет. Устаревание сетевых событий обслуживает networkGeneration со своим guard (QUICRelay.appliedNetworkGeneration отбрасывает ng <= applied). Строка §2.4 со списком инкремента cg — дефект плана. Действует для HB-RW-017, HB-RW-018 и далее. |
+| HB-RW-017 | hydrabox | d43f505 | DONE |
+| HB-RW-012-FIX | hydrabox | 0f1eaca | DONE |
+| HB-RW-012B | hydrabox | bce1f89 | DONE |
+| HB-RW-015-FIX-2 | hydrabox | e855a4e | DONE |
+| HB-RW-018 | hydrabox | c3ad3f2 | DONE |
+| HB-BUNDLE-002 | hydrabox | 70c6218 | DONE |
+| HB-BUNDLE-003 | hydrabox | e140e21 | SATISFIED BY HB-BUNDLE-001: бандл debug.51 (gitlink d0de9624) уже содержит HC-RW-001..005 — 2951d7d3, 6b0b122d, 34da49ed, be30c53c, 2e868e16. Отдельный bump не нужен, дублирующий коммит не создаётся. Разблокирует HB-RW-020. |
+| HB-RW-020 | hydrabox | 1831bed | DONE |
+| HB-RW-021 | hydrabox | 95c71e9 | DONE |
+| HB-RW-029 | hydrabox | — | BLOCKED(HB-RW-028) |
+| HB-RW-032 | hydrabox | 8477d22 | DONE |
