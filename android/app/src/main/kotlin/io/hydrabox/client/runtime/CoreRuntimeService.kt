@@ -376,6 +376,9 @@ internal fun isReady(health: CoreRuntimeProtocol.TransportHealthSnapshot): Boole
         )
     )
 
+internal fun canReleaseImmediately(runtimeGeneration: Long, hasActiveServices: Boolean): Boolean =
+    runtimeGeneration == 0L && !hasActiveServices
+
 /**
  * Sole binder owner of native runtime state. The UI process only exchanges
  * versioned protobuf bytes with this service and never initializes libbox.
@@ -1357,6 +1360,10 @@ class CoreRuntimeService : Service() {
         HydraBoxApplication.clearRuntimeIntent()
         val commandGeneration = generation.get()
         pendingRelease = CloseTask(commandGeneration, onComplete)
+        if (canReleaseImmediately(activeRuntimeGeneration, RuntimeSession.hasActiveServices())) {
+            submitInternal(RuntimeInput.Event.Released(commandGeneration, true))
+            return
+        }
         mainHandler.post {
             RuntimeSession.requestStopAll(reason)
             // Destroy both possible owners as part of the same transaction. A

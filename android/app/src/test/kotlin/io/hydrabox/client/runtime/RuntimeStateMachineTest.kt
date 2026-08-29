@@ -372,6 +372,30 @@ class RuntimeStateMachineTest {
     }
 
     @Test
+    fun `stop without a runtime releases immediately and only once`() {
+        val stopping = reduce(
+            RuntimeMachineState(
+                CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING,
+                commandGeneration = 4,
+                runtimeGeneration = 0,
+            ),
+            RuntimeInput.Event.Released(commandGeneration = 4, success = true),
+            RuntimeReduceContext(),
+        )
+        val duplicate = reduce(
+            stopping.state,
+            RuntimeInput.Event.Released(commandGeneration = 4, success = true),
+            RuntimeReduceContext(),
+        )
+
+        assertEquals(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPED, stopping.state.value)
+        assertEquals(stopping.state, duplicate.state)
+        assertEquals(true, canReleaseImmediately(runtimeGeneration = 0, hasActiveServices = false))
+        assertEquals(false, canReleaseImmediately(runtimeGeneration = 1, hasActiveServices = false))
+        assertEquals(false, canReleaseImmediately(runtimeGeneration = 0, hasActiveServices = true))
+    }
+
+    @Test
     fun `released outside stopping is ignored`() {
         val state = RuntimeMachineState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING, commandGeneration = 4)
 

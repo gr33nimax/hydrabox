@@ -72,6 +72,8 @@ class RuntimeSession(
             }
         }
 
+        fun hasActiveServices(): Boolean = activeServices.isNotEmpty()
+
         fun requestStopForMode(mode: String, source: String): Boolean {
             var requested = false
             for (boxService in activeServices) {
