@@ -61,6 +61,14 @@ internal fun runtimeCleanupComplete(
     return complete
 }
 
+internal fun shouldSkipRuntimeClose(
+    generation: Long,
+    hasCommandServer: Boolean,
+    releasedGeneration: Long,
+): Boolean =
+    (generation == 0L && !hasCommandServer) ||
+        (generation != 0L && generation == releasedGeneration)
+
 class RuntimeSession(
     private val service: Service,
     private val platformInterface: PlatformInterface,
@@ -169,6 +177,7 @@ class RuntimeSession(
         Thread(runnable, "HydraBoxRecovery").apply { isDaemon = true }
     }
     private val recoveryGate = RuntimeRecoveryGate(RUNTIME_RECOVERY_MIN_INTERVAL_MS)
+    private val closeLock = Any()
     private val foregroundNotification = HydraBoxForegroundNotification(
         service = service,
         notificationId = NOTIFICATION_ID,
@@ -182,6 +191,9 @@ class RuntimeSession(
 
     @Volatile
     private var serviceGeneration = 0L
+
+    @Volatile
+    private var releasedGeneration = 0L
 
     @Volatile
     private var activeLaunch: LaunchTask? = null
@@ -490,7 +502,9 @@ class RuntimeSession(
         val thread = Thread(
             {
                 activeLaunch?.thread?.takeIf { it !== Thread.currentThread() }?.join(CLOSE_DEADLINE_MS)
-                stopInternal(source, stopSelf, startId, cancelStarts = false)
+                synchronized(closeLock) {
+                    stopInternal(source, stopSelf, startId, cancelStarts = false)
+                }
             },
             "RuntimeClose",
         ).apply { isDaemon = true }
@@ -716,6 +730,21 @@ class RuntimeSession(
                 "generation=$generation activeGeneration=$activeGeneration " +
                 "hasCommandServer=${server != null} ownsRuntime=$ownsRuntime",
         )
+        if (shouldSkipRuntimeClose(generation, server != null, releasedGeneration)) {
+            HydraBoxDiagnostics.log(
+                TAG,
+                "runtime close no-op source=$source generation=$generation " +
+                    "releasedGeneration=$releasedGeneration",
+            )
+            if (stopSelf) {
+                if (startId != null) {
+                    service.stopSelfResult(startId)
+                } else {
+                    service.stopSelf()
+                }
+            }
+            return
+        }
         if (!hasLocalRuntime && SingboxController.running) {
             HydraBoxDiagnostics.log(
                 TAG,
@@ -795,6 +824,9 @@ class RuntimeSession(
         commandServer = null
         runningConfigHash = null
         serviceGeneration = 0L
+        if (generation != 0L) {
+            releasedGeneration = generation
+        }
 
         if (shouldStopRuntimeState) {
             SingboxController.markServiceStopped(generation, source)
