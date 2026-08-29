@@ -30,6 +30,15 @@ void main() {
     expect(controller.completeSuccessfulStop(), isFalse);
   });
 
+  test('user stop discards a queued restart', () {
+    final controller = RuntimeIntentController()
+      ..markRuntimeDesired()
+      ..queueStartAfterStop()
+      ..beginExplicitStop(discardQueuedStart: true);
+
+    expect(controller.completeSuccessfulStop(), isFalse);
+  });
+
   test('explicit stop suppresses an already queued restart', () {
     final controller = RuntimeIntentController()
       ..markRuntimeDesired()

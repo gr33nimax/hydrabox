@@ -3274,7 +3274,9 @@ class _HydraBoxClientState extends State<HydraBoxClient>
   Future<bool> _performRuntimeStop({required String reason}) async {
     _cancelAutomaticRuntimeRecovery('stop:$reason');
     _cancelManualRuntimeStart('stop:$reason');
-    _runtimeIntent.beginExplicitStop();
+    _runtimeIntent.beginExplicitStop(
+      discardQueuedStart: reason == 'toggle_connection',
+    );
     final stopped = await _runtimeLifecycle.stopRuntime(reason: reason);
     if (!mounted) {
       return stopped;

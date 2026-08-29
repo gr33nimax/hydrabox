@@ -57,8 +57,11 @@ class RuntimeIntentController {
     _startAfterStopRequested = false;
   }
 
-  void beginExplicitStop() {
+  void beginExplicitStop({bool discardQueuedStart = false}) {
     _desiredByUser = false;
+    if (discardQueuedStart) {
+      _startAfterStopRequested = false;
+    }
   }
 
   bool completeSuccessfulStop() {
