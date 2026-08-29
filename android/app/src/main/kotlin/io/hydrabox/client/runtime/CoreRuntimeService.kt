@@ -1234,7 +1234,19 @@ class CoreRuntimeService : Service() {
         if (decision.state == RuntimeMachineState(state.get(), generation.get(), activeRuntimeGeneration)) return
         activeRuntimeGeneration = decision.state.runtimeGeneration
         refreshNetworkSnapshotFromMonitor("runtime_start_complete")
-        refreshTransportHealth(emitEvent = true)
+        refreshTransportHealth(emitEvent = false)
+        val health = synchronized(snapshotLock) { transportHealth }
+        submitInternal(
+            RuntimeInput.Event.Health(
+                commandGeneration = input.commandGeneration,
+                runtimeGeneration = decision.state.runtimeGeneration,
+                ready = isReady(health),
+                challenge = health.state ==
+                    CoreRuntimeProtocol.TransportHealthState.TRANSPORT_HEALTH_STATE_WAITING_USER,
+                activeLanes = health.activeLanes,
+                applicable = health.applicable,
+            ),
+        )
     }
 
     private fun handleHealth(input: RuntimeInput.Event.Health) {

@@ -236,6 +236,40 @@ class RuntimeStateMachineTest {
     }
 
     @Test
+    fun `applicable health after launched stays starting until ready`() {
+        val launched = reduce(
+            RuntimeMachineState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STARTING, commandGeneration = 4),
+            RuntimeInput.Event.Launched(commandGeneration = 4, runtimeGeneration = 9),
+            RuntimeReduceContext(),
+        )
+
+        val decision = reduce(
+            launched.state,
+            RuntimeInput.Event.Health(commandGeneration = 4, runtimeGeneration = 9, ready = false, applicable = true),
+            RuntimeReduceContext(),
+        )
+
+        assertEquals(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STARTING, decision.state.value)
+    }
+
+    @Test
+    fun `health with stale runtime generation is ignored after launched`() {
+        val state = RuntimeMachineState(
+            CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STARTING,
+            commandGeneration = 4,
+            runtimeGeneration = 9,
+        )
+
+        val decision = reduce(
+            state,
+            RuntimeInput.Event.Health(commandGeneration = 4, runtimeGeneration = 8, ready = true),
+            RuntimeReduceContext(),
+        )
+
+        assertEquals(state, decision.state)
+    }
+
+    @Test
     fun `challenge health retains state and rearms deadline`() {
         val state = RuntimeMachineState(
             CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STARTING,
