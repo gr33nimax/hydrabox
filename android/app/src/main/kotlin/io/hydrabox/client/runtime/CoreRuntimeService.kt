@@ -31,8 +31,8 @@ import org.json.JSONObject
 import java.io.FileOutputStream
 import java.security.MessageDigest
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
-import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.atomic.AtomicLong
@@ -50,6 +50,7 @@ internal fun nativeSourceLabel(): String = "embedded"
 
 internal const val START_DEADLINE_MILLIS = 45_000L
 internal const val CHALLENGE_DEADLINE_MILLIS = 120_000L
+internal const val UTILITY_DEADLINE_MILLIS = 10_000L
 
 /** Additive, side-effect-free runtime transition model; production wiring follows separately. */
 internal sealed interface RuntimeInput {
@@ -244,6 +245,7 @@ class CoreRuntimeService : Service() {
     private val scheduler = Executors.newSingleThreadScheduledExecutor { runnable ->
         Thread(runnable, "HydraCoreRuntimeTimers").apply { isDaemon = true }
     }
+    private val pendingUtilityRequestIds = ConcurrentHashMap.newKeySet<String>()
     private val mainHandler = Handler(Looper.getMainLooper())
     private val selectedOutbounds = linkedMapOf<String, String>()
     private val snapshotLock = Any()
@@ -605,7 +607,7 @@ class CoreRuntimeService : Service() {
                     ByteArray(0)
                 }
                 CoreRuntimeProtocol.CoreUtilityKind.CORE_UTILITY_KIND_LOOKUP_OUTBOUND_EXTERNAL_INFO ->
-                    lookupOutboundExternalInfo(request)
+                    return lookupOutboundExternalInfo(request)
                 CoreRuntimeProtocol.CoreUtilityKind.CORE_UTILITY_KIND_UPDATE_NOTIFICATION -> {
                     require(request.argumentsCount == 1)
                     val value = CoreRuntimeProtocol.NotificationPresentation.parseFrom(
@@ -685,24 +687,52 @@ class CoreRuntimeService : Service() {
 
     private fun lookupOutboundExternalInfo(
         request: CoreRuntimeProtocol.CoreUtilityRequest,
-    ): ByteArray {
+    ): CoreRuntimeProtocol.CoreUtilityResponse {
         require(request.argumentsCount == 1)
         val outboundId = request.getArguments(0).toStringUtf8().trim()
         require(outboundId.isNotEmpty())
-        val latch = CountDownLatch(1)
-        var result: Result<Map<String, String>>? = null
-        SingboxController.lookupOutboundExternalInfo(outboundId) {
-            result = it
-            latch.countDown()
+        if (!pendingUtilityRequestIds.add(request.requestId)) {
+            return utilityFailure(
+                request.requestId,
+                "core.utility.duplicate",
+                "utility_request",
+                "The utility request is already pending.",
+            )
         }
-        check(latch.await(UTILITY_DEADLINE_MILLIS, TimeUnit.MILLISECONDS))
-        val value = requireNotNull(result).getOrThrow()
-        return CoreRuntimeProtocol.OutboundExternalInfo.newBuilder()
-            .setOutboundId(outboundId)
-            .setIpAddress(value["ip"].orEmpty())
-            .setCountryCode(value["countryCode"].orEmpty())
+        SingboxController.lookupOutboundExternalInfo(outboundId) {
+            commandExecutor.execute {
+                val response = it.fold(
+                    onSuccess = { value ->
+                        CoreRuntimeProtocol.CoreUtilityResponse.newBuilder()
+                            .setSchemaVersion(SCHEMA_VERSION)
+                            .setRequestId(request.requestId)
+                            .setPayload(
+                                CoreRuntimeProtocol.OutboundExternalInfo.newBuilder()
+                                    .setOutboundId(outboundId)
+                                    .setIpAddress(value["ip"].orEmpty())
+                                    .setCountryCode(value["countryCode"].orEmpty())
+                                    .build()
+                                    .toByteString(),
+                            )
+                            .build()
+                    },
+                    onFailure = {
+                        utilityFailure(
+                            request.requestId,
+                            "core.utility.failed",
+                            "utility_execution",
+                            "HydraCore could not complete the request.",
+                        )
+                    },
+                )
+                pendingUtilityRequestIds.remove(request.requestId)
+                emit(eventBuilder().setUtilityResult(response).build())
+            }
+        }
+        return CoreRuntimeProtocol.CoreUtilityResponse.newBuilder()
+            .setSchemaVersion(SCHEMA_VERSION)
+            .setRequestId(request.requestId)
             .build()
-            .toByteArray()
     }
 
     private fun utilityFailure(
@@ -1867,7 +1897,6 @@ class CoreRuntimeService : Service() {
         private const val RUNTIME_SHUTDOWN_DEADLINE_MILLIS = 5_000L
         private const val TRANSPORT_HEALTH_POLL_MILLIS = 250L
         private const val STATE_POLL_MILLIS = 100L
-        private const val UTILITY_DEADLINE_MILLIS = 10_000L
         private const val ALL_OUTBOUNDS = "*"
         private const val MAX_RECOVERED_CONFIGS = 2
         private val COMMAND_ID_PATTERN = Regex("^[A-Za-z0-9._:-]{1,128}$")

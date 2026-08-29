@@ -268,6 +268,7 @@ message RuntimeEvent {
     NetworkSnapshot network = 17;
     TrafficSnapshot traffic = 18;
     TransportHealthSnapshot transport_health = 19;
+    CoreUtilityResponse utility_result = 20;
   }
 }
 

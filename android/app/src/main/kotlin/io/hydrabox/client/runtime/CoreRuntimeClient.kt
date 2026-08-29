@@ -50,6 +50,43 @@ internal class RebindAttemptCounter {
     }
 }
 
+internal class UtilityRequestRegistry {
+    private val callbacks = mutableMapOf<String, (Result<ByteArray>) -> Unit>()
+
+    @Synchronized
+    fun register(requestId: String, callback: (Result<ByteArray>) -> Unit): Boolean {
+        if (requestId in callbacks) return false
+        callbacks[requestId] = callback
+        return true
+    }
+
+    @Synchronized
+    fun remove(requestId: String): ((Result<ByteArray>) -> Unit)? = callbacks.remove(requestId)
+
+    fun complete(response: CoreRuntimeProtocol.CoreUtilityResponse): Boolean {
+        val callback = remove(response.requestId) ?: return false
+        callback(
+            if (response.hasError()) Result.failure(
+                CoreRuntimeException(
+                    response.error.code,
+                    response.error.stage,
+                    response.error.retryable,
+                    response.error.safeMessage.ifBlank { "HydraCore utility failed." },
+                ),
+            )
+            else Result.success(response.payload.toByteArray()),
+        )
+        return true
+    }
+
+    fun failAll(error: Throwable) {
+        val pending = synchronized(this) {
+            callbacks.values.toList().also { callbacks.clear() }
+        }
+        pending.forEach { it(Result.failure(error)) }
+    }
+}
+
 /** Main-process proxy for the :core binder. It contains no libbox references. */
 class CoreRuntimeClient(context: Context) {
     private data class PendingServiceCall(
@@ -65,6 +102,7 @@ class CoreRuntimeClient(context: Context) {
     private val resultCallbacks = ConcurrentHashMap<String, (Result<Unit>) -> Unit>()
     private val probeResultCallbacks =
         ConcurrentHashMap<String, (Result<CoreRuntimeProtocol.ProbeResult>) -> Unit>()
+    private val utilityResultCallbacks = UtilityRequestRegistry()
     private val eventConsumers = CopyOnWriteArrayList<RuntimeEventConsumer>()
     private val ipcExecutor = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "HydraCoreIpc").apply { isDaemon = true }
@@ -86,16 +124,31 @@ class CoreRuntimeClient(context: Context) {
                 require(eventBytes != null && eventBytes.isNotEmpty())
                 CoreRuntimeProtocol.RuntimeEvent.parseFrom(eventBytes)
             }.getOrNull() ?: return
+            val previousEpoch = lastProcessEpoch
+            val observedEpoch = event.processEpoch.takeIf { it.isNotBlank() }
+                ?: event.snapshot.processEpoch.takeIf { event.hasSnapshot() && it.isNotBlank() }
+            if (previousEpoch != null && observedEpoch != null && previousEpoch != observedEpoch) {
+                utilityResultCallbacks.failAll(
+                    CoreRuntimeException(
+                        "runtime.ipc.epoch_changed",
+                        "ipc",
+                        true,
+                        "HydraCore process restarted.",
+                    ),
+                )
+            }
             val epochEvent = if (event.hasSnapshot()) {
                 val snapshot = event.snapshot
                 latestSnapshot = snapshot
-                epochChangedEvent(lastProcessEpoch, snapshot).also {
+                epochChangedEvent(previousEpoch, snapshot).also {
                     lastProcessEpoch = snapshot.processEpoch.takeIf { it.isNotBlank() }
                 }
             } else {
+                if (observedEpoch != null) lastProcessEpoch = observedEpoch
                 null
             }
             if (event.hasCommandResult()) completeCommand(event.commandResult)
+            if (event.hasUtilityResult()) utilityResultCallbacks.complete(event.utilityResult)
             if (event.hasProbeResult()) {
                 probeResultCallbacks.remove(event.probeResult.sessionId)?.let { completion ->
                     mainHandler.post { completion(Result.success(event.probeResult)) }
@@ -546,16 +599,77 @@ class CoreRuntimeClient(context: Context) {
         outboundId: String,
         callback: (Result<Map<String, String>>) -> Unit,
     ) {
-        utility(
-            CoreRuntimeProtocol.CoreUtilityKind.CORE_UTILITY_KIND_LOOKUP_OUTBOUND_EXTERNAL_INFO,
-            listOf(outboundId.toByteArray(Charsets.UTF_8)),
-        ) { result ->
-            callback(
-                result.mapCatching { payload ->
-                    val value = CoreRuntimeProtocol.OutboundExternalInfo.parseFrom(payload)
-                    mapOf("ip" to value.ipAddress, "countryCode" to value.countryCode)
-                },
+        val id = UUID.randomUUID().toString()
+        val request = CoreRuntimeProtocol.CoreUtilityRequest.newBuilder()
+            .setSchemaVersion(SCHEMA_VERSION)
+            .setRequestId(id)
+            .setKind(CoreRuntimeProtocol.CoreUtilityKind.CORE_UTILITY_KIND_LOOKUP_OUTBOUND_EXTERNAL_INFO)
+            .addArguments(ByteString.copyFrom(outboundId.toByteArray(Charsets.UTF_8)))
+            .build()
+        val completion: (Result<ByteArray>) -> Unit = { result ->
+            mainHandler.post {
+                callback(
+                    result.mapCatching { payload ->
+                        val value = CoreRuntimeProtocol.OutboundExternalInfo.parseFrom(payload)
+                        mapOf("ip" to value.ipAddress, "countryCode" to value.countryCode)
+                    },
+                )
+            }
+        }
+        if (!utilityResultCallbacks.register(id, completion)) {
+            completion(
+                Result.failure(
+                    CoreRuntimeException(
+                        "core.utility.duplicate",
+                        "utility_request",
+                        false,
+                        "The utility request is already pending.",
+                    ),
+                ),
             )
+            return
+        }
+        mainHandler.postDelayed({
+            utilityResultCallbacks.remove(id)?.invoke(
+                Result.failure(
+                    CoreRuntimeException(
+                        "core.utility.deadline",
+                        "utility_result",
+                        true,
+                        "HydraCore utility did not return a result.",
+                    ),
+                ),
+            )
+        }, UTILITY_DEADLINE_MILLIS)
+        withService(
+            onFailure = { error ->
+                utilityResultCallbacks.remove(id)?.invoke(Result.failure(error))
+            },
+        ) { connected ->
+            ipcExecutor.execute {
+                runCatching {
+                    CoreRuntimeProtocol.CoreUtilityResponse.parseFrom(
+                        connected.executeUtility(request.toByteArray()),
+                    )
+                }.onSuccess { acknowledgement ->
+                    if (acknowledgement.hasError()) {
+                        utilityResultCallbacks.remove(id)?.invoke(Result.failure(acknowledgement.error.toException()))
+                    } else if (acknowledgement.requestId != id) {
+                        utilityResultCallbacks.remove(id)?.invoke(
+                            Result.failure(
+                                CoreRuntimeException(
+                                    "core.utility.invalid_response",
+                                    "utility_acknowledgement",
+                                    false,
+                                    "HydraCore returned an invalid utility response.",
+                                ),
+                            ),
+                        )
+                    }
+                }.onFailure { error ->
+                    utilityResultCallbacks.remove(id)?.invoke(Result.failure(error))
+                }
+            }
         }
     }
 
@@ -735,6 +849,7 @@ class CoreRuntimeClient(context: Context) {
         resultCallbacks.clear()
         val probeCallbacks = probeResultCallbacks.values.toList()
         probeResultCallbacks.clear()
+        utilityResultCallbacks.failAll(error)
         mainHandler.post {
             callbacks.forEach { it(Result.failure(error)) }
             probeCallbacks.forEach { it(Result.failure(error)) }
