@@ -59,3 +59,5 @@
 | HB-RW-021 | hydrabox | 95c71e9 | DONE |
 | HB-RW-029 | hydrabox | — | BLOCKED(HB-RW-028) |
 | HB-RW-032 | hydrabox | 8477d22 | DONE |
+| HB-RW-007-FIX | hydrabox | 71137fe, cca5088 | DONE |
+| HB-RW-017-FIX | hydrabox | bf5cc07 | DONE |
