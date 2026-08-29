@@ -20,10 +20,12 @@ class RuntimeGroupsEvent {
   const RuntimeGroupsEvent({
     required this.groups,
     required this.runtimeGeneration,
+    required this.pendingSelectedOutboundIds,
   });
 
   final List<dynamic> groups;
   final int runtimeGeneration;
+  final Map<String, String> pendingSelectedOutboundIds;
 }
 
 class RuntimeTransportHealthEvent {
@@ -195,6 +197,12 @@ class RuntimeEventController {
             groups: (event['groups'] as List?) ?? const [],
             runtimeGeneration:
                 (event['runtimeGeneration'] as num?)?.toInt() ?? 0,
+            pendingSelectedOutboundIds: Map<String, String>.from(
+              (event['pendingSelectedOutboundIds'] as Map?)?.map(
+                    (key, value) => MapEntry(key.toString(), value.toString()),
+                  ) ??
+                  const <String, String>{},
+            ),
           ),
         );
         break;

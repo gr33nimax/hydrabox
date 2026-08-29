@@ -227,6 +227,7 @@ message RuntimeSnapshot {
   repeated ProbeSession probe_sessions = 15;
   TransportHealthSnapshot transport_health = 16;
   DesiredRuntime desired_runtime = 17;
+  map<string, string> pending_selected_outbound_ids = 18;
 }
 
 message RuntimeLog {

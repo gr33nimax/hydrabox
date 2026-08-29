@@ -110,6 +110,28 @@ internal data class Decision(
     val commandDecision: RuntimeCommandDecision? = null,
 )
 
+internal data class PendingSelection(
+    val outboundId: String,
+    val commandGeneration: Long,
+)
+
+internal fun pendingSelectionsAfterAcceptedSelection(
+    pendingSelections: Map<String, PendingSelection>,
+    groupId: String,
+    outboundId: String,
+    commandGeneration: Long,
+): Map<String, PendingSelection> = pendingSelections + (
+    groupId to PendingSelection(outboundId, commandGeneration)
+)
+
+internal fun pendingSelectionsAfterGroups(
+    pendingSelections: Map<String, PendingSelection>,
+    selectedOutbounds: Map<String, String>,
+    commandGeneration: Long,
+): Map<String, PendingSelection> = pendingSelections.filterValues { pending ->
+    pending.commandGeneration == commandGeneration
+}.filter { (groupId, pending) -> selectedOutbounds[groupId] != pending.outboundId }
+
 internal fun reduce(
     state: RuntimeMachineState,
     input: RuntimeInput,
@@ -304,6 +326,7 @@ class CoreRuntimeService : Service() {
     private val pendingUtilityRequestIds = ConcurrentHashMap.newKeySet<String>()
     private val mainHandler = Handler(Looper.getMainLooper())
     private val selectedOutbounds = linkedMapOf<String, String>()
+    private var pendingSelections = emptyMap<String, PendingSelection>()
     private val snapshotLock = Any()
     private var activeConfigSha256 = ByteArray(0)
     private var lastError: CoreRuntimeProtocol.CoreError? = null
@@ -1170,6 +1193,7 @@ class CoreRuntimeService : Service() {
         synchronized(snapshotLock) {
             transportHealth = CoreRuntimeProtocol.TransportHealthSnapshot.getDefaultInstance()
             managedProbeAliases.clear()
+            pendingSelections = emptyMap()
         }
     }
 
@@ -1228,12 +1252,24 @@ class CoreRuntimeService : Service() {
             commandFailed(command.commandId, "runtime.selector.invalid", "selector", "The outbound selection is invalid.", false)
             return
         }
+        val commandGeneration = generation.incrementAndGet()
         SingboxController.selectOutbound(request.groupId, request.outboundId) { result ->
-            result.onSuccess {
-                synchronized(snapshotLock) { selectedOutbounds[request.groupId] = request.outboundId }
-                commandSucceeded(command.commandId, state.get())
-            }.onFailure {
-                commandFailed(command.commandId, "runtime.selector.failed", "selector", "HydraCore rejected the outbound selection.", true)
+            commandExecutor.execute {
+                result.onSuccess {
+                    if (generation.get() == commandGeneration) {
+                        synchronized(snapshotLock) {
+                            pendingSelections = pendingSelectionsAfterAcceptedSelection(
+                                pendingSelections,
+                                request.groupId,
+                                request.outboundId,
+                                commandGeneration,
+                            )
+                        }
+                    }
+                    commandSucceeded(command.commandId, state.get())
+                }.onFailure {
+                    commandFailed(command.commandId, "runtime.selector.failed", "selector", "HydraCore rejected the outbound selection.", true)
+                }
             }
         }
     }
@@ -1652,6 +1688,11 @@ class CoreRuntimeService : Service() {
                     selectedOutbounds[group.groupId] = group.selectedOutboundId
                 }
             }
+            pendingSelections = pendingSelectionsAfterGroups(
+                pendingSelections,
+                selectedOutbounds,
+                generation.get(),
+            )
         }
     }
 
@@ -1807,6 +1848,7 @@ class CoreRuntimeService : Service() {
                 .setMode(mode.get())
                 .setActiveConfigSha256(ByteString.copyFrom(activeConfigSha256))
                 .putAllSelectedOutboundIds(selectedOutbounds)
+                .putAllPendingSelectedOutboundIds(pendingSelections.mapValues { it.value.outboundId })
                 .setTraffic(traffic)
                 .setNetwork(networkSnapshot)
                 .setUpdatedAtMillis(System.currentTimeMillis())

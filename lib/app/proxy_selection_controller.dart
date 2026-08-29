@@ -24,6 +24,7 @@ class ProxySelectionController {
   String? _pendingRuntimeSelectTag;
   String? _pendingRuntimeSelectPreviousTag;
   Timer? _pendingRuntimeSelectTimer;
+  bool _runtimeSelectionAccepted = false;
 
   int get generation => _generation;
   String? get pendingRuntimeSelectTag => _pendingRuntimeSelectTag;
@@ -56,6 +57,19 @@ class ProxySelectionController {
       confirmationTimeout: confirmationTimeout,
     );
     return generation;
+  }
+
+  void markRuntimeSelectionAccepted({required int generation}) {
+    if (generation == _generation) {
+      _runtimeSelectionAccepted = true;
+    }
+  }
+
+  bool clearAcceptedRuntimeSelectionWhen({required bool pendingInCore}) {
+    if (!_runtimeSelectionAccepted || pendingInCore) {
+      return false;
+    }
+    return clearRuntimeSelection();
   }
 
   int guardCurrentSelectionForRuntime({
@@ -240,6 +254,7 @@ class ProxySelectionController {
     _pendingRuntimeSelectTimer = null;
     _pendingRuntimeSelectTag = null;
     _pendingRuntimeSelectPreviousTag = null;
+    _runtimeSelectionAccepted = false;
   }
 }
 

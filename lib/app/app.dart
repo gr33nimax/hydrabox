@@ -3609,7 +3609,9 @@ class _HydraBoxClientState extends State<HydraBoxClient>
             reason: 'proxy selection persisted',
             generation: selectionGeneration,
           );
-          _clearRuntimeProxySelectionGuard(generation: selectionGeneration);
+          _proxySelection.markRuntimeSelectionAccepted(
+            generation: selectionGeneration,
+          );
           _scheduleActiveOutboundIpRefresh();
         } catch (error) {
           if (!mounted ||
@@ -5684,7 +5686,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       'post-start selectOutbound done group=select outbound=$tag '
           'elapsedMs=${result.elapsed.inMilliseconds}',
     );
-    _clearRuntimeProxySelectionGuard(generation: generation);
+    _proxySelection.markRuntimeSelectionAccepted(generation: generation);
   }
 
   void _clearRuntimeProxySelectionGuard({int? generation}) {
@@ -6534,6 +6536,18 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     final activeSubscription = _activeSubscription;
     if (activeSubscription == null || event.groups.isEmpty || !mounted) {
       return;
+    }
+    final pendingRuntimeTag = _proxySelection.pendingRuntimeSelectTag;
+    final corePendingSelection =
+        pendingRuntimeTag != null &&
+        event.pendingSelectedOutboundIds['select'] ==
+            activeSubscription.nativeEntrypointTagForRuntimeTag(
+              pendingRuntimeTag,
+            );
+    if (_proxySelection.clearAcceptedRuntimeSelectionWhen(
+      pendingInCore: corePendingSelection,
+    )) {
+      _publishProxyRuntimeVisualStates();
     }
     final rawGroups = HydraRuntimeTagProjection.canonicalizeGroupUpdates(
       subscription: activeSubscription,

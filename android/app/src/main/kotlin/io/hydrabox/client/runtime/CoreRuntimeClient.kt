@@ -908,6 +908,7 @@ class CoreRuntimeClient(context: Context) {
             mapOf(
                 "type" to "groups",
                 "runtimeGeneration" to generation,
+                "pendingSelectedOutboundIds" to pendingSelectedOutboundIdsMap,
                 "groups" to outboundGroupsList.map { group ->
                     mapOf(
                         "tag" to group.groupId,

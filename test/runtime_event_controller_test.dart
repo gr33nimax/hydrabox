@@ -29,6 +29,7 @@ void main() {
     controller.dispatch({'type': 'network', 'reason': 'default_interface'});
     controller.dispatch({
       'type': 'groups',
+      'pendingSelectedOutboundIds': {'select': 'vless-2'},
       'groups': [
         {'tag': 'select'},
       ],
@@ -62,6 +63,7 @@ void main() {
       {'tag': 'select'},
     ]);
     expect(groups?.runtimeGeneration, 0);
+    expect(groups?.pendingSelectedOutboundIds, {'select': 'vless-2'});
     expect(urlTestSessions?.runtimeGeneration, 7);
     expect(urlTestSessions?.sequence, 12);
     expect(urlTestSessions?.reset, isTrue);
