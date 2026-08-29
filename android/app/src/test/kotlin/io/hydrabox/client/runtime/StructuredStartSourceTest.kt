@@ -1,42 +1,26 @@
 package io.hydrabox.client.runtime
 
-import java.io.File
-import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class StructuredStartSourceTest {
     @Test
-    fun `blank source defaults to ui`() {
-        assertTrue(coreRuntimeServiceSource().contains("request.source.isNotBlank() -> request.source"))
-        assertTrue(coreRuntimeServiceSource().contains("else -> \"ui\""))
+    fun `empty source defaults to ui`() {
+        assertEquals("ui", startSourceFor(recovery = false, requestSource = "", sticky = false))
     }
 
     @Test
-    fun `tile source reaches event unless recovery takes precedence`() {
-        assertTrue(coreRuntimeServiceSource().contains("recovery -> \"recovery\""))
-        assertTrue(coreRuntimeServiceSource().contains("\"source\" to when"))
+    fun `quick settings tile source is preserved`() {
+        assertEquals("tile", startSourceFor(recovery = false, requestSource = "tile", sticky = false))
     }
 
     @Test
-    fun `quick settings start supplies tile source`() {
-        assertTrue(quickSettingsSource().contains("source = \"tile\""))
+    fun `recovery takes precedence over tile`() {
+        assertEquals("recovery", startSourceFor(recovery = true, requestSource = "tile", sticky = false))
     }
 
-    private fun quickSettingsSource(): String {
-        return File(repositoryRoot(), "android/app/src/main/kotlin/io/hydrabox/client/HydraBoxQuickSettingsTileService.kt")
-            .readText()
-    }
-
-    private fun coreRuntimeServiceSource(): String {
-        return File(repositoryRoot(), "android/app/src/main/kotlin/io/hydrabox/client/runtime/CoreRuntimeService.kt")
-            .readText()
-    }
-
-    private fun repositoryRoot(): File {
-        var root = File(requireNotNull(System.getProperty("user.dir")))
-        while (!File(root, "android/app/src/main/kotlin").isDirectory) {
-            root = root.parentFile ?: error("root not found")
-        }
-        return root
+    @Test
+    fun `sticky takes precedence without recovery`() {
+        assertEquals("sticky", startSourceFor(recovery = false, requestSource = "tile", sticky = true))
     }
 }

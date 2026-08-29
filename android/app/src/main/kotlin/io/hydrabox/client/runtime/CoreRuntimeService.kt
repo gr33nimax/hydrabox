@@ -54,6 +54,13 @@ internal const val START_DEADLINE_MILLIS = 45_000L
 internal const val CHALLENGE_DEADLINE_MILLIS = 120_000L
 internal const val UTILITY_DEADLINE_MILLIS = 10_000L
 
+internal fun startSourceFor(recovery: Boolean, requestSource: String, sticky: Boolean): String = when {
+    recovery -> "recovery"
+    sticky -> "sticky"
+    requestSource.isNotBlank() -> requestSource
+    else -> "ui"
+}
+
 /** Additive, side-effect-free runtime transition model; production wiring follows separately. */
 internal sealed interface RuntimeInput {
     sealed interface Command : RuntimeInput {
@@ -1057,11 +1064,11 @@ class CoreRuntimeService : Service() {
             "ng" to HydraBoxDefaultNetworkMonitor.currentInterfaceState("connect").generation,
             "prof" to shortHex(activeConfigSha256),
             "mode" to request.mode.name.lowercase().removePrefix("runtime_mode_"),
-            "source" to when {
-                recovery -> recoverySource
-                request.source.isNotBlank() -> request.source
-                else -> "ui"
-            },
+            "source" to startSourceFor(
+                recovery = recovery && recoverySource != "sticky",
+                requestSource = request.source,
+                sticky = recovery && recoverySource == "sticky",
+            ),
             "attempt" to recoveryAttempt,
         )
         updateState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STARTING)
