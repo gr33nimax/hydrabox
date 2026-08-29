@@ -411,6 +411,7 @@ object HydraBoxDefaultNetworkMonitor {
         interfaceName: String,
         interfaceIndex: Int,
         generation: Long,
+        replay: Boolean = false,
     ) {
         CoreRuntimeService.submitInternalNetwork(
             network,
@@ -421,6 +422,7 @@ object HydraBoxDefaultNetworkMonitor {
                 .setAvailable(interfaceName.isNotBlank() && interfaceIndex >= 0)
                 .build(),
             listeners,
+            replay,
         )
     }
 
@@ -441,7 +443,13 @@ object HydraBoxDefaultNetworkMonitor {
             previous = currentSnapshot
             val transition = nextNetworkTransition(previous?.identity, snapshot.identity, networkGeneration.get())
             if (!transition.changed) {
-                logNetworkSnapshot(trigger, NetworkEventBranch.NOOP, transition.generation)
+                logNetworkSnapshot(
+                    trigger,
+                    NetworkEventBranch.NOOP,
+                    transition.generation,
+                    snapshot.identity.interfaceName,
+                    snapshot.identity.interfaceIndex,
+                )
                 return
             }
             currentSnapshot = snapshot
@@ -450,7 +458,7 @@ object HydraBoxDefaultNetworkMonitor {
             currentListeners = listeners.snapshot()
         }
         val branch = if (network == null) NetworkEventBranch.NONE else NetworkEventBranch.CHANGED
-        logNetworkSnapshot(trigger, branch, networkGeneration.get())
+        logNetworkSnapshot(trigger, branch, networkGeneration.get(), interfaceName, interfaceIndex)
         publishNetworkChanged(currentListeners, network, interfaceName, interfaceIndex, networkGeneration.get())
     }
 
@@ -465,16 +473,25 @@ object HydraBoxDefaultNetworkMonitor {
                 snapshot.identity.interfaceName,
                 snapshot.identity.interfaceIndex,
                 networkGeneration.get(),
+                replay = true,
             )
         }
     }
 
-    private fun logNetworkSnapshot(trigger: String, branch: NetworkEventBranch, generation: Long) {
+    private fun logNetworkSnapshot(
+        trigger: String,
+        branch: NetworkEventBranch,
+        generation: Long,
+        interfaceName: String = currentSnapshot?.identity?.interfaceName.orEmpty(),
+        interfaceIndex: Int = currentSnapshot?.identity?.interfaceIndex ?: -1,
+    ) {
         HydraBoxDiagnostics.event(
             "NETWORK", "ep" to shortMonitorId(CoreProcessIdentity.epoch), "cg" to CoreProcessIdentity.generation.get(),
             "rg" to SingboxController.activeRuntimeGeneration, "ng" to generation,
             "trigger" to trigger,
             "branch" to branch.telemetryValue,
+            "iface_name" to interfaceName,
+            "iface_idx" to interfaceIndex,
             "ms_since_last_callback" to msSinceLastCallback(SystemClock.elapsedRealtime(), lastAndroidCallbackElapsedMs.get()),
         )
     }

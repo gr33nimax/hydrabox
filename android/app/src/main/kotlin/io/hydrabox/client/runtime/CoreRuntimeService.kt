@@ -72,6 +72,50 @@ internal fun setNetworkGenerationBeforeRebind(
     rebind()
 }
 
+internal fun publishDefaultInterface(
+    payload: CoreRuntimeProtocol.NetworkChanged,
+    listeners: List<InterfaceUpdateListener>,
+    onFailure: (Throwable) -> Unit,
+) {
+    if (payload.interfaceIndex < 0 || payload.interfaceName == "tun0") return
+    listeners.forEach { listener ->
+        runCatching {
+            listener.updateDefaultInterface(
+                payload.interfaceName,
+                payload.interfaceIndex,
+                false,
+                false,
+            )
+        }.onFailure(onFailure)
+    }
+}
+
+internal fun applyNetworkChangeAction(
+    action: NetworkChangeAction?,
+    payload: CoreRuntimeProtocol.NetworkChanged,
+    listeners: List<InterfaceUpdateListener>,
+    setNetworkGeneration: (Long) -> Unit,
+    onFailure: (Throwable) -> Unit,
+) {
+    when (action) {
+        NetworkChangeAction.ApplyUnderlying ->
+            publishDefaultInterface(payload, listeners, onFailure)
+        NetworkChangeAction.ApplyUnderlyingAndRebind ->
+            setNetworkGenerationBeforeRebind(payload.networkGeneration, setNetworkGeneration) {
+                publishDefaultInterface(payload, listeners, onFailure)
+            }
+        null -> Unit
+    }
+}
+
+internal fun rejectsNetworkChange(
+    decision: Decision,
+    networkGeneration: Long,
+    appliedNetworkGeneration: Long,
+    replay: Boolean,
+): Boolean = decision.commandDecision == RuntimeCommandDecision.Reject ||
+    (!replay && networkGeneration <= appliedNetworkGeneration)
+
 /** Additive, side-effect-free runtime transition model; production wiring follows separately. */
 internal sealed interface RuntimeInput {
     sealed interface Command : RuntimeInput {
@@ -86,6 +130,7 @@ internal sealed interface RuntimeInput {
             val payload: CoreRuntimeProtocol.NetworkChanged = CoreRuntimeProtocol.NetworkChanged.getDefaultInstance(),
             val network: Network? = null,
             val listeners: List<InterfaceUpdateListener> = emptyList(),
+            val replay: Boolean = false,
         ) : Command
         data object Reload : Command
         data object SelectOutbound : Command
@@ -809,8 +854,12 @@ class CoreRuntimeService : Service() {
             input,
             RuntimeReduceContext(),
         )
-        if (decision.commandDecision == RuntimeCommandDecision.Reject ||
-            input.payload.networkGeneration <= appliedNetworkGeneration
+        if (rejectsNetworkChange(
+                decision,
+                input.payload.networkGeneration,
+                appliedNetworkGeneration,
+                input.replay,
+            )
         ) {
             commandFailed(
                 commandId,
@@ -833,22 +882,14 @@ class CoreRuntimeService : Service() {
             generation = input.payload.networkGeneration,
             updatedAtMillis = System.currentTimeMillis(),
         )
+        applyNetworkChangeAction(
+            decision.networkChangeAction,
+            input.payload,
+            input.listeners,
+            { Libbox.hydraCoreSetNetworkGeneration(it) },
+            { Log.e(TAG, "updateDefaultInterface failed", it) },
+        )
         if (decision.networkChangeAction == NetworkChangeAction.ApplyUnderlyingAndRebind) {
-            setNetworkGenerationBeforeRebind(
-                input.payload.networkGeneration,
-                { Libbox.hydraCoreSetNetworkGeneration(it) },
-            ) {
-                input.listeners.forEach { listener ->
-                    runCatching {
-                        listener.updateDefaultInterface(
-                            input.payload.interfaceName,
-                            input.payload.interfaceIndex,
-                            false,
-                            false,
-                        )
-                    }.onFailure { Log.e(TAG, "updateDefaultInterface failed", it) }
-                }
-            }
             HydraBoxDiagnostics.event(
                 "REBIND", "ep" to shortId(processEpoch), "cg" to generation.get(),
                 "rg" to activeRuntimeGeneration, "ng" to input.payload.networkGeneration,
@@ -2450,8 +2491,9 @@ class CoreRuntimeService : Service() {
             network: Network?,
             payload: CoreRuntimeProtocol.NetworkChanged,
             listeners: List<InterfaceUpdateListener>,
+            replay: Boolean = false,
         ) {
-            currentService?.submitInternal(RuntimeInput.Command.NetworkChanged(payload, network, listeners))
+            currentService?.submitInternal(RuntimeInput.Command.NetworkChanged(payload, network, listeners, replay))
         }
 
         private const val TAG = "HydraCoreRuntime"
