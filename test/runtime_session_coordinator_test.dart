@@ -110,7 +110,6 @@ void main() {
     expect(decision.clearDisconnectedState, isFalse);
   });
 
-
   test('late successful cancelled start requires native cleanup', () {
     final disposition = RuntimeSessionCoordinator().classifyStartResult(
       result: const RuntimeLifecycleResult.success(
@@ -123,5 +122,4 @@ void main() {
 
     expect(disposition, RuntimeStartDisposition.cancelledNeedsCleanup);
   });
-
 }

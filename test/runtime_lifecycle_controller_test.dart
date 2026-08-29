@@ -30,7 +30,6 @@ void main() {
     expect(runtime.startPreparedCalls, 0);
   });
 
-
   test('start passes the regular deadline to the native owner', () async {
     final runtime = _FakeRuntime(running: false);
     final controller = RuntimeLifecycleController(
@@ -157,21 +156,24 @@ void main() {
     },
   );
 
-  test('explicit stop returns the native command result without status polling', () async {
-    final runtime = _FakeRuntime();
-    final controller = RuntimeLifecycleController(
-      runtime: runtime,
-      stopSettleDelay: Duration.zero,
-    );
-    addTearDown(controller.dispose);
+  test(
+    'explicit stop returns the native command result without status polling',
+    () async {
+      final runtime = _FakeRuntime();
+      final controller = RuntimeLifecycleController(
+        runtime: runtime,
+        stopSettleDelay: Duration.zero,
+      );
+      addTearDown(controller.dispose);
 
-    final stopped = await controller.stopRuntime(reason: 'profile_switch');
+      final stopped = await controller.stopRuntime(reason: 'profile_switch');
 
-    expect(stopped, isTrue);
-    expect(runtime.stopCalls, 1);
-    expect(runtime.statusCalls, 0);
-    expect(runtime.running, isFalse);
-  });
+      expect(stopped, isTrue);
+      expect(runtime.stopCalls, 1);
+      expect(runtime.statusCalls, 0);
+      expect(runtime.running, isFalse);
+    },
+  );
 }
 
 SingboxConfigBuildResult _build({bool hasInteractiveVkCall = false}) {

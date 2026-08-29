@@ -409,5 +409,4 @@ class RuntimeLifecycleController {
       interactiveDeadlineMillis: startTimeoutForBuild(build).inMilliseconds,
     );
   }
-
 }

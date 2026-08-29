@@ -110,5 +110,4 @@ class RuntimeSessionCoordinator {
       retryScheduled: phase == AppConnectionPhase.recovering && retryScheduled,
     );
   }
-
 }
