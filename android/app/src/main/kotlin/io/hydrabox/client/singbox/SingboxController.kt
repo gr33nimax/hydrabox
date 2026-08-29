@@ -523,6 +523,7 @@ object SingboxController {
         }
         activeRuntimeGeneration = 0
         setRunning(false)
+        emit(mapOf("type" to "released"))
         HydraBoxDiagnostics.log(TAG, "markServiceStopped generation=$generation reason=$reason")
     }
 
@@ -530,6 +531,7 @@ object SingboxController {
         val previousGeneration = activeRuntimeGeneration
         activeRuntimeGeneration = 0
         setRunning(false)
+        emit(mapOf("type" to "released"))
         HydraBoxDiagnostics.log(
             TAG,
             "forceMarkServiceStopped previousGeneration=$previousGeneration reason=$reason",

@@ -305,6 +305,19 @@ class RuntimeStateMachineTest {
     }
 
     @Test
+    fun `released outside stopping is ignored`() {
+        val state = RuntimeMachineState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING, commandGeneration = 4)
+
+        val decision = reduce(
+            state,
+            RuntimeInput.Event.Released(commandGeneration = 4, success = true),
+            RuntimeReduceContext(),
+        )
+
+        assertEquals(state, decision.state)
+    }
+
+    @Test
     fun `released failure follows shutdown deadline path`() {
         val decision = reduce(
             RuntimeMachineState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING, commandGeneration = 4),

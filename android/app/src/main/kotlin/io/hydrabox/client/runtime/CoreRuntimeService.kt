@@ -427,10 +427,10 @@ class CoreRuntimeService : Service() {
     private var deferredStart: CoreRuntimeProtocol.RuntimeCommand? = null
     private var transportHealthPoll: ScheduledFuture<*>? = null
     private var transportLostSinceMillis = 0L
-    private var pendingRelease: PendingRelease? = null
+    private var pendingRelease: CloseTask? = null
     private var controllerRegistration = 0L
     private lateinit var coreContract: CoreRuntimeProtocol.CoreContract
-    private data class PendingRelease(val commandGeneration: Long, val onComplete: (Boolean) -> Unit)
+    private data class CloseTask(val commandGeneration: Long, val onComplete: (Boolean) -> Unit)
 
     private val binder = object : ICoreRuntimeService.Stub() {
         override fun getContract(): ByteArray = coreContract.toByteArray()
@@ -1343,7 +1343,7 @@ class CoreRuntimeService : Service() {
     private fun shutdownRuntimeServices(reason: String, onComplete: (Boolean) -> Unit) {
         HydraBoxApplication.clearRuntimeIntent()
         val commandGeneration = generation.get()
-        pendingRelease = PendingRelease(commandGeneration, onComplete)
+        pendingRelease = CloseTask(commandGeneration, onComplete)
         mainHandler.post {
             RuntimeSession.requestStopAll(reason)
             // Destroy both possible owners as part of the same transaction. A
@@ -1760,8 +1760,11 @@ class CoreRuntimeService : Service() {
                         (event["runtimeGeneration"] as? Number)?.toLong() ?: 0L,
                     ),
                 )
-            } else {
-                submitInternal(RuntimeInput.Event.Released(generation.get(), true))
+            }
+            "released" -> pendingRelease?.takeIf {
+                state.get() == CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING
+            }?.let { close ->
+                submitInternal(RuntimeInput.Event.Released(close.commandGeneration, true))
             }
             "groups" -> updateOutboundGroups(event)
             "urlTestSessions" -> updateProbeSessions(event)
