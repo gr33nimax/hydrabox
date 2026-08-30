@@ -247,6 +247,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
   DateTime? _lastGroupsDiagnosticsLogAt;
   Set<String> _preloadedProxyFlagCodes = const <String>{};
   AppLifecycleState _appLifecycleState = AppLifecycleState.resumed;
+  Map<String, dynamic>? _lastRuntimeStateSnapshot;
 
   AppConnectionPhase get _connectionPhase => _runtimeConnection.phase;
   bool get _connected => _runtimeConnection.connected;
@@ -3231,31 +3232,31 @@ class _HydraBoxClientState extends State<HydraBoxClient>
 
   Future<void> _toggleConnection({String source = 'unknown'}) async {
     _haptic();
-    if (_connectionPhase == AppConnectionPhase.stopping) {
-      _runtimeIntent.queueStartAfterStop();
-      AppLogStore.info(
-        'runtime',
-        'connection start queued while stopping source=$source',
-      );
-      return;
+    switch (runtimeToggleAction(
+      _lastRuntimeStateSnapshot,
+      localPhase: _connectionPhase,
+    )) {
+      case RuntimeToggleAction.queueStartAfterStop:
+        _runtimeIntent.queueStartAfterStop();
+        AppLogStore.info(
+          'runtime',
+          'connection start queued while stopping source=$source',
+        );
+        return;
+      case RuntimeToggleAction.stop:
+        await _stopRuntime(reason: 'toggle_connection');
+        return;
+      case RuntimeToggleAction.start:
+        await _startConnection(source: source);
     }
-    if (_runtimeActiveOrRequested) {
-      await _stopRuntime(reason: 'toggle_connection');
-      return;
-    }
-
-    await _startConnection(source: source);
   }
 
   bool get _runtimeActiveOrRequested =>
-      _connected ||
-      _runtimeDesiredByUser ||
-      _connectionPhase == AppConnectionPhase.preparing ||
-      _connectionPhase == AppConnectionPhase.configuring ||
-      _connectionPhase == AppConnectionPhase.starting ||
-      _connectionPhase == AppConnectionPhase.stopping ||
-      _connectionPhase == AppConnectionPhase.recovering ||
-      _connectionPhase == AppConnectionPhase.reconfiguring;
+      runtimeToggleAction(
+        _lastRuntimeStateSnapshot,
+        localPhase: _connectionPhase,
+      ) !=
+      RuntimeToggleAction.start;
 
   Future<bool> _stopRuntime({
     required String reason,
@@ -5819,6 +5820,7 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     var shouldSyncQuickSettingsTile = false;
     var shouldCancelLatency = false;
     setState(() {
+      _lastRuntimeStateSnapshot = event.raw;
       _runtimeIntent.applySnapshot(event.raw);
       if (running) {
         _lastLocationLookupSignature = '';

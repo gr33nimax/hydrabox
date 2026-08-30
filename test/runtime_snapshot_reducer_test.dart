@@ -61,4 +61,42 @@ void main() {
     expect(controller.phase, AppConnectionPhase.idle);
     expect(controller.connected, isFalse);
   });
+
+  test('running snapshot stops even while the UI phase is idle', () {
+    expect(
+      runtimeToggleAction(<String, dynamic>{
+        'state': 'RUNTIME_STATE_RUNNING',
+      }, localPhase: AppConnectionPhase.idle),
+      RuntimeToggleAction.stop,
+    );
+  });
+
+  test('stopped snapshot starts even while the UI phase is connected', () {
+    expect(
+      runtimeToggleAction(<String, dynamic>{
+        'state': 'RUNTIME_STATE_STOPPED',
+      }, localPhase: AppConnectionPhase.connected),
+      RuntimeToggleAction.start,
+    );
+  });
+
+  test('missing snapshot starts unless a local command is being prepared', () {
+    expect(
+      runtimeToggleAction(null, localPhase: AppConnectionPhase.idle),
+      RuntimeToggleAction.start,
+    );
+    expect(
+      runtimeToggleAction(null, localPhase: AppConnectionPhase.preparing),
+      RuntimeToggleAction.stop,
+    );
+  });
+
+  test('stopping snapshot queues the existing start-after-stop path', () {
+    expect(
+      runtimeToggleAction(<String, dynamic>{
+        'state': 'RUNTIME_STATE_STOPPING',
+      }, localPhase: AppConnectionPhase.idle),
+      RuntimeToggleAction.queueStartAfterStop,
+    );
+  });
 }
