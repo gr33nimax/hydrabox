@@ -4988,6 +4988,29 @@ CONSEQUENCE: `HB-RW-028` выполняется по P1, не отменяетс
 
 INSTRUMENTATION CLEANED: n/a; `exp/e5` удалена, изменений кода и сборки не было.
 
+### HB-EXP-E9 — 2026-08-30 — Codex
+
+CLASS: C (DEVICE RUNTIME). BRANCH SELECTED: **P1**.
+
+EVIDENCE:
+
+- Device: Samsung SM-S931B (`RFCY60344JL`), Android 16; HydraBox `1.0.2`,
+  instrumentation commits `a783f2c`, `15ac1bc`.
+- Выборка сокращена с трёх устройств до одного по решению тимлида.
+- 50 handover-ов Wi-Fi ↔ cellular: regex-срабатываний 0; health с
+  `domain=NETWORK` 45; покрытых и непокрытых regex-срабатываний 0 / 0.
+- 10 прогонов без сети для пакета (`cmd connectivity set-package-networking-enabled`):
+  regex-срабатываний 0; health с `domain=NETWORK` 10; покрытых и непокрытых
+  regex-срабатываний 0 / 0. Каждый прогон удерживал запрет 20 s.
+- После handover-серии runtime оказался в FAILED с `runtime.transport.unhealthy`
+  по пути failed start, а не с `runtime.recovery.exhausted` по R9.
+
+CONSEQUENCE: P1 — `HB-RW-026` удаляет log-scraping целиком. В обоих сценариях
+regex не сработал; непокрытых случаев нет.
+
+INSTRUMENTATION CLEANED: yes. Фактический reassert возвращён через replay текущего
+default interface всем зарегистрированным listener'ам. Raw-логи не коммитились.
+
 ### HB-EXP-E11 — 2026-08-28 — Codex
 
 CLASS: C (DEVICE RUNTIME). BRANCH SELECTED: **P1**.
@@ -5013,7 +5036,7 @@ INSTRUMENTATION CLEANED: n/a (permanent instrumentation).
 | HB-EXP-E5 | C | **RESOLVED — P1** | HB-RW-028 |
 | HB-EXP-E7 | C | **ожидается** | HB-RW-025 |
 | HB-EXP-E8 | C | **ожидается** | post-gate решение о heartbeat |
-| HB-EXP-E9 | C | **ожидается** | HB-RW-026 |
+| HB-EXP-E9 | C | **RESOLVED — P1** | HB-RW-026 |
 | HB-EXP-E11 | C | **RESOLVED — P1** | HB-RW-005 |
 
 Класс A (E1, E2A, E4, E6, E10, E12) закрыт — см. §8.
