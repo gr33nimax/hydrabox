@@ -116,6 +116,21 @@ internal fun rejectsNetworkChange(
 ): Boolean = decision.commandDecision == RuntimeCommandDecision.Reject ||
     (!replay && networkGeneration <= appliedNetworkGeneration)
 
+internal fun failedCommandResult(
+    commandId: String,
+    finalState: CoreRuntimeProtocol.RuntimeState,
+    generation: Long,
+    error: CoreRuntimeProtocol.CoreError,
+): CoreRuntimeProtocol.CommandResult = CoreRuntimeProtocol.CommandResult.newBuilder()
+    .setSchemaVersion(2)
+    .setCommandId(commandId)
+    .setOutcome(CoreRuntimeProtocol.CommandOutcome.COMMAND_OUTCOME_FAILED)
+    .setFinalState(finalState)
+    .setGeneration(generation)
+    .setCompletedAtMillis(System.currentTimeMillis())
+    .setError(error)
+    .build()
+
 /** Additive, side-effect-free runtime transition model; production wiring follows separately. */
 internal sealed interface RuntimeInput {
     sealed interface Command : RuntimeInput {
@@ -794,7 +809,7 @@ class CoreRuntimeService : Service() {
 
     private fun executeReload(command: CoreRuntimeProtocol.RuntimeCommand) {
         if (state.get() != CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING) {
-            commandFailed(command.commandId, "runtime.reload.not_running", "reload", "HydraCore is not running.", false)
+            failCommand(command.commandId, "runtime.reload.not_running", "reload", "HydraCore is not running.", false)
             return
         }
         reload(command)
@@ -824,7 +839,8 @@ class CoreRuntimeService : Service() {
             } else {
                 deferredStart?.also {
                     deferredStart = null
-                    commandFailed(
+                    // §2.2: STOPPING + RELEASE_FAILED transitions to FAILED.
+                    failRuntimeWithCommand(
                         it.commandId,
                         "runtime.stop.deadline",
                         "runtime_stop",
@@ -880,7 +896,7 @@ class CoreRuntimeService : Service() {
                 input.replay,
             )
         ) {
-            commandFailed(
+            failCommand(
                 commandId,
                 "runtime.network.rejected",
                 "network_changed",
@@ -923,7 +939,7 @@ class CoreRuntimeService : Service() {
     private fun cancelRuntimeChallenge(command: CoreRuntimeProtocol.RuntimeCommand) {
         val challengeId = command.cancelRuntimeChallenge.challengeId
         if (challengeId.isBlank() || !Libbox.hydraCoreCancelRuntimeChallenge(challengeId)) {
-            commandFailed(
+            failCommand(
                 command.commandId,
                 "runtime.challenge.missing",
                 "challenge_cancel",
@@ -1150,7 +1166,7 @@ class CoreRuntimeService : Service() {
             config.isEmpty() || config.size > MAX_CONFIG_BYTES || expectedDigest.size != SHA256_BYTES ||
             !MessageDigest.isEqual(MessageDigest.getInstance("SHA-256").digest(config), expectedDigest)
         ) {
-            commandFailed(
+            failCommand(
                 command.commandId,
                 "runtime.start.invalid_plan",
                 "config_validation",
@@ -1175,7 +1191,8 @@ class CoreRuntimeService : Service() {
         mode.set(request.mode)
         val writeError = runCatching { writeConfigAtomically(config) }.exceptionOrNull()
         if (writeError != null) {
-            commandFailed(
+            activeCommand = null
+            failCommand(
                 command.commandId,
                 "runtime.start.config_write",
                 "config_write",
@@ -1391,7 +1408,8 @@ class CoreRuntimeService : Service() {
         if (!input.success &&
             activeCommand?.kind == CoreRuntimeProtocol.CommandKind.COMMAND_KIND_STOP
         ) {
-            commandFailed(
+            // §2.2: STOPPING + RELEASE_FAILED transitions to FAILED.
+            failRuntimeWithCommand(
                 activeCommand?.commandIds?.firstOrNull().orEmpty(),
                 checkNotNull(decision.errorCode),
                 "runtime_stop",
@@ -1488,7 +1506,8 @@ class CoreRuntimeService : Service() {
                 resetStoppedRuntimeState()
                 commandSucceeded(command.commandId, CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPED)
             } else {
-                commandFailed(
+                // §2.2: STOPPING + RELEASE_FAILED transitions to FAILED.
+                failRuntimeWithCommand(
                     command.commandId,
                     "runtime.stop.deadline",
                     "runtime_stop",
@@ -1501,7 +1520,7 @@ class CoreRuntimeService : Service() {
 
     private fun reload(command: CoreRuntimeProtocol.RuntimeCommand) {
         if (!SingboxController.running) {
-            commandFailed(command.commandId, "runtime.reload.stopped", "reload", "HydraCore is not running.", false)
+            failCommand(command.commandId, "runtime.reload.stopped", "reload", "HydraCore is not running.", false)
             return
         }
         SingboxController.reloadService { result ->
@@ -1509,7 +1528,7 @@ class CoreRuntimeService : Service() {
                 generation.incrementAndGet()
                 commandSucceeded(command.commandId, CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RUNNING)
             }.onFailure {
-                commandFailed(command.commandId, "runtime.reload.failed", "reload", "HydraCore could not reload the plan.", true)
+                failCommand(command.commandId, "runtime.reload.failed", "reload", "HydraCore could not reload the plan.", true)
             }
         }
     }
@@ -1786,7 +1805,7 @@ class CoreRuntimeService : Service() {
 
     private fun recover(command: CoreRuntimeProtocol.RuntimeCommand) {
         if (!SingboxController.running) {
-            commandFailed(command.commandId, "runtime.recovery.stopped", "recovery", "HydraCore is not running.", false)
+            failCommand(command.commandId, "runtime.recovery.stopped", "recovery", "HydraCore is not running.", false)
             return
         }
         updateState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_RECOVERING)
@@ -2280,7 +2299,7 @@ class CoreRuntimeService : Service() {
         emit(snapshotEvent())
     }
 
-    private fun commandFailed(
+    private fun failRuntimeWithCommand(
         commandId: String,
         code: String,
         stage: String,
@@ -2288,7 +2307,7 @@ class CoreRuntimeService : Service() {
         retryable: Boolean,
     ) {
         if (!isOnCommandThread()) {
-            commandExecutor.execute { commandFailed(commandId, code, stage, safeMessage, retryable) }
+            commandExecutor.execute { failRuntimeWithCommand(commandId, code, stage, safeMessage, retryable) }
             return
         }
         val commandIds = activeCommand
@@ -2311,15 +2330,7 @@ class CoreRuntimeService : Service() {
     ) {
         val error = coreError(code, stage, safeMessage, retryable, commandId)
         synchronized(snapshotLock) { lastError = error }
-        val result = CoreRuntimeProtocol.CommandResult.newBuilder()
-            .setSchemaVersion(SCHEMA_VERSION)
-            .setCommandId(commandId)
-            .setOutcome(CoreRuntimeProtocol.CommandOutcome.COMMAND_OUTCOME_FAILED)
-            .setFinalState(state.get())
-            .setGeneration(generation.get())
-            .setCompletedAtMillis(System.currentTimeMillis())
-            .setError(error)
-            .build()
+        val result = failedCommandResult(commandId, state.get(), generation.get(), error)
         emit(eventBuilder().setCommandResult(result).build())
         emit(snapshotEvent())
     }
