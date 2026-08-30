@@ -2,7 +2,9 @@ package io.hydrabox.client.runtime
 
 import io.hydrabox.client.runtime.proto.CoreRuntimeProtocol
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RuntimeStateMachineTest {
@@ -369,6 +371,58 @@ class RuntimeStateMachineTest {
         )
 
         assertEquals(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPED, decision.state.value)
+    }
+
+    @Test
+    fun `release completes the pending stop after an unrelated generation increase`() {
+        var result: Boolean? = null
+        val pending = PendingRelease(commandGeneration = 4) { result = it }
+        val input = RuntimeInput.Event.Released(commandGeneration = 4, success = true)
+        val decision = releasedDecision(
+            RuntimeMachineState(
+                CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING,
+                commandGeneration = 5,
+            ),
+            input,
+            pending,
+        )
+
+        assertEquals(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPED, decision?.state?.value)
+        pending.onComplete(input.success)
+        assertTrue(result == true)
+    }
+
+    @Test
+    fun `mismatched release rejects the pending stop with a result`() {
+        var result: Boolean? = null
+        val pending = PendingRelease(commandGeneration = 4) { result = it }
+
+        val decision = releasedDecision(
+            RuntimeMachineState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING, commandGeneration = 5),
+            RuntimeInput.Event.Released(commandGeneration = 5, success = true),
+            pending,
+        )
+
+        assertNull(decision)
+        pending.onComplete(false)
+        assertFalse(result == true)
+    }
+
+    @Test
+    fun `duplicate release produces one pending stop result`() {
+        var results = 0
+        var pending: PendingRelease? = PendingRelease(commandGeneration = 4) { results++ }
+        val input = RuntimeInput.Event.Released(commandGeneration = 4, success = true)
+        val state = RuntimeMachineState(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING, 4)
+
+        val first = pending?.let { releasedDecision(state, input, it) }
+        pending?.onComplete(input.success)
+        pending = null
+        val duplicate = pending?.let { releasedDecision(first?.state ?: state, input, it) }
+
+        assertEquals(CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPED, first?.state?.value)
+        assertNull(duplicate)
+        assertEquals(1, results)
     }
 
     @Test

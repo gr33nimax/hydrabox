@@ -177,6 +177,7 @@ internal data class RuntimeMachineState(
 internal data class RuntimeReduceContext(
     val startDeadlineMillis: Long = START_DEADLINE_MILLIS,
     val challengeDeadlineMillis: Long = CHALLENGE_DEADLINE_MILLIS,
+    val releasedCommandGeneration: Long? = null,
 )
 
 internal data class Decision(
@@ -190,6 +191,11 @@ internal data class Decision(
 internal data class PendingSelection(
     val outboundId: String,
     val commandGeneration: Long,
+)
+
+internal data class PendingRelease(
+    val commandGeneration: Long,
+    val onComplete: (Boolean) -> Unit,
 )
 
 internal fun pendingSelectionsAfterAcceptedSelection(
@@ -208,6 +214,20 @@ internal fun pendingSelectionsAfterGroups(
 ): Map<String, PendingSelection> = pendingSelections.filterValues { pending ->
     pending.commandGeneration == commandGeneration
 }.filter { (groupId, pending) -> selectedOutbounds[groupId] != pending.outboundId }
+
+internal fun releasedDecision(
+    state: RuntimeMachineState,
+    input: RuntimeInput.Event.Released,
+    pendingRelease: PendingRelease,
+): Decision? {
+    if (pendingRelease.commandGeneration != input.commandGeneration) return null
+    val decision = reduce(
+        state,
+        input,
+        RuntimeReduceContext(releasedCommandGeneration = pendingRelease.commandGeneration),
+    )
+    return decision.takeIf { it.state.value != state.value }
+}
 
 internal fun reduce(
     state: RuntimeMachineState,
@@ -346,7 +366,7 @@ internal fun reduce(
     }
     is RuntimeInput.Event.Released -> if (
         state.value == CoreRuntimeProtocol.RuntimeState.RUNTIME_STATE_STOPPING &&
-        input.commandGeneration == state.commandGeneration
+        input.commandGeneration == (ctx.releasedCommandGeneration ?: state.commandGeneration)
     ) {
         Decision(
             state.copy(
@@ -478,10 +498,9 @@ class CoreRuntimeService : Service() {
     private var deferredStart: CoreRuntimeProtocol.RuntimeCommand? = null
     private var transportHealthPoll: ScheduledFuture<*>? = null
     private var transportLostSinceMillis = 0L
-    private var pendingRelease: CloseTask? = null
+    private var pendingRelease: PendingRelease? = null
     private var controllerRegistration = 0L
     private lateinit var coreContract: CoreRuntimeProtocol.CoreContract
-    private data class CloseTask(val commandGeneration: Long, val onComplete: (Boolean) -> Unit)
 
     private val binder = object : ICoreRuntimeService.Stub() {
         override fun getContract(): ByteArray = coreContract.toByteArray()
@@ -1354,12 +1373,14 @@ class CoreRuntimeService : Service() {
     }
 
     private fun handleReleased(input: RuntimeInput.Event.Released) {
-        val current = RuntimeMachineState(state.get(), generation.get(), activeRuntimeGeneration)
-        val decision = reduce(current, input, RuntimeReduceContext())
-        if (decision.state == current) return
         val pending = pendingRelease ?: return
-        if (pending.commandGeneration != input.commandGeneration) return
         pendingRelease = null
+        val current = RuntimeMachineState(state.get(), generation.get(), activeRuntimeGeneration)
+        val decision = releasedDecision(current, input, pending)
+        if (decision == null) {
+            pending.onComplete(false)
+            return
+        }
         updateState(decision.state.value)
         HydraBoxDiagnostics.event(
             "STOP",
@@ -1414,7 +1435,7 @@ class CoreRuntimeService : Service() {
     private fun shutdownRuntimeServices(reason: String, onComplete: (Boolean) -> Unit) {
         HydraBoxApplication.clearRuntimeIntent()
         val commandGeneration = generation.get()
-        pendingRelease = CloseTask(commandGeneration, onComplete)
+        pendingRelease = PendingRelease(commandGeneration, onComplete)
         if (canReleaseImmediately(activeRuntimeGeneration, RuntimeSession.hasActiveServices())) {
             submitInternal(RuntimeInput.Event.Released(commandGeneration, true))
             return
