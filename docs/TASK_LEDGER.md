@@ -66,3 +66,4 @@
 | HB-EXP-E3 | hydrabox | 73c5032 | DONE (P1) |
 | HB-EXP-E9 | hydrabox | a783f2c, 15ac1bc | DONE (P1) |
 | FIRST-START-IFACE-FIX | hydrabox | 73e3ef0, f99a751 | DONE — 5/5 холодных старта до RUNNING; поправка к NEGATIVE ASSERTIONS HB-RW-017: прямой вызов updateDefaultInterface разрешён только в пути replay при регистрации listener'а, решение тимлида. |
+| HB-EXP-E7 | hydrabox | 9bfc6e5 | DONE (P2) |

@@ -5027,6 +5027,37 @@ CONSEQUENCE: P95 is materially below 3000 ms, so `HB-RW-005` takes P1: `START_DE
 
 INSTRUMENTATION CLEANED: n/a (permanent instrumentation).
 
+### HB-EXP-E7 — 2026-08-30 — Codex
+
+CLASS: C (DEVICE RUNTIME). BRANCH SELECTED: **P2**.
+
+EVIDENCE:
+
+- Device: Samsung SM-S931B (`RFCY60344JL`), Android 16 (API 36); HydraBox `1.0.2`
+  (versionCode 2105). Выборка сокращена с трёх требуемых устройств до одного.
+  Временная сборка `9bfc6e5` заменяла тело `RuntimeSession.requestRuntimeRecovery`
+  событием `EXP7 stage=suppressed`; прочее поведение не менялось.
+- M09, VLESS, Wi-Fi → обе сети выключены не менее 60 s → cellular: **0/3**
+  восстановлений трафика в 30-секундном окне без открытия HydraBox. Во всех трёх
+  возвратах cellular был `NETWORK trigger=callback branch=changed`; фоновая проверка
+  трафика завершилась ошибкой.
+- M04, VLESS, Home + экран выключен 10 min: **0/3** успешных фоновых проверок до
+  открытия HydraBox. Во всех повторах wake-сигнал дошёл как
+  `EXP7 stage=suppressed source=screen_on`; успешного трафика не появилось.
+- doze, VLESS, `dumpsys deviceidle force-idle` → `unforce`: **0/3**
+  восстановлений трафика. Во всех трёх выходах был
+  `EXP7 stage=suppressed source=device_idle_exit`; в первом также наблюдался
+  `NETWORK trigger=heartbeat`; последующая фоновая загрузка завершалась ошибкой.
+
+CONSEQUENCE: P2 окончательная уже на одном устройстве: хотя бы один (фактически все
+девять) прогон без восстановления доказывает, что пауза libbox не снимается надёжно
+без `server.wake()`. Для `HB-RW-025` сохраняется только триггер `device_idle_exit` и
+одно действие `server.wake()`; вызовы monitor start/reassert из него удаляются.
+Триггеры `SCREEN_ON`, `USER_PRESENT`, `task_removed` и `existing_runtime` удаляются.
+
+INSTRUMENTATION CLEANED: yes; ветка `exp/e7` удалена локально и на origin; raw logcat
+не коммитился.
+
 ## 8.2 Ожидающие записи
 
 | EXP | Класс | Статус записи | Разблокирует |
@@ -5034,7 +5065,7 @@ INSTRUMENTATION CLEANED: n/a (permanent instrumentation).
 | HB-EXP-E2B | C | **RESOLVED — P2** | HB-RW-009, HB-RW-010 |
 | HB-EXP-E3 | C | **RESOLVED — P1** | HB-RW-022 |
 | HB-EXP-E5 | C | **RESOLVED — P1** | HB-RW-028 |
-| HB-EXP-E7 | C | **ожидается** | HB-RW-025 |
+| HB-EXP-E7 | C | **RESOLVED — P2** | HB-RW-025 |
 | HB-EXP-E8 | C | **ожидается** | post-gate решение о heartbeat |
 | HB-EXP-E9 | C | **RESOLVED — P1** | HB-RW-026 |
 | HB-EXP-E11 | C | **RESOLVED — P1** | HB-RW-005 |
