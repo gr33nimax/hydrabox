@@ -475,7 +475,8 @@ object HydraBoxDefaultNetworkMonitor {
     private fun replayTo(listener: InterfaceUpdateListener) {
         val snapshot = synchronized(lock) {
             if (listeners.contains(listener)) currentSnapshot else null
-        } ?: return
+        } ?: resolveReplaySnapshot() ?: return
+        if (!synchronized(lock) { listeners.contains(listener) }) return
         runCatching {
             replayDefaultInterface(
                 listener,
@@ -485,6 +486,19 @@ object HydraBoxDefaultNetworkMonitor {
         }.onFailure { error ->
             HydraBoxDiagnostics.log(TAG, "listener_replay_failed", error)
         }
+    }
+
+    private fun resolveReplaySnapshot(): PhysicalNetworkSnapshot? {
+        val network = resolveBestNetwork() ?: return null
+        val interfaceName = HydraBoxApplication.connectivity.getLinkProperties(network)
+            ?.interfaceName
+            ?.trim()
+            .orEmpty()
+        val interfaceIndex = if (interfaceName.isEmpty()) -1 else resolveInterfaceIndex(interfaceName)
+        return PhysicalNetworkSnapshot(
+            network,
+            NetworkIdentity(network.toString(), interfaceName, interfaceIndex),
+        )
     }
 
     private fun logNetworkSnapshot(
