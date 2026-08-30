@@ -28,8 +28,10 @@ class RuntimeSessionCoordinator {
   Future<bool> stop({
     required bool activeOrRequested,
     required bool allowQueuedRestart,
+    required Duration stopTimeout,
     required void Function() suppressQueuedRestart,
     required void Function() clearQueuedRestartSuppression,
+    required void Function() restoreAfterStopFailure,
     required Future<bool> Function() performStop,
   }) {
     if (!allowQueuedRestart) {
@@ -45,12 +47,20 @@ class RuntimeSessionCoordinator {
     }
 
     late final Future<bool> operation;
-    operation = Future<bool>.sync(performStop).whenComplete(() {
-      if (identical(_stopInFlight, operation)) {
-        _stopInFlight = null;
-        clearQueuedRestartSuppression();
-      }
-    });
+    operation = Future<bool>.sync(performStop)
+        .timeout(
+          stopTimeout,
+          onTimeout: () {
+            restoreAfterStopFailure();
+            return false;
+          },
+        )
+        .whenComplete(() {
+          if (identical(_stopInFlight, operation)) {
+            _stopInFlight = null;
+            clearQueuedRestartSuppression();
+          }
+        });
     _stopInFlight = operation;
     return operation;
   }

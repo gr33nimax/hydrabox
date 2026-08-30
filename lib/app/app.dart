@@ -3264,9 +3264,14 @@ class _HydraBoxClientState extends State<HydraBoxClient>
     return _runtimeSession.stop(
       activeOrRequested: _runtimeActiveOrRequested,
       allowQueuedRestart: allowQueuedRestart,
+      stopTimeout: _runtimeLifecycle.stopTimeout,
       suppressQueuedRestart: _runtimeIntent.suppressQueuedRestart,
       clearQueuedRestartSuppression:
           _runtimeIntent.clearQueuedRestartSuppression,
+      restoreAfterStopFailure: () {
+        _runtimeIntent.restoreAfterStopFailure();
+        _showAppSnackBar(_vpnStopFailedMessage);
+      },
       performStop: () => _performRuntimeStop(reason: reason),
     );
   }

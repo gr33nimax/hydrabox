@@ -19,15 +19,19 @@ void main() {
     final first = coordinator.stop(
       activeOrRequested: true,
       allowQueuedRestart: true,
+      stopTimeout: const Duration(seconds: 1),
       suppressQueuedRestart: () {},
       clearQueuedRestartSuppression: () => suppressionClears++,
+      restoreAfterStopFailure: () {},
       performStop: stop,
     );
     final second = coordinator.stop(
       activeOrRequested: true,
       allowQueuedRestart: true,
+      stopTimeout: const Duration(seconds: 1),
       suppressQueuedRestart: () {},
       clearQueuedRestartSuppression: () => suppressionClears++,
+      restoreAfterStopFailure: () {},
       performStop: stop,
     );
 
@@ -49,8 +53,10 @@ void main() {
       final result = await coordinator.stop(
         activeOrRequested: false,
         allowQueuedRestart: false,
+        stopTimeout: const Duration(seconds: 1),
         suppressQueuedRestart: () => suppressed++,
         clearQueuedRestartSuppression: () => cleared++,
+        restoreAfterStopFailure: () {},
         performStop: () async {
           stopCalls++;
           return true;
@@ -76,6 +82,74 @@ void main() {
 
     expect(decision.clearDisconnectedState, isFalse);
     expect(decision.retryScheduled, isTrue);
+  });
+
+  test(
+    'a second stop gets the first stop deadline instead of hanging',
+    () async {
+      final coordinator = RuntimeSessionCoordinator();
+      final completer = Completer<bool>();
+      var failures = 0;
+
+      final first = coordinator.stop(
+        activeOrRequested: true,
+        allowQueuedRestart: true,
+        stopTimeout: const Duration(milliseconds: 10),
+        suppressQueuedRestart: () {},
+        clearQueuedRestartSuppression: () {},
+        restoreAfterStopFailure: () => failures++,
+        performStop: () => completer.future,
+      );
+      final second = coordinator.stop(
+        activeOrRequested: true,
+        allowQueuedRestart: true,
+        stopTimeout: const Duration(milliseconds: 10),
+        suppressQueuedRestart: () {},
+        clearQueuedRestartSuppression: () {},
+        restoreAfterStopFailure: () => failures++,
+        performStop: () => completer.future,
+      );
+
+      expect(await first, isFalse);
+      expect(await second, isFalse);
+      expect(failures, 1);
+    },
+  );
+
+  test('a stop after its deadline starts a new native operation', () async {
+    final coordinator = RuntimeSessionCoordinator();
+    final first = Completer<bool>();
+    var calls = 0;
+
+    final timedOut = coordinator.stop(
+      activeOrRequested: true,
+      allowQueuedRestart: true,
+      stopTimeout: const Duration(milliseconds: 10),
+      suppressQueuedRestart: () {},
+      clearQueuedRestartSuppression: () {},
+      restoreAfterStopFailure: () {},
+      performStop: () {
+        calls++;
+        return first.future;
+      },
+    );
+    expect(await timedOut, isFalse);
+
+    final next = coordinator.stop(
+      activeOrRequested: true,
+      allowQueuedRestart: true,
+      stopTimeout: const Duration(milliseconds: 10),
+      suppressQueuedRestart: () {},
+      clearQueuedRestartSuppression: () {},
+      restoreAfterStopFailure: () {},
+      performStop: () {
+        calls++;
+        return Future<bool>.value(true);
+      },
+    );
+
+    expect(await next, isTrue);
+    expect(calls, 2);
   });
 
   test('stable disconnect clears runtime presentation state', () {
