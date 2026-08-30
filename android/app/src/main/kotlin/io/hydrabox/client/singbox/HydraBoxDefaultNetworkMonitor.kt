@@ -112,6 +112,16 @@ internal fun decideInterfacePublication(
     else -> InterfacePublication.RETRY_SNAPSHOT
 }
 
+internal fun replayDefaultInterface(
+    listener: InterfaceUpdateListener,
+    interfaceName: String,
+    interfaceIndex: Int,
+): Boolean {
+    if (interfaceName.isBlank() || interfaceName == "tun0" || interfaceIndex < 0) return false
+    listener.updateDefaultInterface(interfaceName, interfaceIndex, false, false)
+    return true
+}
+
 object HydraBoxDefaultNetworkMonitor {
     private const val TAG = "HydraBoxDefaultNetwork"
     private const val NO_CALLBACK_YET = -1L
@@ -463,18 +473,17 @@ object HydraBoxDefaultNetworkMonitor {
     }
 
     private fun replayTo(listener: InterfaceUpdateListener) {
-        notifyExecutor.execute {
-            val snapshot = synchronized(lock) {
-                if (listeners.contains(listener)) currentSnapshot else null
-            } ?: return@execute
-            publishNetworkChanged(
-                listOf(listener),
-                snapshot.network,
+        val snapshot = synchronized(lock) {
+            if (listeners.contains(listener)) currentSnapshot else null
+        } ?: return
+        runCatching {
+            replayDefaultInterface(
+                listener,
                 snapshot.identity.interfaceName,
                 snapshot.identity.interfaceIndex,
-                networkGeneration.get(),
-                replay = true,
             )
+        }.onFailure { error ->
+            HydraBoxDiagnostics.log(TAG, "listener_replay_failed", error)
         }
     }
 

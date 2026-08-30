@@ -1,6 +1,7 @@
 package io.hydrabox.client.singbox
 
 import io.hydrabox.client.runtime.setNetworkGenerationBeforeRebind
+import io.nekohasekai.libbox.InterfaceUpdateListener
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -71,5 +72,31 @@ class EffectiveNetworkTest {
 
         assertFalse(replay.changed)
         assertEquals(7, replay.generation)
+    }
+
+    @Test
+    fun `listener replay publishes a valid snapshot before libbox start`() {
+        val calls = mutableListOf<String>()
+
+        assertTrue(replayDefaultInterface(recordingListener(calls), "wlan0", 7))
+        calls += "libbox_start"
+
+        assertEquals(listOf("interface:wlan0:7", "libbox_start"), calls)
+    }
+
+    @Test
+    fun `listener replay skips an empty identity`() {
+        val calls = mutableListOf<String>()
+
+        assertFalse(replayDefaultInterface(recordingListener(calls), "", -1))
+        assertFalse(replayDefaultInterface(recordingListener(calls), "tun0", 7))
+
+        assertTrue(calls.isEmpty())
+    }
+
+    private fun recordingListener(calls: MutableList<String>) = object : InterfaceUpdateListener {
+        override fun updateDefaultInterface(name: String, index: Int, expensive: Boolean, isVpn: Boolean) {
+            calls += "interface:$name:$index"
+        }
     }
 }
