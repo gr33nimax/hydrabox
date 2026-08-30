@@ -5802,6 +5802,11 @@ class _HydraBoxClientState extends State<HydraBoxClient>
       event.raw,
       currentPhase: _connectionPhase,
     );
+    debugPrint(
+      'HB1 DART_STATE state=${event.raw['state'] ?? 'absent'} '
+      'phase=${snapshotPhase.name} running=$running '
+      'active=$_runtimeActiveOrRequested',
+    );
     final decision = _runtimeSession.decideStateEvent(
       running: running,
       hasError: hasError,
