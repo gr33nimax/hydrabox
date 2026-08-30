@@ -565,6 +565,7 @@ object SingboxController {
         val last = lastNoInterfaceReassertUptimeMs.get()
         if (now - last < NO_INTERFACE_REASSERT_THROTTLE_MS) return
         if (!lastNoInterfaceReassertUptimeMs.compareAndSet(last, now)) return
+        HydraBoxDefaultNetworkMonitor.reassertDefaultInterface()
         val state = HydraBoxDefaultNetworkMonitor.currentInterfaceState("core_$reason")
         val shortMessage = message.take(180)
         log(

@@ -403,6 +403,10 @@ object HydraBoxDefaultNetworkMonitor {
         }
     }
 
+    fun reassertDefaultInterface() {
+        listeners.snapshot().forEach(::replayTo)
+    }
+
     internal fun listenerCount(): Int = synchronized(lock) { listeners.size() }
 
     private fun scheduleSnapshot(trigger: String, immediate: Boolean = false) {
