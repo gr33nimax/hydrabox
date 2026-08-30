@@ -61,10 +61,6 @@
 | HB-RW-032 | hydrabox | 8477d22 | DONE |
 | HB-RW-007-FIX | hydrabox | 71137fe, cca5088 | DONE |
 | HB-RW-017-FIX | hydrabox | bf5cc07 | DONE |
-| FIRST-START-IFACE-FIX | hydrabox | 73e3ef0, f99a751 | DONE — 5/5 холодных старта до RUNNING; поправка к NEGATIVE ASSERTIONS HB-RW-017: прямой вызов updateDefaultInterface разрешён только в пути replay при регистрации listener'а, решение тимлида. |
-| HB-RW-032-FIX-2 | hydrabox | 63c8cfd, d521964 | DONE (приёмка DEVICE-2: A1 10/10, ноль stop.unconfirmed; решение тимлида — не блокировать внешними M06/B5/M20)(DEVICE-2: A1 10/10, M03, M05, B3b, R8/B4 и C1–C6 выполненные части зелёные; ожидаются внешние прогоны B3a/M06 (ручной `VpnService.onRevoke()`), B5 (устройство не завершает UI после swipe) и M20 (tile не добавлен в Quick Settings).) |
-| R19-STOP-RESULT-FIX | hydrabox | d12de90, d0ea74f | DONE — каждый STOP получает CommandResult, дедлайн ожидания стопа в Dart |
-| TOGGLE-FROM-SNAPSHOT-FIX | hydrabox | b6d5d8d, 10149af | DONE — DART_STATE в logcat, тумблер решает по снимку |
-| NETWORK-REJECT-FIX | hydrabox | 43de83b | DONE — отклонённое сетевое обновление не роняет runtime в FAILED |
+| HB-RW-032-FIX-2 | hydrabox | 63c8cfd, d521964 | BLOCKED(DEVICE-2: A1 10/10, M03, M05, B3b, R8/B4 и C1–C6 выполненные части зелёные; ожидаются внешние прогоны B3a/M06 (ручной `VpnService.onRevoke()`), B5 (устройство не завершает UI после swipe) и M20 (tile не добавлен в Quick Settings).) |
 | HB-EXP-E5 | hydrabox | 8d35c65 | DONE (P1) |
 | HB-EXP-E3 | hydrabox | 73c5032 | DONE (P1) |
