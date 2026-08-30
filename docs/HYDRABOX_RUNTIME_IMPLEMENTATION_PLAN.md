@@ -765,7 +765,7 @@ app query -> dns.Router (rules) -> upstream transport (DoH/DoT/UDP)
 | `HB-EXP-E1` | A | **RESOLVED** | P2 | `HB-RW-005` снято, `HB-RW-007` снято |
 | `HB-EXP-E2A` | A | **RESOLVED** | P1 | `HB-RW-009` снято |
 | `HB-EXP-E2B` | C | **RESOLVED** | P2 | `HB-RW-009`, `HB-RW-010` |
-| `HB-EXP-E3` | C | ожидается | — | `HB-RW-022` |
+| `HB-EXP-E3` | C | **RESOLVED** | P1 (решение тимлида) | `HB-RW-022` |
 | `HB-EXP-E4` | A | **RESOLVED** | P1 плюс находка | `HB-RW-018` снято |
 | `HB-EXP-E5` | C | ожидается | — | `HB-RW-028` |
 | `HB-EXP-E6` | A | **RESOLVED** | P2 | `HB-RW-020` снято |
@@ -964,7 +964,7 @@ STOPPING; фактическое освобождение ресурсов де�
 
 ## HB-EXP-E3 — Переживает ли ephemeral probe остановку runtime
 
-**CLASS:** C (DEVICE RUNTIME). **REPOSITORY:** hydrabox. **STATUS:** READY.
+**CLASS:** C (DEVICE RUNTIME). **REPOSITORY:** hydrabox. **STATUS:** RESOLVED — P1 (решение тимлида; прямое наблюдение недостижимо).
 
 **QUESTION.** Может ли ephemeral probe (`Libbox.newStandaloneURLTestSession` через
 `SingboxController.preconnectUrlTest`) продолжать работу после того, как
@@ -3646,7 +3646,7 @@ B — Sticky restart через serializer
 
 ## HB-RW-022 — Матрица режимов probe и точки отмены
 
-- **STATUS:** BLOCKED(`HB-EXP-E3`, `HB-RW-021`)
+- **STATUS:** BLOCKED(`HB-RW-021`)
 - **GOAL:** запретить второй native runtime рядом с работающим VPN и определить все
   точки отмены probe.
 - **INVARIANTS ESTABLISHED:** R15
@@ -3671,10 +3671,9 @@ B — Sticky restart через serializer
      outbound в активном плане (по `outboundGroups` снимка).
   2. Добавить вызовы отмены в обработчики `STOP` и `NETWORK_CHANGED` и при
      установке нового `runtimeGeneration`.
-  3. По ветке `HB-EXP-E3` **P2** — `CloseTask` дополнительно ждёт завершения отмены
-     ephemeral probe внутри `CLOSE_DEADLINE`, а
-     `HydraBoxDefaultNetworkMonitor.require()` при `started == false` немедленно
-     возвращает ошибку вместо ожидания.
+  3. По `HB-EXP-E3` **P1** не добавлять ожидание отмены ephemeral probe в `CloseTask`;
+     при `started == false` `HydraBoxDefaultNetworkMonitor.require()` немедленно
+     возвращает ошибку вместо ожидания как независимую дешёвую страховку.
   4. Слить два метода клиента в один; обновить Dart-фасад.
 - **DELETE:** `preconnectProbe` как отдельный метод клиента;
   `latestPreconnectSessionId` (заменяется общим реестром сессий).
@@ -4437,7 +4436,7 @@ HB-RW-001 (HB1 API)
 | HB-EXP-E1 | hydrabox | — | **DONE (P2)**, см. §8.1 | — |
 | HB-EXP-E2A | hydracore | — | **DONE (P1)**, см. §8.1 | — |
 | HB-EXP-E2B | hydrabox | — | HB-RW-009, HB-RW-010 | E3, E5, E7, E8, E9, E11 |
-| HB-EXP-E3 | hydrabox | — | HB-RW-022 | E2B, E5, E7, E8, E11 |
+| HB-EXP-E3 | hydrabox | — | **DONE (P1)**, см. §8.1 | E2B, E5, E7, E8, E11 |
 | HB-EXP-E4 | hydrabox | — | **DONE (P1)**, см. §8.1 | — |
 | HB-EXP-E5 | hydrabox | — | HB-RW-028 | E2B, E3, E7, E8, E11 |
 | HB-EXP-E6 | hydracore | — | **DONE (P2)**, см. §8.1 | — |
@@ -4644,7 +4643,7 @@ HB-RW-001 (HB1 API)
 | 9 | HB-RW-002 | READY | hydrabox | L | 7 | — | M | R12, R18 | M01 и M07 дают полную цепочку §Q.3 |
 | 10 | HB-EXP-E11 | BLOCKED(HB-RW-002) | hydrabox | L | 9 | — | S | — | P95 `network_wait` в §8 |
 | 11 | HB-EXP-E2B | READY | hydrabox | M | — | — | S | — | пять измерений отмены в §8 |
-| 12 | HB-EXP-E3 | READY | hydrabox | L | — | — | S | — | последовательность probe против `monitor stop` |
+| 12 | HB-EXP-E3 | **RESOLVED (P1)** | hydrabox | L | — | — | S | — | последовательность probe против `monitor stop` |
 | 13 | HB-EXP-E5 | READY | hydrabox | L | — | — | S | — | таблица «транспорт → запросы до READY» |
 | 14 | HB-EXP-E7 | READY | hydrabox | M | — | — | S | — | матрица «устройство × сценарий» |
 | 15 | HB-RW-040 | READY | hydrabox | L | 9 | — | S | R1, R3 | grep `CoreBundleManager` в `CoreRuntimeService` пуст |
@@ -4683,7 +4682,7 @@ HB-RW-001 (HB1 API)
 | 48 | HB-BUNDLE-003 | BLOCKED(HC-RW-005) | hydrabox | L | 43, 44, 46 | — | S | — | `TransportHealthBridge.parse` не бросает |
 | 49 | HB-RW-020 | BLOCKED(HB-BUNDLE-003) | hydrabox | M | 48 | — | M | R10, R18 | M14 даёт FAILED через 60 s без цикла |
 | 50 | HB-RW-021 | BLOCKED(HB-RW-020) | hydrabox | L | 49 | — | M | R15 | grep `startsWith("probe")` пуст |
-| 51 | HB-RW-022 | BLOCKED(E3) | hydrabox | M | 50, 12 | E3 | M | R15 | матрица режимов покрыта тестами |
+| 51 | HB-RW-022 | BLOCKED(HB-RW-021) | hydrabox | M | 50, 12 | E3 | M | R15 | матрица режимов покрыта тестами |
 | 52 | HB-RW-024 | BLOCKED(HB-RW-022) | hydrabox | M | 51 | — | M | R16 | epoch клиента не меняется при foreground |
 | 53 | HB-RW-025 | BLOCKED(E7) | hydrabox | H | 52, 14 | E7 | M | R5, R9, R16 | M04 и M09 на трёх устройствах |
 | 54 | HB-RW-026 | BLOCKED(E9) | hydrabox | M | 53, 47 | E9 | S | R5, R18 | соответствие выбранной ветке |
@@ -4917,6 +4916,51 @@ CONSEQUENCE: a concurrent `closeService()` is unsafe for cancellation. `HB-RW-00
 
 INSTRUMENTATION CLEANED: yes.
 
+### HB-EXP-E3 — 2026-08-30 — Codex
+
+CLASS: C (DEVICE RUNTIME). BRANCH SELECTED: **P1** (решение тимлида по
+недостижимости FAIL-сценария, не по прямому наблюдению).
+
+EVIDENCE:
+
+- Device: Samsung SM-S931B (`RFCY60344JL`), Android 16 (API 36); HydraBox `1.0.2`
+  (versionCode 2105). Временная instrumentation: commit `73c5032` в `exp/e3`, APK из
+  CI run `33300912447`.
+- `VLESS`, runtime остановлен: `before_session_run` `1788079214321`,
+  `monitor_require` `1788079214412`, `after_session_run` и `session_finally`
+  `1788079214422` — **101 ms**; `monitor_stop` отсутствует.
+- `Обход БС` (`vk_parasite`), runtime остановлен: `before_session_run`
+  `1788079691281`, `monitor_require` `1788079691349`/`1396`, `after_session_run`
+  `1788079692157`, `session_finally` `1788079692158` — **877 ms**; probe отменён на
+  START с `reason=network_changed`, до STOP не дожил.
+- `Обход БС` (`vk_parasite`), runtime работает: `before_session_run`
+  `1788080652679`, `monitor_require` `1788080652738`, `after_session_run` и
+  `session_finally` `1788080652747` — **68 ms** (кеш credentials), до STOP не дожил.
+- `E3-blackhole` (VLESS, `203.0.113.1:443`), runtime остановлен:
+  `before_session_run` `1788081076579`, `after_session_run` и `session_finally`
+  `1788081076683` — **104 ms**; `monitor_require` и `monitor_stop` отсутствуют.
+  Позднейший TCP timeout относится к уже запущенному runtime, не к standalone session.
+
+CONSEQUENCE: ephemeral probe ни в одной доступной конфигурации не доживает до
+`monitor stop`; при остановленном runtime standalone-сессия завершается примерно за
+100 ms, а blackhole-вариант не вызывает `monitor.require()`; при работающем runtime
+`vk_parasite` завершается за 68 ms из кеша credentials. Состояние «probe в полёте через
+`monitor stop`» не удалось сконструировать VLESS, blackhole `203.0.113.1`,
+`vk_parasite` при остановленном и при работающем runtime. Поэтому P1 выбран по
+недостижимости FAIL-условия, а не по прямому наблюдению отсутствия обращений к монитору.
+
+Для `HB-RW-022`: отмена ephemeral probe реализуется при STOP и при переходе
+`STOPPED → STARTING`; подшаг ожидания отмены в `CloseTask` не вводится. Как независимая
+дешёвая страховка `HydraBoxDefaultNetworkMonitor.require()` при `started == false`
+возвращает ошибку, а не ждёт. Для `vk_parasite` URL-test методологически неверен:
+он поднимает worker и расходует квоту VK control-plane; post-gate заявка на замер
+доставки магического пакета уже зафиксирована.
+
+ОТКЛОНЕНИЕ: `timeoutMillis=15000` вместо карточных 30000, потому что UI жёстко передаёт
+`LatencyCoordinator.perOutboundTimeoutMillis`; изменение значения вне scope.
+
+INSTRUMENTATION CLEANED: yes.
+
 ### HB-EXP-E11 — 2026-08-28 — Codex
 
 CLASS: C (DEVICE RUNTIME). BRANCH SELECTED: **P1**.
@@ -4938,7 +4982,7 @@ INSTRUMENTATION CLEANED: n/a (permanent instrumentation).
 | EXP | Класс | Статус записи | Разблокирует |
 |---|---|---|---|
 | HB-EXP-E2B | C | **RESOLVED — P2** | HB-RW-009, HB-RW-010 |
-| HB-EXP-E3 | C | **ожидается** | HB-RW-022 |
+| HB-EXP-E3 | C | **RESOLVED — P1** | HB-RW-022 |
 | HB-EXP-E5 | C | **ожидается** | HB-RW-028 |
 | HB-EXP-E7 | C | **ожидается** | HB-RW-025 |
 | HB-EXP-E8 | C | **ожидается** | post-gate решение о heartbeat |

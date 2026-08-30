@@ -62,3 +62,4 @@
 | HB-RW-007-FIX | hydrabox | 71137fe, cca5088 | DONE |
 | HB-RW-017-FIX | hydrabox | bf5cc07 | DONE |
 | HB-RW-032-FIX-2 | hydrabox | 63c8cfd, d521964 | BLOCKED(DEVICE-2: A1 10/10, M03, M05, B3b, R8/B4 и C1–C6 выполненные части зелёные; ожидаются внешние прогоны B3a/M06 (ручной `VpnService.onRevoke()`), B5 (устройство не завершает UI после swipe) и M20 (tile не добавлен в Quick Settings).) |
+| HB-EXP-E3 | hydrabox | 73c5032 | DONE (P1) |
