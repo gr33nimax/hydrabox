@@ -767,7 +767,7 @@ app query -> dns.Router (rules) -> upstream transport (DoH/DoT/UDP)
 | `HB-EXP-E2B` | C | **RESOLVED** | P2 | `HB-RW-009`, `HB-RW-010` |
 | `HB-EXP-E3` | C | **RESOLVED** | P1 (решение тимлида) | `HB-RW-022` |
 | `HB-EXP-E4` | A | **RESOLVED** | P1 плюс находка | `HB-RW-018` снято |
-| `HB-EXP-E5` | C | ожидается | — | `HB-RW-028` |
+| `HB-EXP-E5` | C | **RESOLVED** | P1 (решение тимлида) | `HB-RW-028` |
 | `HB-EXP-E6` | A | **RESOLVED** | P2 | `HB-RW-020` снято |
 | `HB-EXP-E7` | C | ожидается | — | `HB-RW-025` |
 | `HB-EXP-E8` | C | ожидается | — | post-gate решение о heartbeat, задачи нет |
@@ -1053,7 +1053,7 @@ TUN активен, и, следовательно, имеет ли слагае
 
 ---
 
-## HB-EXP-E5 — Попадают ли DNS-запросы в `dns-remote` до READY**CLASS:** C (DEVICE RUNTIME). **REPOSITORY:** hydrabox. **STATUS:** READY.
+## HB-EXP-E5 — Попадают ли DNS-запросы в `dns-remote` до READY**CLASS:** C (DEVICE RUNTIME). **REPOSITORY:** hydrabox. **STATUS:** RESOLVED — P1 (решение тимлида).
 
 **QUESTION.** При холодном старте профиля с `vk_parasite` попадают ли DNS-запросы в
 транспорт `dns-remote` (у которого `detour = <selected proxy>`) до достижения
@@ -3935,7 +3935,7 @@ B — Sticky restart через serializer
 
 ## HB-RW-028 — Запрет `dns-remote` до READY
 
-- **STATUS:** BLOCKED(`HB-EXP-E5`, `HB-RW-027`)
+- **STATUS:** BLOCKED(`HB-RW-027`)
 - **GOAL:** исключить попадание DNS-запросов в неготовый proxy-detour.
 - **INVARIANTS ESTABLISHED:** R17
 - **REPOSITORY:** hydrabox
@@ -4438,7 +4438,7 @@ HB-RW-001 (HB1 API)
 | HB-EXP-E2B | hydrabox | — | HB-RW-009, HB-RW-010 | E3, E5, E7, E8, E9, E11 |
 | HB-EXP-E3 | hydrabox | — | **DONE (P1)**, см. §8.1 | E2B, E5, E7, E8, E11 |
 | HB-EXP-E4 | hydrabox | — | **DONE (P1)**, см. §8.1 | — |
-| HB-EXP-E5 | hydrabox | — | HB-RW-028 | E2B, E3, E7, E8, E11 |
+| HB-EXP-E5 | hydrabox | — | **DONE (P1)**, см. §8.1 | E2B, E3, E7, E8, E11 |
 | HB-EXP-E6 | hydracore | — | **DONE (P2)**, см. §8.1 | — |
 | HB-EXP-E7 | hydrabox | — | HB-RW-025 | E2B, E3, E5, E8, E11 |
 | HB-EXP-E8 | hydrabox | HB-RW-002 | — (post-gate) | всё |
@@ -4644,7 +4644,7 @@ HB-RW-001 (HB1 API)
 | 10 | HB-EXP-E11 | BLOCKED(HB-RW-002) | hydrabox | L | 9 | — | S | — | P95 `network_wait` в §8 |
 | 11 | HB-EXP-E2B | READY | hydrabox | M | — | — | S | — | пять измерений отмены в §8 |
 | 12 | HB-EXP-E3 | **RESOLVED (P1)** | hydrabox | L | — | — | S | — | последовательность probe против `monitor stop` |
-| 13 | HB-EXP-E5 | READY | hydrabox | L | — | — | S | — | таблица «транспорт → запросы до READY» |
+| 13 | HB-EXP-E5 | **RESOLVED (P1)** | hydrabox | L | — | — | S | — | статический маршрут DNS до READY |
 | 14 | HB-EXP-E7 | READY | hydrabox | M | — | — | S | — | матрица «устройство × сценарий» |
 | 15 | HB-RW-040 | READY | hydrabox | L | 9 | — | S | R1, R3 | grep `CoreBundleManager` в `CoreRuntimeService` пуст |
 | 16 | HB-RW-041 | BLOCKED(HB-RW-040) | hydrabox | L | 15 | — | S | R20 | два процесса приложения, verify зелёный |
@@ -4687,7 +4687,7 @@ HB-RW-001 (HB1 API)
 | 53 | HB-RW-025 | BLOCKED(E7) | hydrabox | H | 52, 14 | E7 | M | R5, R9, R16 | M04 и M09 на трёх устройствах |
 | 54 | HB-RW-026 | BLOCKED(E9) | hydrabox | M | 53, 47 | E9 | S | R5, R18 | соответствие выбранной ветке |
 | 55 | HB-RW-027 | BLOCKED(HB-RW-018, HB-RW-026) | hydrabox | M | 40, 54 | — | M | R17, R18 | нет DNS-ответов с устаревшей `ng` |
-| 56 | HB-RW-028 | BLOCKED(E5) | hydrabox | M | 55, 13 | E5 | M | R17 | десять холодных стартов без DNS-ошибок |
+| 56 | HB-RW-028 | BLOCKED(HB-RW-027) | hydrabox | M | 55, 13 | E5 | M | R17 | десять холодных стартов без DNS-ошибок |
 | 57 | HB-RW-029 | BLOCKED(HB-RW-020, HB-RW-011) | hydrabox | M | 49, 30, 56 | — | M | R1, R6 | grep состояния в `SingboxController` пуст |
 | 58 | HB-RW-030 | BLOCKED(HB-RW-029) | hydrabox | L | 57 | — | M | R6 | `GenerationSemanticsTest` зелёный |
 | 59 | HB-RW-031 | BLOCKED(HB-RW-030) | hydrabox | M | 58 | — | L | R2 | grep `toLegacy` пуст |
@@ -4961,6 +4961,33 @@ CONSEQUENCE: ephemeral probe ни в одной доступной конфиг�
 
 INSTRUMENTATION CLEANED: yes.
 
+### HB-EXP-E5 — 2026-08-30 — Codex
+
+CLASS: C (DEVICE RUNTIME). BRANCH SELECTED: **P1** (решение тимлида).
+
+EVIDENCE:
+
+- Device: Samsung SM-S931B (`RFCY60344JL`), Android 16 (API 36); HydraBox `1.0.2`
+  (versionCode 2105), debug APK at `8d35c65` baseline. Уровень native-log временно
+  переключался через UI на Debug и возвращён в Warning; raw logcat не сохранён в Git.
+- Tag DNS-транспорта в native debug-логе отсутствует: строки имеют форму
+  `dns: lookup` / `dns: exchanged`. `ExchangeContext` не несёт tag, а
+  `HydraBoxLocalResolver` является `dns-local`; Android не может распределить эти
+  события между `dns-remote`, `dns-direct` и `dns-local`.
+- Статически `lib/singbox/singbox_config_builder.dart:311` задаёт
+  `dnsFinal = hasProxies ? 'dns-remote' : 'dns-direct'`; `dns-remote` создаётся
+  в строках 325–328 с detour выбранного proxy. Следовательно DNS-запросы до READY,
+  не пойманные более специфичным правилом, направляются в ещё неготовый proxy-detour
+  по построению конфигурации.
+- Эмпирически холодный старт дал ошибки классов `no available network interface` и
+  timeout до READY; доменные имена, адреса и сырые строки не записывались.
+
+CONSEQUENCE: `HB-RW-028` выполняется по P1, не отменяется. Выбор P1 против P1b
+оставлен тимлиду: он зависит от необходимости реального reload при READY и решается
+при реализации `HB-RW-028`.
+
+INSTRUMENTATION CLEANED: n/a; `exp/e5` удалена, изменений кода и сборки не было.
+
 ### HB-EXP-E11 — 2026-08-28 — Codex
 
 CLASS: C (DEVICE RUNTIME). BRANCH SELECTED: **P1**.
@@ -4983,7 +5010,7 @@ INSTRUMENTATION CLEANED: n/a (permanent instrumentation).
 |---|---|---|---|
 | HB-EXP-E2B | C | **RESOLVED — P2** | HB-RW-009, HB-RW-010 |
 | HB-EXP-E3 | C | **RESOLVED — P1** | HB-RW-022 |
-| HB-EXP-E5 | C | **ожидается** | HB-RW-028 |
+| HB-EXP-E5 | C | **RESOLVED — P1** | HB-RW-028 |
 | HB-EXP-E7 | C | **ожидается** | HB-RW-025 |
 | HB-EXP-E8 | C | **ожидается** | post-gate решение о heartbeat |
 | HB-EXP-E9 | C | **ожидается** | HB-RW-026 |
