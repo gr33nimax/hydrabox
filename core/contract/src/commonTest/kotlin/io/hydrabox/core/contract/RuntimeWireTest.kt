@@ -1,0 +1,26 @@
+package io.hydrabox.core.contract
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+
+class RuntimeWireTest {
+    @Test
+    fun commandsRoundTripThroughTheSharedWireSchema() {
+        val commands = listOf(
+            RuntimeCommand.Start(RuntimeMode.VPN), RuntimeCommand.Stop, RuntimeCommand.Reload,
+            RuntimeCommand.SelectOutbound("main", "direct"), RuntimeCommand.NetworkChanged(NetworkGeneration(7)),
+        )
+        commands.forEach { assertEquals(it, RuntimeWire.decodeCommand(RuntimeWire.encode(it))) }
+    }
+
+    @Test
+    fun typedSnapshotRoundTripsThroughTheSharedWireSchema() {
+        val failure = RuntimeFailure(FailureDomain.NETWORK, HydraCoreErrorCode.NETWORK_LOST, retryable = true)
+        val snapshot = RuntimeSnapshot(
+            ProcessEpoch("epoch-1"), CommandGeneration(2), RuntimeGeneration(3), NetworkGeneration(4), EventSequence(5),
+            RuntimeState.RUNNING, RuntimeMode.VPN, listOf(OutboundSelection("main", "proxy")),
+            TransportHealth(TransportHealthState.HEALTHY, 1, true, RuntimeGeneration(3), NetworkGeneration(4), failure), failure,
+        )
+        assertEquals(snapshot, RuntimeWire.decodeSnapshot(RuntimeWire.encode(snapshot)))
+    }
+}
