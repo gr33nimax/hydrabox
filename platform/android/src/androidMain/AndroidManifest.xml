@@ -4,7 +4,12 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application android:label="HydraBox">
-        <activity android:name=".RuntimeControlActivity" android:exported="false" />
+        <activity android:name=".RuntimeControlActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
         <service
             android:name=".HydraVpnService"
             android:process=":core"

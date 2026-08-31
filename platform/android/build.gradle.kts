@@ -1,6 +1,10 @@
-import com.android.build.api.dsl.LibraryExtension
+import com.android.build.api.dsl.ApplicationExtension
+import java.security.MessageDigest
 
-apply(from = rootProject.file("config/kmp-module.gradle"))
+plugins {
+    id("com.android.application")
+    kotlin("android")
+}
 
 val libboxAar = file("libs/libbox.aar")
 val provenance = file("libs/libbox.provenance.json")
@@ -15,19 +19,28 @@ val libboxSha256 = Regex("""\"sha256\"\s*:\s*\"([0-9a-f]{64})\"""")
     .find(provenanceText)?.groupValues?.get(1)
     ?: error("libbox provenance has no AAR digest")
 
-extensions.configure<LibraryExtension> {
+extensions.configure<ApplicationExtension> {
+    namespace = "io.hydrabox.platform.android"
+    compileSdk = 36
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures { buildConfig = true }
-    defaultConfig { buildConfigField("String", "HYDRACORE_VERSION", "\"$hydraCoreVersion\"") }
+    defaultConfig {
+        applicationId = "io.hydrabox.platform.android"
+        minSdk = 26
+        targetSdk = 36
+        buildConfigField("String", "HYDRACORE_VERSION", "\"$hydraCoreVersion\"")
+    }
+    sourceSets.getByName("main").manifest.srcFile("src/androidMain/AndroidManifest.xml")
+    sourceSets.getByName("main").java.srcDir("src/androidMain/kotlin")
 }
 
 dependencies {
-    add("commonMainImplementation", project(":core:contract"))
-    add("commonMainImplementation", project(":core:runtime"))
-    add("androidMainImplementation", files(libboxAar))
+    implementation(project(":core:contract"))
+    implementation(project(":core:runtime"))
+    implementation(files(libboxAar))
 }
 
 tasks.register("verifyLibboxProvenance") {
@@ -41,7 +54,7 @@ tasks.register("verifyLibboxProvenance") {
             commandLine("git", "rev-parse", "HEAD")
         }.standardOutput.asText.get().trim()
         check(gitlink == hydraCoreCommit) { "HydraCore gitlink does not match libbox provenance" }
-        val actual = java.security.MessageDigest.getInstance("SHA-256")
+        val actual = MessageDigest.getInstance("SHA-256")
             .digest(libboxAar.readBytes()).joinToString("") { "%02x".format(it.toInt() and 0xff) }
         check(actual == libboxSha256) { "libbox AAR does not match published provenance" }
     }
