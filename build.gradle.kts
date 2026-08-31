@@ -1,4 +1,5 @@
 import org.gradle.api.artifacts.ProjectDependency
+import org.gradle.api.artifacts.ExternalModuleDependency
 
 plugins {
     kotlin("multiplatform") version "2.2.20" apply false
@@ -17,19 +18,39 @@ val forbiddenCommonMainTokens = listOf(
     "LOST_GRACE",
 )
 
+val forbiddenCommonMainJvmApi = Regex("""\b(?:java|javax|kotlin\.jvm)\.""")
+val appleCompatibleCommonMainDependencies = setOf("org.jetbrains.kotlin:kotlin-stdlib")
+
 tasks.register("verifyCommonMainBoundaries") {
     group = "verification"
-    description = "Rejects platform-specific runtime APIs in commonMain."
+    description = "Rejects platform APIs and unverified external dependencies in commonMain."
     doLast {
-        val violations = subprojects.flatMap { project ->
+        val sourceViolations = subprojects.flatMap { project ->
             project.fileTree("src/commonMain") {
                 include("**/*.kt")
             }.files.flatMap { file ->
-                forbiddenCommonMainTokens.filter { token -> file.readText().contains(token, ignoreCase = true) }
+                val text = file.readText()
+                forbiddenCommonMainTokens.filter { token -> text.contains(token, ignoreCase = true) }
                     .map { token -> "${file.relativeTo(rootDir)} contains forbidden token '$token'" }
+                    .plus(if (forbiddenCommonMainJvmApi.containsMatchIn(text)) {
+                        listOf("${file.relativeTo(rootDir)} uses a JVM-only API in commonMain")
+                    } else {
+                        emptyList()
+                    })
             }
         }
-        check(violations.isEmpty()) { violations.joinToString("\n") }
+        val dependencyViolations = subprojects.flatMap { project ->
+            project.configurations.matching { it.name.startsWith("commonMain") }.flatMap { configuration ->
+                configuration.dependencies.filterIsInstance<ExternalModuleDependency>()
+                    .filter { "${it.group}:${it.name}" !in appleCompatibleCommonMainDependencies }
+                    .map { dependency ->
+                        "$project commonMain dependency ${dependency.group}:${dependency.name} is not verified for Apple targets"
+                    }
+            }
+        }
+        check((sourceViolations + dependencyViolations).isEmpty()) {
+            (sourceViolations + dependencyViolations).joinToString("\n")
+        }
     }
 }
 
@@ -39,17 +60,6 @@ tasks.register("ciCheck") {
     dependsOn("verifyCommonMainBoundaries")
     dependsOn(allprojects.filter { it != rootProject && it.childProjects.isEmpty() }
         .map { "${it.path}:check" })
-}
-
-tasks.register("ciIos") {
-    group = "verification"
-    description = "Compiles both iOS targets for CI."
-    dependsOn(allprojects.filter { it != rootProject && it.childProjects.isEmpty() }.flatMap { project ->
-        listOf(
-            "${project.path}:compileKotlinIosArm64",
-            "${project.path}:compileKotlinIosSimulatorArm64",
-        )
-    })
 }
 
 subprojects {

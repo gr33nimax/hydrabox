@@ -26,5 +26,4 @@ include(
     ":ui:app",
     ":platform:android",
     ":platform:desktop",
-    ":platform:ios",
 )

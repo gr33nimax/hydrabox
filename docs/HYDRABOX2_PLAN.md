@@ -550,6 +550,15 @@ EVIDENCE:
 
 CONSEQUENCE: платформа и common-код изолированы проверками сборки с первого коммита.
 
+### H2-001A — 2026-08-31 — Codex
+
+EVIDENCE:
+
+- `:platform:ios` и iOS-таргеты удалены из Gradle и CI;
+- `verifyCommonMainBoundaries` отклоняет `java.*`, `javax.*`, `kotlin.jvm.*` и неразрешённые external dependencies в `commonMain`; разрешён только Apple-совместимый Kotlin stdlib.
+
+CONSEQUENCE: initial release ограничен Android и Windows, а JVM-only общий код и неподтверждённые общие зависимости останавливают host-side проверку.
+
 ## 10. Реестр решений
 
 Решения, принятые в 1.x и продолжающие действовать в 2.0. Переспрашивать их не
