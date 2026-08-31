@@ -19,11 +19,11 @@ object RuntimeWire {
 
     fun decodeCommand(bytes: ByteArray): RuntimeCommand {
         val fields = unpack(bytes.decodeToString(), "command")
-        return when (fields.removeFirst()) {
+        return when (fields.removeAt(0)) {
             "start" -> RuntimeCommand.Start(RuntimeMode.valueOf(fields.single()))
             "stop" -> RuntimeCommand.Stop.also { check(fields.isEmpty()) }
             "reload" -> RuntimeCommand.Reload.also { check(fields.isEmpty()) }
-            "select" -> RuntimeCommand.SelectOutbound(readText(fields.removeFirst()), readText(fields.removeFirst())).also { check(fields.isEmpty()) }
+            "select" -> RuntimeCommand.SelectOutbound(readText(fields.removeAt(0)), readText(fields.removeAt(0))).also { check(fields.isEmpty()) }
             "network" -> RuntimeCommand.NetworkChanged(NetworkGeneration(fields.single().toLong()))
             else -> error("Unknown runtime command")
         }
@@ -51,25 +51,25 @@ object RuntimeWire {
 
     fun decodeSnapshot(bytes: ByteArray): RuntimeSnapshot {
         val fields = unpack(bytes.decodeToString(), "snapshot")
-        val processEpoch = ProcessEpoch(readText(fields.removeFirst()))
-        val commandGeneration = CommandGeneration(fields.removeFirst().toLong())
-        val runtimeGeneration = RuntimeGeneration(fields.removeFirst().toLong())
-        val networkGeneration = NetworkGeneration(fields.removeFirst().toLong())
-        val eventSequence = EventSequence(fields.removeFirst().toLong())
-        val state = RuntimeState.valueOf(fields.removeFirst())
-        val mode = fields.removeFirst().ifEmpty { null }?.let(RuntimeMode::valueOf)
-        val outbounds = List(fields.removeFirst().toInt()) {
-            OutboundSelection(readText(fields.removeFirst()), readText(fields.removeFirst()))
+        val processEpoch = ProcessEpoch(readText(fields.removeAt(0)))
+        val commandGeneration = CommandGeneration(fields.removeAt(0).toLong())
+        val runtimeGeneration = RuntimeGeneration(fields.removeAt(0).toLong())
+        val networkGeneration = NetworkGeneration(fields.removeAt(0).toLong())
+        val eventSequence = EventSequence(fields.removeAt(0).toLong())
+        val state = RuntimeState.valueOf(fields.removeAt(0))
+        val mode = fields.removeAt(0).ifEmpty { null }?.let(RuntimeMode::valueOf)
+        val outbounds = List(fields.removeAt(0).toInt()) {
+            OutboundSelection(readText(fields.removeAt(0)), readText(fields.removeAt(0)))
         }
         val health = TransportHealth(
-            state = TransportHealthState.valueOf(fields.removeFirst()),
-            activeLanes = fields.removeFirst().toInt(),
-            applicable = fields.removeFirst().toBooleanStrict(),
-            runtimeGeneration = RuntimeGeneration(fields.removeFirst().toLong()),
-            networkGeneration = NetworkGeneration(fields.removeFirst().toLong()),
-            failure = readFailure(fields.removeFirst()),
+            state = TransportHealthState.valueOf(fields.removeAt(0)),
+            activeLanes = fields.removeAt(0).toInt(),
+            applicable = fields.removeAt(0).toBooleanStrict(),
+            runtimeGeneration = RuntimeGeneration(fields.removeAt(0).toLong()),
+            networkGeneration = NetworkGeneration(fields.removeAt(0).toLong()),
+            failure = readFailure(fields.removeAt(0)),
         )
-        val lastFailure = readFailure(fields.removeFirst())
+        val lastFailure = readFailure(fields.removeAt(0))
         check(fields.isEmpty())
         return RuntimeSnapshot(processEpoch, commandGeneration, runtimeGeneration, networkGeneration, eventSequence, state, mode, outbounds, health, lastFailure)
     }
@@ -84,7 +84,7 @@ object RuntimeWire {
     private fun pack(type: String, vararg fields: String): String = listOf(SCHEMA, type, *fields).joinToString("|")
 
     private fun unpack(value: String, type: String): MutableList<String> = value.split('|').toMutableList().also {
-        check(it.removeFirst() == SCHEMA && it.removeFirst() == type) { "Unsupported runtime wire message" }
+        check(it.removeAt(0) == SCHEMA && it.removeAt(0) == type) { "Unsupported runtime wire message" }
     }
 
     private fun text(value: String): String = value.map { it.code.toString(16).padStart(4, '0') }.joinToString("")
