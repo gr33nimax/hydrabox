@@ -1,0 +1,18 @@
+apply plugin: 'org.jetbrains.kotlin.multiplatform'
+apply plugin: 'com.android.library'
+
+kotlin {
+    androidTarget()
+    jvm()
+    iosArm64()
+    iosSimulatorArm64()
+}
+
+android {
+    namespace = "io.hydrabox.${project.path.substring(1).replace(':', '.')}"
+    compileSdk = 36
+
+    defaultConfig {
+        minSdk = 26
+    }
+}
