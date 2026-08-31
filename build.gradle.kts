@@ -33,6 +33,25 @@ tasks.register("verifyCommonMainBoundaries") {
     }
 }
 
+tasks.register("ciCheck") {
+    group = "verification"
+    description = "Runs every module's verification tasks for CI."
+    dependsOn("verifyCommonMainBoundaries")
+    dependsOn(allprojects.filter { it != rootProject && it.childProjects.isEmpty() }
+        .map { "${it.path}:check" })
+}
+
+tasks.register("ciIos") {
+    group = "verification"
+    description = "Compiles both iOS targets for CI."
+    dependsOn(allprojects.filter { it != rootProject && it.childProjects.isEmpty() }.flatMap { project ->
+        listOf(
+            "${project.path}:compileKotlinIosArm64",
+            "${project.path}:compileKotlinIosSimulatorArm64",
+        )
+    })
+}
+
 subprojects {
     afterEvaluate {
         if (path.startsWith(":core:") && configurations.any { configuration ->
