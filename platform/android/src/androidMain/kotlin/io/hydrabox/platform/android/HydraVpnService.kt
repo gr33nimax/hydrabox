@@ -3,6 +3,7 @@ package io.hydrabox.platform.android
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.pm.ApplicationInfo
 import android.content.Context
 import android.content.Intent
 import android.net.VpnService
@@ -33,13 +34,19 @@ class HydraVpnService : VpnService() {
     override fun onBind(intent: Intent?): IBinder? =
         if (VpnService.SERVICE_INTERFACE == intent?.action) super.onBind(intent) else endpoint
 
+    override fun onDestroy() {
+        stopRuntime()
+        super.onDestroy()
+    }
+
     private fun start() {
+        startForeground(NOTIFICATION_ID, notification(RuntimeState.STARTING))
         val config = filesDir.resolve(CONFIG_FILE)
         require(config.isFile && config.length() > 0) { "Put a valid config in ${config.path}" }
         val content = config.readText()
+        ensureLibboxSetup()
         Libbox.checkConfig(content)
-        commandServer?.closeService()
-        commandServer?.close()
+        stopRuntime()
         commandServer = Libbox.newCommandServer(handler, MinimalVpnPlatform(this)).also {
             it.start()
             it.startOrReloadService(content, OverrideOptions())
@@ -50,11 +57,29 @@ class HydraVpnService : VpnService() {
 
     private fun stop() {
         runtime.submit(RuntimeCommand.Stop)
+        stopRuntime()
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
+    private fun stopRuntime() {
         commandServer?.closeService()
         commandServer?.close()
         commandServer = null
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
+    }
+
+    private fun ensureLibboxSetup() = synchronized(HydraVpnService::class.java) {
+        if (libboxReady) return
+        val base = filesDir.resolve("libbox-base").apply { mkdirs() }
+        val work = filesDir.resolve("libbox-work").apply { mkdirs() }
+        val temp = cacheDir.resolve("libbox-temp").apply { mkdirs() }
+        Libbox.setup(SetupOptions().apply {
+            basePath = base.path
+            workingPath = work.path
+            tempPath = temp.path
+            debug = (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        })
+        libboxReady = true
     }
 
     private fun notification(state: RuntimeState) = (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).let { manager ->
@@ -72,6 +97,7 @@ class HydraVpnService : VpnService() {
         const val CONFIG_FILE = "hydra-config.json"
         private const val CHANNEL_ID = "hydrabox-vpn"
         private const val NOTIFICATION_ID = 1
+        @Volatile private var libboxReady = false
         private val handler = object : CommandServerHandler {
             override fun getSystemProxyStatus() = SystemProxyStatus().apply { available = false; enabled = false }
             override fun serviceReload() = Unit

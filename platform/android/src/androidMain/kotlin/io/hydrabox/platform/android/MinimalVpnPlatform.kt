@@ -48,10 +48,10 @@ class MinimalVpnPlatform(private val service: VpnService) : PlatformInterface {
         options.inet4Address.consume { address, prefix -> builder.addAddress(address, prefix); hasIpv4 = true }
         options.inet6Address.consume { address, prefix -> builder.addAddress(address, prefix); hasIpv6 = true }
         if (options.autoRoute) {
-            options.inet4RouteRange.consume { address, prefix -> builder.addRoute(address, prefix) }
-            options.inet6RouteRange.consume { address, prefix -> builder.addRoute(address, prefix) }
-            if (hasIpv4) builder.addRoute("0.0.0.0", 0)
-            if (hasIpv6) builder.addRoute("::", 0)
+            val hasIpv4Route = options.inet4RouteRange.consume { address, prefix -> builder.addRoute(address, prefix) }
+            val hasIpv6Route = options.inet6RouteRange.consume { address, prefix -> builder.addRoute(address, prefix) }
+            if (hasIpv4 && !hasIpv4Route) builder.addRoute("0.0.0.0", 0)
+            if (hasIpv6 && !hasIpv6Route) builder.addRoute("::", 0)
             options.includePackage.consume { builder.addAllowedApplication(it) }
             options.excludePackage.consume { builder.addDisallowedApplication(it) }
         }
@@ -59,8 +59,13 @@ class MinimalVpnPlatform(private val service: VpnService) : PlatformInterface {
         return (builder.establish() ?: error("Unable to establish TUN")).detachFd()
     }
 
-    private fun io.nekohasekai.libbox.RoutePrefixIterator.consume(block: (String, Int) -> Unit) {
-        while (hasNext()) next().let { block(it.address(), it.prefix()) }
+    private fun io.nekohasekai.libbox.RoutePrefixIterator.consume(block: (String, Int) -> Unit): Boolean {
+        var found = false
+        while (hasNext()) {
+            next().let { block(it.address(), it.prefix()) }
+            found = true
+        }
+        return found
     }
 
     private fun StringIterator?.consume(block: (String) -> Unit) {
