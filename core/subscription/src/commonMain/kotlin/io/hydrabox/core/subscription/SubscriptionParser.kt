@@ -10,12 +10,14 @@ sealed interface ShareLink {
     data class Vless(override val server: String, override val port: Int, override val name: String, val uuid: Secret) : ShareLink
     data class Trojan(override val server: String, override val port: Int, override val name: String, val password: Secret) : ShareLink
     data class Proxy(override val server: String, override val port: Int, override val name: String, val type: String, val tls: Boolean, val username: Secret?, val password: Secret?) : ShareLink
+    data class WireGuard(override val server: String, override val port: Int, override val name: String, val privateKey: Secret, val peerPublicKey: Secret) : ShareLink
 }
 
 object SubscriptionParser {
     private val link = Regex("^([A-Za-z0-9+]+)://(?:([^@/?#]+)@)?([^:/?#]+):(\\d+)(?:\\?[^#]*)?(?:#(.*))?$")
 
     fun parse(value: String): ShareLink {
+        if (value.trimStart().startsWith("[Interface]")) return parseWireGuard(value)
         val match = link.matchEntire(value.trim()) ?: error("invalid subscription link")
         val scheme = match.groupValues[1].lowercase()
         val credential = decode(match.groupValues[2])
@@ -28,6 +30,20 @@ object SubscriptionParser {
             "socks", "socks4", "socks5", "http", "https", "ss", "hysteria", "hy2", "hysteria2", "naive+https", "naive+quic" -> proxy(scheme, server, port, name, credential)
             else -> error("unsupported subscription link")
         }
+    }
+
+    private fun parseWireGuard(content: String): ShareLink.WireGuard {
+        var section = ""
+        val values = mutableMapOf<String, String>()
+        content.lineSequence().map(String::trim).filter { it.isNotEmpty() && !it.startsWith("#") }.forEach { line ->
+            if (line.startsWith("[") && line.endsWith("]")) section = line.removeSurrounding("[", "]")
+            else line.split('=', limit = 2).takeIf { it.size == 2 }?.let { values["$section.${it[0].trim()}"] = it[1].trim() }
+        }
+        val endpoint = values["Peer.Endpoint"] ?: error("missing WireGuard endpoint")
+        val divider = endpoint.lastIndexOf(':').takeIf { it > 0 } ?: error("invalid WireGuard endpoint")
+        val server = endpoint.substring(0, divider).removeSurrounding("[", "]")
+        val port = endpoint.substring(divider + 1).toIntOrNull()?.takeIf { it in 1..65535 } ?: error("invalid WireGuard port")
+        return ShareLink.WireGuard(server, port, "WireGuard", Secret.of(values["Interface.PrivateKey"] ?: error("missing WireGuard private key")), Secret.of(values["Peer.PublicKey"] ?: error("missing WireGuard peer key")))
     }
 
     fun parseAll(content: String): List<ShareLink> = content

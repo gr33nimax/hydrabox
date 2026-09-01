@@ -35,4 +35,16 @@ class SubscriptionTest {
         assertEquals("hysteria", assertIs<ShareLink.Proxy>(SubscriptionParser.parse("hysteria://auth@hy.example:443#Hy")).type)
         assertEquals("naive", assertIs<ShareLink.Proxy>(SubscriptionParser.parse("naive+https://user:pass@naive.example:443#Naive")).type)
     }
+
+    @Test fun `parses a WireGuard config`() {
+        val link = assertIs<ShareLink.WireGuard>(SubscriptionParser.parse("""
+            [Interface]
+            PrivateKey = interface-key
+            Address = 10.0.0.2/32
+            [Peer]
+            PublicKey = peer-key
+            Endpoint = wg.example:51820
+        """.trimIndent()))
+        assertEquals("wg.example", link.server); assertEquals(51820, link.port); assertEquals("WireGuard", link.name)
+    }
 }
