@@ -1,0 +1,6 @@
+CREATE TABLE subscriptions (
+  subscription_id TEXT NOT NULL PRIMARY KEY,
+  name TEXT NOT NULL,
+  source_secret BLOB NOT NULL,
+  updated_at_millis INTEGER NOT NULL
+);

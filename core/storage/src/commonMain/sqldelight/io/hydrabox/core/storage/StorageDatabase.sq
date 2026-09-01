@@ -12,3 +12,12 @@ SELECT value FROM storage_metadata WHERE storage_key = ?;
 
 upsertValue:
 INSERT OR REPLACE INTO storage_metadata(storage_key, value) VALUES (?, ?);
+
+selectSubscriptions:
+SELECT * FROM subscriptions ORDER BY subscription_id;
+
+selectSubscriptionSecret:
+SELECT source_secret FROM subscriptions WHERE subscription_id = ?;
+
+upsertSubscription:
+INSERT OR REPLACE INTO subscriptions(subscription_id, name, source_secret, updated_at_millis) VALUES (?, ?, ?, ?);

@@ -16,4 +16,11 @@ class SubscriptionTest {
         kotlin.test.assertFails { SubscriptionParser.parse("vless://missing-port") }
         kotlin.test.assertFails { SubscriptionParser.parse("unknown://server.example:443") }
     }
+
+    @Test fun `parses SOCKS and HTTP proxy links`() {
+        val socks = assertIs<ShareLink.Proxy>(SubscriptionParser.parse("socks5://user:p%40ss@socks.server.com:1080#SOCKS%20Node"))
+        assertEquals("socks", socks.type); assertEquals("socks.server.com", socks.server); assertEquals(1080, socks.port); assertEquals(false, socks.tls)
+        val http = assertIs<ShareLink.Proxy>(SubscriptionParser.parse("https://secure.proxy.com:443#HTTPS%20Proxy"))
+        assertEquals("http", http.type); assertEquals(true, http.tls); assertEquals("HTTPS Proxy", http.name)
+    }
 }
