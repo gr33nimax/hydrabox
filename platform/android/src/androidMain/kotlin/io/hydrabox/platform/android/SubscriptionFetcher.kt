@@ -1,5 +1,6 @@
 package io.hydrabox.platform.android
 
+import io.hydrabox.core.subscription.HydraSubscriptionUri
 import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
@@ -26,6 +27,10 @@ object SubscriptionFetcher {
                 requestMethod = "GET"
                 setRequestProperty("User-Agent", "HydraBox/2.0.0-alpha1")
                 setRequestProperty("Accept-Encoding", "gzip")
+                setRequestProperty(
+                    "Accept",
+                    "${HydraSubscriptionUri.PLAINTEXT_MEDIA_TYPE}, ${HydraSubscriptionUri.ENCRYPTED_MEDIA_TYPE}, */*",
+                )
             }
             try {
                 val code = connection.responseCode

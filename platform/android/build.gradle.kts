@@ -65,6 +65,7 @@ dependencies {
     implementation(project(":core:projection"))
     implementation(project(":ui:app"))
     implementation("androidx.activity:activity-compose:1.10.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
     implementation(files(libboxAar))
 }
 

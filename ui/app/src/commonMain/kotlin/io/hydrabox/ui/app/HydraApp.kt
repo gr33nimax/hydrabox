@@ -181,7 +181,7 @@ private fun SubscriptionsScreen(state: ScreenState, actions: AppActions) {
         OutlinedTextField(
             value = source,
             onValueChange = { source = it },
-            label = { Text("Subscription URL, or paste links / a sing-box or Hydra document") },
+            label = { Text("Subscription URL (keep its #hydra-key), links, or a sing-box document") },
             modifier = Modifier.fillMaxWidth(),
             minLines = 3,
         )
@@ -206,7 +206,7 @@ private fun SubscriptionsScreen(state: ScreenState, actions: AppActions) {
         if (state.subscriptions.isEmpty()) {
             UiCard(
                 "Nothing stored yet",
-                "A https:// subscription URL, a Hydra v2 document, a sing-box config, or vless / trojan / ss / socks links all work.",
+                "A https:// Hydra subscription (encrypted ones included, paste the whole URL with its #hydra-key), a sing-box document, or vless / trojan / ss / socks links.",
             )
         } else {
             state.subscriptions.forEach { subscription ->
@@ -214,7 +214,12 @@ private fun SubscriptionsScreen(state: ScreenState, actions: AppActions) {
                 var draft by remember(subscription.id) { mutableStateOf(subscription.name) }
                 UiCard(
                     subscription.name,
-                    "${subscription.outboundCount} servers",
+                    listOfNotNull(
+                        "${subscription.outboundCount} servers",
+                        "encrypted".takeIf { subscription.encrypted },
+                        subscription.expiresAt?.let { "until $it" },
+                        subscription.problem,
+                    ).joinToString(" · "),
                     onClick = { editing = !editing },
                 )
                 if (editing) {

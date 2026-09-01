@@ -23,6 +23,7 @@ import io.hydrabox.core.storage.StorageDatabase
 import io.hydrabox.core.storage.openStorageDriver
 import io.hydrabox.core.storage.platformSecretFieldCipher
 import io.hydrabox.core.subscription.CatalogOutbound
+import io.hydrabox.core.subscription.HydraSubscriptionUri
 import io.hydrabox.core.subscription.OutboundCatalogParser
 import io.hydrabox.core.subscription.SubscriptionRecord
 import io.hydrabox.core.subscription.SubscriptionStore
@@ -103,26 +104,67 @@ class AppStore(context: Context) {
     fun addSubscription(name: String, source: String): String {
         val trimmed = source.trim()
         val remote = trimmed.startsWith("http://") || trimmed.startsWith("https://")
-        val body = if (remote) SubscriptionFetcher.fetch(trimmed) else trimmed
-        val catalog = OutboundCatalogParser.parse(body)
+        val opened = if (remote) retrieve(trimmed) else Opened(openInline(trimmed), null)
+        val catalog = OutboundCatalogParser.parse(opened.document)
         val id = "sub-" + (records().size + 1) + "-" + trimmed.hashCode().toUInt().toString(16)
+        val inspection = if (HydraCoreGate.looksHydra(opened.document)) HydraCoreGate.inspect(opened.document) else null
         val label = name.trim().takeIf(String::isNotEmpty)
+            ?: inspection?.displayName?.takeIf(String::isNotEmpty)
             ?: catalog.selectable.firstOrNull()?.tag?.takeIf { catalog.selectable.size == 1 }
             ?: "Subscription ${records().size + 1}"
-        subscriptions.save(SubscriptionRecord(id, label, Secret.of(body), System.currentTimeMillis()))
-        if (remote) queries.upsertValue(urlKey(id), trimmed.encodeToByteArray())
+        subscriptions.save(SubscriptionRecord(id, label, Secret.of(opened.document), System.currentTimeMillis()))
+        if (remote) queries.upsertValue(urlKey(id), HydraSubscriptionUri.withoutSecretFragment(trimmed).encodeToByteArray())
+        // The key is a secret: it goes into the encrypted field, never beside the URL.
+        opened.key?.let { key -> queries.upsertSetting(keyKey(id), "", codec.seal(key)) }
+        inspection?.notAfter?.let { queries.upsertValue(validityKey(id), it.encodeToByteArray()) }
         if (selectedTag() == null) catalog.defaultTag?.let(::select)
             ?: catalog.selectable.firstOrNull()?.let { select(it.tag) }
         return id
     }
 
+    /** A body plus the key that opened it, when the source was encrypted. */
+    private data class Opened(val document: String, val key: String?)
+
+    /**
+     * Fetches and, when the source is an encrypted Hydra envelope, has the core open it.
+     * The key comes from the URL fragment and is stripped before the request goes out.
+     */
+    private fun retrieve(url: String, storedKey: String? = null): Opened {
+        require(!HydraSubscriptionUri.hasKeyQueryParameter(url)) {
+            "the Hydra key belongs in the URL fragment, not the query, or it is sent to the server"
+        }
+        val key = HydraSubscriptionUri.keyOf(url) ?: storedKey
+        val body = SubscriptionFetcher.fetch(HydraSubscriptionUri.withoutSecretFragment(url))
+        if (!HydraCoreGate.looksEncrypted(body)) {
+            if (HydraCoreGate.looksHydra(body)) HydraCoreGate.validate(body)
+            return Opened(body, key)
+        }
+        checkNotNull(key) { "this subscription is encrypted and needs its #hydra-key fragment" }
+        return Opened(HydraCoreGate.open(body, key), key)
+    }
+
+    /** An inline body: still validated by the core when it claims to be a Hydra document. */
+    private fun openInline(body: String): String {
+        check(!HydraCoreGate.looksEncrypted(body)) {
+            "paste the subscription URL including its #hydra-key fragment, not the encrypted body"
+        }
+        if (HydraCoreGate.looksHydra(body)) HydraCoreGate.validate(body)
+        return body
+    }
+
     fun refreshSubscription(id: String) {
         val url = queries.selectValue(urlKey(id)).executeAsOneOrNull()?.decodeToString()
         checkNotNull(url) { "subscription has no source URL to refresh" }
-        val body = SubscriptionFetcher.fetch(url)
-        OutboundCatalogParser.parse(body)
+        val stored: String? = queries.selectSecretValue(keyKey(id)).executeAsOneOrNull()
+            ?.secret_value?.let(codec::open)
+        val opened = retrieve(url, stored)
+        OutboundCatalogParser.parse(opened.document)
         val current = records().firstOrNull { it.id == id } ?: error("unknown subscription")
-        subscriptions.save(SubscriptionRecord(id, current.name, Secret.of(body), System.currentTimeMillis()))
+        subscriptions.save(SubscriptionRecord(id, current.name, Secret.of(opened.document), System.currentTimeMillis()))
+        if (HydraCoreGate.looksHydra(opened.document)) {
+            HydraCoreGate.inspect(opened.document).notAfter
+                ?.let { queries.upsertValue(validityKey(id), it.encodeToByteArray()) }
+        }
     }
 
     fun removeSubscription(id: String) {
@@ -147,6 +189,9 @@ class AppStore(context: Context) {
             name = record.name,
             outboundCount = outbounds.count(CatalogOutbound::selectable),
             updatedAtMillis = record.updatedAtMillis,
+            expiresAt = validityOf(record.id),
+            encrypted = queries.selectSecretValue(keyKey(record.id)).executeAsOneOrNull()?.secret_value != null,
+            problem = if (outbounds.isEmpty()) parseError(record.id) ?: "no usable server" else null,
         )
     }
 
@@ -210,6 +255,11 @@ class AppStore(context: Context) {
     fun configPreview(): String? = runCatching { generateConfig() }.getOrElse { "generation failed: ${it.message}" }
 
     private fun urlKey(id: String) = "subscription.$id.url"
+    private fun keyKey(id: String) = "subscription.$id.hydra-key"
+    private fun validityKey(id: String) = "subscription.$id.not-after"
+
+    fun validityOf(id: String): String? = queries.selectValue(validityKey(id)).executeAsOneOrNull()
+        ?.decodeToString()?.takeIf(String::isNotEmpty)
 
     private fun defaultSettings() = Settings(
         performanceMode = PerformanceMode.STANDARD,

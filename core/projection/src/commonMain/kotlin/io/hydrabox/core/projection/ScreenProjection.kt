@@ -12,6 +12,10 @@ data class SubscriptionSummary(
     val name: String,
     val outboundCount: Int,
     val updatedAtMillis: Long,
+    /** From the Hydra document's validity window, when the source declares one. */
+    val expiresAt: String? = null,
+    val encrypted: Boolean = false,
+    val problem: String? = null,
 )
 
 /**
