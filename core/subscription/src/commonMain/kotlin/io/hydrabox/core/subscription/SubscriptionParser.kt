@@ -1,6 +1,11 @@
 package io.hydrabox.core.subscription
 
 import io.hydrabox.core.diagnostics.Secret
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 
 sealed interface ShareLink {
     val server: String
@@ -15,6 +20,7 @@ sealed interface ShareLink {
 
 enum class SubscriptionDocumentFormat { SINGBOX, XRAY, CLASH, SIP008, HYDRA, UNKNOWN }
 data class SubscriptionDocument(val format: SubscriptionDocumentFormat)
+data class ParsedSubscriptionDocument(val format: SubscriptionDocumentFormat, val outboundTags: List<String>)
 
 object SubscriptionParser {
     private val link = Regex("^([A-Za-z0-9+]+)://(?:([^@/?#]+)@)?([^:/?#]+):(\\d+)(?:\\?[^#]*)?(?:#(.*))?$")
@@ -68,6 +74,14 @@ object SubscriptionParser {
             else -> SubscriptionDocumentFormat.UNKNOWN
         }
         return SubscriptionDocument(format)
+    }
+
+    fun parseDocument(content: String): ParsedSubscriptionDocument {
+        val format = detectDocument(content).format
+        val root = runCatching { Json.parseToJsonElement(content) }.getOrNull()
+        val outbounds = (root as? JsonObject)?.get("outbounds") as? JsonArray
+        val tags = outbounds.orEmpty().mapNotNull { (it as? JsonObject)?.get("tag")?.jsonPrimitive?.contentOrNull }
+        return ParsedSubscriptionDocument(format, tags)
     }
 
     private fun proxy(scheme: String, server: String, port: Int, name: String, credential: String): ShareLink.Proxy {

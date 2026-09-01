@@ -56,4 +56,10 @@ class SubscriptionTest {
         assertEquals(SubscriptionDocumentFormat.HYDRA, SubscriptionParser.detectDocument("{\"api_version\":\"hydra.io/subscription/v2\"}").format)
         assertEquals(SubscriptionDocumentFormat.UNKNOWN, SubscriptionParser.detectDocument("not a subscription").format)
     }
+
+    @Test fun `parses structural outbound identifiers from JSON documents`() {
+        val document = SubscriptionParser.parseDocument("{\"outbounds\":[{\"type\":\"vless\",\"tag\":\"node-a\"},{\"type\":\"trojan\",\"tag\":\"node-b\"}]}")
+        assertEquals(SubscriptionDocumentFormat.SINGBOX, document.format)
+        assertEquals(listOf("node-a", "node-b"), document.outboundTags)
+    }
 }

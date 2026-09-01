@@ -25,6 +25,7 @@ val forbiddenCommonMainJvmApi = Regex("""\b(?:java|javax|kotlin\.jvm)\.""")
 val appleCompatibleCommonMainDependencies = setOf(
     "org.jetbrains.kotlin:kotlin-stdlib",
     "app.cash.sqldelight:runtime",
+    "org.jetbrains.kotlinx:kotlinx-serialization-json",
 )
 
 tasks.register("verifyCommonMainBoundaries") {
