@@ -40,6 +40,7 @@ extensions.configure<ApplicationExtension> {
 dependencies {
     implementation(project(":core:contract"))
     implementation(project(":core:runtime"))
+    implementation(project(":core:config"))
     implementation(files(libboxAar))
 }
 

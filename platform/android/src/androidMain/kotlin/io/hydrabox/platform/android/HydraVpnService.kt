@@ -15,6 +15,8 @@ import io.nekohasekai.libbox.OverrideOptions
 import io.nekohasekai.libbox.SetupOptions
 import io.nekohasekai.libbox.SystemProxyStatus
 import io.hydrabox.core.contract.RuntimeCommand
+import io.hydrabox.core.config.ConfigGenerator
+import io.hydrabox.core.config.ConfigInput
 import io.hydrabox.core.contract.RuntimeMode
 import io.hydrabox.core.contract.RuntimeState
 import io.hydrabox.core.contract.RuntimeGeneration
@@ -65,9 +67,7 @@ class HydraVpnService : VpnService() {
     }
 
     private fun startCore(commandGeneration: Long) {
-        val config = filesDir.resolve(CONFIG_FILE)
-        require(config.isFile && config.length() > 0) { "Put a valid config in ${config.path}" }
-        val content = config.readText()
+        val content = ConfigGenerator.generate(ConfigInput("https://dns.cloudflare.com/dns-query", ready = true))
         ensureLibboxSetup()
         Libbox.checkConfig(content)
         stopRuntime()
@@ -117,7 +117,6 @@ class HydraVpnService : VpnService() {
     companion object {
         const val ACTION_START = "io.hydrabox.platform.android.START"
         const val ACTION_STOP = "io.hydrabox.platform.android.STOP"
-        const val CONFIG_FILE = "hydra-config.json"
         private const val CHANNEL_ID = "hydrabox-vpn"
         private const val NOTIFICATION_ID = 1
         @Volatile private var libboxReady = false
