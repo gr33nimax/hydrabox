@@ -26,11 +26,13 @@ class HydraVpnService : VpnService() {
     private lateinit var runtime: AndroidRuntime
     private lateinit var endpoint: BinderRuntimeEndpoint
     private lateinit var store: AppStore
+    private lateinit var monitor: DefaultNetworkMonitor
     private var commandServer: CommandServer? = null
 
     override fun onCreate() {
         super.onCreate()
         store = AppStore(this)
+        monitor = DefaultNetworkMonitor(this).apply { start() }
         runtime = AndroidRuntime(::execute)
         endpoint = BinderRuntimeEndpoint(runtime)
         runtime.subscribe { event ->
@@ -53,6 +55,7 @@ class HydraVpnService : VpnService() {
 
     override fun onDestroy() {
         stopRuntime()
+        monitor.stop()
         super.onDestroy()
     }
 
@@ -79,7 +82,7 @@ class HydraVpnService : VpnService() {
             ensureLibboxSetup()
             Libbox.checkConfig(content)
             stopRuntime()
-            commandServer = Libbox.newCommandServer(handler, MinimalVpnPlatform(this)).also {
+            commandServer = Libbox.newCommandServer(handler, AndroidVpnPlatform(this, monitor)).also {
                 it.start()
                 it.startOrReloadService(content, OverrideOptions())
             }
