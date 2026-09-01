@@ -1,5 +1,7 @@
 package io.hydrabox.core.diagnostics
 
+import io.hydrabox.core.model.OperationState
+
 @JvmInline
 value class Secret private constructor(private val value: String) {
     companion object {
@@ -31,3 +33,11 @@ data class DiagnosticEvent(
 fun interface DiagnosticSink {
     fun emit(event: DiagnosticEvent)
 }
+
+enum class LogLevel { ERROR, WARN, INFO, DEBUG }
+
+data class DiagnosticsState(
+    val events: List<DiagnosticEvent> = emptyList(),
+    val level: LogLevel = LogLevel.INFO,
+    val export: OperationState<String> = OperationState.Idle,
+)

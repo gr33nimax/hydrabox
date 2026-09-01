@@ -3,6 +3,7 @@ apply(from = rootProject.file("config/kmp-module.gradle"))
 val secretCompileTest by configurations.creating
 
 dependencies {
+    add("commonMainApi", project(":core:model"))
     add("commonTestImplementation", "org.jetbrains.kotlin:kotlin-test")
     secretCompileTest("org.jetbrains.kotlin:kotlin-compiler-embeddable:2.2.20")
     secretCompileTest("org.jetbrains.kotlin:kotlin-stdlib:2.2.20")
