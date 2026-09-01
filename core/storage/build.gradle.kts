@@ -5,6 +5,7 @@ plugins {
 apply(from = rootProject.file("config/kmp-module.gradle"))
 
 dependencies {
+    add("commonMainApi", project(":core:model"))
     add("commonMainApi", project(":core:diagnostics"))
     add("commonMainApi", "app.cash.sqldelight:runtime:2.3.2")
     add("androidMainImplementation", "app.cash.sqldelight:android-driver:2.3.2")
