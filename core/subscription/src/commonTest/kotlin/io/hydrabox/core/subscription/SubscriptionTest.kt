@@ -68,4 +68,15 @@ class SubscriptionTest {
         assertEquals(listOf("sip-node"), SubscriptionParser.parseDocument("[{\"servers\":[{\"remarks\":\"sip-node\"}]}]").outboundTags)
         assertEquals(listOf("hydra-profile"), SubscriptionParser.parseDocument("{\"api_version\":\"hydra.io/subscription/v2\",\"profiles\":[{\"id\":\"hydra-profile\"}]}" ).outboundTags)
     }
+
+    @Test fun `parses Clash proxy names structurally`() {
+        val document = SubscriptionParser.parseDocument("""
+            proxies:
+              - name: first-node
+                type: vless
+              - name: second-node
+                type: ss
+        """.trimIndent())
+        assertEquals(listOf("first-node", "second-node"), document.outboundTags)
+    }
 }

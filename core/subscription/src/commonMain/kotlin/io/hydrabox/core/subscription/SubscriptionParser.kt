@@ -98,6 +98,10 @@ object SubscriptionParser {
             SubscriptionDocumentFormat.HYDRA -> ((root as? JsonObject)?.get("profiles") as? JsonArray).orEmpty()
                 .mapNotNull { (it as? JsonObject)?.get("id")?.jsonPrimitive?.contentOrNull }
                 .map { ParsedOutbound(it, "hydra") }
+            SubscriptionDocumentFormat.CLASH -> Regex("(?m)^\\s*-\\s*name:\\s*(.+?)\\s*$")
+                .findAll(content)
+                .map { ParsedOutbound(it.groupValues[1].trim().removeSurrounding("\""), "clash") }
+                .toList()
             else -> outbounds
         }
         return ParsedSubscriptionDocument(format, documentOutbounds)
