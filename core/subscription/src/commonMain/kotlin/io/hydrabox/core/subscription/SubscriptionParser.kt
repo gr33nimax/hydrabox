@@ -6,6 +6,8 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 sealed interface ShareLink {
     val server: String
@@ -30,6 +32,8 @@ object SubscriptionParser {
 
     fun parse(value: String): ShareLink {
         if (value.trimStart().startsWith("[Interface]")) return parseWireGuard(value)
+        if (value.startsWith("vmess://", ignoreCase = true)) return parseVmess(value)
+        if (value.startsWith("ssr://", ignoreCase = true)) return parseSsr(value)
         val match = link.matchEntire(value.trim()) ?: error("invalid subscription link")
         val scheme = match.groupValues[1].lowercase()
         val credential = decode(match.groupValues[2])
@@ -56,6 +60,25 @@ object SubscriptionParser {
         val server = endpoint.substring(0, divider).removeSurrounding("[", "]")
         val port = endpoint.substring(divider + 1).toIntOrNull()?.takeIf { it in 1..65535 } ?: error("invalid WireGuard port")
         return ShareLink.WireGuard(server, port, "WireGuard", Secret.of(values["Interface.PrivateKey"] ?: error("missing WireGuard private key")), Secret.of(values["Peer.PublicKey"] ?: error("missing WireGuard peer key")))
+    }
+
+    private fun parseVmess(value: String): ShareLink.Proxy {
+        val document = decodeBase64(value.substringAfter("://").substringBefore('#')) ?: error("invalid VMess link")
+        val fields = Json.parseToJsonElement(document) as? JsonObject ?: error("invalid VMess link")
+        val server = fields["add"]?.jsonPrimitive?.contentOrNull?.takeIf(String::isNotEmpty) ?: error("missing VMess server")
+        val port = fields["port"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()?.takeIf { it in 1..65535 } ?: error("invalid VMess port")
+        val uuid = fields["id"]?.jsonPrimitive?.contentOrNull?.takeIf(String::isNotEmpty) ?: error("missing VMess credential")
+        val name = fields["ps"]?.jsonPrimitive?.contentOrNull.orEmpty()
+        return ShareLink.Proxy(server, port, name, "vmess", fields["tls"]?.jsonPrimitive?.contentOrNull == "tls", Secret.of(uuid), null)
+    }
+
+    private fun parseSsr(value: String): ShareLink.Proxy {
+        val document = decodeBase64(value.substringAfter("://").substringBefore('#')) ?: error("invalid SSR link")
+        val fields = document.substringBefore("/?").split(':')
+        if (fields.size < 6) error("invalid SSR link")
+        val port = fields[1].toIntOrNull()?.takeIf { it in 1..65535 } ?: error("invalid SSR port")
+        val password = decodeBase64(fields.last()) ?: error("invalid SSR credential")
+        return ShareLink.Proxy(fields[0], port, "", "shadowsocksr", false, Secret.of(fields[3]), Secret.of(password))
     }
 
     fun parseAll(content: String): List<ShareLink> = content
@@ -124,6 +147,11 @@ object SubscriptionParser {
         return ShareLink.Proxy(server, port, name, type, scheme == "https" || scheme == "naive+https", username, password)
     }
 }
+
+@OptIn(ExperimentalEncodingApi::class)
+private fun decodeBase64(value: String): String? = runCatching {
+    Base64.Default.decode(value.replace('-', '+').replace('_', '/').let { it + "=".repeat((4 - it.length % 4) % 4) }).decodeToString()
+}.getOrNull()
 
 private fun decode(value: String): String {
     val bytes = ArrayList<Byte>()

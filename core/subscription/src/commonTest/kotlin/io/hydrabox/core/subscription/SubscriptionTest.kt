@@ -3,6 +3,8 @@ package io.hydrabox.core.subscription
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 class SubscriptionTest {
     @Test fun `parses VLESS and Trojan share links`() {
@@ -41,6 +43,16 @@ class SubscriptionTest {
         assertEquals("anytls", assertIs<ShareLink.Proxy>(SubscriptionParser.parse("anytls://password@anytls.example:443#AnyTLS")).type)
         assertEquals("hysteria", assertIs<ShareLink.Proxy>(SubscriptionParser.parse("hy://auth@hy.example:443#Hy")).type)
         assertEquals("socks", assertIs<ShareLink.Proxy>(SubscriptionParser.parse("socks4a://socks.example:1080#SOCKS")).type)
+    }
+
+    @OptIn(ExperimentalEncodingApi::class)
+    @Test fun `parses base64 VMess and SSR links`() {
+        val vmess = Base64.Default.encode("{\"ps\":\"VMess\",\"add\":\"vmess.example\",\"port\":\"443\",\"id\":\"uuid\",\"tls\":\"tls\"}".encodeToByteArray())
+        val parsedVmess = assertIs<ShareLink.Proxy>(SubscriptionParser.parse("vmess://$vmess"))
+        assertEquals("vmess", parsedVmess.type); assertEquals("vmess.example", parsedVmess.server); assertEquals(true, parsedVmess.tls)
+        val ssr = Base64.Default.encode("ssr.example:8388:auth:aes-256-cfb:obfs:cGFzcw==".encodeToByteArray())
+        val parsedSsr = assertIs<ShareLink.Proxy>(SubscriptionParser.parse("ssr://$ssr"))
+        assertEquals("shadowsocksr", parsedSsr.type); assertEquals("ssr.example", parsedSsr.server)
     }
 
     @Test fun `parses a WireGuard config`() {
