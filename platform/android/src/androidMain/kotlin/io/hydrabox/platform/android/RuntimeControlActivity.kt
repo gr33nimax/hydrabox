@@ -50,6 +50,7 @@ class RuntimeControlActivity : ComponentActivity() {
     private var revision by mutableStateOf(0)
     private var message by mutableStateOf<String?>(null)
     private var busy by mutableStateOf<OperationState<Unit>>(OperationState.Idle)
+    private var showApps by mutableStateOf(false)
 
     private val permission = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == RESULT_OK) launch() else message = "VPN permission was declined"
@@ -83,6 +84,12 @@ class RuntimeControlActivity : ComponentActivity() {
         setContent {
             HydraApp(state = ScreenProjection.project(readModel()), message = message, actions = actions())
         }
+        if (intent?.action == ACTION_REQUEST_START) prepareAndStart()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.action == ACTION_REQUEST_START) prepareAndStart()
     }
 
     override fun onDestroy() {
@@ -114,6 +121,7 @@ class RuntimeControlActivity : ComponentActivity() {
                 ),
                 exportState = "idle",
             ),
+            apps = if (showApps) store.installedApps() else emptyList(),
             subscriptionOperation = busy,
             legalAccepted = settings.acceptedLegalAtMillis != null,
         )
@@ -142,6 +150,8 @@ class RuntimeControlActivity : ComponentActivity() {
         onSetProxyDns = { value -> background(null) { store.saveSettings(store.settings().copy(dnsProxyResolver = value)) } },
         onSetDirectDns = { value -> background(null) { store.saveSettings(store.settings().copy(dnsDirectResolver = value)) } },
         onSetSplitPackages = { value -> background("Saved") { store.setSplitRoutingPackages(value) } },
+        onToggleApp = { packageName -> background(null) { store.toggleExcludedApp(packageName) } },
+        onLoadApps = { showApps = true; revision += 1 },
         onToggleNotification = {
             background(null) {
                 store.saveSettings(store.settings().let { it.copy(statusNotificationEnabled = !it.statusNotificationEnabled) })
@@ -192,6 +202,11 @@ class RuntimeControlActivity : ComponentActivity() {
             return
         }
         runCatching { bound.submit(command) }.exceptionOrNull()?.let { message = "Failed: ${it.message}" }
+    }
+
+    companion object {
+        /** Sent by the Quick Settings tile, which cannot show the VPN consent dialog. */
+        const val ACTION_REQUEST_START = "io.hydrabox.platform.android.REQUEST_START"
     }
 
     private fun stoppedSnapshot() = RuntimeSnapshot(

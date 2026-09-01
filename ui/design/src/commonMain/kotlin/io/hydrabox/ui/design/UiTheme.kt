@@ -2,6 +2,7 @@ package io.hydrabox.ui.design
 
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Easing
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -44,11 +45,12 @@ val LocalUiMotion = staticCompositionLocalOf { durationMotion(false) }
 
 @Composable
 fun HydraTheme(
-    dark: Boolean = false,
+    dark: Boolean = isSystemInDarkTheme(),
     capabilities: UiCapabilities = uiCapabilities(),
     content: @Composable () -> Unit,
 ) {
-    val scheme = if (dark) darkColorScheme(primary = BrandSeed) else lightColorScheme(primary = BrandSeed)
+    val scheme = platformColorScheme(dark)
+        ?: if (dark) darkColorScheme(primary = BrandSeed) else lightColorScheme(primary = BrandSeed)
     CompositionLocalProvider(
         LocalUiCapabilities provides capabilities,
         LocalUiMotion provides if (capabilities.motion == MotionScheme.SPRING) springMotion(capabilities.reducedMotion) else durationMotion(capabilities.reducedMotion),

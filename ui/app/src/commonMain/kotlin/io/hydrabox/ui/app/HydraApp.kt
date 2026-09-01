@@ -45,7 +45,11 @@ data class AppActions(
     val onSetSplitPackages: (String) -> Unit = {},
     val onToggleNotification: () -> Unit = {},
     val onMeasure: () -> Unit = {},
+    val onToggleApp: (String) -> Unit = {},
+    val onLoadApps: () -> Unit = {},
 )
+
+private const val APP_LIST_LIMIT = 120
 
 private enum class Destination(val label: String) {
     CONNECTION("Connect"),
@@ -347,19 +351,34 @@ private fun SettingsScreen(state: ScreenState, actions: AppActions) {
             primaryEnabled = mtu.toIntOrNull()?.let { it in 1280..9000 } == true,
             onPrimary = { mtu.toIntOrNull()?.let(actions.onSetMtu) },
         )
-        OutlinedTextField(
-            value = packages,
-            onValueChange = { packages = it },
-            label = { Text("Packages to keep outside the tunnel, comma separated") },
-            modifier = Modifier.fillMaxWidth(),
-            minLines = 2,
-        )
-        UiActionRow(
-            primary = "Save split tunneling",
-            primaryEnabled = true,
-            onPrimary = { actions.onSetSplitPackages(packages) },
-        )
-        UiCard("Currently excluded", "${settings?.splitRoutingPackageCount ?: 0} packages")
+        UiCard("Outside the tunnel", "${settings?.splitRoutingPackageCount ?: 0} apps")
+    }
+    UiSection("Apps outside the tunnel") {
+        if (state.apps.isEmpty()) {
+            UiCard(
+                "Choose apps",
+                "Tap to list installed apps; the ones you pick bypass the tunnel.",
+                onClick = actions.onLoadApps,
+            )
+        } else {
+            OutlinedTextField(
+                value = packages,
+                onValueChange = { packages = it },
+                label = { Text("Filter apps") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+            state.apps
+                .filter { packages.isBlank() || it.label.contains(packages, ignoreCase = true) || it.packageName.contains(packages, ignoreCase = true) }
+                .take(APP_LIST_LIMIT)
+                .forEach { app ->
+                    UiCard(
+                        if (app.excluded) "${app.label}  ✓" else app.label,
+                        app.packageName,
+                        onClick = { actions.onToggleApp(app.packageName) },
+                    )
+                }
+        }
     }
     UiSection("About") {
         UiCard("HydraBox", "2.0.0 alpha")

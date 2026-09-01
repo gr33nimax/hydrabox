@@ -37,6 +37,9 @@ data class SettingsSummary(
     val statusNotificationEnabled: Boolean,
 )
 
+/** One installed app, as the split-tunnel picker needs it. */
+data class InstalledApp(val packageName: String, val label: String, val excluded: Boolean)
+
 data class DiagnosticsSummary(
     val level: String,
     val recentEvents: List<String>,
@@ -85,6 +88,7 @@ data class ScreenState(
     val legalAccepted: Boolean = true,
     val transport: String = "",
     val busy: Boolean = false,
+    val apps: List<InstalledApp> = emptyList(),
 ) {
     val hasProxies get() = proxies.isNotEmpty()
 }
@@ -99,6 +103,7 @@ data class AppReadModel(
     val subscriptionOperation: OperationState<Unit> = OperationState.Idle,
     val backupOperation: OperationState<Unit> = OperationState.Idle,
     val legalAccepted: Boolean = true,
+    val apps: List<InstalledApp> = emptyList(),
 )
 
 object ScreenProjection {
@@ -146,6 +151,7 @@ object ScreenProjection {
                 if (!health.applicable) "not applicable" else "${health.state.name.lowercase()}, ${health.activeLanes} lanes"
             },
             busy = model.subscriptionOperation == OperationState.Running || model.backupOperation == OperationState.Running,
+            apps = model.apps.sortedWith(compareByDescending<InstalledApp> { it.excluded }.thenBy { it.label.lowercase() }),
         )
     }
 

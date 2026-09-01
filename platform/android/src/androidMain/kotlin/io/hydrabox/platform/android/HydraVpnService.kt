@@ -146,12 +146,56 @@ class HydraVpnService : VpnService() {
     }
 
     private fun notification(state: RuntimeState) = (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).let { manager ->
-        manager.createNotificationChannel(NotificationChannel(CHANNEL_ID, "HydraBox VPN", NotificationManager.IMPORTANCE_LOW))
+        manager.createNotificationChannel(
+            NotificationChannel(CHANNEL_ID, "HydraBox VPN", NotificationManager.IMPORTANCE_LOW).apply {
+                setShowBadge(false)
+                description = "Shows whether the tunnel is up"
+            },
+        )
+        val snapshot = runtime.snapshot()
+        val detail = if (snapshot.traffic.available) {
+            "${snapshot.state.name.lowercase()} · ↓ ${rate(snapshot.traffic.downlink)} ↑ ${rate(snapshot.traffic.uplink)}"
+        } else {
+            snapshot.state.name.lowercase()
+        }
         android.app.Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle("HydraBox")
-            .setContentText(state.name.lowercase())
-            .setSmallIcon(android.R.drawable.stat_sys_warning)
+            .setContentTitle(snapshot.selectedOutbounds.firstOrNull()?.outboundId ?: "HydraBox")
+            .setContentText(detail)
+            .setSmallIcon(R.drawable.ic_hydra_status)
+            .setOngoing(state != RuntimeState.STOPPED)
+            .setOnlyAlertOnce(true)
+            .setContentIntent(
+                android.app.PendingIntent.getActivity(
+                    this,
+                    0,
+                    Intent(this, RuntimeControlActivity::class.java),
+                    android.app.PendingIntent.FLAG_IMMUTABLE,
+                ),
+            )
+            .addAction(
+                android.app.Notification.Action.Builder(
+                    null,
+                    "Disconnect",
+                    android.app.PendingIntent.getService(
+                        this,
+                        1,
+                        Intent(this, HydraVpnService::class.java).setAction(ACTION_STOP),
+                        android.app.PendingIntent.FLAG_IMMUTABLE,
+                    ),
+                ).build(),
+            )
             .build()
+    }
+
+    private fun rate(value: Long): String {
+        val units = listOf("B", "KiB", "MiB", "GiB")
+        var amount = value.toDouble()
+        var unit = 0
+        while (amount >= 1024 && unit < units.lastIndex) {
+            amount /= 1024
+            unit += 1
+        }
+        return "${amount.toLong()} ${units[unit]}/s"
     }
 
     companion object {

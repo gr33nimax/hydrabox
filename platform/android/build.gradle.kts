@@ -50,6 +50,7 @@ extensions.configure<ApplicationExtension> {
     }
     sourceSets.getByName("main").manifest.srcFile("src/androidMain/AndroidManifest.xml")
     sourceSets.getByName("main").java.srcDir("src/androidMain/kotlin")
+    sourceSets.getByName("main").res.srcDir("src/androidMain/res")
 }
 
 dependencies {

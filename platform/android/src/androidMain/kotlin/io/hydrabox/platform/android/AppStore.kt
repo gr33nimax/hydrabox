@@ -34,6 +34,7 @@ import io.hydrabox.core.subscription.SubscriptionStore
  * document file.
  */
 class AppStore(context: Context) {
+    private val appContext = context.applicationContext
     private val driver = openStorageDriver(StorageContext(context.applicationContext), DATABASE_NAME)
     private val database = StorageDatabase(driver)
     private val codec = SecretFieldCodec(platformSecretFieldCipher(driver))
@@ -55,6 +56,35 @@ class AppStore(context: Context) {
         splitRoutingPackageCount = settings.splitRoutingPackages.size,
         statusNotificationEnabled = settings.statusNotificationEnabled,
     )
+
+    /** Launchable apps, with the ones currently kept outside the tunnel marked. */
+    fun installedApps(): List<io.hydrabox.core.projection.InstalledApp> {
+        val excluded = settings().splitRoutingPackages.toSet()
+        val manager = appContext.packageManager
+        val intent = android.content.Intent(android.content.Intent.ACTION_MAIN)
+            .addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+        return runCatching {
+            manager.queryIntentActivities(intent, 0).mapNotNull { resolved ->
+                val name = resolved.activityInfo?.packageName ?: return@mapNotNull null
+                if (name == appContext.packageName) return@mapNotNull null
+                io.hydrabox.core.projection.InstalledApp(
+                    packageName = name,
+                    label = runCatching { resolved.loadLabel(manager).toString() }.getOrDefault(name),
+                    excluded = name in excluded,
+                )
+            }.distinctBy { it.packageName }
+        }.getOrDefault(emptyList())
+    }
+
+    fun toggleExcludedApp(packageName: String) {
+        val current = settings()
+        val updated = if (packageName in current.splitRoutingPackages) {
+            current.splitRoutingPackages - packageName
+        } else {
+            current.splitRoutingPackages + packageName
+        }
+        saveSettings(current.copy(splitRoutingPackages = normalizeSplitRoutingPackages(updated)))
+    }
 
     fun setSplitRoutingPackages(raw: String) = saveSettings(
         settings().copy(
