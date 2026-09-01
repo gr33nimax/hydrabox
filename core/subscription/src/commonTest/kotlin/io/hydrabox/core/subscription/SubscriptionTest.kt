@@ -61,5 +61,6 @@ class SubscriptionTest {
         val document = SubscriptionParser.parseDocument("{\"outbounds\":[{\"type\":\"vless\",\"tag\":\"node-a\"},{\"type\":\"trojan\",\"tag\":\"node-b\"}]}")
         assertEquals(SubscriptionDocumentFormat.SINGBOX, document.format)
         assertEquals(listOf("node-a", "node-b"), document.outboundTags)
+        assertEquals(listOf("vless", "trojan"), document.outbounds.map(ParsedOutbound::type))
     }
 }
