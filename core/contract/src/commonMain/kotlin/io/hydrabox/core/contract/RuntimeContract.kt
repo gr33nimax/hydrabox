@@ -43,6 +43,19 @@ data class TransportHealth(
     val isReady get() = !applicable || (state in setOf(TransportHealthState.HEALTHY, TransportHealthState.DEGRADED) && activeLanes >= 1)
 }
 
+/** Counters as the core reports them; [available] is false until it starts publishing. */
+data class TrafficCounters(
+    val available: Boolean = false,
+    val uplink: Long = 0,
+    val downlink: Long = 0,
+    val uplinkTotal: Long = 0,
+    val downlinkTotal: Long = 0,
+    val connectionsOut: Int = 0,
+)
+
+/** One measured outbound, as the core's own latency group reports it. */
+data class OutboundLatency(val tag: String, val delayMillis: Int, val status: String)
+
 data class RuntimeSnapshot(
     val processEpoch: ProcessEpoch,
     val commandGeneration: CommandGeneration,
@@ -54,6 +67,8 @@ data class RuntimeSnapshot(
     val selectedOutbounds: List<OutboundSelection> = emptyList(),
     val transportHealth: TransportHealth = TransportHealth(),
     val lastFailure: RuntimeFailure? = null,
+    val traffic: TrafficCounters = TrafficCounters(),
+    val latencies: List<OutboundLatency> = emptyList(),
 )
 
 sealed interface RuntimeCommand {

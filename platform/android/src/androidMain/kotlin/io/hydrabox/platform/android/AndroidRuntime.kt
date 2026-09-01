@@ -40,7 +40,7 @@ class AndroidRuntime(private val execute: (Effect) -> Unit) : RuntimeTransport {
         }
     }
 
-    override fun snapshot() = RuntimeSnapshot(epoch, CommandGeneration(model.commandGeneration), RuntimeGeneration(model.runtimeGeneration), model.networkGeneration, EventSequence(sequence), model.state, model.mode, model.selectedOutbounds, model.health, model.failure)
+    override fun snapshot() = RuntimeSnapshot(epoch, CommandGeneration(model.commandGeneration), RuntimeGeneration(model.runtimeGeneration), model.networkGeneration, EventSequence(sequence), model.state, model.mode, model.selectedOutbounds, model.health, model.failure, model.traffic, model.latencies)
 
     override fun subscribe(listener: (RuntimeEvent) -> Unit): AutoCloseable = synchronized(this) {
         listeners += listener

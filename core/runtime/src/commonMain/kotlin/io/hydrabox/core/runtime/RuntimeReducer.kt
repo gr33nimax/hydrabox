@@ -5,6 +5,8 @@ import io.hydrabox.core.contract.OutboundSelection
 import io.hydrabox.core.contract.RuntimeFailure
 import io.hydrabox.core.contract.RuntimeMode
 import io.hydrabox.core.contract.RuntimeState
+import io.hydrabox.core.contract.OutboundLatency
+import io.hydrabox.core.contract.TrafficCounters
 import io.hydrabox.core.contract.TransportHealth
 
 enum class RuntimeDeadline(val milliseconds: Long) {
@@ -32,6 +34,10 @@ sealed interface RuntimeInput {
     data class Deadline(val commandGeneration: Long) : RuntimeInput
     data class Released(val commandGeneration: Long, val success: Boolean) : RuntimeInput
     data object DeviceIdleExit : RuntimeInput
+    /** Counters observed from the core; carries no decision, only what to display. */
+    data class Traffic(val counters: TrafficCounters) : RuntimeInput
+    /** Latencies measured by the core's own group; likewise display-only. */
+    data class Latencies(val values: List<OutboundLatency>) : RuntimeInput
 }
 
 data class RuntimeModel(
@@ -47,6 +53,8 @@ data class RuntimeModel(
     val failure: RuntimeFailure? = null,
     val failAfterRelease: Boolean = false,
     val deferredStart: RuntimeMode? = null,
+    val traffic: TrafficCounters = TrafficCounters(),
+    val latencies: List<OutboundLatency> = emptyList(),
 )
 
 sealed interface Effect {
@@ -70,6 +78,9 @@ data class Decision(
 
 /** Pure state transition: platform code alone executes [Effect] and [TimerOp]. */
 fun reduce(state: RuntimeModel, input: RuntimeInput): Decision = when (input) {
+    is RuntimeInput.Traffic ->
+        if (state.state == RuntimeState.RUNNING) Decision(state.copy(traffic = input.counters)) else Decision(state)
+    is RuntimeInput.Latencies -> Decision(state.copy(latencies = input.values))
     is RuntimeInput.Start -> when (state.state) {
         RuntimeState.STOPPED, RuntimeState.FAILED -> start(state, input.mode)
         RuntimeState.RUNNING -> if (state.mode == input.mode) Decision(state) else stop(state, deferredStart = input.mode)

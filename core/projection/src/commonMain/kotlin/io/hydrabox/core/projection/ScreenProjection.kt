@@ -45,9 +45,28 @@ data class DiagnosticsSummary(
 
 data class TrafficSummary(
     val available: Boolean,
-    val uplinkBytes: Long = 0,
-    val downlinkBytes: Long = 0,
+    val uplink: String = "0 B/s",
+    val downlink: String = "0 B/s",
+    val uplinkTotal: String = "0 B",
+    val downlinkTotal: String = "0 B",
+    val connections: Int = 0,
 )
+
+/** Bytes as a person reads them. Formatting belongs here, not in a composable. */
+internal fun formatBytes(value: Long, suffix: String): String {
+    val units = listOf("B", "KiB", "MiB", "GiB", "TiB")
+    var amount = value.toDouble()
+    var unit = 0
+    while (amount >= 1024 && unit < units.lastIndex) {
+        amount /= 1024
+        unit += 1
+    }
+    val rendered = if (unit == 0) amount.toLong().toString() else {
+        val scaled = (amount * 10).toLong()
+        "${scaled / 10}.${scaled % 10}"
+    }
+    return "$rendered ${units[unit]}$suffix"
+}
 
 data class ScreenState(
     val phase: ScreenPhase,
@@ -89,6 +108,7 @@ object ScreenProjection {
         val snapshot = model.runtime
         val active = snapshot.selectedOutbounds.firstOrNull()?.outboundId
             ?: model.proxies.firstOrNull { it.selected }?.tag
+        val latency = snapshot.latencies.associate { it.tag to it.delayMillis.takeIf { value -> value > 0 } }
         val base = when (snapshot.state) {
             RuntimeState.STOPPED -> Triple(ScreenPhase.DISCONNECTED, true, false)
             RuntimeState.STARTING, RuntimeState.RECOVERING -> Triple(ScreenPhase.CONNECTING, false, true)
@@ -104,10 +124,21 @@ object ScreenProjection {
             errorCode = snapshot.lastFailure?.code?.code.takeIf { snapshot.state == RuntimeState.FAILED },
             activeOutbound = active,
             subscriptions = model.subscriptions,
-            proxies = model.proxies,
+            proxies = model.proxies.map { entry ->
+                entry.copy(latencyMillis = latency[entry.tag] ?: entry.latencyMillis)
+            },
             settings = model.settings,
             diagnostics = model.diagnostics,
-            traffic = TrafficSummary(available = snapshot.state == RuntimeState.RUNNING),
+            traffic = snapshot.traffic.let { counters ->
+                TrafficSummary(
+                    available = counters.available && snapshot.state == RuntimeState.RUNNING,
+                    uplink = formatBytes(counters.uplink, "/s"),
+                    downlink = formatBytes(counters.downlink, "/s"),
+                    uplinkTotal = formatBytes(counters.uplinkTotal, ""),
+                    downlinkTotal = formatBytes(counters.downlinkTotal, ""),
+                    connections = counters.connectionsOut,
+                )
+            },
             subscriptionOperation = label(model.subscriptionOperation),
             backupOperation = label(model.backupOperation),
             legalAccepted = model.legalAccepted,

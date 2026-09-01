@@ -27,12 +27,14 @@ class HydraVpnService : VpnService() {
     private lateinit var endpoint: BinderRuntimeEndpoint
     private lateinit var store: AppStore
     private lateinit var monitor: DefaultNetworkMonitor
+    private lateinit var observer: CoreObserver
     private var commandServer: CommandServer? = null
 
     override fun onCreate() {
         super.onCreate()
         store = AppStore(this)
         monitor = DefaultNetworkMonitor(this).apply { start() }
+        observer = CoreObserver(dispatch = { input -> runtime.dispatch(input) })
         runtime = AndroidRuntime(::execute)
         endpoint = BinderRuntimeEndpoint(runtime)
         runtime.subscribe { event ->
@@ -46,6 +48,7 @@ class HydraVpnService : VpnService() {
         when (intent?.action) {
             ACTION_START -> start()
             ACTION_STOP -> stop()
+            ACTION_MEASURE -> observer.measure(io.hydrabox.core.config.SELECTOR_TAG)
         }
         return Service.START_NOT_STICKY
     }
@@ -71,7 +74,19 @@ class HydraVpnService : VpnService() {
             stopRuntime()
             runtime.dispatch(RuntimeInput.Released(effect.commandGeneration, true))
         }
-        else -> Unit
+        is Effect.SelectCoreOutbound -> {
+            // Applied inside the running core; a restart here would drop every connection.
+            observer.select(effect.selection.groupId, effect.selection.outboundId)
+            Unit
+        }
+        is Effect.ReloadCore -> {
+            observer.reload()
+            Unit
+        }
+        is Effect.RebindNetwork -> {
+            runCatching { commandServer?.resetNetwork() }
+            Unit
+        }
     }
 
     private fun startCore(commandGeneration: Long) {
@@ -97,6 +112,7 @@ class HydraVpnService : VpnService() {
             return
         }
         store.clearStartFailure()
+        observer.start()
         runtime.dispatch(RuntimeInput.Launched(commandGeneration, commandGeneration))
         runtime.dispatch(RuntimeInput.Health(commandGeneration, commandGeneration, TransportHealth(applicable = false, runtimeGeneration = RuntimeGeneration(commandGeneration))))
         startForeground(NOTIFICATION_ID, notification(runtime.snapshot().state))
@@ -109,6 +125,7 @@ class HydraVpnService : VpnService() {
     }
 
     private fun stopRuntime() {
+        observer.stop()
         commandServer?.closeService()
         commandServer?.close()
         commandServer = null
@@ -140,6 +157,7 @@ class HydraVpnService : VpnService() {
     companion object {
         const val ACTION_START = "io.hydrabox.platform.android.START"
         const val ACTION_STOP = "io.hydrabox.platform.android.STOP"
+        const val ACTION_MEASURE = "io.hydrabox.platform.android.MEASURE"
         private const val CHANNEL_ID = "hydrabox-vpn"
         private const val NOTIFICATION_ID = 1
         @Volatile private var libboxReady = false

@@ -44,6 +44,7 @@ data class AppActions(
     val onSetDirectDns: (String) -> Unit = {},
     val onSetSplitPackages: (String) -> Unit = {},
     val onToggleNotification: () -> Unit = {},
+    val onMeasure: () -> Unit = {},
 )
 
 private enum class Destination(val label: String) {
@@ -161,9 +162,9 @@ private fun ConnectionScreen(state: ScreenState, actions: AppActions, navigate: 
     }
     if (state.traffic.available) {
         UiSection("Traffic") {
-            UiCard("Uplink", "${state.traffic.uplinkBytes} bytes")
-            UiCard("Downlink", "${state.traffic.downlinkBytes} bytes")
-            UiCard("Counters appear once the core publishes them")
+            UiCard("Download  ${state.traffic.downlink}", "total ${state.traffic.downlinkTotal}")
+            UiCard("Upload  ${state.traffic.uplink}", "total ${state.traffic.uplinkTotal}")
+            UiCard("Open connections", state.traffic.connections.toString())
         }
     }
 }
@@ -256,6 +257,18 @@ private fun ProxiesScreen(state: ScreenState, actions: AppActions) {
             singleLine = true,
         )
         val visible = state.proxies.filter { filter.isBlank() || it.tag.contains(filter, ignoreCase = true) }
+        visible.filter { it.subscriptionId.isEmpty() }.forEach { proxy ->
+            UiCard(
+                if (proxy.selected) "Automatic  ✓" else "Automatic",
+                listOfNotNull("lowest latency", proxy.latencyMillis?.let { "$it ms" }).joinToString(" — "),
+                onClick = { actions.onSelectProxy(proxy.tag) },
+            )
+        }
+        UiActionRow(
+            primary = "Measure now",
+            primaryEnabled = state.canStop,
+            onPrimary = actions.onMeasure,
+        )
         state.subscriptions.forEach { subscription ->
             val group = visible.filter { it.subscriptionId == subscription.id }
             if (group.isEmpty()) return@forEach
@@ -272,7 +285,9 @@ private fun ProxiesScreen(state: ScreenState, actions: AppActions) {
                 )
             }
         }
-        val orphans = visible.filter { proxy -> state.subscriptions.none { it.id == proxy.subscriptionId } }
+        val orphans = visible.filter { proxy ->
+            proxy.subscriptionId.isNotEmpty() && state.subscriptions.none { it.id == proxy.subscriptionId }
+        }
         orphans.forEach { proxy ->
             UiCard(proxy.tag, proxy.type, onClick = { actions.onSelectProxy(proxy.tag) })
         }

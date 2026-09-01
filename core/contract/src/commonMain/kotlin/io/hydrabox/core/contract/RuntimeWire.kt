@@ -47,6 +47,16 @@ object RuntimeWire {
         snapshot.transportHealth.networkGeneration.value.toString(),
         failure(snapshot.transportHealth.failure),
         failure(snapshot.lastFailure),
+        snapshot.traffic.available.toString(),
+        snapshot.traffic.uplink.toString(),
+        snapshot.traffic.downlink.toString(),
+        snapshot.traffic.uplinkTotal.toString(),
+        snapshot.traffic.downlinkTotal.toString(),
+        snapshot.traffic.connectionsOut.toString(),
+        snapshot.latencies.size.toString(),
+        *snapshot.latencies.flatMap {
+            listOf(text(it.tag), it.delayMillis.toString(), text(it.status))
+        }.toTypedArray(),
     ).encodeToByteArray()
 
     fun decodeSnapshot(bytes: ByteArray): RuntimeSnapshot {
@@ -70,8 +80,19 @@ object RuntimeWire {
             failure = readFailure(fields.removeAt(0)),
         )
         val lastFailure = readFailure(fields.removeAt(0))
+        val traffic = TrafficCounters(
+            available = fields.removeAt(0).toBooleanStrict(),
+            uplink = fields.removeAt(0).toLong(),
+            downlink = fields.removeAt(0).toLong(),
+            uplinkTotal = fields.removeAt(0).toLong(),
+            downlinkTotal = fields.removeAt(0).toLong(),
+            connectionsOut = fields.removeAt(0).toInt(),
+        )
+        val latencies = List(fields.removeAt(0).toInt()) {
+            OutboundLatency(readText(fields.removeAt(0)), fields.removeAt(0).toInt(), readText(fields.removeAt(0)))
+        }
         check(fields.isEmpty())
-        return RuntimeSnapshot(processEpoch, commandGeneration, runtimeGeneration, networkGeneration, eventSequence, state, mode, outbounds, health, lastFailure)
+        return RuntimeSnapshot(processEpoch, commandGeneration, runtimeGeneration, networkGeneration, eventSequence, state, mode, outbounds, health, lastFailure, traffic, latencies)
     }
 
     private fun failure(value: RuntimeFailure?): String = value?.let { "${it.domain.name},${it.code.name},${it.retryable}" } ?: ""

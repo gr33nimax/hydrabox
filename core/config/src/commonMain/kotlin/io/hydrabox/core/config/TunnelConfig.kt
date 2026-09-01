@@ -19,10 +19,19 @@ data class TunnelInput(
     val includePackages: List<String> = emptyList(),
     val excludePackages: List<String> = emptyList(),
     val logLevel: String = "warn",
+    val urlTestUrl: String = "https://cp.cloudflare.com/generate_204",
+    val urlTestIntervalSeconds: Int = 600,
 )
 
 const val SELECTOR_TAG = "select"
 const val DIRECT_TAG = "direct"
+
+/**
+ * The core's own latency group. It exists for two reasons: it lets the user pick
+ * "fastest" instead of a named server, and it is what makes the core measure and report a
+ * delay per outbound at all — a plain selector measures nothing.
+ */
+const val AUTO_TAG = "auto"
 
 /**
  * Builds a complete core configuration: a tun inbound, every outbound the subscription
@@ -37,10 +46,11 @@ object TunnelConfigGenerator {
     fun generate(input: TunnelInput): String = json.encodeToString(JsonObject.serializer(), build(input))
 
     fun build(input: TunnelInput): JsonObject {
-        val embedded = input.outbounds.filterNot { it.tag == DIRECT_TAG || it.tag == SELECTOR_TAG }
+        val reserved = setOf(DIRECT_TAG, SELECTOR_TAG, AUTO_TAG)
+        val embedded = input.outbounds.filterNot { it.tag in reserved }
         val choices = embedded.filter(CatalogOutbound::selectable).map(CatalogOutbound::tag)
         val hasProxies = choices.isNotEmpty()
-        val selected = input.selectedTag?.takeIf(choices::contains) ?: choices.firstOrNull()
+        val selected = input.selectedTag?.takeIf { it == AUTO_TAG || it in choices }
         return buildJsonObject {
             putJsonObject("log") { put("level", input.logLevel) }
             put("dns", dns(input, hasProxies))
@@ -51,10 +61,24 @@ object TunnelConfigGenerator {
                 if (hasProxies) {
                     add(
                         buildJsonObject {
+                            put("type", "urltest")
+                            put("tag", AUTO_TAG)
+                            putJsonArray("outbounds") { choices.forEach { add(JsonPrimitive(it)) } }
+                            put("url", input.urlTestUrl)
+                            put("interval", "${input.urlTestIntervalSeconds}s")
+                            put("tolerance", 50)
+                        },
+                    )
+                    add(
+                        buildJsonObject {
                             put("type", "selector")
                             put("tag", SELECTOR_TAG)
-                            putJsonArray("outbounds") { choices.forEach { add(JsonPrimitive(it)) } }
-                            selected?.let { put("default", it) }
+                            putJsonArray("outbounds") {
+                                add(JsonPrimitive(AUTO_TAG))
+                                choices.forEach { add(JsonPrimitive(it)) }
+                            }
+                            put("default", selected ?: AUTO_TAG)
+                            put("interrupt_exist_connections", true)
                         },
                     )
                 }

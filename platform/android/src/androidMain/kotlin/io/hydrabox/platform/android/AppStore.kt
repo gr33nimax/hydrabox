@@ -1,6 +1,7 @@
 package io.hydrabox.platform.android
 
 import android.content.Context
+import io.hydrabox.core.config.AUTO_TAG
 import io.hydrabox.core.config.TunnelConfigGenerator
 import io.hydrabox.core.config.TunnelInput
 import io.hydrabox.core.diagnostics.Secret
@@ -120,12 +121,16 @@ class AppStore(context: Context) {
     }
 
     fun proxies(): List<ProxyEntry> {
-        val selected = selectedTag()
-        return catalogs().flatMap { (record, outbounds) ->
+        val selected = selectedTag() ?: AUTO_TAG
+        val named = catalogs().flatMap { (record, outbounds) ->
             outbounds.filter(CatalogOutbound::selectable).map { outbound ->
                 ProxyEntry(outbound.tag, outbound.type, record.id, outbound.tag == selected)
             }
         }
+        if (named.isEmpty()) return named
+        // The automatic group is a real outbound in the generated config, so it belongs in
+        // the same list rather than being a separate control.
+        return listOf(ProxyEntry(AUTO_TAG, "lowest latency", "", selected == AUTO_TAG)) + named
     }
 
     fun parseError(id: String): String? = records().firstOrNull { it.id == id }?.let { record ->
@@ -152,6 +157,8 @@ class AppStore(context: Context) {
                 directDnsResolver = settings.dnsDirectResolver,
                 mtu = settings.vpnMtu,
                 excludePackages = settings.splitRoutingPackages,
+                urlTestUrl = settings.urlTestUrl,
+                urlTestIntervalSeconds = settings.urlTestIntervalSeconds,
             ),
         )
     }

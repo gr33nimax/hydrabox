@@ -148,6 +148,7 @@ class RuntimeControlActivity : ComponentActivity() {
             }
         },
         onReload = { send(RuntimeCommand.Reload) },
+        onMeasure = { startService(Intent(this, HydraVpnService::class.java).setAction(HydraVpnService.ACTION_MEASURE)) },
     )
 
     private fun background(success: String?, block: () -> Unit) {
