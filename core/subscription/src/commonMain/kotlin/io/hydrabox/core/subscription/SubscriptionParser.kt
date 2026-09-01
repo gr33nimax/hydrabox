@@ -14,10 +14,17 @@ sealed interface ShareLink {
     val port: Int
     val name: String
 
-    data class Vless(override val server: String, override val port: Int, override val name: String, val uuid: Secret) : ShareLink
-    data class Trojan(override val server: String, override val port: Int, override val name: String, val password: Secret) : ShareLink
-    data class Proxy(override val server: String, override val port: Int, override val name: String, val type: String, val tls: Boolean, val username: Secret?, val password: Secret?) : ShareLink
-    data class WireGuard(override val server: String, override val port: Int, override val name: String, val privateKey: Secret, val peerPublicKey: Secret) : ShareLink
+    /**
+     * Transport parameters carried by the link query string: security, sni, flow, type,
+     * path, host, alpn and friends. Kept as given so config generation can honour them;
+     * a link without a query yields an empty map.
+     */
+    val query: Map<String, String>
+
+    data class Vless(override val server: String, override val port: Int, override val name: String, val uuid: Secret, override val query: Map<String, String> = emptyMap()) : ShareLink
+    data class Trojan(override val server: String, override val port: Int, override val name: String, val password: Secret, override val query: Map<String, String> = emptyMap()) : ShareLink
+    data class Proxy(override val server: String, override val port: Int, override val name: String, val type: String, val tls: Boolean, val username: Secret?, val password: Secret?, override val query: Map<String, String> = emptyMap()) : ShareLink
+    data class WireGuard(override val server: String, override val port: Int, override val name: String, val privateKey: Secret, val peerPublicKey: Secret, override val query: Map<String, String> = emptyMap()) : ShareLink
 }
 
 enum class SubscriptionDocumentFormat { SINGBOX, XRAY, CLASH, SIP008, HYDRA, UNKNOWN }
@@ -28,7 +35,7 @@ data class ParsedSubscriptionDocument(val format: SubscriptionDocumentFormat, va
 }
 
 object SubscriptionParser {
-    private val link = Regex("^([A-Za-z0-9+]+)://(?:([^@/?#]+)@)?([^:/?#]+):(\\d+)(?:\\?[^#]*)?(?:#(.*))?$")
+    private val link = Regex("^([A-Za-z0-9+]+)://(?:([^@/?#]+)@)?([^:/?#]+):(\\d+)(?:\\?([^#]*))?(?:#(.*))?$")
 
     fun parse(value: String): ShareLink {
         if (value.trimStart().startsWith("[Interface]")) return parseWireGuard(value)
@@ -39,11 +46,12 @@ object SubscriptionParser {
         val credential = decode(match.groupValues[2])
         val server = decode(match.groupValues[3]).takeIf(String::isNotEmpty) ?: error("missing link server")
         val port = match.groupValues[4].toIntOrNull()?.takeIf { it in 1..65535 } ?: error("invalid link port")
-        val name = decode(match.groupValues[5])
+        val query = parseQuery(match.groupValues[5])
+        val name = decode(match.groupValues[6])
         return when (scheme) {
-            "vless" -> ShareLink.Vless(server, port, name, Secret.of(credential.takeIf(String::isNotEmpty) ?: error("missing link credential")))
-            "trojan" -> ShareLink.Trojan(server, port, name, Secret.of(credential.takeIf(String::isNotEmpty) ?: error("missing link credential")))
-            "socks", "socks4", "socks4a", "socks5", "socks5h", "http", "https", "ss", "hysteria", "hy", "hy2", "hysteria2", "naive+https", "naive+quic", "tuic", "anytls" -> proxy(scheme, server, port, name, credential)
+            "vless" -> ShareLink.Vless(server, port, name, Secret.of(credential.takeIf(String::isNotEmpty) ?: error("missing link credential")), query)
+            "trojan" -> ShareLink.Trojan(server, port, name, Secret.of(credential.takeIf(String::isNotEmpty) ?: error("missing link credential")), query)
+            "socks", "socks4", "socks4a", "socks5", "socks5h", "http", "https", "ss", "hysteria", "hy", "hy2", "hysteria2", "naive+https", "naive+quic", "tuic", "anytls" -> proxy(scheme, server, port, name, credential, query)
             else -> error("unsupported subscription link")
         }
     }
@@ -134,7 +142,7 @@ object SubscriptionParser {
         return ParsedSubscriptionDocument(format, documentOutbounds)
     }
 
-    private fun proxy(scheme: String, server: String, port: Int, name: String, credential: String): ShareLink.Proxy {
+    private fun proxy(scheme: String, server: String, port: Int, name: String, credential: String, query: Map<String, String>): ShareLink.Proxy {
         val parts = credential.split(':', limit = 2)
         val username = parts.firstOrNull()?.takeIf(String::isNotEmpty)?.let(Secret::of)
         val password = parts.getOrNull(1)?.takeIf(String::isNotEmpty)?.let(Secret::of)
@@ -148,8 +156,22 @@ object SubscriptionParser {
             scheme == "anytls" -> "anytls"
             else -> "http"
         }
-        return ShareLink.Proxy(server, port, name, type, scheme == "https" || scheme == "naive+https", username, password)
+        val secured = scheme == "https" || scheme == "naive+https" ||
+            query["security"] == "tls" || query["tls"] == "1" ||
+            type == "hysteria2" || type == "hysteria" || type == "tuic" || type == "anytls"
+        return ShareLink.Proxy(server, port, name, type, secured, username, password, query)
     }
+
+    private fun parseQuery(raw: String): Map<String, String> = raw
+        .split('&')
+        .asSequence()
+        .filter(String::isNotEmpty)
+        .mapNotNull { pair ->
+            val divider = pair.indexOf('=')
+            if (divider <= 0) null else decode(pair.substring(0, divider)) to decode(pair.substring(divider + 1))
+        }
+        .filter { it.second.isNotEmpty() }
+        .toMap()
 }
 
 @OptIn(ExperimentalEncodingApi::class)

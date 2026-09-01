@@ -33,3 +33,6 @@ DELETE FROM storage_metadata;
 
 deleteAllSubscriptions:
 DELETE FROM subscriptions;
+
+deleteSubscription:
+DELETE FROM subscriptions WHERE subscription_id = ?;

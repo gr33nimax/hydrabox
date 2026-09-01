@@ -10,6 +10,15 @@ value class Secret private constructor(private val value: String) {
     }
 
     fun sealWith(sealer: SecretSealer): ByteArray = sealer.seal(value)
+
+    /**
+     * Narrow, deliberate escape hatch for the few producers that must materialise the
+     * plaintext: sealing it into storage and writing it into a core configuration.
+     * Never call this from a code path that renders text for a human or a log.
+     */
+    fun <T> use(block: (String) -> T): T = block(value)
+
+    override fun toString(): String = "Secret(redacted)"
 }
 
 fun interface SecretSealer {

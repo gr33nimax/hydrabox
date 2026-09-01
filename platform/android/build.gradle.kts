@@ -4,6 +4,8 @@ import java.security.MessageDigest
 plugins {
     id("com.android.application")
     kotlin("android")
+    id("org.jetbrains.compose")
+    kotlin("plugin.compose")
 }
 
 val libboxAar = file("libs/libbox.aar")
@@ -26,12 +28,25 @@ extensions.configure<ApplicationExtension> {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    buildFeatures { buildConfig = true }
+    buildFeatures {
+        buildConfig = true
+        compose = true
+    }
     defaultConfig {
         applicationId = "io.hydrabox.platform.android"
         minSdk = 26
         targetSdk = 36
+        versionCode = 200
+        versionName = "2.0.0-alpha1"
         buildConfigField("String", "HYDRACORE_VERSION", "\"$hydraCoreVersion\"")
+        // The alpha ships arm64 only: the other ABIs triple the artifact for devices we
+        // are not testing on. Restore them when the alpha becomes a release candidate.
+        ndk { abiFilters += "arm64-v8a" }
+    }
+    buildTypes {
+        getByName("debug") {
+            ndk { debugSymbolLevel = "none" }
+        }
     }
     sourceSets.getByName("main").manifest.srcFile("src/androidMain/AndroidManifest.xml")
     sourceSets.getByName("main").java.srcDir("src/androidMain/kotlin")
@@ -41,6 +56,14 @@ dependencies {
     implementation(project(":core:contract"))
     implementation(project(":core:runtime"))
     implementation(project(":core:config"))
+    implementation(project(":core:subscription"))
+    implementation(project(":core:settings"))
+    implementation(project(":core:storage"))
+    implementation(project(":core:diagnostics"))
+    implementation(project(":core:model"))
+    implementation(project(":core:projection"))
+    implementation(project(":ui:app"))
+    implementation("androidx.activity:activity-compose:1.10.1")
     implementation(files(libboxAar))
 }
 

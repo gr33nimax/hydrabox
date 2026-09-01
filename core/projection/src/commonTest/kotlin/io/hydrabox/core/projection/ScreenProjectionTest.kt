@@ -19,4 +19,9 @@ class ScreenProjectionTest {
         val state = ScreenProjection.project(snapshot(RuntimeState.FAILED, RuntimeFailure(FailureDomain.DNS, HydraCoreErrorCode.DNS_UPSTREAM_TIMEOUT, true)))
         assertEquals("dns.upstream.timeout", state.errorCode); assertTrue(state.canRetry)
     }
+
+    @Test fun `projection exposes selected outbound without a second UI state`() {
+        val source = snapshot(RuntimeState.RUNNING).copy(selectedOutbounds = listOf(OutboundSelection("default", "proxy-a")))
+        assertEquals("proxy-a", ScreenProjection.project(source).activeOutbound)
+    }
 }

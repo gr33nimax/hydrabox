@@ -15,8 +15,6 @@ import io.nekohasekai.libbox.OverrideOptions
 import io.nekohasekai.libbox.SetupOptions
 import io.nekohasekai.libbox.SystemProxyStatus
 import io.hydrabox.core.contract.RuntimeCommand
-import io.hydrabox.core.config.ConfigGenerator
-import io.hydrabox.core.config.ConfigInput
 import io.hydrabox.core.contract.RuntimeMode
 import io.hydrabox.core.contract.RuntimeState
 import io.hydrabox.core.contract.RuntimeGeneration
@@ -27,12 +25,19 @@ import io.hydrabox.core.runtime.RuntimeInput
 class HydraVpnService : VpnService() {
     private lateinit var runtime: AndroidRuntime
     private lateinit var endpoint: BinderRuntimeEndpoint
+    private lateinit var store: AppStore
     private var commandServer: CommandServer? = null
 
     override fun onCreate() {
         super.onCreate()
+        store = AppStore(this)
         runtime = AndroidRuntime(::execute)
         endpoint = BinderRuntimeEndpoint(runtime)
+        runtime.subscribe { event ->
+            if (event is io.hydrabox.core.contract.RuntimeEvent.Snapshot && event.snapshot.state != RuntimeState.STOPPED) {
+                startForeground(NOTIFICATION_ID, notification(event.snapshot.state))
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -67,7 +72,14 @@ class HydraVpnService : VpnService() {
     }
 
     private fun startCore(commandGeneration: Long) {
-        val content = ConfigGenerator.generate(ConfigInput("https://dns.cloudflare.com/dns-query", ready = true))
+        val content = store.generateConfig()
+        if (content == null) {
+            stopRuntime()
+            runtime.dispatch(RuntimeInput.Released(commandGeneration, false))
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return
+        }
         ensureLibboxSetup()
         Libbox.checkConfig(content)
         stopRuntime()
@@ -77,6 +89,7 @@ class HydraVpnService : VpnService() {
         }
         runtime.dispatch(RuntimeInput.Launched(commandGeneration, commandGeneration))
         runtime.dispatch(RuntimeInput.Health(commandGeneration, commandGeneration, TransportHealth(applicable = false, runtimeGeneration = RuntimeGeneration(commandGeneration))))
+        startForeground(NOTIFICATION_ID, notification(runtime.snapshot().state))
     }
 
     private fun stop() {
