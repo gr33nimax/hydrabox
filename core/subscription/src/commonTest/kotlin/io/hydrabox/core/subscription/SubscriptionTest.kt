@@ -97,5 +97,12 @@ class SubscriptionTest {
                 type: ss
         """.trimIndent())
         assertEquals(listOf("first-node", "second-node"), document.outboundTags)
+        assertEquals(listOf("vless", "ss"), document.outbounds.map(ParsedOutbound::type))
+    }
+
+    @Test fun `uses Xray protocol as outbound type`() {
+        val document = SubscriptionParser.parseDocument("{\"outbounds\":[{\"tag\":\"xray-node\",\"protocol\":\"trojan\"}]}")
+        assertEquals(SubscriptionDocumentFormat.XRAY, document.format)
+        assertEquals(listOf(ParsedOutbound("xray-node", "trojan")), document.outbounds)
     }
 }

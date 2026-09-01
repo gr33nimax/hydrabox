@@ -110,6 +110,7 @@ object SubscriptionParser {
             (value as? JsonObject)?.let { object_ ->
                 val tag = object_["tag"]?.jsonPrimitive?.contentOrNull
                 val type = object_["type"]?.jsonPrimitive?.contentOrNull
+                    ?: object_["protocol"]?.jsonPrimitive?.contentOrNull
                 if (tag == null || type == null) null else ParsedOutbound(tag, type)
             }
         }
@@ -121,9 +122,12 @@ object SubscriptionParser {
             SubscriptionDocumentFormat.HYDRA -> ((root as? JsonObject)?.get("profiles") as? JsonArray).orEmpty()
                 .mapNotNull { (it as? JsonObject)?.get("id")?.jsonPrimitive?.contentOrNull }
                 .map { ParsedOutbound(it, "hydra") }
-            SubscriptionDocumentFormat.CLASH -> Regex("(?m)^\\s*-\\s*name:\\s*(.+?)\\s*$")
+            SubscriptionDocumentFormat.CLASH -> Regex("(?ms)^\\s*-\\s*name:\\s*(.+?)\\s*$([\\s\\S]*?)(?=^\\s*-\\s*name:|\\z)")
                 .findAll(content)
-                .map { ParsedOutbound(it.groupValues[1].trim().removeSurrounding("\""), "clash") }
+                .map {
+                    val type = Regex("(?m)^\\s*type:\\s*(.+?)\\s*$").find(it.groupValues[2])?.groupValues?.get(1)?.trim()
+                    ParsedOutbound(it.groupValues[1].trim().removeSurrounding("\""), type ?: "clash")
+                }
                 .toList()
             else -> outbounds
         }
