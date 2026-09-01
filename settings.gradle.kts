@@ -18,6 +18,7 @@ rootProject.name = "HydraBox2"
 
 include(
     ":core:model",
+    ":core:update",
     ":core:contract",
     ":core:runtime",
     ":core:projection",
