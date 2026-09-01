@@ -39,7 +39,7 @@ object SubscriptionParser {
         return when (scheme) {
             "vless" -> ShareLink.Vless(server, port, name, Secret.of(credential.takeIf(String::isNotEmpty) ?: error("missing link credential")))
             "trojan" -> ShareLink.Trojan(server, port, name, Secret.of(credential.takeIf(String::isNotEmpty) ?: error("missing link credential")))
-            "socks", "socks4", "socks5", "http", "https", "ss", "hysteria", "hy2", "hysteria2", "naive+https", "naive+quic" -> proxy(scheme, server, port, name, credential)
+            "socks", "socks4", "socks4a", "socks5", "socks5h", "http", "https", "ss", "hysteria", "hy", "hy2", "hysteria2", "naive+https", "naive+quic", "tuic", "anytls" -> proxy(scheme, server, port, name, credential)
             else -> error("unsupported subscription link")
         }
     }
@@ -115,8 +115,10 @@ object SubscriptionParser {
             scheme.startsWith("socks") -> "socks"
             scheme == "ss" -> "shadowsocks"
             scheme == "hy2" || scheme == "hysteria2" -> "hysteria2"
-            scheme == "hysteria" -> "hysteria"
+            scheme == "hysteria" || scheme == "hy" -> "hysteria"
             scheme.startsWith("naive+") -> "naive"
+            scheme == "tuic" -> "tuic"
+            scheme == "anytls" -> "anytls"
             else -> "http"
         }
         return ShareLink.Proxy(server, port, name, type, scheme == "https" || scheme == "naive+https", username, password)

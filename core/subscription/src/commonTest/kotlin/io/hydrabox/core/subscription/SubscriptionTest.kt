@@ -36,6 +36,13 @@ class SubscriptionTest {
         assertEquals("naive", assertIs<ShareLink.Proxy>(SubscriptionParser.parse("naive+https://user:pass@naive.example:443#Naive")).type)
     }
 
+    @Test fun `parses remaining supported link schemes`() {
+        assertEquals("tuic", assertIs<ShareLink.Proxy>(SubscriptionParser.parse("tuic://id:password@tuic.example:443#TUIC")).type)
+        assertEquals("anytls", assertIs<ShareLink.Proxy>(SubscriptionParser.parse("anytls://password@anytls.example:443#AnyTLS")).type)
+        assertEquals("hysteria", assertIs<ShareLink.Proxy>(SubscriptionParser.parse("hy://auth@hy.example:443#Hy")).type)
+        assertEquals("socks", assertIs<ShareLink.Proxy>(SubscriptionParser.parse("socks4a://socks.example:1080#SOCKS")).type)
+    }
+
     @Test fun `parses a WireGuard config`() {
         val link = assertIs<ShareLink.WireGuard>(SubscriptionParser.parse("""
             [Interface]
