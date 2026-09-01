@@ -13,6 +13,9 @@ sealed interface ShareLink {
     data class WireGuard(override val server: String, override val port: Int, override val name: String, val privateKey: Secret, val peerPublicKey: Secret) : ShareLink
 }
 
+enum class SubscriptionDocumentFormat { SINGBOX, XRAY, CLASH, SIP008, HYDRA, UNKNOWN }
+data class SubscriptionDocument(val format: SubscriptionDocumentFormat)
+
 object SubscriptionParser {
     private val link = Regex("^([A-Za-z0-9+]+)://(?:([^@/?#]+)@)?([^:/?#]+):(\\d+)(?:\\?[^#]*)?(?:#(.*))?$")
 
@@ -53,6 +56,19 @@ object SubscriptionParser {
         .filter(String::isNotEmpty)
         .map(::parse)
         .toList()
+
+    fun detectDocument(content: String): SubscriptionDocument {
+        val trimmed = content.trim()
+        val format = when {
+            trimmed.startsWith("proxies:") -> SubscriptionDocumentFormat.CLASH
+            trimmed.startsWith("[") && trimmed.contains("\"servers\"") -> SubscriptionDocumentFormat.SIP008
+            trimmed.startsWith("{") && trimmed.contains("\"api_version\"") && trimmed.contains("hydra") -> SubscriptionDocumentFormat.HYDRA
+            trimmed.startsWith("{") && trimmed.contains("\"protocol\"") -> SubscriptionDocumentFormat.XRAY
+            trimmed.startsWith("{") && trimmed.contains("\"outbounds\"") -> SubscriptionDocumentFormat.SINGBOX
+            else -> SubscriptionDocumentFormat.UNKNOWN
+        }
+        return SubscriptionDocument(format)
+    }
 
     private fun proxy(scheme: String, server: String, port: Int, name: String, credential: String): ShareLink.Proxy {
         val parts = credential.split(':', limit = 2)

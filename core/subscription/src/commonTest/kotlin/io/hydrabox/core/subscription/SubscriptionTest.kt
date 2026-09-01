@@ -47,4 +47,13 @@ class SubscriptionTest {
         """.trimIndent()))
         assertEquals("wg.example", link.server); assertEquals(51820, link.port); assertEquals("WireGuard", link.name)
     }
+
+    @Test fun `recognizes supported config documents without exposing payload`() {
+        assertEquals(SubscriptionDocumentFormat.SINGBOX, SubscriptionParser.detectDocument("{\"outbounds\":[]}").format)
+        assertEquals(SubscriptionDocumentFormat.XRAY, SubscriptionParser.detectDocument("{\"outbounds\":[{\"protocol\":\"vless\"}]}" ).format)
+        assertEquals(SubscriptionDocumentFormat.CLASH, SubscriptionParser.detectDocument("proxies:\n  - name: node").format)
+        assertEquals(SubscriptionDocumentFormat.SIP008, SubscriptionParser.detectDocument("[{\"servers\":[]}]").format)
+        assertEquals(SubscriptionDocumentFormat.HYDRA, SubscriptionParser.detectDocument("{\"api_version\":\"hydra.io/subscription/v2\"}").format)
+        assertEquals(SubscriptionDocumentFormat.UNKNOWN, SubscriptionParser.detectDocument("not a subscription").format)
+    }
 }
