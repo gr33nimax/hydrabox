@@ -25,16 +25,32 @@ object SubscriptionParser {
         return when (scheme) {
             "vless" -> ShareLink.Vless(server, port, name, Secret.of(credential.takeIf(String::isNotEmpty) ?: error("missing link credential")))
             "trojan" -> ShareLink.Trojan(server, port, name, Secret.of(credential.takeIf(String::isNotEmpty) ?: error("missing link credential")))
-            "socks", "socks4", "socks5", "http", "https" -> proxy(scheme, server, port, name, credential)
+            "socks", "socks4", "socks5", "http", "https", "ss", "hysteria", "hy2", "hysteria2", "naive+https", "naive+quic" -> proxy(scheme, server, port, name, credential)
             else -> error("unsupported subscription link")
         }
     }
+
+    fun parseAll(content: String): List<ShareLink> = content
+        .replace(" -> ", "\n")
+        .lineSequence()
+        .map(String::trim)
+        .filter(String::isNotEmpty)
+        .map(::parse)
+        .toList()
 
     private fun proxy(scheme: String, server: String, port: Int, name: String, credential: String): ShareLink.Proxy {
         val parts = credential.split(':', limit = 2)
         val username = parts.firstOrNull()?.takeIf(String::isNotEmpty)?.let(Secret::of)
         val password = parts.getOrNull(1)?.takeIf(String::isNotEmpty)?.let(Secret::of)
-        return ShareLink.Proxy(server, port, name, if (scheme.startsWith("socks")) "socks" else "http", scheme == "https", username, password)
+        val type = when {
+            scheme.startsWith("socks") -> "socks"
+            scheme == "ss" -> "shadowsocks"
+            scheme == "hy2" || scheme == "hysteria2" -> "hysteria2"
+            scheme == "hysteria" -> "hysteria"
+            scheme.startsWith("naive+") -> "naive"
+            else -> "http"
+        }
+        return ShareLink.Proxy(server, port, name, type, scheme == "https" || scheme == "naive+https", username, password)
     }
 }
 

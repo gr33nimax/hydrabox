@@ -8,6 +8,7 @@ import io.hydrabox.core.storage.StorageDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFails
 
 class SubscriptionStoreTest {
     @Test fun `subscription update changes one encrypted SQLDelight row`() {
@@ -21,6 +22,17 @@ class SubscriptionStoreTest {
         assertEquals(listOf("Renamed", "Second"), store.all().map(SubscriptionRecord::name))
         val raw = StorageDatabase(driver).storageDatabaseQueries.selectSubscriptionSecret("a").executeAsOne()
         assertFalse(raw.decodeToString().contains("updated"))
+    }
+
+    @Test fun `failed refresh leaves the persisted subscription unchanged`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).also(StorageDatabase.Schema::create)
+        val cipher = SecretFieldCodec(FixedCipher)
+        val store = SubscriptionStore(StorageDatabase(driver), cipher, cipher)
+        val original = SubscriptionRecord("a", "Original", Secret.of("vless://one"), 1)
+        store.save(original)
+
+        assertFails { SubscriptionUpdater(store).refresh(original) { error("network failure") } }
+        assertEquals("Original", store.all().single().name)
     }
 }
 

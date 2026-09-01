@@ -23,4 +23,16 @@ class SubscriptionTest {
         val http = assertIs<ShareLink.Proxy>(SubscriptionParser.parse("https://secure.proxy.com:443#HTTPS%20Proxy"))
         assertEquals("http", http.type); assertEquals(true, http.tls); assertEquals("HTTPS Proxy", http.name)
     }
+
+    @Test fun `imports each link in a raw subscription body`() {
+        val links = SubscriptionParser.parseAll("vless://id@one.example:443#One\ntrojan://pass@two.example:443#Two")
+        assertEquals(2, links.size); assertEquals("one.example", links[0].server); assertEquals("two.example", links[1].server)
+    }
+
+    @Test fun `parses Shadowsocks Hysteria and Naive links`() {
+        assertEquals("shadowsocks", assertIs<ShareLink.Proxy>(SubscriptionParser.parse("ss://cipher:password@ss.example:8388#SS")).type)
+        assertEquals("hysteria2", assertIs<ShareLink.Proxy>(SubscriptionParser.parse("hy2://auth@hy2.example:443#Hy2")).type)
+        assertEquals("hysteria", assertIs<ShareLink.Proxy>(SubscriptionParser.parse("hysteria://auth@hy.example:443#Hy")).type)
+        assertEquals("naive", assertIs<ShareLink.Proxy>(SubscriptionParser.parse("naive+https://user:pass@naive.example:443#Naive")).type)
+    }
 }

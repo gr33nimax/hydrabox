@@ -16,3 +16,8 @@ class SubscriptionStore(private val database: StorageDatabase, private val seale
         SubscriptionRecord(it.subscription_id, it.name, Secret.openWith(it.source_secret, opener), it.updated_at_millis)
     }
 }
+
+class SubscriptionUpdater(private val store: SubscriptionStore) {
+    fun refresh(current: SubscriptionRecord, fetch: (SubscriptionRecord) -> SubscriptionRecord): SubscriptionRecord =
+        fetch(current).also(store::save)
+}
