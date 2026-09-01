@@ -1,0 +1,14 @@
+selectAll:
+SELECT * FROM settings;
+
+upsertSetting:
+INSERT OR REPLACE INTO settings(setting_key, value, secret_value) VALUES (?, ?, ?);
+
+selectSecretValue:
+SELECT secret_value FROM settings WHERE setting_key = ?;
+
+selectValue:
+SELECT value FROM storage_metadata WHERE storage_key = ?;
+
+upsertValue:
+INSERT OR REPLACE INTO storage_metadata(storage_key, value) VALUES (?, ?);

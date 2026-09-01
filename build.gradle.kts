@@ -6,6 +6,7 @@ plugins {
     kotlin("android") version "2.2.20" apply false
     id("com.android.library") version "8.11.1" apply false
     id("com.android.application") version "8.11.1" apply false
+    id("app.cash.sqldelight") version "2.3.2" apply false
 }
 
 val forbiddenCommonMainTokens = listOf(
@@ -21,7 +22,10 @@ val forbiddenCommonMainTokens = listOf(
 )
 
 val forbiddenCommonMainJvmApi = Regex("""\b(?:java|javax|kotlin\.jvm)\.""")
-val appleCompatibleCommonMainDependencies = setOf("org.jetbrains.kotlin:kotlin-stdlib")
+val appleCompatibleCommonMainDependencies = setOf(
+    "org.jetbrains.kotlin:kotlin-stdlib",
+    "app.cash.sqldelight:runtime",
+)
 
 tasks.register("verifyCommonMainBoundaries") {
     group = "verification"

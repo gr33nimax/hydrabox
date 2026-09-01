@@ -1,0 +1,6 @@
+ALTER TABLE settings ADD COLUMN secret_value BLOB;
+
+CREATE TABLE storage_metadata (
+  storage_key TEXT NOT NULL PRIMARY KEY,
+  value BLOB NOT NULL
+);
