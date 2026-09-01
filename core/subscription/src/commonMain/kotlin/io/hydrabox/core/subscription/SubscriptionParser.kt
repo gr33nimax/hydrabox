@@ -90,7 +90,17 @@ object SubscriptionParser {
                 if (tag == null || type == null) null else ParsedOutbound(tag, type)
             }
         }
-        return ParsedSubscriptionDocument(format, outbounds)
+        val documentOutbounds = when (format) {
+            SubscriptionDocumentFormat.SIP008 -> (root as? JsonArray).orEmpty()
+                .flatMap { ((it as? JsonObject)?.get("servers") as? JsonArray).orEmpty() }
+                .mapNotNull { (it as? JsonObject)?.get("remarks")?.jsonPrimitive?.contentOrNull }
+                .map { ParsedOutbound(it, "shadowsocks") }
+            SubscriptionDocumentFormat.HYDRA -> ((root as? JsonObject)?.get("profiles") as? JsonArray).orEmpty()
+                .mapNotNull { (it as? JsonObject)?.get("id")?.jsonPrimitive?.contentOrNull }
+                .map { ParsedOutbound(it, "hydra") }
+            else -> outbounds
+        }
+        return ParsedSubscriptionDocument(format, documentOutbounds)
     }
 
     private fun proxy(scheme: String, server: String, port: Int, name: String, credential: String): ShareLink.Proxy {

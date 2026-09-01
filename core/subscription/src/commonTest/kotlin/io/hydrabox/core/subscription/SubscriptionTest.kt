@@ -63,4 +63,9 @@ class SubscriptionTest {
         assertEquals(listOf("node-a", "node-b"), document.outboundTags)
         assertEquals(listOf("vless", "trojan"), document.outbounds.map(ParsedOutbound::type))
     }
+
+    @Test fun `parses SIP008 and Hydra profile identifiers`() {
+        assertEquals(listOf("sip-node"), SubscriptionParser.parseDocument("[{\"servers\":[{\"remarks\":\"sip-node\"}]}]").outboundTags)
+        assertEquals(listOf("hydra-profile"), SubscriptionParser.parseDocument("{\"api_version\":\"hydra.io/subscription/v2\",\"profiles\":[{\"id\":\"hydra-profile\"}]}" ).outboundTags)
+    }
 }
