@@ -17,6 +17,7 @@ dependencyResolutionManagement {
 rootProject.name = "HydraBox2"
 
 include(
+    ":core:model",
     ":core:contract",
     ":core:runtime",
     ":core:projection",
