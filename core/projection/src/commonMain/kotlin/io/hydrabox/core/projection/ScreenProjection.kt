@@ -64,6 +64,8 @@ data class ScreenState(
     val subscriptionOperation: String? = null,
     val backupOperation: String? = null,
     val legalAccepted: Boolean = true,
+    val transport: String = "",
+    val busy: Boolean = false,
 ) {
     val hasProxies get() = proxies.isNotEmpty()
 }
@@ -109,6 +111,10 @@ object ScreenProjection {
             subscriptionOperation = label(model.subscriptionOperation),
             backupOperation = label(model.backupOperation),
             legalAccepted = model.legalAccepted,
+            transport = snapshot.transportHealth.let { health ->
+                if (!health.applicable) "not applicable" else "${health.state.name.lowercase()}, ${health.activeLanes} lanes"
+            },
+            busy = model.subscriptionOperation == OperationState.Running || model.backupOperation == OperationState.Running,
         )
     }
 

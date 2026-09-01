@@ -1,6 +1,6 @@
 package io.hydrabox.core.config
 
-import io.hydrabox.core.subscription.ShareLink
+import io.hydrabox.core.subscription.CatalogOutbound
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -11,7 +11,7 @@ import kotlinx.serialization.json.putJsonObject
 
 /** Everything the generator needs that does not come from the selected outbounds. */
 data class TunnelInput(
-    val links: List<ShareLink>,
+    val outbounds: List<CatalogOutbound>,
     val selectedTag: String?,
     val proxyDnsResolver: String = "https://dns.cloudflare.com/dns-query",
     val directDnsResolver: String = "1.1.1.1",
@@ -25,40 +25,41 @@ const val SELECTOR_TAG = "select"
 const val DIRECT_TAG = "direct"
 
 /**
- * Builds a complete core configuration: a tun inbound, one outbound per selected share
- * link, a selector over them, and the DNS layout fixed by the plan — the proxy resolver
- * bootstraps through the local resolver and never routes application queries outside the
- * tunnel.
+ * Builds a complete core configuration: a tun inbound, every outbound the subscription
+ * contributed — embedded exactly as it was described, so detour chains keep resolving — a
+ * selector over the selectable ones, and the DNS layout the plan fixes. The proxy
+ * resolver bootstraps through the local resolver and never routes application queries
+ * outside the tunnel.
  */
 object TunnelConfigGenerator {
-    private val json = Json { prettyPrint = false }
+    private val json = Json { prettyPrint = false; encodeDefaults = true }
 
     fun generate(input: TunnelInput): String = json.encodeToString(JsonObject.serializer(), build(input))
 
     fun build(input: TunnelInput): JsonObject {
-        val outbounds = input.links.mapIndexed { index, link -> outbound(link, tagFor(link, index)) }
-        val tags = outbounds.map { it.tag }
-        val hasProxies = tags.isNotEmpty()
-        val selected = input.selectedTag?.takeIf(tags::contains) ?: tags.firstOrNull()
+        val embedded = input.outbounds.filterNot { it.tag == DIRECT_TAG || it.tag == SELECTOR_TAG }
+        val choices = embedded.filter(CatalogOutbound::selectable).map(CatalogOutbound::tag)
+        val hasProxies = choices.isNotEmpty()
+        val selected = input.selectedTag?.takeIf(choices::contains) ?: choices.firstOrNull()
         return buildJsonObject {
             putJsonObject("log") { put("level", input.logLevel) }
             put("dns", dns(input, hasProxies))
             putJsonArray("inbounds") { add(tun(input)) }
             putJsonArray("outbounds") {
-                outbounds.forEach { add(it.value) }
+                embedded.forEach { add(it.json) }
                 add(buildJsonObject { put("type", "direct"); put("tag", DIRECT_TAG) })
                 if (hasProxies) {
                     add(
                         buildJsonObject {
                             put("type", "selector")
                             put("tag", SELECTOR_TAG)
-                            putJsonArray("outbounds") { tags.forEach { add(JsonPrimitive(it)) } }
+                            putJsonArray("outbounds") { choices.forEach { add(JsonPrimitive(it)) } }
                             selected?.let { put("default", it) }
                         },
                     )
                 }
             }
-            put("route", route(input, hasProxies))
+            put("route", route(hasProxies))
         }
     }
 
@@ -69,7 +70,7 @@ object TunnelConfigGenerator {
                 buildJsonObject {
                     put("type", "udp")
                     put("tag", "dns-direct")
-                    put("server", input.directDnsResolver)
+                    put("server", host(input.directDnsResolver))
                     put("detour", DIRECT_TAG)
                 },
             )
@@ -107,7 +108,7 @@ object TunnelConfigGenerator {
         }
     }
 
-    private fun route(input: TunnelInput, hasProxies: Boolean) = buildJsonObject {
+    private fun route(hasProxies: Boolean) = buildJsonObject {
         put("default_domain_resolver", "dns-local")
         put("auto_detect_interface", true)
         put("final", if (hasProxies) SELECTOR_TAG else DIRECT_TAG)
@@ -115,116 +116,6 @@ object TunnelConfigGenerator {
             add(buildJsonObject { put("action", "sniff") })
             add(buildJsonObject { put("protocol", "dns"); put("action", "hijack-dns") })
         }
-    }
-
-    private fun tagFor(link: ShareLink, index: Int): String =
-        link.name.trim().takeIf(String::isNotEmpty) ?: "${link.server}-${link.port}-$index"
-
-    private data class Outbound(val tag: String, val value: JsonObject)
-
-    private fun outbound(link: ShareLink, tag: String): Outbound = Outbound(
-        tag,
-        when (link) {
-            is ShareLink.Vless -> buildJsonObject {
-                put("type", "vless")
-                put("tag", tag)
-                put("server", link.server)
-                put("server_port", link.port)
-                link.uuid.use { put("uuid", it) }
-                link.query["flow"]?.let { put("flow", it) }
-                transport(link.query)?.let { put("transport", it) }
-                tls(link.query, link.server, secured(link.query))?.let { put("tls", it) }
-            }
-
-            is ShareLink.Trojan -> buildJsonObject {
-                put("type", "trojan")
-                put("tag", tag)
-                put("server", link.server)
-                put("server_port", link.port)
-                link.password.use { put("password", it) }
-                transport(link.query)?.let { put("transport", it) }
-                tls(link.query, link.server, secured = true)?.let { put("tls", it) }
-            }
-
-            is ShareLink.Proxy -> proxyOutbound(link, tag)
-
-            is ShareLink.WireGuard -> buildJsonObject {
-                put("type", "wireguard")
-                put("tag", tag)
-                put("server", link.server)
-                put("server_port", link.port)
-                link.privateKey.use { put("private_key", it) }
-                link.peerPublicKey.use { put("peer_public_key", it) }
-            }
-        },
-    )
-
-    private fun proxyOutbound(link: ShareLink.Proxy, tag: String): JsonObject = buildJsonObject {
-        put("type", link.type)
-        put("tag", tag)
-        put("server", link.server)
-        put("server_port", link.port)
-        when (link.type) {
-            "shadowsocks", "shadowsocksr" -> {
-                link.username?.use { put("method", it) }
-                link.password?.use { put("password", it) }
-            }
-
-            "vmess" -> link.username?.use { put("uuid", it) }
-
-            "hysteria2", "tuic", "anytls" -> link.password?.use { put("password", it) }
-                ?: link.username?.use { put("password", it) }
-
-            else -> {
-                link.username?.use { put("username", it) }
-                link.password?.use { put("password", it) }
-            }
-        }
-        transport(link.query)?.let { put("transport", it) }
-        tls(link.query, link.server, link.tls)?.let { put("tls", it) }
-    }
-
-    private fun secured(query: Map<String, String>): Boolean =
-        query["security"].let { it == "tls" || it == "reality" || it == "xtls" }
-
-    private fun tls(query: Map<String, String>, server: String, secured: Boolean): JsonObject? {
-        if (!secured) return null
-        return buildJsonObject {
-            put("enabled", true)
-            put("server_name", query["sni"] ?: query["host"] ?: server)
-            query["fp"]?.let { putJsonObject("utls") { put("enabled", true); put("fingerprint", it) } }
-            query["alpn"]?.split(',')?.map(String::trim)?.filter(String::isNotEmpty)?.takeIf { it.isNotEmpty() }
-                ?.let { values -> putJsonArray("alpn") { values.forEach { add(JsonPrimitive(it)) } } }
-            if (query["allowInsecure"] == "1" || query["insecure"] == "1") put("insecure", true)
-            query["pbk"]?.let { key ->
-                putJsonObject("reality") {
-                    put("enabled", true)
-                    put("public_key", key)
-                    query["sid"]?.let { put("short_id", it) }
-                }
-            }
-        }
-    }
-
-    private fun transport(query: Map<String, String>): JsonObject? = when (query["type"]) {
-        "ws" -> buildJsonObject {
-            put("type", "ws")
-            query["path"]?.let { put("path", it) }
-            query["host"]?.let { host -> putJsonObject("headers") { put("Host", host) } }
-        }
-
-        "grpc" -> buildJsonObject {
-            put("type", "grpc")
-            query["serviceName"]?.let { put("service_name", it) }
-        }
-
-        "http" -> buildJsonObject {
-            put("type", "http")
-            query["host"]?.let { host -> putJsonArray("host") { add(JsonPrimitive(host)) } }
-            query["path"]?.let { put("path", it) }
-        }
-
-        else -> null
     }
 
     private fun host(resolver: String): String = resolver

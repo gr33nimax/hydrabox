@@ -2,8 +2,12 @@ package io.hydrabox.ui.app
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -17,6 +21,7 @@ import io.hydrabox.core.projection.ScreenPhase
 import io.hydrabox.core.projection.ScreenState
 import io.hydrabox.ui.design.AdaptiveScaffold
 import io.hydrabox.ui.design.HydraTheme
+import io.hydrabox.ui.design.UiAction
 import io.hydrabox.ui.design.UiActionRow
 import io.hydrabox.ui.design.UiCard
 import io.hydrabox.ui.design.UiSection
@@ -27,31 +32,30 @@ data class AppActions(
     val onStart: () -> Unit = {},
     val onStop: () -> Unit = {},
     val onRetry: () -> Unit = {},
+    val onReload: () -> Unit = {},
     val onAddSubscription: (String, String) -> Unit = { _, _ -> },
+    val onRefreshSubscription: (String) -> Unit = {},
+    val onRenameSubscription: (String, String) -> Unit = { _, _ -> },
     val onRemoveSubscription: (String) -> Unit = {},
     val onSelectProxy: (String) -> Unit = {},
     val onAcceptLegal: () -> Unit = {},
     val onSetMtu: (Int) -> Unit = {},
     val onSetProxyDns: (String) -> Unit = {},
     val onSetDirectDns: (String) -> Unit = {},
+    val onSetSplitPackages: (String) -> Unit = {},
     val onToggleNotification: () -> Unit = {},
 )
 
 private enum class Destination(val label: String) {
     CONNECTION("Connect"),
-    TRAFFIC("Traffic"),
-    SUBSCRIPTIONS("Subs"),
-    PROXIES("Proxies"),
+    SUBSCRIPTIONS("Subscriptions"),
+    PROXIES("Servers"),
     SETTINGS("Settings"),
     DIAGNOSTICS("Logs"),
 }
 
 @Composable
-fun HydraApp(
-    state: ScreenState,
-    message: String? = null,
-    actions: AppActions = AppActions(),
-) {
+fun HydraApp(state: ScreenState, message: String? = null, actions: AppActions = AppActions()) {
     var destination by remember { mutableStateOf(Destination.CONNECTION) }
     HydraTheme {
         AdaptiveScaffold(
@@ -60,19 +64,40 @@ fun HydraApp(
             selected = destination.ordinal,
             onSelect = { destination = Destination.entries[it] },
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(UiTokens.spacing * 2), modifier = Modifier.fillMaxWidth()) {
-                message?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
+            Column(
+                verticalArrangement = Arrangement.spacedBy(UiTokens.spacing * 2),
+                modifier = Modifier.fillMaxWidth().padding(bottom = UiTokens.spacing * 3),
+            ) {
+                if (state.busy) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                message?.let { Banner(it) }
                 if (!state.legalAccepted) LegalGate(actions)
                 when (destination) {
-                    Destination.CONNECTION -> ConnectionScreen(state, actions)
-                    Destination.TRAFFIC -> TrafficScreen(state)
+                    Destination.CONNECTION -> ConnectionScreen(state, actions) { destination = it }
                     Destination.SUBSCRIPTIONS -> SubscriptionsScreen(state, actions)
                     Destination.PROXIES -> ProxiesScreen(state, actions)
                     Destination.SETTINGS -> SettingsScreen(state, actions)
-                    Destination.DIAGNOSTICS -> DiagnosticsScreen(state)
+                    Destination.DIAGNOSTICS -> DiagnosticsScreen(state, actions)
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun Banner(text: String) {
+    val failed = text.startsWith("Failed") || text.startsWith("VPN permission")
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (failed) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer,
+        ),
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (failed) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer,
+            modifier = Modifier.padding(UiTokens.spacing * 2),
+        )
     }
 }
 
@@ -83,7 +108,7 @@ private fun LegalGate(actions: AppActions) = UiSection("Before you start") {
 }
 
 @Composable
-private fun ConnectionScreen(state: ScreenState, actions: AppActions) {
+private fun ConnectionScreen(state: ScreenState, actions: AppActions, navigate: (Destination) -> Unit) {
     val label = when (state.phase) {
         ScreenPhase.DISCONNECTED -> "Disconnected"
         ScreenPhase.CONNECTING -> "Connecting"
@@ -91,33 +116,55 @@ private fun ConnectionScreen(state: ScreenState, actions: AppActions) {
         ScreenPhase.DISCONNECTING -> "Disconnecting"
         ScreenPhase.ERROR -> "Connection failed"
     }
-    UiSection("Connection") {
-        UiCard(label, state.errorCode)
-        UiActionRow(
-            primary = if (state.canStop) "Disconnect" else "Connect",
-            primaryEnabled = state.canStop || state.canStart,
-            secondary = if (state.canRetry) "Retry" else null,
-            onPrimary = { if (state.canStop) actions.onStop() else actions.onStart() },
-            onSecondary = actions.onRetry,
-        )
+    val tone = when (state.phase) {
+        ScreenPhase.CONNECTED -> MaterialTheme.colorScheme.primaryContainer
+        ScreenPhase.ERROR -> MaterialTheme.colorScheme.errorContainer
+        else -> MaterialTheme.colorScheme.surfaceContainerHigh
     }
-    UiSection("Active route") {
-        UiCard(state.activeOutbound ?: "No proxy selected", "${state.proxies.size} available")
+    Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = tone)) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(UiTokens.spacing * 3),
+            verticalArrangement = Arrangement.spacedBy(UiTokens.spacing),
+        ) {
+            Text(label, style = MaterialTheme.typography.headlineMedium)
+            Text(
+                state.errorCode ?: state.activeOutbound ?: "No server selected",
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            state.transport.takeIf(String::isNotEmpty)?.let {
+                Text("Transport: $it", style = MaterialTheme.typography.bodySmall)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(UiTokens.spacing), modifier = Modifier.padding(top = UiTokens.spacing)) {
+                UiAction(
+                    label = if (state.canStop) "Disconnect" else "Connect",
+                    enabled = (state.canStop || state.canStart) && !state.busy,
+                    onClick = { if (state.canStop) actions.onStop() else actions.onStart() },
+                )
+                if (state.canRetry) UiAction("Retry", enabled = true, secondary = true, onClick = actions.onRetry)
+                if (state.phase == ScreenPhase.CONNECTED) {
+                    UiAction("Reload", enabled = true, secondary = true, onClick = actions.onReload)
+                }
+            }
+        }
+    }
+    UiSection("Route") {
         UiCard(
-            state.subscriptions.firstOrNull()?.name ?: "No subscription",
-            state.subscriptions.size.takeIf { it > 1 }?.let { "$it subscriptions stored" },
+            state.activeOutbound ?: "Pick a server",
+            "${state.proxies.size} available — tap to choose",
+            onClick = { navigate(Destination.PROXIES) },
+        )
+        UiCard(
+            state.subscriptions.firstOrNull()?.name ?: "No subscription yet",
+            if (state.subscriptions.isEmpty()) "Tap to add one" else "${state.subscriptions.size} stored — tap to manage",
+            onClick = { navigate(Destination.SUBSCRIPTIONS) },
         )
     }
-}
-
-@Composable
-private fun TrafficScreen(state: ScreenState) = UiSection("Traffic dashboard") {
     if (state.traffic.available) {
-        UiCard("Uplink", "${state.traffic.uplinkBytes} bytes")
-        UiCard("Downlink", "${state.traffic.downlinkBytes} bytes")
-        UiCard("Counters arrive from the core once it publishes them")
-    } else {
-        UiCard("Connect to view traffic")
+        UiSection("Traffic") {
+            UiCard("Uplink", "${state.traffic.uplinkBytes} bytes")
+            UiCard("Downlink", "${state.traffic.downlinkBytes} bytes")
+            UiCard("Counters appear once the core publishes them")
+        }
     }
 }
 
@@ -127,21 +174,22 @@ private fun SubscriptionsScreen(state: ScreenState, actions: AppActions) {
     var source by remember { mutableStateOf("") }
     UiSection("Add a subscription") {
         OutlinedTextField(
+            value = source,
+            onValueChange = { source = it },
+            label = { Text("Subscription URL, or paste links / a sing-box or Hydra document") },
+            modifier = Modifier.fillMaxWidth(),
+            minLines = 3,
+        )
+        OutlinedTextField(
             value = name,
             onValueChange = { name = it },
             label = { Text("Name (optional)") },
-            modifier = Modifier.fillMaxWidth(),
-        )
-        OutlinedTextField(
-            value = source,
-            onValueChange = { source = it },
-            label = { Text("Share links, one per line") },
             modifier = Modifier.fillMaxWidth().padding(top = UiTokens.spacing),
-            minLines = 3,
+            singleLine = true,
         )
         UiActionRow(
             primary = "Add",
-            primaryEnabled = source.isNotBlank(),
+            primaryEnabled = source.isNotBlank() && !state.busy,
             onPrimary = {
                 actions.onAddSubscription(name, source)
                 name = ""
@@ -149,34 +197,84 @@ private fun SubscriptionsScreen(state: ScreenState, actions: AppActions) {
             },
         )
     }
-    UiSection("Stored subscriptions") {
+    UiSection("Stored") {
         if (state.subscriptions.isEmpty()) {
-            UiCard("No subscriptions", "Paste a vless://, trojan://, ss:// or socks:// link above.")
+            UiCard(
+                "Nothing stored yet",
+                "A https:// subscription URL, a Hydra v2 document, a sing-box config, or vless / trojan / ss / socks links all work.",
+            )
         } else {
             state.subscriptions.forEach { subscription ->
+                var editing by remember(subscription.id) { mutableStateOf(false) }
+                var draft by remember(subscription.id) { mutableStateOf(subscription.name) }
                 UiCard(
                     subscription.name,
-                    "${subscription.outboundCount} outbounds — tap to remove",
-                    onClick = { actions.onRemoveSubscription(subscription.id) },
+                    "${subscription.outboundCount} servers",
+                    onClick = { editing = !editing },
                 )
+                if (editing) {
+                    OutlinedTextField(
+                        value = draft,
+                        onValueChange = { draft = it },
+                        label = { Text("Name") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(UiTokens.spacing)) {
+                        UiAction("Rename", enabled = draft.isNotBlank()) {
+                            actions.onRenameSubscription(subscription.id, draft)
+                            editing = false
+                        }
+                        UiAction("Refresh", enabled = !state.busy, secondary = true) {
+                            actions.onRefreshSubscription(subscription.id)
+                        }
+                        UiAction("Remove", enabled = !state.busy, secondary = true) {
+                            actions.onRemoveSubscription(subscription.id)
+                            editing = false
+                        }
+                    }
+                }
             }
         }
-        state.subscriptionOperation?.let { UiCard("Refresh", it) }
+        state.subscriptionOperation?.let { UiCard("Last operation", it) }
     }
 }
 
 @Composable
-private fun ProxiesScreen(state: ScreenState, actions: AppActions) = UiSection("Proxies") {
-    if (state.proxies.isEmpty()) {
-        UiCard("No proxies", "Add a subscription first.")
-    } else {
-        state.proxies.forEach { proxy ->
-            UiCard(
-                proxy.tag,
-                listOfNotNull(proxy.type, "selected".takeIf { proxy.selected }, proxy.latencyMillis?.let { "$it ms" })
-                    .joinToString(" — "),
-                onClick = { actions.onSelectProxy(proxy.tag) },
+private fun ProxiesScreen(state: ScreenState, actions: AppActions) {
+    var filter by remember { mutableStateOf("") }
+    UiSection("Servers") {
+        if (state.proxies.isEmpty()) {
+            UiCard("No servers", "Add a subscription first.")
+            return@UiSection
+        }
+        OutlinedTextField(
+            value = filter,
+            onValueChange = { filter = it },
+            label = { Text("Filter") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+        )
+        val visible = state.proxies.filter { filter.isBlank() || it.tag.contains(filter, ignoreCase = true) }
+        state.subscriptions.forEach { subscription ->
+            val group = visible.filter { it.subscriptionId == subscription.id }
+            if (group.isEmpty()) return@forEach
+            Text(
+                subscription.name,
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(top = UiTokens.spacing),
             )
+            group.forEach { proxy ->
+                UiCard(
+                    if (proxy.selected) "${proxy.tag}  ✓" else proxy.tag,
+                    listOfNotNull(proxy.type, proxy.latencyMillis?.let { "$it ms" }).joinToString(" — "),
+                    onClick = { actions.onSelectProxy(proxy.tag) },
+                )
+            }
+        }
+        val orphans = visible.filter { proxy -> state.subscriptions.none { it.id == proxy.subscriptionId } }
+        orphans.forEach { proxy ->
+            UiCard(proxy.tag, proxy.type, onClick = { actions.onSelectProxy(proxy.tag) })
         }
     }
 }
@@ -187,11 +285,12 @@ private fun SettingsScreen(state: ScreenState, actions: AppActions) {
     var proxyDns by remember(settings?.proxyDnsResolver) { mutableStateOf(settings?.proxyDnsResolver.orEmpty()) }
     var directDns by remember(settings?.directDnsResolver) { mutableStateOf(settings?.directDnsResolver.orEmpty()) }
     var mtu by remember(settings?.vpnMtu) { mutableStateOf(settings?.vpnMtu?.toString().orEmpty()) }
+    var packages by remember { mutableStateOf("") }
     UiSection("General") {
         UiCard("Performance mode", settings?.performanceMode ?: "unknown")
         UiCard(
             "Status notification",
-            if (settings?.statusNotificationEnabled == true) "enabled — tap to disable" else "disabled — tap to enable",
+            if (settings?.statusNotificationEnabled == true) "on — tap to turn off" else "off — tap to turn on",
             onClick = actions.onToggleNotification,
         )
     }
@@ -199,14 +298,16 @@ private fun SettingsScreen(state: ScreenState, actions: AppActions) {
         OutlinedTextField(
             value = proxyDns,
             onValueChange = { proxyDns = it },
-            label = { Text("Proxy resolver") },
+            label = { Text("Resolver through the tunnel") },
             modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
         )
         OutlinedTextField(
             value = directDns,
             onValueChange = { directDns = it },
             label = { Text("Direct resolver") },
             modifier = Modifier.fillMaxWidth().padding(top = UiTokens.spacing),
+            singleLine = true,
         )
         UiActionRow(
             primary = "Save resolvers",
@@ -216,32 +317,46 @@ private fun SettingsScreen(state: ScreenState, actions: AppActions) {
                 actions.onSetDirectDns(directDns.trim())
             },
         )
-        UiCard("Before the tunnel is ready DNS refuses rather than answering outside it")
+        UiCard("Until the tunnel is ready DNS refuses rather than answering outside it")
     }
-    UiSection("Inbound") {
+    UiSection("Tunnel") {
         OutlinedTextField(
             value = mtu,
             onValueChange = { mtu = it.filter(Char::isDigit) },
-            label = { Text("Tunnel MTU") },
+            label = { Text("MTU") },
             modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
         )
         UiActionRow(
             primary = "Save MTU",
             primaryEnabled = mtu.toIntOrNull()?.let { it in 1280..9000 } == true,
             onPrimary = { mtu.toIntOrNull()?.let(actions.onSetMtu) },
         )
-        UiCard("Split tunneling", "${settings?.splitRoutingPackageCount ?: 0} packages excluded")
+        OutlinedTextField(
+            value = packages,
+            onValueChange = { packages = it },
+            label = { Text("Packages to keep outside the tunnel, comma separated") },
+            modifier = Modifier.fillMaxWidth(),
+            minLines = 2,
+        )
+        UiActionRow(
+            primary = "Save split tunneling",
+            primaryEnabled = true,
+            onPrimary = { actions.onSetSplitPackages(packages) },
+        )
+        UiCard("Currently excluded", "${settings?.splitRoutingPackageCount ?: 0} packages")
     }
-    UiSection("Backup and about") {
-        UiCard("Export backup", state.backupOperation ?: "versioned schema")
-        UiCard("About HydraBox", "2.0.0 alpha")
+    UiSection("About") {
+        UiCard("HydraBox", "2.0.0 alpha")
+        UiCard("Backup", state.backupOperation ?: "versioned schema, export arrives with the next task")
     }
 }
 
 @Composable
-private fun DiagnosticsScreen(state: ScreenState) = UiSection("Logs and diagnostics") {
+private fun DiagnosticsScreen(state: ScreenState, actions: AppActions) = UiSection("Diagnostics") {
     val diagnostics = state.diagnostics
-    UiCard("Level", diagnostics?.level ?: "unknown")
     diagnostics?.recentEvents?.forEach { UiCard(it) }
+    UiActionRow(primary = "Reload runtime", primaryEnabled = state.canStop, onPrimary = actions.onReload)
+    UiCard("Log level", diagnostics?.level ?: "unknown")
     UiCard("Export", diagnostics?.exportState ?: "idle")
 }

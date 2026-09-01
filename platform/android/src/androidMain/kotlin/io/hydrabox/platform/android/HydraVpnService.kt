@@ -72,21 +72,28 @@ class HydraVpnService : VpnService() {
     }
 
     private fun startCore(commandGeneration: Long) {
-        val content = store.generateConfig()
-        if (content == null) {
+        // Every failure on this path has to reach the user as text. A crash here reads as
+        // "it just does not work", which is the one report nobody can act on.
+        val outcome = runCatching {
+            val content = store.generateConfig() ?: error("no usable server in any subscription")
+            ensureLibboxSetup()
+            Libbox.checkConfig(content)
+            stopRuntime()
+            commandServer = Libbox.newCommandServer(handler, MinimalVpnPlatform(this)).also {
+                it.start()
+                it.startOrReloadService(content, OverrideOptions())
+            }
+        }
+        val failure = outcome.exceptionOrNull()
+        if (failure != null) {
+            store.recordStartFailure(failure.message ?: failure::class.java.simpleName)
             stopRuntime()
             runtime.dispatch(RuntimeInput.Released(commandGeneration, false))
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return
         }
-        ensureLibboxSetup()
-        Libbox.checkConfig(content)
-        stopRuntime()
-        commandServer = Libbox.newCommandServer(handler, MinimalVpnPlatform(this)).also {
-            it.start()
-            it.startOrReloadService(content, OverrideOptions())
-        }
+        store.clearStartFailure()
         runtime.dispatch(RuntimeInput.Launched(commandGeneration, commandGeneration))
         runtime.dispatch(RuntimeInput.Health(commandGeneration, commandGeneration, TransportHealth(applicable = false, runtimeGeneration = RuntimeGeneration(commandGeneration))))
         startForeground(NOTIFICATION_ID, notification(runtime.snapshot().state))
