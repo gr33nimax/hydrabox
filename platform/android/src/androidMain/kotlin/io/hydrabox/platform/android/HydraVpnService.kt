@@ -17,11 +17,21 @@ import io.nekohasekai.libbox.SystemProxyStatus
 import io.hydrabox.core.contract.RuntimeCommand
 import io.hydrabox.core.contract.RuntimeMode
 import io.hydrabox.core.contract.RuntimeState
+import io.hydrabox.core.contract.RuntimeGeneration
+import io.hydrabox.core.contract.TransportHealth
+import io.hydrabox.core.runtime.Effect
+import io.hydrabox.core.runtime.RuntimeInput
 
 class HydraVpnService : VpnService() {
-    private val runtime = StubRuntime()
-    private val endpoint = BinderRuntimeEndpoint(runtime)
+    private lateinit var runtime: AndroidRuntime
+    private lateinit var endpoint: BinderRuntimeEndpoint
     private var commandServer: CommandServer? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        runtime = AndroidRuntime(::execute)
+        endpoint = BinderRuntimeEndpoint(runtime)
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
@@ -41,6 +51,20 @@ class HydraVpnService : VpnService() {
 
     private fun start() {
         startForeground(NOTIFICATION_ID, notification(RuntimeState.STARTING))
+        runtime.submit(RuntimeCommand.Start(RuntimeMode.VPN))
+        startForeground(NOTIFICATION_ID, notification(runtime.snapshot().state))
+    }
+
+    private fun execute(effect: Effect) = when (effect) {
+        is Effect.StartCore -> startCore(effect.commandGeneration)
+        is Effect.StopCore -> {
+            stopRuntime()
+            runtime.dispatch(RuntimeInput.Released(effect.commandGeneration, true))
+        }
+        else -> Unit
+    }
+
+    private fun startCore(commandGeneration: Long) {
         val config = filesDir.resolve(CONFIG_FILE)
         require(config.isFile && config.length() > 0) { "Put a valid config in ${config.path}" }
         val content = config.readText()
@@ -51,13 +75,12 @@ class HydraVpnService : VpnService() {
             it.start()
             it.startOrReloadService(content, OverrideOptions())
         }
-        runtime.submit(RuntimeCommand.Start(RuntimeMode.VPN))
-        startForeground(NOTIFICATION_ID, notification(RuntimeState.RUNNING))
+        runtime.dispatch(RuntimeInput.Launched(commandGeneration, commandGeneration))
+        runtime.dispatch(RuntimeInput.Health(commandGeneration, commandGeneration, TransportHealth(applicable = false, runtimeGeneration = RuntimeGeneration(commandGeneration))))
     }
 
     private fun stop() {
         runtime.submit(RuntimeCommand.Stop)
-        stopRuntime()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
