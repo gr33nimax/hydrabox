@@ -711,8 +711,16 @@ class AppStore(context: Context) : AutoCloseable {
     fun generateConfig(
         selectedTag: String? = selectedTag(),
         rules: RouteData = routeData(),
+        /**
+         * One server to build the document around, with its dial chain and nothing else. A
+         * standalone measurement asks for exactly one server, and carrying its siblings made
+         * one entry the core refuses take every other server's measurement down with it.
+         * Null keeps the whole catalogue, which is what a start needs.
+         */
+        only: String? = null,
     ): String? {
-        val outbounds = activeCatalogs().flatMap { it.second }
+        val all = activeCatalogs().flatMap { it.second }
+        val outbounds = only?.let { tag -> io.hydrabox.core.config.isolateOutbound(all, tag) } ?: all
         if (outbounds.none(CatalogOutbound::selectable)) return null
         val settings = settings()
         return TunnelConfigGenerator.generate(

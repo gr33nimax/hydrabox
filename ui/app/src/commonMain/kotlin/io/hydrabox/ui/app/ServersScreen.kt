@@ -171,4 +171,5 @@ private fun ServerEntry(server: ServerRef, selectedId: String?, actions: AppActi
     selected = server.id == selectedId,
     icon = HydraIcons.Server,
     onClick = { actions.onSelectServer(server.id) },
+    measuring = server.measuring,
 )

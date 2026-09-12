@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cleartext is allowed for the loopback address and nothing else.
+
+  The core serves the captcha page it needs a person to answer on a port of 127.0.0.1; the
+  page is fetched by a WebView in this process, and Android's default policy would refuse the
+  plain-http load. Every other destination keeps the default, so this opens nothing outward.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+</network-security-config>

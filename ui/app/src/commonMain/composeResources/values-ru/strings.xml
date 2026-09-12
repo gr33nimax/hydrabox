@@ -33,7 +33,7 @@
     <string name="trouble_subscription">Подписка недоступна</string>
     <string name="trouble_subscription_hint">Не удалось обновить подписку. Проверьте её и повторите попытку.</string>
     <string name="trouble_config">Не удалось подготовить подключение</string>
-    <string name="trouble_config_hint">Сохранённые данные подключения отклонены. Повторите попытку, а если повторится — откройте диагностику.</string>
+    <string name="trouble_config_hint">Из этих настроек не удалось собрать конфигурацию. Причина — в диагностике.</string>
     <string name="trouble_permission">Android должен разрешить VPN</string>
     <string name="trouble_permission_hint">Без системного разрешения HydraBox не может создать туннель.</string>
     <string name="trouble_unknown">Подключение прервалось</string>
@@ -133,6 +133,8 @@
     <string name="notice_server_switched">Сервер изменён</string>
     <string name="notice_server_switch_restarted">Туннель перезапущен: прежний транспорт освобождён, его соединения закрыты</string>
     <string name="notice_settings_need_reconnect">Изменение применится при следующем подключении</string>
+    <string name="notice_settings_applied">Настройка применена, подключение перезапущено</string>
+    <string name="notice_proxy_port_taken">Этот порт уже занят. Прокси остался на том порту, где слушает</string>
     <string name="notice_backup_exported">Копия сохранена</string>
     <string name="notice_backup_imported">Копия восстановлена</string>
     <string name="notice_operation_failed">Не удалось выполнить операцию. Повторите попытку</string>

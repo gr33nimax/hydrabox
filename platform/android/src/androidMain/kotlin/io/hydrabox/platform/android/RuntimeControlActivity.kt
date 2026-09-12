@@ -15,15 +15,19 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import kotlinx.coroutines.delay
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import io.hydrabox.core.contract.CommandGeneration
 import io.hydrabox.core.contract.EventSequence
 import io.hydrabox.core.contract.NetworkGeneration
+import io.hydrabox.core.contract.OutboundLatency
 import io.hydrabox.core.contract.ProcessEpoch
 import io.hydrabox.core.contract.RuntimeCommand
 import io.hydrabox.core.contract.RuntimeEvent
@@ -163,6 +167,9 @@ class RuntimeControlActivity : ComponentActivity() {
     /** Whether the screens are on screen. The snapshot stream is worth paying for only then. */
     private var started by mutableStateOf(false)
 
+    /** Whether this activity currently holds a binding to the tunnel service. */
+    private var bound = false
+
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             binder ?: return
@@ -212,6 +219,7 @@ class RuntimeControlActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         started = true
+        bind()
         // What happened while nobody was looking arrives in one read, before the stream resumes.
         transport?.let { bound -> runCatching { bound.snapshot() }.getOrNull()?.let(::observe) }
         attach()
@@ -230,7 +238,39 @@ class RuntimeControlActivity : ComponentActivity() {
         if (exit.checking) exitProbeHidden = true
         stopExitProbe()
         detach()
+        unbind()
         super.onStop()
+    }
+
+    /**
+     * Connects to the tunnel service, without bringing it up.
+     *
+     * This used to happen once in `onCreate`, with `BIND_AUTO_CREATE`, and stay for the life of
+     * the activity. The flag did two things nobody asked for. Opening the application created the
+     * service — and with it the `:core` process, its database and its network monitor — before
+     * anything had been asked of it; and a bound client keeps a service alive, so after a
+     * disconnect the service had called `stopSelf`, was no longer started, and still could not be
+     * destroyed. A dump taken at that moment says it exactly: `startRequested=false`, one binding,
+     * `CREATE`, owned by the interface process — an idle core holding ~210 MB of PSS with no tunnel
+     * to show for it, held there by the screens alone.
+     *
+     * Without the flag the bind reaches the service only while something else is keeping it — the
+     * tunnel itself, the tile, or the system's always-on — and [unbind] lets go when the screens
+     * do. The Quick Settings tile already binds this way, for the same reason.
+     */
+    private fun bind(createIfMissing: Boolean = false) {
+        if (bound) return
+        val flags = if (createIfMissing) Context.BIND_AUTO_CREATE else 0
+        bound = runCatching { bindService(Intent(this, HydraVpnService::class.java), connection, flags) }
+            .getOrDefault(false)
+        if (!bound) runCatching { unbindService(connection) }
+    }
+
+    private fun unbind() {
+        if (!bound) return
+        bound = false
+        runCatching { unbindService(connection) }
+        transport = null
     }
 
     /** The only state derived from a transition rather than from the snapshot itself. */
@@ -240,14 +280,27 @@ class RuntimeControlActivity : ComponentActivity() {
 
     private fun observe(next: RuntimeSnapshot) {
         if (next.processEpoch == snapshot.processEpoch && next.lastEventSequence.value < snapshot.lastEventSequence.value) return
+        // A standalone sweep owns a short-lived service. Its last empty STOPPED snapshot must not
+        // erase answers it just delivered; retain each tag until this or a later service provides
+        // that tag's next answer. The projection still marks old answers stale by their own TTL.
+        val retained = next.copy(
+            latencies = mergeLatencies(snapshot.latencies, next.latencies),
+            edgeLatencies = mergeLatencies(snapshot.edgeLatencies, next.edgeLatencies),
+        )
         val previous = snapshot
-        snapshot = next
-        if (next.state != previous.state) refresh()
-        val changedRoute = exitRoute(next) != exitRoute(previous)
+        snapshot = retained
+        if (retained.state != previous.state) refresh()
+        // The first frame runs before the binder answers, so the visibility report sent at
+        // resume found a stopped runtime and was dropped. The moment the screens learn there is
+        // a tunnel, they say again that they are in front of the person — otherwise a captcha
+        // arriving in the first seconds would be announced by a notification on top of the very
+        // screen that is already drawing it.
+        if (visible && retained.state != previous.state && retained.state != RuntimeState.STOPPED) reportUiVisibility(true)
+        val changedRoute = exitRoute(retained) != exitRoute(previous)
         if (changedRoute) {
-            HydraLog.info(AREA, "the route changed: ${exitRoute(previous)} -> ${exitRoute(next)}")
+            HydraLog.info(AREA, "the route changed: ${exitRoute(previous)} -> ${exitRoute(retained)}")
         }
-        if (next.state != RuntimeState.RUNNING) {
+        if (retained.state != RuntimeState.RUNNING) {
             stopExitProbe()
             exit = ExitAddress()
         } else if (started && (previous.state != RuntimeState.RUNNING || changedRoute)) {
@@ -256,6 +309,9 @@ class RuntimeControlActivity : ComponentActivity() {
             HydraLog.info(AREA, "a route change arrived while the screens were off; the exit will be asked when they come back")
         }
     }
+
+    private fun mergeLatencies(previous: List<OutboundLatency>, incoming: List<OutboundLatency>): List<OutboundLatency> =
+        (previous + incoming).associateBy { it.tag }.values.toList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -266,7 +322,6 @@ class RuntimeControlActivity : ComponentActivity() {
         runCatching { store.settings() }.onSuccess { settings ->
             stored = stored.copy(legalAccepted = settings.acceptedLegalAtMillis != null, settings = store.settingsSummary(settings))
         }.onFailure { notice = Notice.OPERATION_FAILED }
-        bindService(Intent(this, HydraVpnService::class.java), connection, Context.BIND_AUTO_CREATE)
         onBackPressedDispatcher.addCallback(
             this,
             object : OnBackPressedCallback(true) {
@@ -301,16 +356,27 @@ class RuntimeControlActivity : ComponentActivity() {
                     latencyExpiryRenderedAt.value = staleAt
                 }
             }
-            HydraApp(
-                state = ScreenProjection.project(
-                    readModel(),
-                    nowMillis = System.currentTimeMillis().also { latencyExpiryRenderedAt.value },
-                ),
-                actions = actions(),
-                navigation = navigation,
-                versionName = BuildConfig.VERSION_NAME,
-                coreVersion = BuildConfig.HYDRACORE_VERSION,
-            )
+            Box(modifier = Modifier.fillMaxSize()) {
+                HydraApp(
+                    state = ScreenProjection.project(
+                        readModel(),
+                        nowMillis = System.currentTimeMillis().also { latencyExpiryRenderedAt.value },
+                    ),
+                    actions = actions(),
+                    navigation = navigation,
+                    versionName = BuildConfig.VERSION_NAME,
+                    coreVersion = BuildConfig.HYDRACORE_VERSION,
+                )
+                // The core's own question, when it has one, over everything else: the captcha
+                // page answers only on this device's loopback, so there is nowhere else to
+                // send a person.
+                snapshot.challenge?.let { challenge ->
+                    ChallengeOverlay(
+                        challenge = challenge,
+                        onDismiss = { send(RuntimeCommand.CancelChallenge(challenge.id)) },
+                    )
+                }
+            }
         }
         askForNotifications()
         io.execute { runCatching { SubscriptionRefreshJob.schedule(applicationContext) } }
@@ -321,6 +387,38 @@ class RuntimeControlActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handle(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        visible = true
+        reportUiVisibility(true)
+    }
+
+    override fun onPause() {
+        visible = false
+        reportUiVisibility(false)
+        super.onPause()
+    }
+
+    /**
+     * Tells the core process whether the screens are in front of the person.
+     *
+     * The service cannot see this activity's lifecycle — it is another process — and it is the
+     * one that must decide between drawing the core's question here and posting a notification
+     * about it. Nothing is sent while the tunnel is stopped: there is no question to raise then,
+     * and starting the core service to hear about a screen would open its database and network
+     * monitor for nothing.
+     */
+    private fun reportUiVisibility(visibleNow: Boolean) {
+        if (snapshot.state == RuntimeState.STOPPED) return
+        runCatching {
+            startService(
+                Intent(this, HydraVpnService::class.java)
+                    .setAction(HydraVpnService.ACTION_UI_VISIBILITY)
+                    .putExtra(HydraVpnService.EXTRA_UI_VISIBLE, visibleNow),
+            )
+        }
     }
 
     private fun askForNotifications() {
@@ -364,7 +462,10 @@ class RuntimeControlActivity : ComponentActivity() {
         stopExitProbe()
         exitReader.shutdownNow()
         detach()
-        runCatching { unbindService(connection) }
+        // The screens let go of the service through the same flag the release is tracked by, so
+        // `onDestroy` after `onStop` is a no-op rather than a second unbind of a connection that
+        // is no longer registered.
+        unbind()
         io.execute {
             reader.execute { store.close() }
             reader.shutdown()
@@ -656,6 +757,13 @@ class RuntimeControlActivity : ComponentActivity() {
                 if (snapshot.state == RuntimeState.RUNNING) {
                     main.post { send(RuntimeCommand.SelectOutbound(SELECT_GROUP, id)) }
                     if (crossing) Notice.SERVER_SWITCH_RESTARTED else Notice.SERVER_SWITCHED
+                } else if (snapshot.state == RuntimeState.FAILED) {
+                    // A failed tunnel offers one action on the home screen — choose another
+                    // server — and nothing left to press afterwards: the choice was stored and
+                    // the screen stayed in that dead end until the application was restarted.
+                    // Choosing is the instruction to use this server, so it also starts.
+                    main.post { prepareAndStart() }
+                    null
                 } else {
                     null
                 }
@@ -754,9 +862,7 @@ class RuntimeControlActivity : ComponentActivity() {
                 )
             }
         },
-        onSetProxyPort = { port ->
-            reconnectAware { store.saveSettings(store.settings().copy(proxyMixedPort = port)) }
-        },
+        onSetProxyPort = { port -> applyProxyPort(port) },
         onSetProxyAllowLan = { allow ->
             reconnectAware { store.saveSettings(store.settings().copy(proxyAllowLan = allow)) }
         },
@@ -911,6 +1017,72 @@ class RuntimeControlActivity : ComponentActivity() {
         block,
     )
 
+    /**
+     * The local proxy port, applied where it is actually bound.
+     *
+     * A listener is created once, while the core is being started, so storing another number
+     * left the proxy answering on the old port — still open, still reachable — while the screens
+     * showed the new one. It is the one setting whose stale value is a surface rather than a
+     * behaviour, and a transient "applies next time you connect" is not what someone reading a
+     * port number is looking for.
+     *
+     * The port is tried before it is stored. A port already taken is the failure that matters
+     * here, and on that one both the stored value and the running proxy stay as they were, which
+     * is what the screen then keeps showing. When it is free and the proxy is running, the core
+     * is started again — the old listener closes with it — through the reducer's own restart
+     * idiom, and the start reads the port from the value just stored.
+     */
+    private fun applyProxyPort(port: Int) {
+        background {
+            val settings = store.settings()
+            val running = snapshot.state == RuntimeState.RUNNING && store.proxyOnly()
+            when {
+                // The running listener owns its current port, so a no-op must not test it as an
+                // external conflict or restart a healthy proxy.
+                running && port == settings.proxyMixedPort -> null
+                running && !proxyPortIsFree(port) -> Notice.PROXY_PORT_TAKEN
+                running -> {
+                    store.saveSettings(settings.copy(proxyMixedPort = port))
+                    restartCore()
+                    Notice.SETTINGS_APPLIED
+                }
+                else -> {
+                    store.saveSettings(settings.copy(proxyMixedPort = port))
+                    null
+                }
+            }
+        }
+    }
+
+    /**
+     * Whether this process can bind where the proxy would listen. The core binds it in its own
+     * process, so this is the same question asked one step early rather than a guarantee — but
+     * the conflict it catches is exactly the one a person creates by typing a number that
+     * something else is already using.
+     */
+    private fun proxyPortIsFree(port: Int): Boolean {
+        val address = if (store.settings().proxyAllowLan) "0.0.0.0" else "127.0.0.1"
+        return runCatching {
+            java.net.ServerSocket().use { socket ->
+                socket.reuseAddress = false
+                socket.bind(java.net.InetSocketAddress(address, port))
+            }
+        }.isSuccess
+    }
+
+    /**
+     * Starts the core again under the settings that are stored now.
+     *
+     * A stop followed by a start is the reducer's own restart idiom: a start received while the
+     * runtime is stopping is deferred and applied once the core has confirmed its release. The
+     * core cannot reload in place — it closes the old instance before the new one exists — so a
+     * restart is the honest way to change what the configuration contains.
+     */
+    private fun restartCore() {
+        send(RuntimeCommand.Stop)
+        send(RuntimeCommand.Start(if (store.proxyOnly()) RuntimeMode.PROXY else RuntimeMode.VPN))
+    }
+
     private fun background(success: Notice?, block: () -> Unit) = background { block(); success }
 
     /**
@@ -975,6 +1147,13 @@ class RuntimeControlActivity : ComponentActivity() {
         notice = null
         permissionMissing = false
         startForegroundService(Intent(this, HydraVpnService::class.java).setAction(HydraVpnService.ACTION_START))
+        // The bind at resume may have found no service to connect to, or it may still belong to
+        // the service that just stopped. A dead binding without BIND_AUTO_CREATE is not reconnected
+        // when this start creates a new service, so replace it before waiting for the new snapshot.
+        if (transport == null) unbind()
+        // Starting is asynchronous; this is the one bind that may create a service, because its
+        // matching foreground start has already established started-service ownership.
+        bind(createIfMissing = true)
     }
 
     private fun measureIntent() =
@@ -1089,6 +1268,13 @@ class RuntimeControlActivity : ComponentActivity() {
 
     companion object {
         private const val AREA = "ui"
+
+        /**
+         * Whether the screens are in front of the person. The core process cannot see the
+         * activity's lifecycle, and it needs it to decide between drawing a question and
+         * posting a notification about it.
+         */
+        @Volatile var visible = false
 
         /**
          * Past this the checking state is left, whatever became of the answer: the service

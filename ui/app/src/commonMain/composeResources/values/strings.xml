@@ -35,7 +35,7 @@
     <string name="trouble_subscription">Subscription unavailable</string>
     <string name="trouble_subscription_hint">Could not refresh the subscription. Check it and try again.</string>
     <string name="trouble_config">Could not prepare the connection</string>
-    <string name="trouble_config_hint">The stored connection data was rejected. Try again; if it repeats, open diagnostics.</string>
+    <string name="trouble_config_hint">The configuration could not be built from these settings. Open diagnostics for the reason.</string>
     <string name="trouble_permission">Android needs to allow the VPN</string>
     <string name="trouble_permission_hint">HydraBox cannot create a tunnel until the system consent is granted.</string>
     <string name="trouble_unknown">The connection stopped</string>
@@ -137,6 +137,8 @@
     <string name="notice_server_switched">Server changed</string>
     <string name="notice_server_switch_restarted">Tunnel restarted: the previous transport is released and its connections are closed</string>
     <string name="notice_settings_need_reconnect">The change applies the next time you connect</string>
+    <string name="notice_settings_applied">The setting was applied and the tunnel was started again</string>
+    <string name="notice_proxy_port_taken">That port is already in use. The proxy keeps the port it is listening on</string>
     <string name="notice_backup_exported">Backup saved</string>
     <string name="notice_backup_imported">Backup restored</string>
     <string name="notice_operation_failed">Could not complete the operation. Try again</string>

@@ -8,4 +8,10 @@
     <string name="notification_failed">Не подключено</string>
     <string name="notification_disconnect">Отключить</string>
     <string name="tile_disconnected">Отключено</string>
+    <string name="notification_challenge_channel">Требуется подтверждение</string>
+    <string name="notification_challenge_channel_detail">VK просит пройти капчу, чтобы поднять туннель</string>
+    <string name="notification_challenge_title">Требуется подтверждение</string>
+    <string name="notification_challenge_text">VK просит пройти капчу — нажмите, чтобы открыть</string>
+    <string name="captcha_title">VK просит подтверждение</string>
+    <string name="captcha_close">Закрыть</string>
 </resources>

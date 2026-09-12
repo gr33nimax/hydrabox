@@ -21,6 +21,7 @@ class OfflineSweepTest {
         published: MutableList<String>,
         onEdge: (String) -> OutboundLatency? = { null },
         onHttp: (String) -> OutboundLatency = { OutboundLatency(it, 40, "available") },
+        progress: MutableList<String> = mutableListOf(),
     ) = OfflineSweep(
         isCancelled = moved,
         networkStillCurrent = { !moved() },
@@ -28,7 +29,46 @@ class OfflineSweepTest {
         measureHttp = { tag -> measured += "http:$tag"; onHttp(tag) },
         publishEdge = { answers -> published += "edge:" + answers.joinToString(",") { it.tag } },
         publishHttp = { answers -> published += "http:" + answers.joinToString(",") { it.tag } },
+        onProgress = { tag -> progress += tag },
     )
+
+    @Test fun `every server the pass asks is named before it is asked`() {
+        val progress = mutableListOf<String>()
+        pass(
+            moved = { false },
+            measured = mutableListOf(),
+            published = mutableListOf(),
+            progress = progress,
+        ).run(
+            listOf(
+                OfflineSweep.Target("vk", "call"),
+                OfflineSweep.Target("amsterdam", "vless"),
+                OfflineSweep.Target("tokyo", "vless"),
+            ),
+        )
+        assertEquals(listOf("vk", "amsterdam", "tokyo"), progress)
+    }
+
+    @Test fun `a server the pass never reaches is never named`() {
+        val progress = mutableListOf<String>()
+        var moved = false
+        pass(
+            moved = { moved },
+            measured = mutableListOf(),
+            published = mutableListOf(),
+            progress = progress,
+            onHttp = { tag ->
+                if (tag == "amsterdam") moved = true
+                OutboundLatency(tag, 40, "available")
+            },
+        ).run(
+            listOf(
+                OfflineSweep.Target("amsterdam", "vless"),
+                OfflineSweep.Target("tokyo", "vless"),
+            ),
+        )
+        assertEquals(listOf("amsterdam"), progress, "a server the pass never reached was marked as measuring")
+    }
 
     @Test fun `a handover between two servers ends the pass and publishes nothing`() {
         val measured = mutableListOf<String>()
@@ -75,7 +115,7 @@ class OfflineSweepTest {
         assertTrue(published.isEmpty(), "an answer from before the handover was published as current")
     }
 
-    @Test fun `an undisturbed pass asks its cheap questions first and publishes each kind separately`() {
+    @Test fun `an undisturbed pass publishes each completed answer without waiting for its kind`() {
         val measured = mutableListOf<String>()
         val published = mutableListOf<String>()
         pass(
@@ -92,7 +132,7 @@ class OfflineSweepTest {
             ),
         )
         assertEquals(listOf("edge:vk", "edge:vk-two", "http:amsterdam", "http:tokyo"), measured)
-        assertEquals(listOf("edge:vk,vk-two", "http:amsterdam,tokyo"), published)
+        assertEquals(listOf("edge:vk", "edge:vk-two", "http:amsterdam", "http:tokyo"), published)
     }
 
     @Test fun `edge answers published before a later handover in the http pass survive it`() {

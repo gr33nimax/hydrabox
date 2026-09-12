@@ -159,14 +159,46 @@ private fun withoutIdleCallTransports(
     return if (remaining.none(CatalogOutbound::selectable)) outbounds else remaining
 }
 
+/** Every tag one outbound points at: what it dials through, and what its group holds. */
+private fun referencesOf(outbound: CatalogOutbound): Set<String> = buildSet {
+    (outbound.json["detour"] as? JsonPrimitive)?.contentOrNull?.let(::add)
+    (outbound.json["outbounds"] as? JsonArray)?.forEach { member ->
+        (member as? JsonPrimitive)?.contentOrNull?.let(::add)
+    }
+}
+
 /** Every tag the embedded documents point at: a detour, or a member of a group they carry. */
 private fun referencedTags(outbounds: List<CatalogOutbound>): Set<String> = buildSet {
-    outbounds.forEach { outbound ->
-        (outbound.json["detour"] as? JsonPrimitive)?.contentOrNull?.let(::add)
-        (outbound.json["outbounds"] as? JsonArray)?.forEach { member ->
-            (member as? JsonPrimitive)?.contentOrNull?.let(::add)
+    outbounds.forEach { outbound -> addAll(referencesOf(outbound)) }
+}
+
+/**
+ * One server and the chain it dials through, and nothing else.
+ *
+ * A measurement session used to carry every outbound of every subscription, and one entry the
+ * core refuses is refused as a whole document — so a single broken server answered for every
+ * other server's measurement, and nothing was measured at all. Isolating the session to the
+ * server being asked, plus what that server dials through (transitively: a `detour` or a group
+ * member that is missing is a document the core refuses whole), makes a sibling's breakage
+ * someone else's problem.
+ *
+ * An unknown tag answers with the whole list rather than an empty one: a measurement without
+ * its server is a measurement of nothing, and the caller is the one that knows whether the
+ * tag was real.
+ */
+fun isolateOutbound(outbounds: List<CatalogOutbound>, tag: String): List<CatalogOutbound> {
+    val byTag = outbounds.associateBy(CatalogOutbound::tag)
+    if (tag !in byTag) return outbounds
+    val keep = mutableSetOf<String>()
+    val pending = ArrayDeque(listOf(tag))
+    while (true) {
+        val current = pending.removeFirstOrNull() ?: break
+        if (!keep.add(current)) continue
+        referencesOf(byTag.getValue(current)).forEach { reference ->
+            if (reference in byTag) pending += reference
         }
     }
+    return outbounds.filter { it.tag in keep }
 }
 
 /**

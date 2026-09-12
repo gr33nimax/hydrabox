@@ -102,6 +102,11 @@ class ShareLinkFidelityTest {
         assertEquals("stream-up", transport.text("mode"))
         assertEquals("/xhttp", transport.text("path"))
         assertEquals("x.example", assertIs<JsonObject>(outbound["tls"]).text("server_name"))
+        // A provider that is not Hydra sends a plain `type=xhttp` link with no `extra`, and
+        // the core refuses a document whose xhttp transport names no padding range — one
+        // such link took the tunnel and every other subscription's servers down with it.
+        // The core's own runtime default range is written out so the document decodes.
+        assertEquals("100-1000", transport.text("x_padding_bytes"))
     }
 
     @Test fun `the xhttp extras arrive under the names the core reads`() {

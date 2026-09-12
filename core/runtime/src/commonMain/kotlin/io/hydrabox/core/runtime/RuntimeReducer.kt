@@ -71,6 +71,23 @@ sealed interface RuntimeInput {
         val generation: Long = 0,
     ) : RuntimeInput
 
+    /**
+     * Which servers an offline measurement sweep is asking right now. Display-only: it moves a
+     * per-row spinner, and it is cleared the moment the sweep ends, succeeds or is cancelled,
+     * so a spinner can never outlive the question it belongs to.
+     */
+    data class SweepProgress(val measuring: Set<String> = emptySet()) : RuntimeInput
+
+    /**
+     * The question the core is waiting for an answer to, or null when there is none. The core
+     * owns the question; the application owns putting its page in front of the person, and
+     * this is how it hears that there is one.
+     */
+    data class Challenge(val challenge: io.hydrabox.core.contract.TransportChallenge?) : RuntimeInput
+
+    /** The person closed the question without answering it; the core stops waiting for it. */
+    data class CancelChallenge(val id: String) : RuntimeInput
+
     /** Which outbound the core says it is routing through, per group. Observed, not commanded. */
     data class SelectionObserved(
         val commandGeneration: Long,
@@ -105,6 +122,10 @@ data class RuntimeModel(
     /** The workerless edge round trips, kept apart from the group's HTTP delays. */
     val edgeLatencies: List<OutboundLatency> = emptyList(),
     val connectedAtElapsedRealtimeMillis: Long? = null,
+    /** The servers an offline sweep is asking right now; display-only. */
+    val measuringTags: Set<String> = emptySet(),
+    /** The core's open interactive question, if it is waiting for one. */
+    val challenge: io.hydrabox.core.contract.TransportChallenge? = null,
 )
 
 sealed interface Effect {
@@ -129,6 +150,12 @@ sealed interface Effect {
      * of replacing it.
      */
     data class RebindNetwork(val generation: NetworkGeneration) : Effect
+
+    /**
+     * Tell the core the person is done with its question — closed the page, or gave up — so it
+     * stops waiting out the whole window and reports the outcome now.
+     */
+    data class CancelChallenge(val id: String) : Effect
 }
 
 sealed interface TimerOp {
@@ -146,6 +173,15 @@ data class Decision(
 fun reduce(state: RuntimeModel, input: RuntimeInput): Decision = when (input) {
     is RuntimeInput.Traffic ->
         if (state.state == RuntimeState.RUNNING) Decision(state.copy(traffic = input.counters)) else Decision(state)
+    // Which servers an offline sweep is asking right now: moves a per-row spinner, and a
+    // cleared set means the sweep is done or cancelled. Display-only.
+    is RuntimeInput.SweepProgress -> Decision(state.copy(measuringTags = input.measuring))
+    // The core's open question, as it reports it. Unchanged answers change nothing: the
+    // transport reports its health on every heartbeat, and a re-announced question is not a
+    // new one.
+    is RuntimeInput.Challenge ->
+        if (state.challenge == input.challenge) Decision(state) else Decision(state.copy(challenge = input.challenge))
+    is RuntimeInput.CancelChallenge -> Decision(state, effects = listOf(Effect.CancelChallenge(input.id)))
     // Measured under a command that is no longer the current one: the servers may be the same,
     // the route through them is not. A sweep with no core behind it (generation zero) is always
     // current, because it measured each server on its own.
@@ -280,7 +316,7 @@ private fun network(state: RuntimeModel, input: RuntimeInput.NetworkChanged): De
 private fun start(state: RuntimeModel, mode: RuntimeMode): Decision {
     val generation = state.commandGeneration + 1
     return Decision(
-        state.copy(state = RuntimeState.STARTING, commandGeneration = generation, runtimeGeneration = 0, mode = mode, wantRunning = true, recoveryAttempts = 0, failure = null, health = TransportHealth(), traffic = TrafficCounters(), latencies = emptyList(), latencyGeneration = 0, edgeLatencies = emptyList(), observedOutbounds = emptyList(), selectedOutbounds = emptyList(), connectedAtElapsedRealtimeMillis = null),
+        state.copy(state = RuntimeState.STARTING, commandGeneration = generation, runtimeGeneration = 0, mode = mode, wantRunning = true, recoveryAttempts = 0, failure = null, health = TransportHealth(), traffic = TrafficCounters(), latencies = emptyList(), latencyGeneration = 0, edgeLatencies = emptyList(), observedOutbounds = emptyList(), selectedOutbounds = emptyList(), connectedAtElapsedRealtimeMillis = null, challenge = null),
         effects = listOf(Effect.StartCore(mode, generation)),
         timers = listOf(TimerOp.Arm(generation, RuntimeDeadline.START)),
     )
@@ -356,6 +392,8 @@ private fun released(state: RuntimeModel, input: RuntimeInput.Released): Decisio
         edgeLatencies = if (state.latencyGeneration == 0L) state.edgeLatencies else emptyList(),
         latencyGeneration = 0,
         observedOutbounds = emptyList(),
+        // A question the core was waiting for belongs to the session that asked it.
+        challenge = null,
     )
     val timers = listOf(TimerOp.Cancel(state.commandGeneration))
     return state.deferredStart?.takeIf { !failed }?.let { start(cleared, it).copy(timers = timers + TimerOp.Arm(cleared.commandGeneration + 1, RuntimeDeadline.START)) }

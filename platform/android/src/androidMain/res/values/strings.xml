@@ -14,4 +14,14 @@
     <string name="notification_failed">Not connected</string>
     <string name="notification_disconnect">Disconnect</string>
     <string name="tile_disconnected">Disconnected</string>
+    <!--
+      The core's interactive question: VK's captcha, served on this device's loopback. It is
+      the one notification that has to reach a person who is not looking at the app.
+    -->
+    <string name="notification_challenge_channel">Confirmation required</string>
+    <string name="notification_challenge_channel_detail">VK asks for a captcha before the tunnel can come up</string>
+    <string name="notification_challenge_title">Confirmation required</string>
+    <string name="notification_challenge_text">VK asks for a captcha — tap to answer it</string>
+    <string name="captcha_title">VK asks for confirmation</string>
+    <string name="captcha_close">Close</string>
 </resources>

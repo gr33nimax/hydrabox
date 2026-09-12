@@ -28,6 +28,7 @@ class ScreenProjectionTest {
         selections: List<OutboundSelection> = emptyList(),
         latencies: List<OutboundLatency> = emptyList(),
         edgeLatencies: List<OutboundLatency> = emptyList(),
+        measuringTags: Set<String> = emptySet(),
     ) = RuntimeSnapshot(
         processEpoch = ProcessEpoch("p"),
         commandGeneration = CommandGeneration(1),
@@ -41,6 +42,7 @@ class ScreenProjectionTest {
         lastFailure = failure,
         latencies = latencies,
         edgeLatencies = edgeLatencies,
+        measuringTags = measuringTags,
     )
 
     private val auto = ServerRef(id = "auto", displayName = "Auto", auto = true)
@@ -55,10 +57,11 @@ class ScreenProjectionTest {
         selections: List<OutboundSelection> = emptyList(),
         latencies: List<OutboundLatency> = emptyList(),
         edgeLatencies: List<OutboundLatency> = emptyList(),
+        measuringTags: Set<String> = emptySet(),
         selected: String? = null,
         permissionMissing: Boolean = false,
     ) = AppReadModel(
-        runtime = snapshot(state, failure, health, selections, latencies, edgeLatencies),
+        runtime = snapshot(state, failure, health, selections, latencies, edgeLatencies, measuringTags),
         sources = sources,
         servers = servers,
         autoServer = auto,
@@ -112,7 +115,10 @@ class ScreenProjectionTest {
         val cases = mapOf(
             HydraCoreErrorCode.NETWORK_LOST to Trouble.NO_INTERNET,
             HydraCoreErrorCode.QUIC_NO_PATHS to Trouble.SERVER_UNREACHABLE,
-            HydraCoreErrorCode.VK_CREDENTIALS_REJECTED to Trouble.SUBSCRIPTION_UNAVAILABLE,
+            // A VK refusal is a server-level situation with a server-level action, not a dead
+            // subscription: its only action must not be "refresh the source".
+            HydraCoreErrorCode.VK_CREDENTIALS_REJECTED to Trouble.SERVER_UNREACHABLE,
+            HydraCoreErrorCode.VK_CAPTCHA_TIMEOUT to Trouble.SERVER_UNREACHABLE,
             HydraCoreErrorCode.CONFIG_QUARANTINED to Trouble.CONFIG_REJECTED,
             HydraCoreErrorCode.RUNTIME_SUPERSEDED to Trouble.UNKNOWN,
         )
@@ -295,6 +301,17 @@ class ScreenProjectionTest {
             model(RuntimeState.RUNNING, latencies = listOf(OutboundLatency("tokyo", 80, "ok", 1_000, 5_000))),
         )
         assertEquals(false, ordinary.servers.first().servers.first().latencyIsEdgeRtt)
+    }
+
+    // A sweep in flight marks the server it is asking right now, and only that one: the row it
+    // names shows a spinner, and a row the sweep has moved past goes back to its own verdict.
+    @Test
+    fun `the server being measured right now is marked`() {
+        val state = ScreenProjection.project(model(RuntimeState.FAILED, measuringTags = setOf("tokyo")))
+        assertEquals(true, state.servers.first().servers.single { it.id == "tokyo" }.measuring)
+
+        val idle = ScreenProjection.project(model(RuntimeState.FAILED))
+        assertEquals(false, idle.servers.first().servers.first().measuring)
     }
 
     // The offline sweep answers a mixed catalogue — HTTP servers and call transports — at

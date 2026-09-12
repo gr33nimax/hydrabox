@@ -129,6 +129,29 @@ data class RuntimeSnapshot(
      */
     val edgeLatencies: List<OutboundLatency> = emptyList(),
     val connectedAtElapsedRealtimeMillis: Long? = null,
+    /**
+     * The servers an offline measurement sweep is asking right now. It reaches the screens
+     * as a per-row spinner so a person sees which server the question is about, rather than a
+     * whole list that says nothing while it is being asked one server at a time.
+     */
+    val measuringTags: Set<String> = emptySet(),
+    /**
+     * A question the core needs a person to answer before the tunnel can come up — today,
+     * VK's captcha. The core serves the page itself on a loopback port; the application's
+     * only job is to put it in front of the person and to say when they gave up.
+     */
+    val challenge: TransportChallenge? = null,
+)
+
+/**
+ * One interactive question from the core, as the core describes it: an identity to cancel it
+ * by, the kind of question, the loopback address its page answers on, and when it expires.
+ */
+data class TransportChallenge(
+    val id: String,
+    val kind: String,
+    val url: String,
+    val expiresAtMillis: Long = 0,
 )
 
 sealed interface RuntimeCommand {
@@ -137,6 +160,9 @@ sealed interface RuntimeCommand {
     data object Reload : RuntimeCommand
     data class SelectOutbound(val groupId: String, val outboundId: String) : RuntimeCommand
     data class NetworkChanged(val generation: NetworkGeneration) : RuntimeCommand
+
+    /** The person closed the question without answering it; the core stops waiting for it. */
+    data class CancelChallenge(val id: String) : RuntimeCommand
 }
 
 sealed interface RuntimeEvent {

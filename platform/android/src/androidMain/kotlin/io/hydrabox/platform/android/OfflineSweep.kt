@@ -20,6 +20,7 @@ internal class OfflineSweep(
     private val publishEdge: (List<OutboundLatency>) -> Unit,
     private val publishHttp: (List<OutboundLatency>) -> Unit,
     private val reportStopped: (Int) -> Unit = {},
+    private val onProgress: (String) -> Unit = {},
 ) {
     data class Target(val id: String, val type: String?)
 
@@ -28,31 +29,34 @@ internal class OfflineSweep(
         // seconds, while every HTTP session ahead of it builds a whole core instance — and
         // the sessions used to spend the edge pass's entire budget before its turn came,
         // leaving the call rows nothing to show for the press that asked for them.
-        val edgeAnswers = mutableListOf<OutboundLatency>()
+        var completed = 0
         for (target in targets) {
             if (isCancelled()) break
             if (!target.type.equals("call", ignoreCase = true)) continue
-            measureEdge(target.id)?.let { edgeAnswers += it }
-        }
-        if (edgeAnswers.isNotEmpty() && !isCancelled() && networkStillCurrent()) {
-            publishEdge(edgeAnswers)
+            onProgress(target.id)
+            val answer = measureEdge(target.id) ?: continue
+            if (isCancelled() || !networkStillCurrent()) break
+            publishEdge(listOf(answer))
+            completed++
         }
         // ponytail: sessions own a full core instance; parallelize only if sequential sweeps
         // become slower than the flood-control and memory cost of concurrent call transports.
-        val answers = mutableListOf<OutboundLatency>()
         for (target in targets) {
             if (target.type.equals("call", ignoreCase = true)) continue
             if (isCancelled()) {
-                reportStopped(answers.size)
-                break
+                reportStopped(completed)
+                return
             }
-            answers += measureHttp(target.id)
+            onProgress(target.id)
+            val answer = measureHttp(target.id)
+            if (isCancelled() || !networkStillCurrent()) {
+                reportStopped(completed)
+                return
+            }
+            // Each answer is useful immediately. The reducer replaces only this tag, so rows
+            // that are still waiting retain their previous RTT instead of flashing blank.
+            publishHttp(listOf(answer))
+            completed++
         }
-        if (answers.isEmpty() || isCancelled()) return
-        // A handover under the pass invalidates its answers with everything else: they
-        // were asked of a network the device is no longer on, and publishing them under
-        // generation zero would keep them past the session that measured them.
-        if (!networkStillCurrent()) return
-        publishHttp(answers)
     }
 }

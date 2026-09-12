@@ -116,6 +116,12 @@ dependencies {
     implementation(project(":core:projection"))
     implementation(project(":ui:app"))
     implementation("androidx.activity:activity-compose:1.10.1")
+    // The captcha overlay is the one screen that is Android-only — a WebView pointing at the
+    // core's loopback page — so its Compose pieces are declared here rather than pulled in
+    // through the shared UI module.
+    implementation(compose.ui)
+    implementation(compose.foundation)
+    implementation(compose.material3)
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
     implementation(files(libboxAar))
 }

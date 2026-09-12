@@ -9,6 +9,7 @@ class RuntimeWireTest {
         val commands = listOf(
             RuntimeCommand.Start(RuntimeMode.VPN), RuntimeCommand.Stop, RuntimeCommand.Reload,
             RuntimeCommand.SelectOutbound("main", "direct"), RuntimeCommand.NetworkChanged(NetworkGeneration(7)),
+            RuntimeCommand.CancelChallenge("challenge-1"),
         )
         commands.forEach { assertEquals(it, RuntimeWire.decodeCommand(RuntimeWire.encode(it))) }
     }
@@ -56,6 +57,13 @@ class RuntimeWireTest {
                 ),
             ),
             connectedAtElapsedRealtimeMillis = 123_456,
+            measuringTags = setOf("proxy", "vk-call"),
+            challenge = TransportChallenge(
+                id = "captcha-1",
+                kind = "vk_captcha",
+                url = "http://127.0.0.1:39281/",
+                expiresAtMillis = 1_700_000_120_000,
+            ),
         )
         assertEquals(snapshot, RuntimeWire.decodeSnapshot(RuntimeWire.encode(snapshot)))
     }

@@ -8,9 +8,15 @@ import io.hydrabox.core.contract.OutboundSelection
 import io.hydrabox.core.contract.RuntimeFailure
 import io.hydrabox.core.contract.RuntimeGeneration
 import io.hydrabox.core.contract.TrafficCounters
+import io.hydrabox.core.contract.TransportChallenge
 import io.hydrabox.core.contract.TransportHealth
 import io.hydrabox.core.contract.TransportHealthState
 import io.hydrabox.core.runtime.RuntimeInput
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import io.nekohasekai.libbox.CommandClient
 import io.nekohasekai.libbox.CommandClientHandler
 import io.nekohasekai.libbox.CommandClientOptions
@@ -451,12 +457,41 @@ class CoreObserver(
     }
 
     /**
+     * The core's open question, if it has one — today, VK's captcha.
+     *
+     * It is a pull rather than a field of the health event: the challenge appears and expires
+     * on the core's own clock, and a question that is already over must not be offered to a
+     * person who can no longer answer it. The core publishes it together with the transport
+     * state, so the answer read here is the one the core holds at this instant.
+     */
+    private fun publishChallenge(current: Observation) {
+        if (!isCurrent(current)) return
+        val state = runCatching { Libbox.hydraCoreTransportState() }.getOrNull() ?: return
+        val challenge = runCatching {
+            json.parseToJsonElement(state).jsonObject["challenge"]?.jsonObject?.let { entry ->
+                val id = entry["id"]?.jsonPrimitive?.contentOrNull ?: return@let null
+                TransportChallenge(
+                    id = id,
+                    kind = entry["kind"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    url = entry["url"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    expiresAtMillis = entry["expires_at"]?.jsonPrimitive?.longOrNull ?: 0,
+                )
+            }
+        }.getOrNull()
+        dispatch(RuntimeInput.Challenge(challenge))
+    }
+
+    /**
      * Applies transport health only to the outbound and runtime generation that produced it.
      * A previous VK bridge may still report while the selector already routes through VLESS;
      * that event must not move the active tunnel into recovery.
      */
     private fun publishTransport(current: Observation) {
         if (!isCurrent(current)) return
+        // The question is read before any of the health filters below: it belongs to the core,
+        // not to one outbound, and a challenge the person can answer is worth showing even
+        // while the health this loop is watching has not moved yet.
+        publishChallenge(current)
         // The route in use, following the chain rather than stopping at the first name in it. The
         // selector may be routing through `auto`, and `auto`'s own choice is the server that
         // actually carries the traffic — so checking the selector's answer alone let an automatic
@@ -519,6 +554,7 @@ class CoreObserver(
     private companion object {
         const val AREA = "core-observer"
         const val RUNTIME_EVENT_INTERVAL_MILLIS = 1_000L
+        val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
         /**
          * How many times the runtime stream is opened before the core is declared unreachable, and

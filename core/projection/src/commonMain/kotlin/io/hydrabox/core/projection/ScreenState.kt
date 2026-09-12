@@ -233,6 +233,10 @@ enum class Notice {
     /** The switch crossed the VK boundary, so the core restarted and its connections closed. */
     SERVER_SWITCH_RESTARTED,
     SETTINGS_NEED_RECONNECT,
+    /** A setting the core reads at start was applied by starting the core again. */
+    SETTINGS_APPLIED,
+    /** The local proxy port is taken by something else; the running proxy kept the old one. */
+    PROXY_PORT_TAKEN,
     BACKUP_EXPORTED,
     BACKUP_IMPORTED,
     BACKUP_FAILED,
@@ -245,7 +249,7 @@ enum class Notice {
     val failure: Boolean
         get() = this !in setOf(
             SOURCE_ADDED, SOURCE_UPDATED, SOURCE_REMOVED, SERVER_SWITCHED, SERVER_SWITCH_RESTARTED,
-            SETTINGS_NEED_RECONNECT, BACKUP_EXPORTED, BACKUP_IMPORTED, SETTINGS_RESET, RULES_UPDATED,
+            SETTINGS_NEED_RECONNECT, SETTINGS_APPLIED, BACKUP_EXPORTED, BACKUP_IMPORTED, SETTINGS_RESET, RULES_UPDATED,
         )
 }
 

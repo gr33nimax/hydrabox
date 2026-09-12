@@ -146,6 +146,8 @@ fun noticeText(notice: Notice): String = stringResource(
         Notice.SERVER_SWITCHED -> Res.string.notice_server_switched
         Notice.SERVER_SWITCH_RESTARTED -> Res.string.notice_server_switch_restarted
         Notice.SETTINGS_NEED_RECONNECT -> Res.string.notice_settings_need_reconnect
+        Notice.SETTINGS_APPLIED -> Res.string.notice_settings_applied
+        Notice.PROXY_PORT_TAKEN -> Res.string.notice_proxy_port_taken
         Notice.BACKUP_EXPORTED -> Res.string.notice_backup_exported
         Notice.BACKUP_IMPORTED -> Res.string.notice_backup_imported
         Notice.BACKUP_FAILED -> Res.string.notice_backup_failed

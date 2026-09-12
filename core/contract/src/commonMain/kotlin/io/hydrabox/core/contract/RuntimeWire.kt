@@ -7,7 +7,7 @@ package io.hydrabox.core.contract
  * than the contract, own their platform serialization APIs.
  */
 object RuntimeWire {
-    private const val SCHEMA = "6"
+    private const val SCHEMA = "8"
 
     fun encode(command: RuntimeCommand): ByteArray = when (command) {
         is RuntimeCommand.Start -> pack("command", "start", command.mode.name)
@@ -15,6 +15,7 @@ object RuntimeWire {
         RuntimeCommand.Reload -> pack("command", "reload")
         is RuntimeCommand.SelectOutbound -> pack("command", "select", text(command.groupId), text(command.outboundId))
         is RuntimeCommand.NetworkChanged -> pack("command", "network", command.generation.value.toString())
+        is RuntimeCommand.CancelChallenge -> pack("command", "cancel-challenge", text(command.id))
     }.encodeToByteArray()
 
     fun decodeCommand(bytes: ByteArray): RuntimeCommand {
@@ -25,6 +26,7 @@ object RuntimeWire {
             "reload" -> RuntimeCommand.Reload.also { check(fields.isEmpty()) }
             "select" -> RuntimeCommand.SelectOutbound(readText(fields.removeAt(0)), readText(fields.removeAt(0))).also { check(fields.isEmpty()) }
             "network" -> RuntimeCommand.NetworkChanged(NetworkGeneration(fields.single().toLong()))
+            "cancel-challenge" -> RuntimeCommand.CancelChallenge(readText(fields.removeAt(0))).also { check(fields.isEmpty()) }
             else -> error("Unknown runtime command")
         }
     }
@@ -76,6 +78,14 @@ object RuntimeWire {
             )
         }.toTypedArray(),
         snapshot.connectedAtElapsedRealtimeMillis?.toString() ?: "",
+        snapshot.measuringTags.size.toString(),
+        *snapshot.measuringTags.map { text(it) }.toTypedArray(),
+        // A fixed four fields, with an empty id meaning "no question right now": positional
+        // decoding must not have to guess whether the rest of the frame follows.
+        text(snapshot.challenge?.id ?: ""),
+        text(snapshot.challenge?.kind ?: ""),
+        text(snapshot.challenge?.url ?: ""),
+        snapshot.challenge?.expiresAtMillis?.toString() ?: "",
     ).encodeToByteArray()
 
     fun decodeSnapshot(bytes: ByteArray): RuntimeSnapshot {
@@ -137,6 +147,14 @@ object RuntimeWire {
             )
         }
         val connectedAtElapsedRealtimeMillis = fields.removeAt(0).ifEmpty { null }?.toLong()
+        val measuringTags = List(fields.removeAt(0).toInt()) { readText(fields.removeAt(0)) }.toSet()
+        val challengeId = readText(fields.removeAt(0))
+        val challengeKind = readText(fields.removeAt(0))
+        val challengeUrl = readText(fields.removeAt(0))
+        val challengeExpiresAtMillis = fields.removeAt(0).ifEmpty { "0" }.toLong()
+        val challenge = challengeId.takeIf(String::isNotEmpty)?.let { id ->
+            TransportChallenge(id = id, kind = challengeKind, url = challengeUrl, expiresAtMillis = challengeExpiresAtMillis)
+        }
         check(fields.isEmpty())
         return RuntimeSnapshot(
             processEpoch = processEpoch,
@@ -154,6 +172,8 @@ object RuntimeWire {
             latencies = latencies,
             edgeLatencies = edgeLatencies,
             connectedAtElapsedRealtimeMillis = connectedAtElapsedRealtimeMillis,
+            measuringTags = measuringTags,
+            challenge = challenge,
         )
     }
 

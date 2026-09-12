@@ -56,6 +56,8 @@ data class ServerRef(
      * and nothing behind it.
      */
     val latencyIsEdgeRtt: Boolean = false,
+    /** An offline measurement sweep is asking this server right now; the row shows a spinner. */
+    val measuring: Boolean = false,
 )
 
 /**
@@ -104,15 +106,18 @@ enum class Trouble {
             HydraCoreErrorCode.DNS_UPSTREAM_REFUSED,
             HydraCoreErrorCode.DNS_NO_ANSWER,
             HydraCoreErrorCode.PROBE_TIMEOUT,
-            -> SERVER_UNREACHABLE
-
+            // VK turned this route away — a captcha, a flood limit, its own refusal. The
+            // subscription is not dead and re-downloading it fixes nothing; the actionable
+            // move is another server, which is what this situation offers. It used to read
+            // as "subscription unavailable", whose only action is to refresh the source, and
+            // the screen then had no way to connect at all until the app was restarted.
             HydraCoreErrorCode.VK_CREDENTIALS_REJECTED,
             HydraCoreErrorCode.VK_CREDENTIALS_FLOOD,
             HydraCoreErrorCode.VK_AUTH_TERMINAL,
             HydraCoreErrorCode.VK_CAPTCHA_REQUIRED,
             HydraCoreErrorCode.VK_CAPTCHA_TIMEOUT,
             HydraCoreErrorCode.VK_CAPTCHA_CANCELLED,
-            -> SUBSCRIPTION_UNAVAILABLE
+            -> SERVER_UNREACHABLE
 
             HydraCoreErrorCode.CONFIG_INVALID_PLAN,
             HydraCoreErrorCode.CONFIG_DIGEST_MISMATCH,

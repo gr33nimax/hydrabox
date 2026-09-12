@@ -200,6 +200,14 @@ object ShareLinkOutbound {
             put("mode", query["mode"]?.takeIf(String::isNotEmpty) ?: "auto")
             query["path"]?.let { put("path", it) }
             query["host"]?.let { put("host", it) }
+            // The core refuses a document whose xhttp transport names no padding range
+            // (`x_padding_bytes cannot be disabled`), and a provider that is not Hydra hands
+            // out plain `type=xhttp` links with no `extra` — one such link refused the whole
+            // configuration, taking the tunnel and every other subscription's servers down
+            // with it. The range below is the core's own runtime default
+            // (GetNormalizedXPaddingBytes), written out so the document decodes; an `extra`
+            // that carries its own range replaces it below.
+            put("x_padding_bytes", "100-1000")
             // `extra` is a JSON object the provider appends to an xhttp link, and it is
             // written in Xray's vocabulary: `xPaddingBytes`, `scStreamUpServerSecs`, `xmux`.
             // The core reads the same settings under snake_case names, so the keys are

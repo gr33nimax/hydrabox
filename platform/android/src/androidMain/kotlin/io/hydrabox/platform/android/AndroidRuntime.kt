@@ -64,6 +64,7 @@ class AndroidRuntime(private val execute: (Effect) -> Unit) : RuntimeTransport {
                 is RuntimeCommand.SelectOutbound ->
                     RuntimeInput.SelectOutbound(OutboundSelection(command.groupId, command.outboundId))
                 is RuntimeCommand.NetworkChanged -> RuntimeInput.NetworkChanged(command.generation)
+                is RuntimeCommand.CancelChallenge -> RuntimeInput.CancelChallenge(command.id)
             },
         )
     }
@@ -155,6 +156,8 @@ class AndroidRuntime(private val execute: (Effect) -> Unit) : RuntimeTransport {
         latencies = model.latencies,
         edgeLatencies = model.edgeLatencies,
         connectedAtElapsedRealtimeMillis = model.connectedAtElapsedRealtimeMillis,
+        measuringTags = model.measuringTags,
+        challenge = model.challenge,
     )
 
     override fun subscribe(listener: (RuntimeEvent) -> Unit): AutoCloseable = synchronized(this) {

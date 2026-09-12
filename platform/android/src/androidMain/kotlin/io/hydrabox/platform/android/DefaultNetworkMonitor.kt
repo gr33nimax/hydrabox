@@ -24,10 +24,13 @@ class DefaultNetworkMonitor(context: Context) {
     private val connectivity = context.applicationContext
         .getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     private val listeners = CopyOnWriteArraySet<InterfaceUpdateListener>()
-    private val lock = Any()
+    @Suppress("PLATFORM_CLASS_MAPPED_TO_KOTLIN")
+    private val lock = java.lang.Object()
 
     @Volatile private var current: Iface? = null
     @Volatile private var generation: Long = 0
+    /** Last generation whose [onChanged] callback finished. */
+    @Volatile private var deliveredGeneration: Long = 0
     private var callback: ConnectivityManager.NetworkCallback? = null
 
     /**
@@ -96,6 +99,17 @@ class DefaultNetworkMonitor(context: Context) {
         listeners -= listener
     }
 
+    /** Waits briefly for the first usable non-VPN uplink after this monitor starts. */
+    fun awaitNetwork(timeoutMillis: Long): Boolean = synchronized(lock) {
+        val deadline = android.os.SystemClock.elapsedRealtime() + timeoutMillis
+        while (currentNetwork == null || deliveredGeneration != generation) {
+            val remaining = deadline - android.os.SystemClock.elapsedRealtime()
+            if (remaining <= 0) return@synchronized false
+            lock.wait(remaining)
+        }
+        true
+    }
+
     /**
      * Re-resolves the default interface and raises the generation if it moved.
      *
@@ -114,8 +128,15 @@ class DefaultNetworkMonitor(context: Context) {
             generation += 1
             generation
         }
+        // A standalone latency sweep may be waiting for the first non-VPN uplink after its
+        // service was created. Let the runtime see this generation first, then wake the sweep so
+        // it captures this callback as its baseline; any later callback is a real handover.
         HydraLog.info(AREA, "default network is now ${resolved?.iface?.name ?: "none"}, generation $raised")
         onChanged?.invoke(raised)
+        synchronized(lock) {
+            deliveredGeneration = raised
+            lock.notifyAll()
+        }
     }
 
     /**

@@ -12,6 +12,59 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class RuntimeReducerTest {
+    @Test fun `the sweep progress names the servers being asked, and clears when it is done`() {
+        val measured = reduce(RuntimeModel(), RuntimeInput.SweepProgress(setOf("a", "b"))).state
+        assertEquals(setOf("a", "b"), measured.measuringTags)
+        assertEquals(emptySet(), reduce(measured, RuntimeInput.SweepProgress(emptySet())).state.measuringTags)
+    }
+
+    @Test fun `sweep progress declares no effect and no deadline`() {
+        val decision = reduce(RuntimeModel(), RuntimeInput.SweepProgress(setOf("a")))
+        assertEquals(emptyList(), decision.effects)
+        assertEquals(emptyList(), decision.timers)
+    }
+
+    @Test fun `measuring a server keeps its last latency until its new answer arrives`() {
+        val previous = OutboundLatency("a", 80, "available")
+        val state = RuntimeModel(
+            state = RuntimeState.FAILED,
+            latencies = listOf(previous),
+            latencyGeneration = 0,
+        )
+        val measuring = reduce(state, RuntimeInput.SweepProgress(setOf("a"))).state
+        assertEquals(listOf(previous), measuring.latencies)
+        assertEquals(setOf("a"), measuring.measuringTags)
+    }
+
+    @Test fun `the core's question is carried until it is answered or gone`() {
+        val challenge = io.hydrabox.core.contract.TransportChallenge(
+            id = "captcha-1", kind = "vk_captcha", url = "http://127.0.0.1:9/",
+        )
+        val asked = reduce(RuntimeModel(), RuntimeInput.Challenge(challenge)).state
+        assertEquals(challenge, asked.challenge)
+        // A re-announcement is not a new question.
+        assertEquals(asked, reduce(asked, RuntimeInput.Challenge(challenge)).state)
+        assertEquals(null, reduce(asked, RuntimeInput.Challenge(null)).state.challenge)
+    }
+
+    @Test fun `cancelling a question tells the core and changes nothing else`() {
+        val challenge = io.hydrabox.core.contract.TransportChallenge(id = "captcha-1", kind = "vk_captcha", url = "u")
+        val asked = reduce(RuntimeModel(), RuntimeInput.Challenge(challenge)).state
+        val decision = reduce(asked, RuntimeInput.CancelChallenge("captcha-1"))
+        assertEquals(listOf(Effect.CancelChallenge("captcha-1")), decision.effects)
+        assertEquals(asked, decision.state)
+    }
+
+    @Test fun `a question does not outlive the session that asked it`() {
+        val challenge = io.hydrabox.core.contract.TransportChallenge(id = "captcha-1", kind = "vk_captcha", url = "u")
+        // A new start drops whatever the previous session was waiting for.
+        assertEquals(null, reduce(RuntimeModel(challenge = challenge), RuntimeInput.Start(RuntimeMode.VPN)).state.challenge)
+        // And so does the release that ends a session — whichever way it ends.
+        val starting = reduce(RuntimeModel(), RuntimeInput.Start(RuntimeMode.VPN)).state
+        val released = reduce(starting.copy(challenge = challenge), RuntimeInput.Released(1, success = true)).state
+        assertEquals(null, released.challenge)
+    }
+
     @Test fun `R1 reducer is deterministic`() {
         val input = RuntimeInput.Start(RuntimeMode.VPN)
         assertEquals(reduce(RuntimeModel(), input), reduce(RuntimeModel(), input))

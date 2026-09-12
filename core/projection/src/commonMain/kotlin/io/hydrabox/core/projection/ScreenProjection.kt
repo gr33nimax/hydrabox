@@ -44,16 +44,18 @@ object ScreenProjection {
         val snapshot = model.runtime
         val latencies = snapshot.latencies.associateBy { it.tag }
         val edgeLatencies = snapshot.edgeLatencies.associateBy { it.tag }
+        val measuringTags = snapshot.measuringTags
         val server = selectedServer(model, latencies, edgeLatencies, nowMillis)
         return ScreenState(
             connection = connection(model, server),
             legalAccepted = model.legalAccepted,
             servers = model.servers.map { group ->
-                group.copy(servers = group.servers.map { it.withLatency(latencies, edgeLatencies, nowMillis) })
+                group.copy(servers = group.servers.map { it.withLatency(latencies, edgeLatencies, nowMillis).copy(measuring = it.id in measuringTags) })
             },
             autoServer = model.autoServer
                 ?.copy(resolvedName = resolvedAuto(model))
-                ?.withLatency(latencies, edgeLatencies, nowMillis),
+                ?.withLatency(latencies, edgeLatencies, nowMillis)
+                ?.copy(measuring = model.autoServer.id in measuringTags),
             selectedServerId = model.selectedServerId,
             sources = model.sources,
             settings = model.settings,
