@@ -70,13 +70,31 @@ enum class SubscriptionDocumentFormat { SINGBOX, XRAY, CLASH, SIP008, HYDRA, UNK
 
 object SubscriptionParser {
     private val link = Regex("""^([A-Za-z0-9+]+)://(?:([^@/?#]+)@)?([^:/?#]+):(\d+)(?:/[^?#]*)?(?:\?([^#]*))?(?:#(.*))?$""")
-    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+    private val json =
+        Json {
+            ignoreUnknownKeys = true
+            isLenient = true
+        }
 
     /** Schemes whose userinfo is a single credential rather than `user:password`. */
-    private val proxySchemes = setOf(
-        "socks", "socks4", "socks4a", "socks5", "socks5h", "http", "https",
-        "hysteria", "hy", "hy2", "hysteria2", "naive+https", "naive+quic", "tuic", "anytls",
-    )
+    private val proxySchemes =
+        setOf(
+            "socks",
+            "socks4",
+            "socks4a",
+            "socks5",
+            "socks5h",
+            "http",
+            "https",
+            "hysteria",
+            "hy",
+            "hy2",
+            "hysteria2",
+            "naive+https",
+            "naive+quic",
+            "tuic",
+            "anytls",
+        )
 
     fun parse(value: String): ShareLink {
         val trimmed = value.trim()
@@ -97,33 +115,45 @@ object SubscriptionParser {
         val query = parseQuery(match.groupValues[5])
         val name = decode(match.groupValues[6])
         return when (scheme) {
-            "vless" -> ShareLink.Vless(
-                server,
-                port,
-                name,
-                Secret.of(credential.takeIf(String::isNotEmpty) ?: error("missing link credential")),
-                query,
-            )
-            "trojan" -> ShareLink.Trojan(
-                server,
-                port,
-                name,
-                Secret.of(credential.takeIf(String::isNotEmpty) ?: error("missing link credential")),
-                query,
-            )
-            in proxySchemes -> proxy(scheme, server, port, name, credential, query)
-            else -> error("unsupported scheme $scheme")
+            "vless" -> {
+                ShareLink.Vless(
+                    server,
+                    port,
+                    name,
+                    Secret.of(credential.takeIf(String::isNotEmpty) ?: error("missing link credential")),
+                    query,
+                )
+            }
+
+            "trojan" -> {
+                ShareLink.Trojan(
+                    server,
+                    port,
+                    name,
+                    Secret.of(credential.takeIf(String::isNotEmpty) ?: error("missing link credential")),
+                    query,
+                )
+            }
+
+            in proxySchemes -> {
+                proxy(scheme, server, port, name, credential, query)
+            }
+
+            else -> {
+                error("unsupported scheme $scheme")
+            }
         }
     }
 
     /** Every link the body holds, skipping the ones this build has no mapping for. */
-    fun parseAll(content: String): List<ShareLink> = content
-        .replace(" -> ", "\n")
-        .lineSequence()
-        .map(String::trim)
-        .filter { it.isNotEmpty() && !it.startsWith("#") }
-        .mapNotNull { line -> runCatching { parse(line) }.getOrNull() }
-        .toList()
+    fun parseAll(content: String): List<ShareLink> =
+        content
+            .replace(" -> ", "\n")
+            .lineSequence()
+            .map(String::trim)
+            .filter { it.isNotEmpty() && !it.startsWith("#") }
+            .mapNotNull { line -> runCatching { parse(line) }.getOrNull() }
+            .toList()
 
     /**
      * A `wg://` or `wireguard://` link. Providers put the private key in the query rather
@@ -135,14 +165,17 @@ object SubscriptionParser {
         val port = match.groupValues[4].toIntOrNull()?.takeIf { it in 1..65535 } ?: error("invalid WireGuard port")
         val query = parseQuery(match.groupValues[5])
         val userInfo = decode(match.groupValues[2])
-        val privateKey = query["private_key"] ?: query["privatekey"] ?: query["secret_key"]
-            ?: userInfo.takeIf(String::isNotEmpty)
-            ?: error("missing WireGuard private key")
+        val privateKey =
+            query["private_key"] ?: query["privatekey"] ?: query["secret_key"]
+                ?: userInfo.takeIf(String::isNotEmpty)
+                ?: error("missing WireGuard private key")
         val peerKey = query["public_key"] ?: query["publickey"] ?: query["peer_public_key"] ?: query["pubkey"]
-        val local = (query["local_address"] ?: query["address"] ?: query["ip"]).orEmpty()
-            .split(',')
-            .map(String::trim)
-            .filter(String::isNotEmpty)
+        val local =
+            (query["local_address"] ?: query["address"] ?: query["ip"])
+                .orEmpty()
+                .split(',')
+                .map(String::trim)
+                .filter(String::isNotEmpty)
         return ShareLink.WireGuard(
             server = server,
             port = port,
@@ -163,32 +196,82 @@ object SubscriptionParser {
         var section = ""
         val values = mutableMapOf<String, String>()
         content.lineSequence().map(String::trim).filter { it.isNotEmpty() && !it.startsWith("#") }.forEach { line ->
-            if (line.startsWith("[") && line.endsWith("]")) section = line.removeSurrounding("[", "]")
-            else line.split('=', limit = 2).takeIf { it.size == 2 }?.let { values["$section.${it[0].trim()}"] = it[1].trim() }
+            if (line.startsWith("[") && line.endsWith("]")) {
+                section = line.removeSurrounding("[", "]")
+            } else {
+                line.split('=', limit = 2).takeIf { it.size == 2 }?.let { values["$section.${it[0].trim()}"] = it[1].trim() }
+            }
         }
         val endpoint = values["Peer.Endpoint"] ?: error("missing WireGuard endpoint")
         val divider = endpoint.lastIndexOf(':').takeIf { it > 0 } ?: error("invalid WireGuard endpoint")
         val server = endpoint.substring(0, divider).removeSurrounding("[", "]")
-        val port = endpoint.substring(divider + 1).toIntOrNull()?.takeIf { it in 1..65535 }
-            ?: error("invalid WireGuard port")
-        val amnezia = listOf("Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4", "H1", "H2", "H3", "H4")
-            .mapNotNull { field -> values["Interface.$field"]?.let { field.lowercase() to it } }
-            .toMap()
+        val port =
+            endpoint.substring(divider + 1).toIntOrNull()?.takeIf { it in 1..65535 }
+                ?: error("invalid WireGuard port")
+        val amnezia =
+            listOf(
+                "Jc",
+                "Jmin",
+                "Jmax",
+                "S1",
+                "S2",
+                "S3",
+                "S4",
+                "H1",
+                "H2",
+                "H3",
+                "H4",
+                "I1",
+                "I2",
+                "I3",
+                "I4",
+                "I5",
+                "HeaderProtectionKey",
+                "ContentPaddingAddition",
+                "RekeyAfterTime",
+                "RekeyTimeout",
+                "RejectAfterTime",
+                "KeepaliveTimeout",
+                "MaxHandshakeAttempts",
+                "RandomTrailers",
+                "DisableCookies",
+            ).mapNotNull { field -> values["Interface.$field"]?.let { field.toAmneziaKey() to it } }
+                .toMap()
         return ShareLink.WireGuard(
             server = server,
             port = port,
             name = values["Interface.Name"] ?: "WireGuard",
             privateKey = Secret.of(values["Interface.PrivateKey"] ?: error("missing WireGuard private key")),
             peerPublicKey = Secret.of(values["Peer.PublicKey"] ?: error("missing WireGuard peer key")),
-            localAddresses = values["Interface.Address"].orEmpty().split(',').map(String::trim).filter(String::isNotEmpty),
+            localAddresses =
+                values["Interface.Address"]
+                    .orEmpty()
+                    .split(',')
+                    .map(String::trim)
+                    .filter(String::isNotEmpty),
             preSharedKey = values["Peer.PresharedKey"]?.let(Secret::of),
-            query = amnezia + listOfNotNull(
-                values["Interface.MTU"]?.let { "mtu" to it },
-                values["Peer.PersistentKeepalive"]?.let { "keepalive" to it },
-                values["Peer.AllowedIPs"]?.let { "allowed_ips" to it },
-            ).toMap(),
+            query =
+                amnezia +
+                    listOfNotNull(
+                        values["Interface.MTU"]?.let { "mtu" to it },
+                        values["Peer.PersistentKeepalive"]?.let { "keepalive" to it },
+                        values["Peer.AllowedIPs"]?.let { "allowed_ips" to it },
+                    ).toMap(),
         )
     }
+
+    /**
+     * A provider writes the AmneziaWG directives in their native PascalCase spelling; the
+     * core and the share-link query use snake_case, and every letter case transition is a
+     * word boundary.
+     */
+    private fun String.toAmneziaKey(): String =
+        buildString {
+            this@toAmneziaKey.forEachIndexed { index, character ->
+                if (character.isUpperCase() && index > 0) append('_')
+                append(character.lowercaseChar())
+            }
+        }
 
     /**
      * A `vmess://` link: base64 of the v2rayN JSON object.
@@ -202,33 +285,42 @@ object SubscriptionParser {
     private fun parseVmess(value: String): ShareLink.Proxy {
         val payload = value.substringAfter("://").substringBefore('#')
         val document = decodeBase64(payload) ?: error("invalid vmess link")
-        val fields = runCatching { json.parseToJsonElement(document) as? JsonObject }.getOrNull()
-            ?: error("invalid vmess document")
-        fun field(vararg names: String): String? = names.firstNotNullOfOrNull { name ->
-            fields[name]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf(String::isNotEmpty)
-        }
+        val fields =
+            runCatching { json.parseToJsonElement(document) as? JsonObject }.getOrNull()
+                ?: error("invalid vmess document")
+
+        fun field(vararg names: String): String? =
+            names.firstNotNullOfOrNull { name ->
+                fields[name]
+                    ?.jsonPrimitive
+                    ?.contentOrNull
+                    ?.trim()
+                    ?.takeIf(String::isNotEmpty)
+            }
         val server = field("add", "address", "host") ?: error("missing vmess server")
         val port = field("port")?.toIntOrNull()?.takeIf { it in 1..65535 } ?: error("invalid vmess port")
         val uuid = field("id") ?: error("missing vmess credential")
         val transport = field("net", "network")?.lowercase().orEmpty()
         val security = field("tls", "security")?.lowercase().orEmpty()
         val host = field("host", "sni")
-        val query = buildMap {
-            transport.takeIf { it.isNotEmpty() && it != "tcp" }?.let { put("type", it) }
-            field("path")?.let { put("path", it) }
-            // gRPC calls it a service name; v2rayN puts it in `path` for every transport.
-            if (transport == "grpc") field("path", "serviceName")?.let { put("serviceName", it) }
-            host?.let { put("host", it) }
-            field("sni", "peer")?.let { put("sni", it) }
-            field("alpn")?.let { put("alpn", it) }
-            field("fp")?.let { put("fp", it) }
-            field("scy", "security")?.takeIf { it != "tls" && it != "none" && it != "reality" }
-                ?.let { put("scy", it) }
-            field("aid", "alterId")?.let { put("aid", it) }
-            field("mode")?.let { put("mode", it) }
-            if (security == "tls" || security == "reality") put("security", security)
-            if (field("allowInsecure") == "1" || field("skip-cert-verify") == "true") put("insecure", "1")
-        }
+        val query =
+            buildMap {
+                transport.takeIf { it.isNotEmpty() && it != "tcp" }?.let { put("type", it) }
+                field("path")?.let { put("path", it) }
+                // gRPC calls it a service name; v2rayN puts it in `path` for every transport.
+                if (transport == "grpc") field("path", "serviceName")?.let { put("serviceName", it) }
+                host?.let { put("host", it) }
+                field("sni", "peer")?.let { put("sni", it) }
+                field("alpn")?.let { put("alpn", it) }
+                field("fp")?.let { put("fp", it) }
+                field("scy", "security")
+                    ?.takeIf { it != "tls" && it != "none" && it != "reality" }
+                    ?.let { put("scy", it) }
+                field("aid", "alterId")?.let { put("aid", it) }
+                field("mode")?.let { put("mode", it) }
+                if (security == "tls" || security == "reality") put("security", security)
+                if (field("allowInsecure") == "1" || field("skip-cert-verify") == "true") put("insecure", "1")
+            }
         return ShareLink.Proxy(
             server = server,
             port = port,
@@ -264,11 +356,13 @@ object SubscriptionParser {
         val hostPort = address.substringBefore('?').substringBefore('/')
         val divider = hostPort.lastIndexOf(':').takeIf { it > 0 } ?: error("invalid shadowsocks address")
         val server = hostPort.substring(0, divider).removeSurrounding("[", "]")
-        val port = hostPort.substring(divider + 1).toIntOrNull()?.takeIf { it in 1..65535 }
-            ?: error("invalid shadowsocks port")
+        val port =
+            hostPort.substring(divider + 1).toIntOrNull()?.takeIf { it in 1..65535 }
+                ?: error("invalid shadowsocks port")
         val method = credential.substringBefore(':').takeIf(String::isNotEmpty) ?: error("missing shadowsocks method")
-        val password = credential.substringAfter(':', "").takeIf(String::isNotEmpty)
-            ?: error("missing shadowsocks password")
+        val password =
+            credential.substringAfter(':', "").takeIf(String::isNotEmpty)
+                ?: error("missing shadowsocks password")
         return ShareLink.Proxy(
             server = server,
             port = port,
@@ -310,40 +404,47 @@ object SubscriptionParser {
         val parts = credential.split(':', limit = 2)
         val username = parts.firstOrNull()?.takeIf(String::isNotEmpty)?.let(Secret::of)
         val password = parts.getOrNull(1)?.takeIf(String::isNotEmpty)?.let(Secret::of)
-        val type = when {
-            scheme.startsWith("socks") -> "socks"
-            scheme == "hy2" || scheme == "hysteria2" -> "hysteria2"
-            scheme == "hysteria" || scheme == "hy" -> "hysteria"
-            scheme.startsWith("naive+") -> "naive"
-            scheme == "tuic" -> "tuic"
-            scheme == "anytls" -> "anytls"
-            else -> "http"
-        }
-        val secured = scheme == "https" || scheme == "naive+https" ||
-            query["security"] == "tls" || query["tls"] == "1" ||
-            type == "hysteria2" || type == "hysteria" || type == "tuic" || type == "anytls"
+        val type =
+            when {
+                scheme.startsWith("socks") -> "socks"
+                scheme == "hy2" || scheme == "hysteria2" -> "hysteria2"
+                scheme == "hysteria" || scheme == "hy" -> "hysteria"
+                scheme.startsWith("naive+") -> "naive"
+                scheme == "tuic" -> "tuic"
+                scheme == "anytls" -> "anytls"
+                else -> "http"
+            }
+        val secured =
+            scheme == "https" || scheme == "naive+https" ||
+                query["security"] == "tls" || query["tls"] == "1" ||
+                type == "hysteria2" || type == "hysteria" || type == "tuic" || type == "anytls"
         return ShareLink.Proxy(server, port, name, type, secured, username, password, query)
     }
 
-    private fun parseQuery(raw: String): Map<String, String> = raw
-        .split('&')
-        .asSequence()
-        .filter(String::isNotEmpty)
-        .mapNotNull { pair ->
-            val divider = pair.indexOf('=')
-            if (divider <= 0) null else decode(pair.substring(0, divider)) to decode(pair.substring(divider + 1))
-        }
-        .filter { it.second.isNotEmpty() }
-        .toMap()
+    private fun parseQuery(raw: String): Map<String, String> =
+        raw
+            .split('&')
+            .asSequence()
+            .filter(String::isNotEmpty)
+            .mapNotNull { pair ->
+                val divider = pair.indexOf('=')
+                if (divider <= 0) null else decode(pair.substring(0, divider)) to decode(pair.substring(divider + 1))
+            }.filter { it.second.isNotEmpty() }
+            .toMap()
 }
 
 @OptIn(ExperimentalEncodingApi::class)
-private fun decodeBase64(value: String): String? = runCatching {
-    Base64.Default.decode(
-        value.trim().replace('-', '+').replace('_', '/')
-            .let { it + "=".repeat((4 - it.length % 4) % 4) },
-    ).decodeToString()
-}.getOrNull()?.takeIf { text -> text.none { it.code == 0 } }
+private fun decodeBase64(value: String): String? =
+    runCatching {
+        Base64.Default
+            .decode(
+                value
+                    .trim()
+                    .replace('-', '+')
+                    .replace('_', '/')
+                    .let { it + "=".repeat((4 - it.length % 4) % 4) },
+            ).decodeToString()
+    }.getOrNull()?.takeIf { text -> text.none { it.code == 0 } }
 
 private fun decode(value: String): String {
     if (!value.contains('%') && !value.contains('+')) return value
@@ -357,6 +458,7 @@ private fun decode(value: String): String {
                 bytes += hex.toByte()
                 index += 3
             }
+
             else -> {
                 bytes += symbol.code.toByte()
                 index += 1

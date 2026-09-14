@@ -5,19 +5,23 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.VpnService
 import android.system.OsConstants
+import io.nekohasekai.libbox.BridgeOptions
+import io.nekohasekai.libbox.BridgeSession
 import io.nekohasekai.libbox.ConnectionOwner
 import io.nekohasekai.libbox.InterfaceUpdateListener
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.LocalDNSTransport
+import io.nekohasekai.libbox.NeighborUpdateListener
 import io.nekohasekai.libbox.NetworkInterface
 import io.nekohasekai.libbox.NetworkInterfaceIterator
 import io.nekohasekai.libbox.Notification
 import io.nekohasekai.libbox.PlatformInterface
+import io.nekohasekai.libbox.PlatformUser
+import io.nekohasekai.libbox.ShellSession
 import io.nekohasekai.libbox.StringIterator
 import io.nekohasekai.libbox.TunOptions
 import io.nekohasekai.libbox.WIFIState
 import java.net.NetworkInterface as JavaNetworkInterface
-import java.security.KeyStore
 
 /**
  * The Android half of the core's platform contract: it opens the tun device, enumerates
@@ -32,15 +36,19 @@ class AndroidVpnPlatform(
     private val service: VpnService,
     private val monitor: DefaultNetworkMonitor,
 ) : PlatformInterface {
-    private val connectivity = service.applicationContext
-        .getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    private val connectivity =
+        service.applicationContext
+            .getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     private val resolver = AndroidLocalResolver(monitor)
 
     override fun autoDetectInterfaceControl(fd: Int) {
         check(service.protect(fd)) { "VpnService.protect failed" }
     }
 
-    override fun bindInterfaceControl(fd: Int, interfaceName: String) = autoDetectInterfaceControl(fd)
+    override fun bindInterfaceControl(
+        fd: Int,
+        interfaceName: String,
+    ) = autoDetectInterfaceControl(fd)
 
     override fun clearDNSCache() = Unit
 
@@ -73,44 +81,51 @@ class AndroidVpnPlatform(
     override fun usePlatformConnectionOwnerFinder() = false
 
     override fun getInterfaces(): NetworkInterfaceIterator {
-        val javaInterfaces = runCatching { JavaNetworkInterface.getNetworkInterfaces()?.toList() }
-            .getOrNull().orEmpty()
+        val javaInterfaces =
+            runCatching { JavaNetworkInterface.getNetworkInterfaces()?.toList() }
+                .getOrNull()
+                .orEmpty()
         val collected = mutableListOf<NetworkInterface>()
         runCatching { connectivity.allNetworks.toList() }.getOrDefault(emptyList()).forEach { network ->
             val link = connectivity.getLinkProperties(network) ?: return@forEach
             val capabilities = connectivity.getNetworkCapabilities(network) ?: return@forEach
             val java = javaInterfaces.firstOrNull { it.name == link.interfaceName } ?: return@forEach
-            collected += NetworkInterface().apply {
-                index = java.index
-                mtu = runCatching { java.mtu }.getOrDefault(1500)
-                name = java.name
-                addresses = SimpleStringIterator(
-                    java.interfaceAddresses.mapNotNull { address ->
-                        val host = address.address.hostAddress ?: return@mapNotNull null
-                        "${host.substringBefore('%')}/${address.networkPrefixLength}"
-                    },
-                )
-                dnsServer = SimpleStringIterator(link.dnsServers.mapNotNull { it.hostAddress })
-                type = when {
-                    capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> Libbox.InterfaceTypeWIFI
-                    capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> Libbox.InterfaceTypeCellular
-                    capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> Libbox.InterfaceTypeEthernet
-                    else -> Libbox.InterfaceTypeOther
+            collected +=
+                NetworkInterface().apply {
+                    index = java.index
+                    mtu = runCatching { java.mtu }.getOrDefault(1500)
+                    name = java.name
+                    addresses =
+                        SimpleStringIterator(
+                            java.interfaceAddresses.mapNotNull { address ->
+                                val host = address.address.hostAddress ?: return@mapNotNull null
+                                "${host.substringBefore('%')}/${address.networkPrefixLength}"
+                            },
+                        )
+                    dnsServer = SimpleStringIterator(link.dnsServers.mapNotNull { it.hostAddress })
+                    type =
+                        when {
+                            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> Libbox.InterfaceTypeWIFI
+                            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> Libbox.InterfaceTypeCellular
+                            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> Libbox.InterfaceTypeEthernet
+                            else -> Libbox.InterfaceTypeOther
+                        }
+                    metered = !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+                    var computed = 0
+                    if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
+                        computed = OsConstants.IFF_UP or OsConstants.IFF_RUNNING
+                    }
+                    if (runCatching { java.isLoopback }.getOrDefault(false)) computed = computed or OsConstants.IFF_LOOPBACK
+                    if (runCatching { java.isPointToPoint }.getOrDefault(false)) computed = computed or OsConstants.IFF_POINTOPOINT
+                    if (runCatching { java.supportsMulticast() }.getOrDefault(false)) computed = computed or OsConstants.IFF_MULTICAST
+                    flags = computed
                 }
-                metered = !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
-                var computed = 0
-                if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
-                    computed = OsConstants.IFF_UP or OsConstants.IFF_RUNNING
-                }
-                if (runCatching { java.isLoopback }.getOrDefault(false)) computed = computed or OsConstants.IFF_LOOPBACK
-                if (runCatching { java.isPointToPoint }.getOrDefault(false)) computed = computed or OsConstants.IFF_POINTOPOINT
-                if (runCatching { java.supportsMulticast() }.getOrDefault(false)) computed = computed or OsConstants.IFF_MULTICAST
-                flags = computed
-            }
         }
         return object : NetworkInterfaceIterator {
             private val iterator = collected.iterator()
+
             override fun hasNext() = iterator.hasNext()
+
             override fun next(): NetworkInterface = iterator.next()
         }
     }
@@ -128,23 +143,6 @@ class AndroidVpnPlatform(
 
     override fun sendNotification(notification: Notification?) = Unit
 
-    override fun systemCertificates(): StringIterator {
-        val certificates = mutableListOf<String>()
-        runCatching {
-            val store = KeyStore.getInstance("AndroidCAStore").apply { load(null) }
-            store.aliases().asSequence().forEach { alias ->
-                runCatching { store.getCertificate(alias) }.getOrNull()?.encoded?.let { encoded ->
-                    certificates += buildString {
-                        append("-----BEGIN CERTIFICATE-----\n")
-                        append(base64(encoded).chunked(64).joinToString("\n"))
-                        append("\n-----END CERTIFICATE-----\n")
-                    }
-                }
-            }
-        }
-        return SimpleStringIterator(certificates)
-    }
-
     override fun underNetworkExtension() = false
 
     override fun usePlatformAutoDetectInterfaceControl() = true
@@ -156,8 +154,14 @@ class AndroidVpnPlatform(
         val builder = service.Builder().setSession("HydraBox").setMtu(options.mtu)
         var hasIpv4 = false
         var hasIpv6 = false
-        options.inet4Address.consume { address, prefix -> builder.addAddress(address, prefix); hasIpv4 = true }
-        options.inet6Address.consume { address, prefix -> builder.addAddress(address, prefix); hasIpv6 = true }
+        options.inet4Address.consume { address, prefix ->
+            builder.addAddress(address, prefix)
+            hasIpv4 = true
+        }
+        options.inet6Address.consume { address, prefix ->
+            builder.addAddress(address, prefix)
+            hasIpv6 = true
+        }
         if (options.autoRoute) {
             val hasIpv4Route = options.inet4RouteRange.consume { address, prefix -> builder.addRoute(address, prefix) }
             val hasIpv6Route = options.inet6RouteRange.consume { address, prefix -> builder.addRoute(address, prefix) }
@@ -188,42 +192,50 @@ class AndroidVpnPlatform(
                     .onFailure { HydraLog.warn(AREA, "an application kept outside the tunnel is not installed") }
             }
         }
-        options.dnsServerAddress?.value?.takeIf(String::isNotBlank)?.let(builder::addDnsServer)
+        options.dnsServerAddress.consume { address ->
+            address.takeIf(String::isNotBlank)?.let(builder::addDnsServer)
+        }
         return (builder.establish() ?: error("unable to establish the tun device")).detachFd()
     }
 
-    private fun base64(bytes: ByteArray): String {
-        val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-        val builder = StringBuilder()
-        var index = 0
-        while (index + 2 < bytes.size) {
-            val chunk = ((bytes[index].toInt() and 0xff) shl 16) or
-                ((bytes[index + 1].toInt() and 0xff) shl 8) or
-                (bytes[index + 2].toInt() and 0xff)
-            builder.append(alphabet[(chunk shr 18) and 0x3f])
-            builder.append(alphabet[(chunk shr 12) and 0x3f])
-            builder.append(alphabet[(chunk shr 6) and 0x3f])
-            builder.append(alphabet[chunk and 0x3f])
-            index += 3
-        }
-        when (bytes.size - index) {
-            1 -> {
-                val chunk = (bytes[index].toInt() and 0xff) shl 16
-                builder.append(alphabet[(chunk shr 18) and 0x3f])
-                builder.append(alphabet[(chunk shr 12) and 0x3f])
-                builder.append("==")
-            }
+    // The migrated core exposes Tailscale-era platform services the app never provides.
+    // Capabilities answer "no"; the calls that would need one throw so the core records
+    // a refusal instead of a silent empty success.
+    override fun usePlatformShell() = false
 
-            2 -> {
-                val chunk = ((bytes[index].toInt() and 0xff) shl 16) or ((bytes[index + 1].toInt() and 0xff) shl 8)
-                builder.append(alphabet[(chunk shr 18) and 0x3f])
-                builder.append(alphabet[(chunk shr 12) and 0x3f])
-                builder.append(alphabet[(chunk shr 6) and 0x3f])
-                builder.append('=')
-            }
-        }
-        return builder.toString()
-    }
+    override fun usePlatformBridge() = false
+
+    override fun tailscaleHostname() = ""
+
+    override fun checkPlatformShell(): Unit = error("the platform shell is unavailable")
+
+    override fun openShellSession(
+        user: PlatformUser?,
+        command: String?,
+        environ: StringIterator?,
+        term: String?,
+        rows: Int,
+        cols: Int,
+    ): ShellSession = error("the platform shell is unavailable")
+
+    override fun lookupUser(username: String?): PlatformUser = error("there are no platform users")
+
+    override fun lookupSFTPServer(): String = error("the SFTP server is unavailable")
+
+    override fun readSystemSSHHostKey(): String = error("there is no system SSH host key")
+
+    override fun createBridge(options: BridgeOptions?): BridgeSession = error("the bridge interface is unavailable")
+
+    override fun startNeighborMonitor(listener: NeighborUpdateListener?) = Unit
+
+    override fun closeNeighborMonitor(listener: NeighborUpdateListener?) = Unit
+
+    override fun registerMyInterface(name: String?) = Unit
+
+    override fun cancelNotification(
+        identifier: String?,
+        typeID: Int,
+    ) = Unit
 
     private companion object {
         const val AREA = "tun"
@@ -244,10 +256,15 @@ class AndroidVpnPlatform(
 }
 
 /** Minimal bridge from a Kotlin collection to the iterator shape the core expects. */
-class SimpleStringIterator(values: Iterable<String>) : StringIterator {
+class SimpleStringIterator(
+    values: Iterable<String>,
+) : StringIterator {
     private val backing = values.toList()
     private val iterator = backing.iterator()
+
     override fun hasNext() = iterator.hasNext()
+
     override fun len() = backing.size
+
     override fun next(): String = iterator.next()
 }

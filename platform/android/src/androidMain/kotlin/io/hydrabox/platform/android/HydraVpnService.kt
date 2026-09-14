@@ -4,33 +4,33 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.BroadcastReceiver
-import android.content.IntentFilter
-import android.os.Build
-import android.os.PowerManager
-import android.content.pm.ApplicationInfo
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.ApplicationInfo
 import android.net.VpnService
+import android.os.Build
 import android.os.IBinder
-import io.nekohasekai.libbox.Libbox
+import android.os.PowerManager
+import io.hydrabox.core.contract.EdgeLatencyStatus
+import io.hydrabox.core.contract.NetworkGeneration
+import io.hydrabox.core.contract.OutboundLatency
+import io.hydrabox.core.contract.RuntimeCommand
+import io.hydrabox.core.contract.RuntimeGeneration
+import io.hydrabox.core.contract.RuntimeMode
+import io.hydrabox.core.contract.RuntimeState
+import io.hydrabox.core.contract.TransportChallenge
+import io.hydrabox.core.contract.TransportHealth
+import io.hydrabox.core.runtime.Effect
+import io.hydrabox.core.runtime.RuntimeInput
+import io.hydrabox.core.settings.LogLevel
+import io.hydrabox.core.settings.NotificationTrafficDisplayMode
 import io.nekohasekai.libbox.CommandServer
 import io.nekohasekai.libbox.CommandServerHandler
+import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.OverrideOptions
 import io.nekohasekai.libbox.SetupOptions
 import io.nekohasekai.libbox.SystemProxyStatus
-import io.hydrabox.core.contract.NetworkGeneration
-import io.hydrabox.core.contract.EdgeLatencyStatus
-import io.hydrabox.core.contract.OutboundLatency
-import io.hydrabox.core.contract.RuntimeCommand
-import io.hydrabox.core.contract.RuntimeMode
-import io.hydrabox.core.contract.RuntimeState
-import io.hydrabox.core.contract.RuntimeGeneration
-import io.hydrabox.core.contract.TransportHealth
-import io.hydrabox.core.contract.TransportChallenge
-import io.hydrabox.core.runtime.Effect
-import io.hydrabox.core.settings.LogLevel
-import io.hydrabox.core.settings.NotificationTrafficDisplayMode
-import io.hydrabox.core.runtime.RuntimeInput
 
 /**
  * The tunnel, as Android runs it, in its own process (`:core`).
@@ -70,8 +70,12 @@ class HydraVpnService : VpnService() {
      * they are coalesced into one transaction instead of one transaction each.
      */
     private val journal = java.util.concurrent.ConcurrentLinkedQueue<HydraLog.Entry>()
-    private val journalWriter = java.util.concurrent.Executors.newSingleThreadScheduledExecutor()
-    private val journalPending = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val journalWriter =
+        java.util.concurrent.Executors
+            .newSingleThreadScheduledExecutor()
+    private val journalPending =
+        java.util.concurrent.atomic
+            .AtomicBoolean(false)
 
     /** The state the notification currently shows, so it is not rewritten for nothing. */
     private var posted: RuntimeState? = null
@@ -99,6 +103,7 @@ class HydraVpnService : VpnService() {
      * older pinned AAR it still depends on how the core was started.
      */
     @Volatile private var coreLogFactoryAvailable = false
+
     @Volatile private var callTransportTags: Set<String> = emptySet()
 
     /**
@@ -109,10 +114,17 @@ class HydraVpnService : VpnService() {
     @Volatile private var stopping = false
 
     /** Prevents repeated taps from queueing complete offline sweeps. */
-    private val measuring = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val measuring =
+        java.util.concurrent.atomic
+            .AtomicBoolean(false)
+
     /** True only while a newly requested offline sweep still needs its first uplink callback. */
-    private val awaitingMeasurementBaseline = java.util.concurrent.atomic.AtomicBoolean(false)
-    private val measurementStartId = java.util.concurrent.atomic.AtomicInteger()
+    private val awaitingMeasurementBaseline =
+        java.util.concurrent.atomic
+            .AtomicBoolean(false)
+    private val measurementStartId =
+        java.util.concurrent.atomic
+            .AtomicInteger()
 
     /** The challenge id the notification is currently showing, if any. */
     private var challengeNotifiedId: String? = null
@@ -134,21 +146,43 @@ class HydraVpnService : VpnService() {
      * both build whole core instances, platform DNS resources and, through the VK transport, VK
      * joins of their own.
      */
-    private val sweepEpoch = java.util.concurrent.atomic.AtomicInteger()
+    private val sweepEpoch =
+        java.util.concurrent.atomic
+            .AtomicInteger()
 
     /** The probe session in flight, so cancelling can close the one that is blocking. */
-    private val probe = java.util.concurrent.atomic.AtomicReference<AutoCloseable?>()
+    private val probe =
+        java.util.concurrent.atomic
+            .AtomicReference<AutoCloseable?>()
 
     /** The most recent startId, so giving up started ownership cannot cancel a newer command. */
-    private val currentStartId = java.util.concurrent.atomic.AtomicInteger()
+    private val currentStartId =
+        java.util.concurrent.atomic
+            .AtomicInteger()
 
-    private val handler = object : CommandServerHandler {
-        override fun getSystemProxyStatus() = SystemProxyStatus().apply { available = false; enabled = false }
-        override fun serviceReload(): Unit = error("live reload is unsupported; reconnect the tunnel")
-        override fun serviceStop() = Unit
-        override fun setSystemProxyEnabled(enabled: Boolean) = Unit
-        override fun writeDebugMessage(message: String?) = Unit
-    }
+    private val handler =
+        object : CommandServerHandler {
+            override fun getSystemProxyStatus() =
+                SystemProxyStatus().apply {
+                    available = false
+                    enabled = false
+                }
+
+            override fun serviceReload(): Unit = error("live reload is unsupported; reconnect the tunnel")
+
+            override fun serviceStop() = Unit
+
+            override fun setSystemProxyEnabled(enabled: Boolean) = Unit
+
+            override fun writeDebugMessage(message: String?) = Unit
+
+            // Both arrived with the migrated core. The app neither reports native
+            // crashes nor serves an SSH agent, so the calls are refused as data
+            // rather than as a panic across the language boundary.
+            override fun triggerNativeCrash() = Unit
+
+            override fun connectSSHAgent(): Int = 0
+        }
 
     /**
      * The outbound the person chose, as the tag the core knows it by, and how many times we have
@@ -158,16 +192,19 @@ class HydraVpnService : VpnService() {
      * start so a stale intention cannot outlive the configuration it belonged to.
      */
     @Volatile private var wantedOutbound: String = io.hydrabox.core.config.AUTO_TAG
-    private val corrections = java.util.concurrent.atomic.AtomicInteger(0)
+    private val corrections =
+        java.util.concurrent.atomic
+            .AtomicInteger(0)
 
     /**
      * The workerless edge probes run on their own single thread: one question at a time is
      * the whole parallelism a reachability check on demand deserves, and it must never sit
      * in front of the lifecycle.
      */
-    private val edgeProbes = java.util.concurrent.Executors.newSingleThreadExecutor { runnable ->
-        Thread(runnable, "turn-edge-probe").apply { isDaemon = true }
-    }
+    private val edgeProbes =
+        java.util.concurrent.Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "turn-edge-probe").apply { isDaemon = true }
+        }
 
     /**
      * The core questions a binder thread must answer, each under a hard deadline: a stuck
@@ -182,7 +219,9 @@ class HydraVpnService : VpnService() {
     /**
      * The edge sweep in flight, so a stop or a handover can close the one that is blocking.
      */
-    private val edgeSweep = java.util.concurrent.atomic.AtomicReference<EdgeSweep?>()
+    private val edgeSweep =
+        java.util.concurrent.atomic
+            .AtomicReference<EdgeSweep?>()
 
     /**
      * The TURN edge recorded for the transport this session confirmed ready, as the triple
@@ -201,7 +240,10 @@ class HydraVpnService : VpnService() {
      * "chose one server, connected to another" report, and nothing in the app could see it before:
      * the group message carries the core's answer and it was being thrown away.
      */
-    private fun reconcileSelection(group: String, actual: String) {
+    private fun reconcileSelection(
+        group: String,
+        actual: String,
+    ) {
         if (group != io.hydrabox.core.config.SELECTOR_TAG) return
         // A change of selection is not an attribution: after a switch across the VK
         // boundary the new transport has not allocated yet, and the edge on file still
@@ -247,7 +289,10 @@ class HydraVpnService : VpnService() {
      * In either case nothing is filed, and the measurement says "not measured" rather than
      * guessing the previous transport's edge for the next server's profile.
      */
-    private fun recordTurnEdgeFor(tag: String, runtimeGeneration: Long): Boolean {
+    private fun recordTurnEdgeFor(
+        tag: String,
+        runtimeGeneration: Long,
+    ): Boolean {
         val record = runCatching { Libbox.hydraCoreTurnEdgeAttribution() }.getOrNull() ?: return false
         if (record.transportTag.orEmpty() != tag) return false
         if (record.runtimeGeneration != runtimeGeneration) return false
@@ -269,13 +314,14 @@ class HydraVpnService : VpnService() {
             }
         }
         monitor = DefaultNetworkMonitor(this).apply { start() }
-        observer = CoreObserver(
-            dispatch = { input -> runtime.dispatch(input) },
-            onLog = ::recordCoreLine,
-            onSelected = ::reconcileSelection,
-            staleAfterMillis = { store.settings().urlTestIntervalSeconds * 1000L },
-            isCallTransport = { it in callTransportTags },
-        )
+        observer =
+            CoreObserver(
+                dispatch = { input -> runtime.dispatch(input) },
+                onLog = ::recordCoreLine,
+                onSelected = ::reconcileSelection,
+                staleAfterMillis = { store.settings().urlTestIntervalSeconds * 1000L },
+                isCallTransport = { it in callTransportTags },
+            )
         runtime = AndroidRuntime(::execute)
         // The exit lookup crosses on the binder thread and blocks there for as long as the
         // core's own bounded lookup takes; the alternative — answering it from the app's
@@ -283,17 +329,20 @@ class HydraVpnService : VpnService() {
         // deadline is structural here too: the binder thread has to write its reply before
         // returning, so it never waits on the core longer than the core's own budget plus
         // room for a slow one.
-        endpoint = BinderRuntimeEndpoint(runtime) { outboundTag ->
-            val started = android.os.SystemClock.elapsedRealtime()
-            val answer = exitLookups.ask { observer.exitAddress(outboundTag) }
-            HydraLog.info(
-                AREA,
-                "the exit lookup of $outboundTag " +
-                    (answer?.let { "answered ${it.first} in ${android.os.SystemClock.elapsedRealtime() - started}ms" }
-                        ?: "has no answer after ${android.os.SystemClock.elapsedRealtime() - started}ms"),
-            )
-            answer
-        }
+        endpoint =
+            BinderRuntimeEndpoint(runtime) { outboundTag ->
+                val started = android.os.SystemClock.elapsedRealtime()
+                val answer = exitLookups.ask { observer.exitAddress(outboundTag) }
+                HydraLog.info(
+                    AREA,
+                    "the exit lookup of $outboundTag " +
+                        (
+                            answer?.let { "answered ${it.first} in ${android.os.SystemClock.elapsedRealtime() - started}ms" }
+                                ?: "has no answer after ${android.os.SystemClock.elapsedRealtime() - started}ms"
+                        ),
+                )
+                answer
+            }
         runtime.subscribe { event ->
             if (event !is io.hydrabox.core.contract.RuntimeEvent.Snapshot) return@subscribe
             // The core's log stream is worth its cost while the tunnel is coming up or has
@@ -303,7 +352,8 @@ class HydraVpnService : VpnService() {
             if (commandServer != null) {
                 runtime.onLifecycleThread {
                     observer.setLogStream(
-                        commandServer != null && coreLogFactoryAvailable && (wantsCoreDetail || runtime.snapshot().state != RuntimeState.RUNNING),
+                        commandServer != null && coreLogFactoryAvailable &&
+                            (wantsCoreDetail || runtime.snapshot().state != RuntimeState.RUNNING),
                     )
                 }
             }
@@ -366,19 +416,23 @@ class HydraVpnService : VpnService() {
     private fun registerIdleWatch() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
         val power = getSystemService(Context.POWER_SERVICE) as PowerManager
-        idleWatch = object : BroadcastReceiver() {
-            override fun onReceive(context: Context?, intent: Intent?) {
-                if (power.isDeviceIdleMode) return
-                HydraLog.info(AREA, "the device left idle mode; checking the running core")
-                runtime.onLifecycleThread {
-                    if (!observer.refresh()) HydraLog.warn(AREA, "the core did not answer the post-idle check")
+        idleWatch =
+            object : BroadcastReceiver() {
+                override fun onReceive(
+                    context: Context?,
+                    intent: Intent?,
+                ) {
+                    if (power.isDeviceIdleMode) return
+                    HydraLog.info(AREA, "the device left idle mode; checking the running core")
+                    runtime.onLifecycleThread {
+                        if (!observer.refresh()) HydraLog.warn(AREA, "the core did not answer the post-idle check")
+                    }
+                }
+            }.also {
+                runCatching {
+                    registerReceiver(it, IntentFilter(PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED))
                 }
             }
-        }.also {
-            runCatching {
-                registerReceiver(it, IntentFilter(PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED))
-            }
-        }
     }
 
     /** A manual measurement uses the running core when one exists, otherwise isolated sessions. */
@@ -407,26 +461,28 @@ class HydraVpnService : VpnService() {
         val selected = store.selectedTag()
         observer.measure(
             group = io.hydrabox.core.config.SELECTOR_TAG,
-            request = MeasureRequest(
-                url = settings.urlTestUrl,
-                timeoutMillis = settings.urlTestTimeoutSeconds * 1000,
-                concurrency = settings.urlTestConcurrency,
-                deadlineMillis = settings.urlTestTimeoutSeconds * 3000,
-                priorityTag = selected,
-                // The chosen call transport answers through its edge, not through an HTTP
-                // round trip the group would raise a whole VK transport for: the workerless
-                // question asks it separately, on its own thread, and its figure must not
-                // be the group's to overwrite.
-                excludeTag = selected?.takeIf { it in callTransportTags },
-            ),
+            request =
+                MeasureRequest(
+                    url = settings.urlTestUrl,
+                    timeoutMillis = settings.urlTestTimeoutSeconds * 1000,
+                    concurrency = settings.urlTestConcurrency,
+                    deadlineMillis = settings.urlTestTimeoutSeconds * 3000,
+                    priorityTag = selected,
+                    // The chosen call transport answers through its edge, not through an HTTP
+                    // round trip the group would raise a whole VK transport for: the workerless
+                    // question asks it separately, on its own thread, and its figure must not
+                    // be the group's to overwrite.
+                    excludeTag = selected?.takeIf { it in callTransportTags },
+                ),
         )
         // Call transports are not members of the running group — the configuration does not
         // even carry them unless one is the chosen route — so the on-demand measurement asks
         // their edges the workerless question on its own thread, never the lifecycle's.
-        val sweep = newEdgeSweep(
-            runtimeGeneration = runtime.snapshot().runtimeGeneration.value,
-            timeoutMillis = settings.urlTestTimeoutSeconds * 3_000L,
-        )
+        val sweep =
+            newEdgeSweep(
+                runtimeGeneration = runtime.snapshot().runtimeGeneration.value,
+                timeoutMillis = settings.urlTestTimeoutSeconds * 3_000L,
+            )
         edgeProbes.execute { probeAllTurnEdges(sweep) }
         HydraLog.info(
             AREA,
@@ -491,8 +547,10 @@ class HydraVpnService : VpnService() {
             recordTurnEdgeFor(tag, sweep.runtimeGeneration)
         }
         val staleAfter = settings.urlTestIntervalSeconds * 1000L
-        val endpoint = runCatching { store.turnEdge(tag) }.getOrNull()
-            ?.let(TurnEdgeProbe::parseEndpoint)
+        val endpoint =
+            runCatching { store.turnEdge(tag) }
+                .getOrNull()
+                ?.let(TurnEdgeProbe::parseEndpoint)
         if (endpoint == null) {
             // No edge this profile's transport ever reached — an honest "not measured",
             // never a guess at an address obtained by performing a VK authorisation.
@@ -517,15 +575,16 @@ class HydraVpnService : VpnService() {
                 observedAt = remembered.observedAtMillis
             } else {
                 val asked = System.currentTimeMillis()
-                val measured = runCatching {
-                    TurnEdgeProbe.probe(
-                        endpoint,
-                        openSocket = { turnEdgeSocket(sweep) },
-                        resolve = { host -> resolveEdgeAddress(sweep, host) },
-                        budgetMillis = sweep.remainingBudgetMillis().coerceAtMost(EDGE_PROBE_BUDGET_MILLIS),
-                        isCancelled = { sweep.cancelled },
-                    )
-                }.getOrNull()
+                val measured =
+                    runCatching {
+                        TurnEdgeProbe.probe(
+                            endpoint,
+                            openSocket = { turnEdgeSocket(sweep) },
+                            resolve = { host -> resolveEdgeAddress(sweep, host) },
+                            budgetMillis = sweep.remainingBudgetMillis().coerceAtMost(EDGE_PROBE_BUDGET_MILLIS),
+                            isCancelled = { sweep.cancelled },
+                        )
+                    }.getOrNull()
                 // A cached or remembered answer keeps the time it was actually measured:
                 // a fresh timestamp would call a forty-five-second-old round trip new.
                 observedAt = asked
@@ -548,21 +607,31 @@ class HydraVpnService : VpnService() {
         // asked, and a cancelled sweep means the answer will not be published — only a
         // question that ran its course unanswered is a silence.
         return when {
-            sweep.cancelled -> null
-            !sweep.withinDeadline() -> edgeOutcome(tag, EdgeLatencyStatus.NOT_MEASURED)
-            else -> OutboundLatency(
-                tag = tag,
-                delayMillis = 0,
-                status = EdgeLatencyStatus.SILENT,
-                observedAtMillis = observedAt,
-                staleAfterMillis = staleAfter,
-            )
+            sweep.cancelled -> {
+                null
+            }
+
+            !sweep.withinDeadline() -> {
+                edgeOutcome(tag, EdgeLatencyStatus.NOT_MEASURED)
+            }
+
+            else -> {
+                OutboundLatency(
+                    tag = tag,
+                    delayMillis = 0,
+                    status = EdgeLatencyStatus.SILENT,
+                    observedAtMillis = observedAt,
+                    staleAfterMillis = staleAfter,
+                )
+            }
         }
     }
 
     /** An edge answer that carries no figure: what happened, at the moment it was decided. */
-    private fun edgeOutcome(tag: String, status: String): OutboundLatency =
-        OutboundLatency(tag = tag, delayMillis = 0, status = status, observedAtMillis = System.currentTimeMillis())
+    private fun edgeOutcome(
+        tag: String,
+        status: String,
+    ): OutboundLatency = OutboundLatency(tag = tag, delayMillis = 0, status = status, observedAtMillis = System.currentTimeMillis())
 
     /**
      * A datagram socket that answers outside the tunnel, on the network underneath it. Only
@@ -612,7 +681,10 @@ class HydraVpnService : VpnService() {
      * The probe bounds the blocking call itself under its budget, so a resolver that never
      * answers costs the sweep its patience, not its thread.
      */
-    private fun resolveEdgeAddress(sweep: EdgeSweep, host: String): java.net.InetAddress? {
+    private fun resolveEdgeAddress(
+        sweep: EdgeSweep,
+        host: String,
+    ): java.net.InetAddress? {
         val network = sweep.network ?: return null
         return runCatching { network.getAllByName(host).firstOrNull() }.getOrNull()
     }
@@ -621,14 +693,18 @@ class HydraVpnService : VpnService() {
      * Starts one edge sweep, ending any that is still in flight: repeated taps replace the
      * running pass instead of queueing another behind it.
      */
-    private fun newEdgeSweep(runtimeGeneration: Long, timeoutMillis: Long): EdgeSweep {
+    private fun newEdgeSweep(
+        runtimeGeneration: Long,
+        timeoutMillis: Long,
+    ): EdgeSweep {
         cancelEdgeSweep()
-        val sweep = EdgeSweep(
-            runtimeGeneration = runtimeGeneration,
-            networkGeneration = monitor.networkGeneration,
-            network = monitor.currentNetwork,
-            deadlineElapsedRealtime = android.os.SystemClock.elapsedRealtime() + timeoutMillis,
-        )
+        val sweep =
+            EdgeSweep(
+                runtimeGeneration = runtimeGeneration,
+                networkGeneration = monitor.networkGeneration,
+                network = monitor.currentNetwork,
+                deadlineElapsedRealtime = android.os.SystemClock.elapsedRealtime() + timeoutMillis,
+            )
         edgeSweep.set(sweep)
         return sweep
     }
@@ -675,10 +751,11 @@ class HydraVpnService : VpnService() {
         ensureLibboxSetup()
         // The edge questions of this sweep belong to a runtime that is not there: their
         // answers travel with generation zero, like every other result of this pass.
-        val sweep = newEdgeSweep(
-            runtimeGeneration = 0,
-            timeoutMillis = settings.urlTestTimeoutSeconds * 3_000L,
-        )
+        val sweep =
+            newEdgeSweep(
+                runtimeGeneration = 0,
+                timeoutMillis = settings.urlTestTimeoutSeconds * 3_000L,
+            )
         // The pass itself — the order of its questions, when it ends, what it publishes —
         // lives in OfflineSweep, so the rules are testable without a core, the platform
         // or a device: this wiring only supplies the service's own answers.
@@ -718,8 +795,9 @@ class HydraVpnService : VpnService() {
                 // One server only: the document carries this server and its dial chain, so a
                 // broken sibling cannot have the core refuse the whole document and take
                 // every other server's measurement with it.
-                val content = store.generateConfig(selectedTag = tag, rules = lease.paths.toRouteData(), only = tag)
-                    ?: error("no usable server configuration")
+                val content =
+                    store.generateConfig(selectedTag = tag, rules = lease.paths.toRouteData(), only = tag)
+                        ?: error("no usable server configuration")
                 val session = Libbox.newStandaloneURLTestSession(AndroidVpnPlatform(this, monitor))
                 probe.set(AutoCloseable { runCatching { session.close() } })
                 try {
@@ -782,31 +860,50 @@ class HydraVpnService : VpnService() {
         liveTraffic = settings.statusNotificationEnabled
         trafficDisplay = settings.notificationTrafficDisplayMode
         val level = settings.logLevel
-        journalFloor = when (level) {
-            LogLevel.OFF, LogLevel.ERROR -> HydraLog.Level.ERROR
-            LogLevel.TRACE, LogLevel.DEBUG -> HydraLog.Level.DEBUG
-            LogLevel.INFO -> HydraLog.Level.INFO
-            LogLevel.WARN -> HydraLog.Level.WARN
-        }
+        journalFloor =
+            when (level) {
+                LogLevel.OFF, LogLevel.ERROR -> HydraLog.Level.ERROR
+                LogLevel.TRACE, LogLevel.DEBUG -> HydraLog.Level.DEBUG
+                LogLevel.INFO -> HydraLog.Level.INFO
+                LogLevel.WARN -> HydraLog.Level.WARN
+            }
         wantsCoreDetail = journalFloor <= HydraLog.Level.INFO
         val core = if (level == LogLevel.OFF) "off" else level.name.lowercase()
-        val applied = coreLogFactoryAvailable && runCatching {
-            requireNotNull(commandServer).setLogLevel(core)
-        }.isSuccess
-        val message = when {
-            // An older core started with logging off stays off on its own: no factory was
-            // ever built for it, and there is nothing to tell it.
-            level == LogLevel.OFF && !coreLogFactoryAvailable -> "the core's log factory is off"
-            level != LogLevel.OFF && !coreLogFactoryAvailable ->
-                "core logging was disabled at start; reconnect to enable $core"
-            applied && level == LogLevel.OFF -> "the core's log factory is off"
-            applied -> "the core now logs at $core"
-            else -> "the core would not take the level $core"
-        }
+        val applied =
+            coreLogFactoryAvailable &&
+                runCatching {
+                    requireNotNull(commandServer).setLogLevel(core)
+                }.isSuccess
+        val message =
+            when {
+                // An older core started with logging off stays off on its own: no factory was
+                // ever built for it, and there is nothing to tell it.
+                level == LogLevel.OFF && !coreLogFactoryAvailable -> {
+                    "the core's log factory is off"
+                }
+
+                level != LogLevel.OFF && !coreLogFactoryAvailable -> {
+                    "core logging was disabled at start; reconnect to enable $core"
+                }
+
+                applied && level == LogLevel.OFF -> {
+                    "the core's log factory is off"
+                }
+
+                applied -> {
+                    "the core now logs at $core"
+                }
+
+                else -> {
+                    "the core would not take the level $core"
+                }
+            }
         HydraLog.info(AREA, message)
         val state = runtime.snapshot().state
         runtime.onLifecycleThread {
-            observer.setLogStream(commandServer != null && coreLogFactoryAvailable && (wantsCoreDetail || runtime.snapshot().state != RuntimeState.RUNNING))
+            observer.setLogStream(
+                commandServer != null && coreLogFactoryAvailable && (wantsCoreDetail || runtime.snapshot().state != RuntimeState.RUNNING),
+            )
         }
         if (state in setOf(RuntimeState.STOPPED, RuntimeState.FAILED)) {
             stopSelfResult(currentStartId.get())
@@ -815,12 +912,25 @@ class HydraVpnService : VpnService() {
         }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    override fun onStartCommand(
+        intent: Intent?,
+        flags: Int,
+        startId: Int,
+    ): Int {
         currentStartId.set(startId)
         when (intent?.action) {
-            ACTION_START -> start()
-            ACTION_STOP -> stop()
-            ACTION_MEASURE -> measureNow(startId)
+            ACTION_START -> {
+                start()
+            }
+
+            ACTION_STOP -> {
+                stop()
+            }
+
+            ACTION_MEASURE -> {
+                measureNow(startId)
+            }
+
             ACTION_UI_VISIBILITY -> {
                 uiVisible = intent.getBooleanExtra(EXTRA_UI_VISIBLE, false)
                 // A visibility report is not a reason for this service to exist: with no tunnel
@@ -834,7 +944,11 @@ class HydraVpnService : VpnService() {
                     syncChallengeNotification(runtime.snapshot().challenge)
                 }
             }
-            ACTION_REFRESH_SETTINGS, ACTION_LOG_LEVEL -> runtime.onLifecycleThread(::refreshSettings)
+
+            ACTION_REFRESH_SETTINGS, ACTION_LOG_LEVEL -> {
+                runtime.onLifecycleThread(::refreshSettings)
+            }
+
             // Always-on VPN: the system starts the service itself, with the tunnel's own
             // action and no user in front of the screen. Ignoring it, as the alpha did, is
             // why "always on" turned the switch on and nothing happened.
@@ -846,8 +960,7 @@ class HydraVpnService : VpnService() {
         return Service.START_NOT_STICKY
     }
 
-    override fun onBind(intent: Intent?): IBinder? =
-        if (VpnService.SERVICE_INTERFACE == intent?.action) super.onBind(intent) else endpoint
+    override fun onBind(intent: Intent?): IBinder? = if (VpnService.SERVICE_INTERFACE == intent?.action) super.onBind(intent) else endpoint
 
     override fun onDestroy() {
         HydraLog.sink = null
@@ -865,7 +978,11 @@ class HydraVpnService : VpnService() {
             } finally {
                 observer.close()
                 journalWriter.execute {
-                    try { flushJournal() } finally { store.close() }
+                    try {
+                        flushJournal()
+                    } finally {
+                        store.close()
+                    }
                 }
                 journalWriter.shutdown()
             }
@@ -884,17 +1001,21 @@ class HydraVpnService : VpnService() {
      *
      * The colour codes go: they are terminal escapes, and on a screen they are noise.
      */
-    private fun recordCoreLine(coreLevel: Int, raw: String) {
+    private fun recordCoreLine(
+        coreLevel: Int,
+        raw: String,
+    ) {
         val level = HydraLog.levelOf(coreLevel)
         // A stream the client itself closed is the ordinary end of a request, and the core says so
         // at warning level — 4733 of those in one ten-minute run. Left at that level the warning
         // view is nothing but them, which is the same as having no warning view. Now that the level
         // is the core's own, this is a deliberate product judgement rather than a guess about text.
-        val demoted = if (level == HydraLog.Level.WARN && BENIGN.any { raw.contains(it) }) {
-            HydraLog.Level.DEBUG
-        } else {
-            level
-        }
+        val demoted =
+            if (level == HydraLog.Level.WARN && BENIGN.any { raw.contains(it) }) {
+                HydraLog.Level.DEBUG
+            } else {
+                level
+            }
         if (demoted < journalFloor) return
         val clean = raw.replace(ANSI, "").trim()
         // What is left after the level and the uptime bracket is the line itself.
@@ -940,12 +1061,13 @@ class HydraVpnService : VpnService() {
         val settings = store.settings()
         liveTraffic = settings.statusNotificationEnabled
         trafficDisplay = settings.notificationTrafficDisplayMode
-        journalFloor = when (settings.logLevel) {
-            LogLevel.OFF, LogLevel.ERROR -> HydraLog.Level.ERROR
-            LogLevel.TRACE, LogLevel.DEBUG -> HydraLog.Level.DEBUG
-            LogLevel.INFO -> HydraLog.Level.INFO
-            LogLevel.WARN -> HydraLog.Level.WARN
-        }
+        journalFloor =
+            when (settings.logLevel) {
+                LogLevel.OFF, LogLevel.ERROR -> HydraLog.Level.ERROR
+                LogLevel.TRACE, LogLevel.DEBUG -> HydraLog.Level.DEBUG
+                LogLevel.INFO -> HydraLog.Level.INFO
+                LogLevel.WARN -> HydraLog.Level.WARN
+            }
         wantsCoreDetail = journalFloor <= HydraLog.Level.INFO
         coreLogFactoryAvailable = true
         val mode = if (store.proxyOnly(settings)) RuntimeMode.PROXY else RuntimeMode.VPN
@@ -953,67 +1075,78 @@ class HydraVpnService : VpnService() {
         startForeground(NOTIFICATION_ID, notification(runtime.snapshot().state))
     }
 
-    private fun execute(effect: Effect) = when (effect) {
-        is Effect.StartCore -> startCore(effect.commandGeneration)
-        is Effect.StopCore -> {
-            stopRuntime()
-            runtime.dispatch(RuntimeInput.Released(effect.commandGeneration, true))
-        }
-        is Effect.SelectCoreOutbound -> {
-            // The intention is recorded before the attempt, so the reconciliation that runs off
-            // the core's own group message knows what to compare against even if this fails.
-            val previous = wantedOutbound
-            wantedOutbound = effect.selection.outboundId
-            corrections.set(0)
-            // A switch across the VK boundary cannot happen in place. In one direction the
-            // chosen route is not in the running configuration at all; in the other it is, and
-            // switching away would leave the transport's workers, calls and TURN allocations
-            // alive until the whole core closes — hours after nobody chose it. The core starts
-            // again instead: the connections are dropped once, with a warning on the screen,
-            // rather than the transport living on behind a route nobody selected.
-            val crossing = io.hydrabox.core.config.selectionCrossesCallBoundary(
-                previous,
-                effect.selection.outboundId,
-                store::isCallTransport,
-            )
-            if (crossing) {
-                restartForSelection()
-            } else {
-                // Applied inside the running core; a restart here would drop every connection.
-                val applied = observer.select(effect.selection.groupId, effect.selection.outboundId)
-                // Except for the one server the configuration deliberately does not carry: the VK
-                // transport is left out until it is chosen, so choosing it is the one switch that
-                // cannot happen in place.
-                if (!applied) {
-                    if (store.isCallTransport(effect.selection.outboundId)) {
-                        restartForSelection()
-                    } else {
-                        // Not fatal and not silent: the store now says one thing and the core does
-                        // another, and this is the line that says so. The group message will bring
-                        // the core's answer round and the reconciliation corrects it from there.
-                        HydraLog.warn(AREA, "the core refused the switch to ${effect.selection.outboundId}")
+    private fun execute(effect: Effect) =
+        when (effect) {
+            is Effect.StartCore -> {
+                startCore(effect.commandGeneration)
+            }
+
+            is Effect.StopCore -> {
+                stopRuntime()
+                runtime.dispatch(RuntimeInput.Released(effect.commandGeneration, true))
+            }
+
+            is Effect.SelectCoreOutbound -> {
+                // The intention is recorded before the attempt, so the reconciliation that runs off
+                // the core's own group message knows what to compare against even if this fails.
+                val previous = wantedOutbound
+                wantedOutbound = effect.selection.outboundId
+                corrections.set(0)
+                // A switch across the VK boundary cannot happen in place. In one direction the
+                // chosen route is not in the running configuration at all; in the other it is, and
+                // switching away would leave the transport's workers, calls and TURN allocations
+                // alive until the whole core closes — hours after nobody chose it. The core starts
+                // again instead: the connections are dropped once, with a warning on the screen,
+                // rather than the transport living on behind a route nobody selected.
+                val crossing =
+                    io.hydrabox.core.config.selectionCrossesCallBoundary(
+                        previous,
+                        effect.selection.outboundId,
+                        store::isCallTransport,
+                    )
+                if (crossing) {
+                    restartForSelection()
+                } else {
+                    // Applied inside the running core; a restart here would drop every connection.
+                    val applied = observer.select(effect.selection.groupId, effect.selection.outboundId)
+                    // Except for the one server the configuration deliberately does not carry: the VK
+                    // transport is left out until it is chosen, so choosing it is the one switch that
+                    // cannot happen in place.
+                    if (!applied) {
+                        if (store.isCallTransport(effect.selection.outboundId)) {
+                            restartForSelection()
+                        } else {
+                            // Not fatal and not silent: the store now says one thing and the core does
+                            // another, and this is the line that says so. The group message will bring
+                            // the core's answer round and the reconciliation corrects it from there.
+                            HydraLog.warn(AREA, "the core refused the switch to ${effect.selection.outboundId}")
+                        }
                     }
                 }
+                Unit
             }
-            Unit
-        }
-        is Effect.PublishNetwork -> {
-            HydraLog.info(AREA, "publishing the default interface, generation ${effect.generation.value}")
-            monitor.publishCurrent()
-        }
 
-        is Effect.RebindNetwork -> rebind(effect.generation)
-        is Effect.CancelChallenge -> {
-            // The person closed the page without answering. Telling the core now is the whole
-            // point: without it the core waits out the rest of its window and reports a
-            // timeout that reads as a dead network rather than as a closed question.
-            val cancelled = runCatching { Libbox.hydraCoreCancelRuntimeChallenge(effect.id) }
-                .onFailure { HydraLog.warn(AREA, "the core would not take the challenge cancellation", it) }
-                .getOrDefault(false)
-            HydraLog.info(AREA, if (cancelled) "the captcha was closed unanswered" else "the captcha was already gone")
-            syncChallengeNotification(null)
+            is Effect.PublishNetwork -> {
+                HydraLog.info(AREA, "publishing the default interface, generation ${effect.generation.value}")
+                monitor.publishCurrent()
+            }
+
+            is Effect.RebindNetwork -> {
+                rebind(effect.generation)
+            }
+
+            is Effect.CancelChallenge -> {
+                // The person closed the page without answering. Telling the core now is the whole
+                // point: without it the core waits out the rest of its window and reports a
+                // timeout that reads as a dead network rather than as a closed question.
+                val cancelled =
+                    runCatching { Libbox.hydraCoreCancelRuntimeChallenge(effect.id) }
+                        .onFailure { HydraLog.warn(AREA, "the core would not take the challenge cancellation", it) }
+                        .getOrDefault(false)
+                HydraLog.info(AREA, if (cancelled) "the captcha was closed unanswered" else "the captcha was already gone")
+                syncChallengeNotification(null)
+            }
         }
-    }
 
     /**
      * Starts the core again so a configuration that now carries the chosen server takes effect.
@@ -1075,45 +1208,50 @@ class HydraVpnService : VpnService() {
         // Taken before the configuration is generated and handed over to the core only once the
         // core is running; on any failure below it is released in the tail of this function.
         var pendingLease: AdBlockRuleSets.Lease? = null
-        val outcome = runCatching {
-            check(CoreAbi.isCompatible()) { "incompatible HydraCore client ABI" }
-            callTransportTags = store.serverGroups()
-                .flatMap { it.servers }
-                .filter { it.type.equals("call", ignoreCase = true) }
-                .mapTo(mutableSetOf()) { it.id }
-            pendingLease = AdBlockRuleSets.acquire(this)
-            val content = store.generateConfig(rules = pendingLease.paths.toRouteData())
-                ?: error("no usable server in any subscription")
-            ensureLibboxSetup()
-            // 1.x turns this on by default and the setting was carried over without ever being
-            // applied: the core then runs with Go's default GC target, and a `:core` process
-            // that keeps more than it needs is a process Android reclaims — which reads as a
-            // tunnel that dropped by itself.
-            runCatching { Libbox.setMemoryLimit(store.settings().memoryLimitEnabled) }
-                .onFailure { HydraLog.warn(AREA, "the core would not take the memory limit", it) }
-            // checkConfig is what turns "the tunnel does not come up" into a sentence naming
-            // the section the core refused, so its failure is logged before it is rethrown.
-            stage = StartStage.CHECK
-            runCatching { Libbox.checkConfig(content) }.onFailure {
-                HydraLog.error(AREA, "the core refused the generated configuration", it)
-            }.getOrThrow()
-            stage = StartStage.LAUNCH
-            stopRuntime()
-            val server = Libbox.newCommandServer(handler, AndroidVpnPlatform(this, monitor))
-            try {
-                server.start()
-                server.startOrReloadService(content, OverrideOptions().apply { runtimeGeneration = commandGeneration })
-                commandServer = server
-                // The core is running against these files now, so the lease becomes the
-                // service's and is no longer this function's to release.
-                ruleSetLease?.close()
-                ruleSetLease = pendingLease
-                pendingLease = null
-            } catch (failure: Throwable) {
-                runCatching { server.close() }
-                throw failure
+        val outcome =
+            runCatching {
+                check(CoreAbi.isCompatible()) { "incompatible HydraCore client ABI" }
+                callTransportTags =
+                    store
+                        .serverGroups()
+                        .flatMap { it.servers }
+                        .filter { it.type.equals("call", ignoreCase = true) }
+                        .mapTo(mutableSetOf()) { it.id }
+                pendingLease = AdBlockRuleSets.acquire(this)
+                val content =
+                    store.generateConfig(rules = pendingLease.paths.toRouteData())
+                        ?: error("no usable server in any subscription")
+                ensureLibboxSetup()
+                // 1.x turns this on by default and the setting was carried over without ever being
+                // applied: the core then runs with Go's default GC target, and a `:core` process
+                // that keeps more than it needs is a process Android reclaims — which reads as a
+                // tunnel that dropped by itself.
+                runCatching { Libbox.setMemoryLimit(store.settings().memoryLimitEnabled) }
+                    .onFailure { HydraLog.warn(AREA, "the core would not take the memory limit", it) }
+                // checkConfig is what turns "the tunnel does not come up" into a sentence naming
+                // the section the core refused, so its failure is logged before it is rethrown.
+                stage = StartStage.CHECK
+                runCatching { Libbox.checkConfig(content) }
+                    .onFailure {
+                        HydraLog.error(AREA, "the core refused the generated configuration", it)
+                    }.getOrThrow()
+                stage = StartStage.LAUNCH
+                stopRuntime()
+                val server = Libbox.newCommandServer(handler, AndroidVpnPlatform(this, monitor))
+                try {
+                    server.start()
+                    server.startOrReloadService(content, OverrideOptions().apply { runtimeGeneration = commandGeneration })
+                    commandServer = server
+                    // The core is running against these files now, so the lease becomes the
+                    // service's and is no longer this function's to release.
+                    ruleSetLease?.close()
+                    ruleSetLease = pendingLease
+                    pendingLease = null
+                } catch (failure: Throwable) {
+                    runCatching { server.close() }
+                    throw failure
+                }
             }
-        }
         pendingLease?.close()
         val failure = outcome.exceptionOrNull()
         if (failure != null) {
@@ -1126,18 +1264,23 @@ class HydraVpnService : VpnService() {
                 RuntimeInput.Released(
                     commandGeneration = commandGeneration,
                     success = false,
-                    failure = io.hydrabox.core.contract.RuntimeFailure(
-                        domain = io.hydrabox.core.contract.FailureDomain.INTERNAL,
-                        code = when (stage) {
-                            // Nothing was started: what is stored could not be made into a
-                            // configuration, or the core refused the one it was given.
-                            StartStage.PREPARE, StartStage.CHECK ->
-                                io.hydrabox.core.contract.HydraCoreErrorCode.CONFIG_INVALID_PLAN
-                            StartStage.LAUNCH ->
-                                io.hydrabox.core.contract.HydraCoreErrorCode.RUNTIME_CORE_DIED
-                        },
-                        retryable = true,
-                    ),
+                    failure =
+                        io.hydrabox.core.contract.RuntimeFailure(
+                            domain = io.hydrabox.core.contract.FailureDomain.INTERNAL,
+                            code =
+                                when (stage) {
+                                    // Nothing was started: what is stored could not be made into a
+                                    // configuration, or the core refused the one it was given.
+                                    StartStage.PREPARE, StartStage.CHECK -> {
+                                        io.hydrabox.core.contract.HydraCoreErrorCode.CONFIG_INVALID_PLAN
+                                    }
+
+                                    StartStage.LAUNCH -> {
+                                        io.hydrabox.core.contract.HydraCoreErrorCode.RUNTIME_CORE_DIED
+                                    }
+                                },
+                            retryable = true,
+                        ),
                 ),
             )
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -1170,6 +1313,7 @@ class HydraVpnService : VpnService() {
      * incomplete credentials. So the service stops itself only once the runtime has confirmed
      * the release — and the close runs off the main thread, because it takes seconds.
      */
+
     /**
      * Asks for the tunnel to be released, and returns.
      *
@@ -1209,23 +1353,26 @@ class HydraVpnService : VpnService() {
         }
     }
 
-    private fun ensureLibboxSetup(): Unit = synchronized(HydraVpnService::class.java) {
-        if (libboxReady) return
-        val base = filesDir.resolve("libbox-base").apply { mkdirs() }
-        val work = filesDir.resolve("libbox-work").apply { mkdirs() }
-        val temp = cacheDir.resolve("libbox-temp").apply { mkdirs() }
-        Libbox.setup(SetupOptions().apply {
-            basePath = base.path
-            workingPath = work.path
-            tempPath = temp.path
-            // Not the build type: this makes the core hand every line it writes to the
-            // platform as well, which is a call across the language boundary per line and a
-            // per-packet cost while a tunnel is up. It is worth paying only when someone
-            // asked to see those lines.
-            debug = store.settings().logLevel in setOf(LogLevel.DEBUG, LogLevel.TRACE)
-        })
-        libboxReady = true
-    }
+    private fun ensureLibboxSetup(): Unit =
+        synchronized(HydraVpnService::class.java) {
+            if (libboxReady) return
+            val base = filesDir.resolve("libbox-base").apply { mkdirs() }
+            val work = filesDir.resolve("libbox-work").apply { mkdirs() }
+            val temp = cacheDir.resolve("libbox-temp").apply { mkdirs() }
+            Libbox.setup(
+                SetupOptions().apply {
+                    basePath = base.path
+                    workingPath = work.path
+                    tempPath = temp.path
+                    // Not the build type: this makes the core hand every line it writes to the
+                    // platform as well, which is a call across the language boundary per line and a
+                    // per-packet cost while a tunnel is up. It is worth paying only when someone
+                    // asked to see those lines.
+                    debug = store.settings().logLevel in setOf(LogLevel.DEBUG, LogLevel.TRACE)
+                },
+            )
+            libboxReady = true
+        }
 
     /**
      * The core's open question, on screen when the person is not.
@@ -1250,7 +1397,11 @@ class HydraVpnService : VpnService() {
         challengeNotifiedId = wanted.id
         if (!challengeChannelReady) {
             manager.createNotificationChannel(
-                NotificationChannel(CHALLENGE_CHANNEL_ID, getString(R.string.notification_challenge_channel), NotificationManager.IMPORTANCE_HIGH).apply {
+                NotificationChannel(
+                    CHALLENGE_CHANNEL_ID,
+                    getString(R.string.notification_challenge_channel),
+                    NotificationManager.IMPORTANCE_HIGH,
+                ).apply {
                     description = getString(R.string.notification_challenge_channel_detail)
                 },
             )
@@ -1258,7 +1409,8 @@ class HydraVpnService : VpnService() {
         }
         manager.notify(
             CHALLENGE_NOTIFICATION_ID,
-            android.app.Notification.Builder(this, CHALLENGE_CHANNEL_ID)
+            android.app.Notification
+                .Builder(this, CHALLENGE_CHANNEL_ID)
                 .setContentTitle(getString(R.string.notification_challenge_title))
                 .setContentText(getString(R.string.notification_challenge_text))
                 .setSmallIcon(R.drawable.ic_hydrabox_status)
@@ -1270,69 +1422,72 @@ class HydraVpnService : VpnService() {
                         Intent(this, RuntimeControlActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
                         android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
                     ),
-                )
-                .build(),
+                ).build(),
         )
     }
 
-    private fun notification(state: RuntimeState) = (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).let { manager ->
-        if (!channelReady) {
-            manager.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, getString(R.string.notification_channel), NotificationManager.IMPORTANCE_LOW).apply {
-                    setShowBadge(false)
-                    description = getString(R.string.notification_channel_detail)
-                },
-            )
-            channelReady = true
-        }
-        val snapshot = runtime.snapshot()
-        // A runtime phase is not a sentence for a person. `starting` and `running` are what
-        // the reducer calls its states; the notification says what is true of the tunnel.
-        val headline = when {
-            state == RuntimeState.RUNNING && snapshot.transportHealth.isReady -> R.string.notification_connected
-            state == RuntimeState.STOPPING -> R.string.notification_disconnecting
-            state == RuntimeState.FAILED -> R.string.notification_failed
-            else -> R.string.notification_connecting
-        }
-        val detail = if (snapshot.traffic.available && liveTraffic) {
-            val speed = "↓ ${rate(snapshot.traffic.downlink)} ↑ ${rate(snapshot.traffic.uplink)}"
-            val total = "Σ ↓ ${size(snapshot.traffic.downlinkTotal)} ↑ ${size(snapshot.traffic.uplinkTotal)}"
-            when (trafficDisplay) {
-                NotificationTrafficDisplayMode.SPEED -> "${getString(headline)} · $speed"
-                NotificationTrafficDisplayMode.TOTAL -> "${getString(headline)} · $total"
-                NotificationTrafficDisplayMode.BOTH -> "${getString(headline)} · $speed · $total"
+    private fun notification(state: RuntimeState) =
+        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).let { manager ->
+            if (!channelReady) {
+                manager.createNotificationChannel(
+                    NotificationChannel(CHANNEL_ID, getString(R.string.notification_channel), NotificationManager.IMPORTANCE_LOW).apply {
+                        setShowBadge(false)
+                        description = getString(R.string.notification_channel_detail)
+                    },
+                )
+                channelReady = true
             }
-        } else {
-            getString(headline)
-        }
-        android.app.Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle(snapshot.selectedOutbounds.firstOrNull()?.outboundId ?: "HydraBox")
-            .setContentText(detail)
-            .setSmallIcon(R.drawable.ic_hydrabox_notification)
-            .setOngoing(state != RuntimeState.STOPPED)
-            .setOnlyAlertOnce(true)
-            .setContentIntent(
-                android.app.PendingIntent.getActivity(
-                    this,
-                    0,
-                    Intent(this, RuntimeControlActivity::class.java),
-                    android.app.PendingIntent.FLAG_IMMUTABLE,
-                ),
-            )
-            .addAction(
-                android.app.Notification.Action.Builder(
-                    android.graphics.drawable.Icon.createWithResource(this, R.drawable.ic_hydrabox_notification),
-                    getString(R.string.notification_disconnect),
-                    android.app.PendingIntent.getService(
+            val snapshot = runtime.snapshot()
+            // A runtime phase is not a sentence for a person. `starting` and `running` are what
+            // the reducer calls its states; the notification says what is true of the tunnel.
+            val headline =
+                when {
+                    state == RuntimeState.RUNNING && snapshot.transportHealth.isReady -> R.string.notification_connected
+                    state == RuntimeState.STOPPING -> R.string.notification_disconnecting
+                    state == RuntimeState.FAILED -> R.string.notification_failed
+                    else -> R.string.notification_connecting
+                }
+            val detail =
+                if (snapshot.traffic.available && liveTraffic) {
+                    val speed = "↓ ${rate(snapshot.traffic.downlink)} ↑ ${rate(snapshot.traffic.uplink)}"
+                    val total = "Σ ↓ ${size(snapshot.traffic.downlinkTotal)} ↑ ${size(snapshot.traffic.uplinkTotal)}"
+                    when (trafficDisplay) {
+                        NotificationTrafficDisplayMode.SPEED -> "${getString(headline)} · $speed"
+                        NotificationTrafficDisplayMode.TOTAL -> "${getString(headline)} · $total"
+                        NotificationTrafficDisplayMode.BOTH -> "${getString(headline)} · $speed · $total"
+                    }
+                } else {
+                    getString(headline)
+                }
+            android.app.Notification
+                .Builder(this, CHANNEL_ID)
+                .setContentTitle(snapshot.selectedOutbounds.firstOrNull()?.outboundId ?: "HydraBox")
+                .setContentText(detail)
+                .setSmallIcon(R.drawable.ic_hydrabox_notification)
+                .setOngoing(state != RuntimeState.STOPPED)
+                .setOnlyAlertOnce(true)
+                .setContentIntent(
+                    android.app.PendingIntent.getActivity(
                         this,
-                        1,
-                        Intent(this, HydraVpnService::class.java).setAction(ACTION_STOP),
+                        0,
+                        Intent(this, RuntimeControlActivity::class.java),
                         android.app.PendingIntent.FLAG_IMMUTABLE,
                     ),
-                ).build(),
-            )
-            .build()
-    }
+                ).addAction(
+                    android.app.Notification.Action
+                        .Builder(
+                            android.graphics.drawable.Icon
+                                .createWithResource(this, R.drawable.ic_hydrabox_notification),
+                            getString(R.string.notification_disconnect),
+                            android.app.PendingIntent.getService(
+                                this,
+                                1,
+                                Intent(this, HydraVpnService::class.java).setAction(ACTION_STOP),
+                                android.app.PendingIntent.FLAG_IMMUTABLE,
+                            ),
+                        ).build(),
+                ).build()
+        }
 
     private fun rate(value: Long): String = "${size(value)}/s"
 
@@ -1366,19 +1521,27 @@ class HydraVpnService : VpnService() {
         val deadlineElapsedRealtime: Long,
     ) {
         @Volatile var cancelled = false
-        val liveSocket = java.util.concurrent.atomic.AtomicReference<java.net.DatagramSocket?>()
+        val liveSocket =
+            java.util.concurrent.atomic
+                .AtomicReference<java.net.DatagramSocket?>()
         private val answers = java.util.concurrent.ConcurrentHashMap<String, Answer>()
 
-        class Answer(val rttMillis: Long?, val observedAtMillis: Long)
+        class Answer(
+            val rttMillis: Long?,
+            val observedAtMillis: Long,
+        )
 
         fun answer(key: String): Answer? = answers[key]
 
-        fun remember(key: String, rttMillis: Long?, observedAtMillis: Long) {
+        fun remember(
+            key: String,
+            rttMillis: Long?,
+            observedAtMillis: Long,
+        ) {
             answers[key] = Answer(rttMillis, observedAtMillis)
         }
 
-        fun withinDeadline(): Boolean =
-            android.os.SystemClock.elapsedRealtime() <= deadlineElapsedRealtime
+        fun withinDeadline(): Boolean = android.os.SystemClock.elapsedRealtime() <= deadlineElapsedRealtime
 
         fun remainingBudgetMillis(): Long = deadlineElapsedRealtime - android.os.SystemClock.elapsedRealtime()
 
@@ -1407,6 +1570,7 @@ class HydraVpnService : VpnService() {
         const val ACTION_UI_VISIBILITY = "io.hydrabox.platform.android.UI_VISIBILITY"
         const val EXTRA_UI_VISIBLE = "visible"
         const val ACTION_REFRESH_SETTINGS = "io.hydrabox.platform.android.REFRESH_SETTINGS"
+
         /** Compatibility alias for older callers; refresh now applies notification settings too. */
         const val ACTION_LOG_LEVEL = "io.hydrabox.platform.android.LOG_LEVEL"
         private const val CHANNEL_ID = "hydrabox-vpn"
@@ -1446,7 +1610,6 @@ class HydraVpnService : VpnService() {
          */
         private const val MAX_SELECTION_CORRECTIONS = 3
 
-
         /** Terminal colour codes, which a screen shows as square brackets and digits. */
         private val ANSI = Regex(Char(27) + """\[[0-9;]*m""")
 
@@ -1455,11 +1618,14 @@ class HydraVpnService : VpnService() {
          * status stream cancelled because we asked for it to be. Matched on the raw line, so the
          * text is the core's, not ours.
          */
-        private val BENIGN = listOf(
-            "canceled by local with error code 0",
-            "context canceled",
-        )
+        private val BENIGN =
+            listOf(
+                "canceled by local with error code 0",
+                "context canceled",
+            )
+
         @Volatile private var libboxReady = false
+
         @Volatile private var channelReady = false
     }
 }

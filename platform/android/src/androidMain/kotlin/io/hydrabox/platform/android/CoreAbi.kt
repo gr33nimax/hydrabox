@@ -7,18 +7,15 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 internal object CoreAbi {
-    private const val expected = 1
-    private const val pinnedLegacySource = "c7180414a98c278100f4d4985e562062826f0bfd"
+    // The contract with HydraCore v2: the core accepts the complete AmneziaWG 3.1
+    // configuration. A core that predates it fails to parse a 3.1 profile, so an
+    // older build has to be refused up front rather than at tunnel start.
+    private const val expected = 2
     private val json = Json { ignoreUnknownKeys = true }
 
     fun isCompatible(): Boolean =
         runCatching {
             val info = json.parseToJsonElement(Libbox.hydraCoreBuildInfo()).jsonObject
-            info["client_abi"]?.jsonPrimitive?.intOrNull == expected ||
-                info["source"]
-                    ?.jsonObject
-                    ?.get("commit")
-                    ?.jsonPrimitive
-                    ?.content == pinnedLegacySource
+            info["client_abi"]?.jsonPrimitive?.intOrNull == expected
         }.getOrDefault(false)
 }

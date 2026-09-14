@@ -12,22 +12,23 @@ import io.hydrabox.core.contract.TransportChallenge
 import io.hydrabox.core.contract.TransportHealth
 import io.hydrabox.core.contract.TransportHealthState
 import io.hydrabox.core.runtime.RuntimeInput
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.longOrNull
 import io.nekohasekai.libbox.CommandClient
 import io.nekohasekai.libbox.CommandClientHandler
 import io.nekohasekai.libbox.CommandClientOptions
 import io.nekohasekai.libbox.ConnectionEvents
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.LogIterator
+import io.nekohasekai.libbox.OutboundGroupItemIterator
 import io.nekohasekai.libbox.OutboundGroupIterator
 import io.nekohasekai.libbox.RuntimeEventHandler
 import io.nekohasekai.libbox.RuntimeEvents
 import io.nekohasekai.libbox.StatusMessage
 import io.nekohasekai.libbox.StringIterator
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 
 /**
  * What one manual measurement is allowed to cost.
@@ -78,11 +79,17 @@ class CoreObserver(
 ) {
     private var client: CommandClient? = null
 
-    private class Observation(val generation: Long) {
+    private class Observation(
+        val generation: Long,
+    ) {
         @Volatile var lastHealth: TransportHealth? = null
+
         @Volatile var selectedTag = ""
+
         @Volatile var autoTag = ""
+
         @Volatile var coreResponding = false
+
         @Volatile var coreHealth: io.nekohasekai.libbox.TransportHealth? = null
     }
 
@@ -102,12 +109,15 @@ class CoreObserver(
     private var clientToken: Any? = null
 
     /** How many times attaching has been tried since the last one that worked. */
-    private val attempts = java.util.concurrent.atomic.AtomicInteger(0)
+    private val attempts =
+        java.util.concurrent.atomic
+            .AtomicInteger(0)
 
     /** Reattaches, and nothing else: one thread, so an attempt cannot overlap another. */
-    private val reconnects = java.util.concurrent.Executors.newSingleThreadScheduledExecutor { runnable ->
-        Thread(runnable, "core-observer-attach").apply { isDaemon = true }
-    }
+    private val reconnects =
+        java.util.concurrent.Executors.newSingleThreadScheduledExecutor { runnable ->
+            Thread(runnable, "core-observer-attach").apply { isDaemon = true }
+        }
 
     fun start(commandGeneration: Long = 0) {
         val current = Observation(commandGeneration)
@@ -131,10 +141,11 @@ class CoreObserver(
         lateinit var created: CommandClient
         synchronized(clientLock) {
             if (!isCurrent(current) || client != null) return
-            val options = CommandClientOptions().apply {
-                addCommand(Libbox.CommandRuntimeEvents)
-                runtimeEventIntervalMillis = RUNTIME_EVENT_INTERVAL_MILLIS
-            }
+            val options =
+                CommandClientOptions().apply {
+                    addCommand(Libbox.CommandRuntimeEvents)
+                    runtimeEventIntervalMillis = RUNTIME_EVENT_INTERVAL_MILLIS
+                }
             created = Libbox.newCommandClient(runtimeClientHandler(current, token), options)
                 ?: return scheduleAttach(current, "the core would not give out a command client")
             created.setRuntimeEventHandler(runtimeHandler(current))
@@ -143,24 +154,26 @@ class CoreObserver(
         }
         runCatching { created.connect() }.fold(
             onSuccess = {
-                val keep = synchronized(clientLock) {
-                    val active = isCurrent(current) && clientToken === token
-                    if (!active && clientToken === token) {
-                        client = null
-                        clientToken = null
+                val keep =
+                    synchronized(clientLock) {
+                        val active = isCurrent(current) && clientToken === token
+                        if (!active && clientToken === token) {
+                            client = null
+                            clientToken = null
+                        }
+                        active
                     }
-                    active
-                }
                 if (keep) attempts.set(0) else runCatching { created.disconnect() }
             },
             onFailure = { failure ->
-                val retry = synchronized(clientLock) {
-                    if (clientToken === token) {
-                        client = null
-                        clientToken = null
+                val retry =
+                    synchronized(clientLock) {
+                        if (clientToken === token) {
+                            client = null
+                            clientToken = null
+                        }
+                        isCurrent(current)
                     }
-                    isCurrent(current)
-                }
                 runCatching { created.disconnect() }
                 if (retry) scheduleAttach(current, failure.message ?: "connect refused")
             },
@@ -169,7 +182,10 @@ class CoreObserver(
 
     private fun isCurrent(current: Observation): Boolean = watching && observation === current
 
-    private fun scheduleAttach(current: Observation, reason: String) {
+    private fun scheduleAttach(
+        current: Observation,
+        reason: String,
+    ) {
         if (!isCurrent(current)) return
         val attempt = attempts.incrementAndGet()
         if (attempt > MAX_ATTACH_ATTEMPTS) {
@@ -197,17 +213,19 @@ class CoreObserver(
      */
     private fun reportObservationLost(current: Observation) {
         if (!isCurrent(current)) return
-        val lost = TransportHealth(
-            state = TransportHealthState.FAILED,
-            activeLanes = 0,
-            applicable = true,
-            runtimeGeneration = RuntimeGeneration(current.generation),
-            failure = RuntimeFailure(
-                domain = FailureDomain.INTERNAL,
-                code = HydraCoreErrorCode.RUNTIME_IPC_LOST,
-                retryable = true,
-            ),
-        )
+        val lost =
+            TransportHealth(
+                state = TransportHealthState.FAILED,
+                activeLanes = 0,
+                applicable = true,
+                runtimeGeneration = RuntimeGeneration(current.generation),
+                failure =
+                    RuntimeFailure(
+                        domain = FailureDomain.INTERNAL,
+                        code = HydraCoreErrorCode.RUNTIME_IPC_LOST,
+                        retryable = true,
+                    ),
+            )
         current.lastHealth = lost
         dispatch(
             RuntimeInput.Health(
@@ -233,12 +251,13 @@ class CoreObserver(
     fun stop() {
         watching = false
         logStream.close()
-        val runtimeClient = synchronized(clientLock) {
-            val existing = client
-            client = null
-            clientToken = null
-            existing
-        }
+        val runtimeClient =
+            synchronized(clientLock) {
+                val existing = client
+                client = null
+                clientToken = null
+                existing
+            }
         runCatching { runtimeClient?.disconnect() }
         observation = Observation(0)
         dispatch(RuntimeInput.Traffic(TrafficCounters(available = false)))
@@ -251,8 +270,10 @@ class CoreObserver(
     }
 
     /** Selects inside the running core, so switching server does not restart the tunnel. */
-    fun select(group: String, outbound: String): Boolean =
-        runCatching { requireNotNull(current()).selectOutbound(group, outbound) }.isSuccess
+    fun select(
+        group: String,
+        outbound: String,
+    ): Boolean = runCatching { requireNotNull(current()).selectOutbound(group, outbound) }.isSuccess
 
     /** Reads one fresh core snapshot, used after Doze before deciding whether recovery is needed. */
     fun refresh(): Boolean {
@@ -272,21 +293,25 @@ class CoreObserver(
      * could return the same cached figures it had just shown: without [force] the core skips
      * every member whose last result is younger than the group interval — half an hour.
      */
-    fun measure(group: String, request: MeasureRequest): Boolean = runCatching {
-        requireNotNull(current()).startURLTestWithOptions(
-            group,
-            // No single target: this is the whole group, on demand — except the member the
-            // caller excluded, which answers a different question on its own thread.
-            "",
-            request.priorityTag.orEmpty(),
-            request.excludeTag.orEmpty(),
-            request.url,
-            request.timeoutMillis,
-            request.concurrency,
-            request.deadlineMillis,
-            true,
-        )
-    }.isSuccess
+    fun measure(
+        group: String,
+        request: MeasureRequest,
+    ): Boolean =
+        runCatching {
+            requireNotNull(current()).startURLTestWithOptions(
+                group,
+                // No single target: this is the whole group, on demand — except the member the
+                // caller excluded, which answers a different question on its own thread.
+                "",
+                request.priorityTag.orEmpty(),
+                request.excludeTag.orEmpty(),
+                request.url,
+                request.timeoutMillis,
+                request.concurrency,
+                request.deadlineMillis,
+                true,
+            )
+        }.isSuccess
 
     /**
      * Where an outbound comes out, asked of the core.
@@ -298,39 +323,56 @@ class CoreObserver(
      * one presented as the exit. The core dials the endpoint through the named outbound, so the
      * answer is evidence about the route. Blocking; call it off the main thread.
      */
-    fun exitAddress(outboundTag: String): Pair<String, String?>? = runCatching {
-        val info = requireNotNull(current()).lookupOutboundExternalInfo(outboundTag)
-        val address = info.ip.orEmpty().trim().takeIf(String::isNotEmpty) ?: return null
-        address to info.countryCode.orEmpty().trim().takeIf { it.length == 2 && it.all(Char::isLetter) }
-    }.onFailure { HydraLog.debug(AREA, "the core could not report the exit of $outboundTag: ${it.message}") }
-        .getOrNull()
+    fun exitAddress(outboundTag: String): Pair<String, String?>? =
+        runCatching {
+            val info = requireNotNull(current()).lookupOutboundExternalInfo(outboundTag)
+            val address =
+                info.ip
+                    .orEmpty()
+                    .trim()
+                    .takeIf(String::isNotEmpty) ?: return null
+            address to
+                info.countryCode
+                    .orEmpty()
+                    .trim()
+                    .takeIf { it.length == 2 && it.all(Char::isLetter) }
+        }.onFailure { HydraLog.debug(AREA, "the core could not report the exit of $outboundTag: ${it.message}") }
+            .getOrNull()
 
-    private val handler = object : CommandClientHandler {
-        override fun connected() = Unit
+    private val handler =
+        object : CommandClientHandler {
+            override fun connected() = Unit
 
-        override fun disconnected(message: String?) = Unit
+            override fun disconnected(message: String?) = Unit
 
-        override fun clearLogs() = Unit
+            override fun clearLogs() = Unit
 
-        override fun initializeClashMode(modeList: StringIterator?, currentMode: String?) = Unit
+            override fun initializeClashMode(
+                modeList: StringIterator?,
+                currentMode: String?,
+            ) = Unit
 
-        override fun setDefaultLogLevel(level: Int) = Unit
+            override fun setDefaultLogLevel(level: Int) = Unit
 
-        override fun updateClashMode(newMode: String?) = Unit
+            override fun updateClashMode(newMode: String?) = Unit
 
-        override fun writeConnectionEvents(events: ConnectionEvents?) = Unit
+            override fun writeConnectionEvents(events: ConnectionEvents?) = Unit
 
-        override fun writeLogs(messageList: LogIterator?) {
-            while (messageList?.hasNext() == true) {
-                val entry = messageList.next()
-                onLog(entry.level, entry.message.orEmpty())
+            override fun writeLogs(messageList: LogIterator?) {
+                while (messageList?.hasNext() == true) {
+                    val entry = messageList.next()
+                    onLog(entry.level, entry.message.orEmpty())
+                }
             }
+
+            override fun writeStatus(message: StatusMessage?) = Unit
+
+            override fun writeGroups(message: OutboundGroupIterator?) = Unit
+
+            // The core publishes the outbound inventory on its own channel now; the
+            // app reads the same information through the status projection.
+            override fun writeOutbounds(message: OutboundGroupItemIterator?) = Unit
         }
-
-        override fun writeStatus(message: StatusMessage?) = Unit
-
-        override fun writeGroups(message: OutboundGroupIterator?) = Unit
-    }
 
     /**
      * The core's log stream, which is separate so it can be absent.
@@ -342,30 +384,36 @@ class CoreObserver(
      * updates stay on their own client so this can come and go without disturbing them,
      * and losing it no longer leaves a dead client behind that blocks every later enable.
      */
-    private val logStream = LogStream(
-        base = handler,
-        newClient = { streamHandler ->
-            Libbox.newCommandClient(streamHandler, CommandClientOptions().apply { addCommand(Libbox.CommandLog) })
-                ?.let { client ->
-                    object : LogStream.Client {
-                        override fun connect() = client.connect()
-                        override fun disconnect() = client.disconnect()
+    private val logStream =
+        LogStream(
+            base = handler,
+            newClient = { streamHandler ->
+                Libbox
+                    .newCommandClient(streamHandler, CommandClientOptions().apply { addCommand(Libbox.CommandLog) })
+                    ?.let { client ->
+                        object : LogStream.Client {
+                            override fun connect() = client.connect()
+
+                            override fun disconnect() = client.disconnect()
+                        }
                     }
-                }
-        },
-        schedule = { delay, action ->
-            reconnects.schedule(action, delay, java.util.concurrent.TimeUnit.MILLISECONDS)
-        },
-        report = { message, severe ->
-            if (severe) HydraLog.error(AREA, message) else HydraLog.warn(AREA, message)
-        },
-    )
+            },
+            schedule = { delay, action ->
+                reconnects.schedule(action, delay, java.util.concurrent.TimeUnit.MILLISECONDS)
+            },
+            report = { message, severe ->
+                if (severe) HydraLog.error(AREA, message) else HydraLog.warn(AREA, message)
+            },
+        )
 
     fun setLogStream(enabled: Boolean) {
         logStream.setEnabled(enabled)
     }
 
-    private fun handleStatus(current: Observation, message: StatusMessage?) {
+    private fun handleStatus(
+        current: Observation,
+        message: StatusMessage?,
+    ) {
         if (!isCurrent(current)) return
         message ?: return
         current.coreResponding = true
@@ -384,7 +432,10 @@ class CoreObserver(
         )
     }
 
-    private fun handleGroups(current: Observation, message: OutboundGroupIterator?) {
+    private fun handleGroups(
+        current: Observation,
+        message: OutboundGroupIterator?,
+    ) {
         if (!isCurrent(current)) return
         val collected = mutableListOf<OutboundLatency>()
         while (message?.hasNext() == true) {
@@ -405,13 +456,14 @@ class CoreObserver(
                 val item = items.next()
                 val status = item.urlTestStatus.orEmpty()
                 if (item.urlTestDelay > 0 || status.isNotEmpty()) {
-                    collected += OutboundLatency(
-                        tag = item.tag,
-                        delayMillis = item.urlTestDelay,
-                        status = status,
-                        observedAtMillis = item.urlTestTime * 1000,
-                        staleAfterMillis = staleAfterMillis(),
-                    )
+                    collected +=
+                        OutboundLatency(
+                            tag = item.tag,
+                            delayMillis = item.urlTestDelay,
+                            status = status,
+                            observedAtMillis = item.urlTestTime * 1000,
+                            staleAfterMillis = staleAfterMillis(),
+                        )
                 }
             }
         }
@@ -420,7 +472,10 @@ class CoreObserver(
         publishTransport(current)
     }
 
-    private fun handleSnapshot(current: Observation, snapshot: io.nekohasekai.libbox.RuntimeSnapshot) {
+    private fun handleSnapshot(
+        current: Observation,
+        snapshot: io.nekohasekai.libbox.RuntimeSnapshot,
+    ) {
         if (!isCurrent(current)) return
         current.coreHealth = snapshot.transportHealth
         handleGroups(current, snapshot.groups())
@@ -434,7 +489,10 @@ class CoreObserver(
      * transition into RUNNING, by design — reported the counters as unavailable and looked exactly
      * like losing the core.
      */
-    private fun runtimeClientHandler(current: Observation, token: Any) = object : CommandClientHandler by handler {
+    private fun runtimeClientHandler(
+        current: Observation,
+        token: Any,
+    ) = object : CommandClientHandler by handler {
         override fun writeStatus(message: StatusMessage?) = handleStatus(current, message)
 
         override fun writeGroups(message: OutboundGroupIterator?) = handleGroups(current, message)
@@ -444,13 +502,14 @@ class CoreObserver(
             HydraLog.warn(AREA, "the runtime stream disconnected${message?.let { ": $it" }.orEmpty()}")
             dispatch(RuntimeInput.Traffic(TrafficCounters(available = false)))
             current.coreResponding = false
-            val disconnected = synchronized(clientLock) {
-                if (clientToken !== token) return@synchronized null
-                val existing = client
-                client = null
-                clientToken = null
-                existing
-            }
+            val disconnected =
+                synchronized(clientLock) {
+                    if (clientToken !== token) return@synchronized null
+                    val existing = client
+                    client = null
+                    clientToken = null
+                    existing
+                }
             runCatching { disconnected?.disconnect() }
             if (isCurrent(current)) scheduleAttach(current, message ?: "stream closed")
         }
@@ -467,17 +526,18 @@ class CoreObserver(
     private fun publishChallenge(current: Observation) {
         if (!isCurrent(current)) return
         val state = runCatching { Libbox.hydraCoreTransportState() }.getOrNull() ?: return
-        val challenge = runCatching {
-            json.parseToJsonElement(state).jsonObject["challenge"]?.jsonObject?.let { entry ->
-                val id = entry["id"]?.jsonPrimitive?.contentOrNull ?: return@let null
-                TransportChallenge(
-                    id = id,
-                    kind = entry["kind"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-                    url = entry["url"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-                    expiresAtMillis = entry["expires_at"]?.jsonPrimitive?.longOrNull ?: 0,
-                )
-            }
-        }.getOrNull()
+        val challenge =
+            runCatching {
+                json.parseToJsonElement(state).jsonObject["challenge"]?.jsonObject?.let { entry ->
+                    val id = entry["id"]?.jsonPrimitive?.contentOrNull ?: return@let null
+                    TransportChallenge(
+                        id = id,
+                        kind = entry["kind"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                        url = entry["url"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                        expiresAtMillis = entry["expires_at"]?.jsonPrimitive?.longOrNull ?: 0,
+                    )
+                }
+            }.getOrNull()
         dispatch(RuntimeInput.Challenge(challenge))
     }
 
@@ -496,25 +556,28 @@ class CoreObserver(
         // selector may be routing through `auto`, and `auto`'s own choice is the server that
         // actually carries the traffic — so checking the selector's answer alone let an automatic
         // choice sitting on a sick VK transport report itself as an ordinary healthy server.
-        val selected = current.selectedTag.takeIf { it != io.hydrabox.core.config.AUTO_TAG }
-            ?: current.autoTag.takeIf(String::isNotEmpty)
-            ?: current.selectedTag
+        val selected =
+            current.selectedTag.takeIf { it != io.hydrabox.core.config.AUTO_TAG }
+                ?: current.autoTag.takeIf(String::isNotEmpty)
+                ?: current.selectedTag
         val expected = selected.isNotEmpty() && isCallTransport(selected)
-        val reported = current.coreHealth?.takeIf {
-            it.transportTag == selected && it.runtimeGeneration == current.generation
-        }
+        val reported =
+            current.coreHealth?.takeIf {
+                it.transportTag == selected && it.runtimeGeneration == current.generation
+            }
         if (expected && reported == null) return
         if (!expected && !current.coreResponding) return
-        val health = if (expected) {
-            TransportState.from(requireNotNull(reported))
-        } else {
-            TransportHealth(
-                state = TransportHealthState.HEALTHY,
-                activeLanes = 1,
-                applicable = false,
-                runtimeGeneration = RuntimeGeneration(current.generation),
-            )
-        }
+        val health =
+            if (expected) {
+                TransportState.from(requireNotNull(reported))
+            } else {
+                TransportHealth(
+                    state = TransportHealthState.HEALTHY,
+                    activeLanes = 1,
+                    applicable = false,
+                    runtimeGeneration = RuntimeGeneration(current.generation),
+                )
+            }
         if (health == current.lastHealth) return
         current.lastHealth = health
         val line = TransportState.describe(health)
@@ -531,30 +594,41 @@ class CoreObserver(
         )
     }
 
-    private fun runtimeHandler(current: Observation) = object : RuntimeEventHandler {
-        override fun writeRuntimeEvents(events: RuntimeEvents?) {
-            if (!isCurrent(current)) return
-            events ?: return
-            events.snapshot?.let { handleSnapshot(current, it) }
-            val iterator = events.events()
-            while (iterator.hasNext()) {
-                val event = iterator.next()
-                when (event.type) {
-                    Libbox.RuntimeEventStatus -> handleStatus(current, event.status)
-                    Libbox.RuntimeEventGroups -> handleGroups(current, event.groups())
-                    Libbox.RuntimeEventTransportHealth -> {
-                        current.coreHealth = event.transportHealth
-                        publishTransport(current)
+    private fun runtimeHandler(current: Observation) =
+        object : RuntimeEventHandler {
+            override fun writeRuntimeEvents(events: RuntimeEvents?) {
+                if (!isCurrent(current)) return
+                events ?: return
+                events.snapshot?.let { handleSnapshot(current, it) }
+                val iterator = events.events()
+                while (iterator.hasNext()) {
+                    val event = iterator.next()
+                    when (event.type) {
+                        Libbox.RuntimeEventStatus -> {
+                            handleStatus(current, event.status)
+                        }
+
+                        Libbox.RuntimeEventGroups -> {
+                            handleGroups(current, event.groups())
+                        }
+
+                        Libbox.RuntimeEventTransportHealth -> {
+                            current.coreHealth = event.transportHealth
+                            publishTransport(current)
+                        }
                     }
                 }
             }
         }
-    }
 
     private companion object {
         const val AREA = "core-observer"
         const val RUNTIME_EVENT_INTERVAL_MILLIS = 1_000L
-        val json = Json { ignoreUnknownKeys = true; isLenient = true }
+        val json =
+            Json {
+                ignoreUnknownKeys = true
+                isLenient = true
+            }
 
         /**
          * How many times the runtime stream is opened before the core is declared unreachable, and

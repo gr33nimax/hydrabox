@@ -17,7 +17,11 @@ import kotlinx.serialization.json.jsonPrimitive
  */
 object HydraCoreGate {
     private const val AREA = "hydra-gate"
-    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+    private val json =
+        Json {
+            ignoreUnknownKeys = true
+            isLenient = true
+        }
 
     data class Inspection(
         val valid: Boolean,
@@ -51,7 +55,10 @@ object HydraCoreGate {
      * Opens an envelope through the core. The key never leaves this call, and the failure
      * message comes from the core rather than being invented here.
      */
-    fun open(envelope: String, keyBase64Url: String): String {
+    fun open(
+        envelope: String,
+        keyBase64Url: String,
+    ): String {
         HydraLog.debug(AREA, "opening an encrypted subscription, ${envelope.length} chars")
         return runCatching { Libbox.hydraCoreOpenSubscriptionJWE(envelope, keyBase64Url) }
             .onSuccess { HydraLog.info(AREA, "envelope opened, ${it.length} chars of document") }
@@ -61,8 +68,9 @@ object HydraCoreGate {
                 // that makes the difference between a fixable report and "it does not work".
                 HydraLog.error(AREA, "the core could not open the envelope", failure)
                 throw SubscriptionException(
-                    failure = SourceFailure.ENCRYPTED_WITHOUT_KEY.takeIf { looksLikeKeyFailure(failure) }
-                        ?: SourceFailure.INVALID_CONTENT,
+                    failure =
+                        SourceFailure.ENCRYPTED_WITHOUT_KEY.takeIf { looksLikeKeyFailure(failure) }
+                            ?: SourceFailure.INVALID_CONTENT,
                     detail = HydraLog.describe(failure),
                     cause = failure,
                 )
@@ -80,8 +88,11 @@ object HydraCoreGate {
             joined.contains("unsupported_required_feature") ||
                 joined.contains("incompatible_core_version") ||
                 joined.contains("incompatible_subscription_contract") -> SourceFailure.CORE_TOO_OLD
+
             joined.contains("expired") || joined.contains("not_yet_valid") -> SourceFailure.EXPIRED
+
             joined.contains("decrypt") || joined.contains("authentication") -> SourceFailure.ENCRYPTED_WITHOUT_KEY
+
             else -> SourceFailure.INVALID_CONTENT
         }
     }
@@ -92,11 +103,13 @@ object HydraCoreGate {
         }
 
     fun inspect(document: String): Inspection {
-        val raw = runCatching { Libbox.hydraCoreInspectSubscription(document) }
-            .onFailure { HydraLog.warn(AREA, "the core could not inspect the document", it) }
-            .getOrNull()
-        val root = runCatching { json.parseToJsonElement(raw.orEmpty()) }.getOrNull() as? JsonObject
-            ?: return Inspection(valid = false, diagnostics = listOf("inspection failed"))
+        val raw =
+            runCatching { Libbox.hydraCoreInspectSubscription(document) }
+                .onFailure { HydraLog.warn(AREA, "the core could not inspect the document", it) }
+                .getOrNull()
+        val root =
+            runCatching { json.parseToJsonElement(raw.orEmpty()) }.getOrNull() as? JsonObject
+                ?: return Inspection(valid = false, diagnostics = listOf("inspection failed"))
         val identity = root["identity"] as? JsonObject
         val validity = root["validity"] as? JsonObject
         return Inspection(
@@ -117,7 +130,10 @@ object HydraCoreGate {
      * `display.name` is either a string or a map of translations with a `default`. The
      * person's own language wins when the provider sent one.
      */
-    private fun displayName(document: String, language: String? = null): String? {
+    private fun displayName(
+        document: String,
+        language: String? = null,
+    ): String? {
         val root = runCatching { json.parseToJsonElement(document) }.getOrNull() as? JsonObject ?: return null
         val name = (root["display"] as? JsonObject)?.get("name") ?: return null
         (name as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotBlank)?.let { return it }
@@ -129,18 +145,21 @@ object HydraCoreGate {
     }
 
     private fun diagnose(result: String): List<String> {
-        val root = runCatching { json.parseToJsonElement(result) }.getOrNull() as? JsonObject
-            ?: return listOf("the core returned an unreadable validation result")
+        val root =
+            runCatching { json.parseToJsonElement(result) }.getOrNull() as? JsonObject
+                ?: return listOf("the core returned an unreadable validation result")
         if (root["valid"]?.jsonPrimitive?.contentOrNull == "true") return emptyList()
         return messages(root["diagnostics"] as? JsonArray).ifEmpty { listOf("validation failed without a reason") }
     }
 
-    private fun messages(diagnostics: JsonArray?): List<String> = diagnostics.orEmpty().mapNotNull { entry ->
-        val diagnostic = entry as? JsonObject ?: return@mapNotNull null
-        val code = diagnostic["code"]?.jsonPrimitive?.contentOrNull
-        val message = diagnostic["message"]?.jsonPrimitive?.contentOrNull
-        val path = diagnostic["path"]?.jsonPrimitive?.contentOrNull
-        listOfNotNull(code, message, path?.takeIf { it != "$" }?.let { "at $it" }).joinToString(": ")
-            .takeIf(String::isNotEmpty)
-    }
+    private fun messages(diagnostics: JsonArray?): List<String> =
+        diagnostics.orEmpty().mapNotNull { entry ->
+            val diagnostic = entry as? JsonObject ?: return@mapNotNull null
+            val code = diagnostic["code"]?.jsonPrimitive?.contentOrNull
+            val message = diagnostic["message"]?.jsonPrimitive?.contentOrNull
+            val path = diagnostic["path"]?.jsonPrimitive?.contentOrNull
+            listOfNotNull(code, message, path?.takeIf { it != "$" }?.let { "at $it" })
+                .joinToString(": ")
+                .takeIf(String::isNotEmpty)
+        }
 }

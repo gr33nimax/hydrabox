@@ -3,5 +3,6 @@ build/
 **/build/
 local.properties
 platform/android/libs/libbox.aar
+platform/android/libs/libbox-sources.jar
 .kotlin/
 __pycache__/
