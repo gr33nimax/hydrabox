@@ -53,21 +53,6 @@ object HydraCoreGate {
      */
     fun open(envelope: String, keyBase64Url: String): String {
         HydraLog.debug(AREA, "opening an encrypted subscription, ${envelope.length} chars")
-        // The validation result is diagnostic, not a verdict: a core that cannot even be
-        // called here still gets to refuse the document in its own process. What it must
-        // never do is disappear, so the reason is logged either way.
-        val validation = runCatching { Libbox.hydraCoreValidateSubscriptionJWE(envelope, keyBase64Url) }
-            .onFailure { HydraLog.warn(AREA, "the core could not validate the envelope", it) }
-            .getOrNull()
-        val rejections = validation?.let(::diagnose).orEmpty()
-        if (rejections.isNotEmpty()) {
-            HydraLog.error(AREA, "core rejected the envelope: ${rejections.joinToString("; ")}")
-            throw SubscriptionException(
-                failure = failureOf(rejections),
-                detail = rejections.joinToString("; "),
-            )
-        }
-        // Opening an envelope, unlike validating it, only the core can do.
         return runCatching { Libbox.hydraCoreOpenSubscriptionJWE(envelope, keyBase64Url) }
             .onSuccess { HydraLog.info(AREA, "envelope opened, ${it.length} chars of document") }
             .getOrElse { failure ->
@@ -105,24 +90,6 @@ object HydraCoreGate {
         HydraLog.describe(failure).lowercase().let { text ->
             text.contains("key") || text.contains("decrypt") || text.contains("authentication")
         }
-
-    /**
-     * Validates a plaintext document through the core, throwing with its own reasons.
-     *
-     * The core lives in another process. When its library is not loaded in this one, the
-     * import must not fail: the document is validated again before it is ever run, by the
-     * process that owns the core. Refusing here would mean a subscription that works cannot be
-     * added, which is worse than adding one that the core will reject with its own message.
-     */
-    fun validate(document: String) {
-        val result = runCatching { Libbox.hydraCoreValidateSubscription(document) }
-            .onFailure { HydraLog.warn(AREA, "the core is not callable in this process", it) }
-            .getOrNull() ?: return
-        val rejections = diagnose(result)
-        if (rejections.isEmpty()) return
-        HydraLog.error(AREA, "core rejected the document: ${rejections.joinToString("; ")}")
-        throw SubscriptionException(failureOf(rejections), detail = rejections.joinToString("; "))
-    }
 
     fun inspect(document: String): Inspection {
         val raw = runCatching { Libbox.hydraCoreInspectSubscription(document) }

@@ -248,7 +248,6 @@ class HydraVpnService : VpnService() {
      * guessing the previous transport's edge for the next server's profile.
      */
     private fun recordTurnEdgeFor(tag: String, runtimeGeneration: Long): Boolean {
-        if (!CoreFeatures.turnEdgeAttribution) return false
         val record = runCatching { Libbox.hydraCoreTurnEdgeAttribution() }.getOrNull() ?: return false
         if (record.transportTag.orEmpty() != tag) return false
         if (record.runtimeGeneration != runtimeGeneration) return false
@@ -948,7 +947,7 @@ class HydraVpnService : VpnService() {
             LogLevel.WARN -> HydraLog.Level.WARN
         }
         wantsCoreDetail = journalFloor <= HydraLog.Level.INFO
-        coreLogFactoryAvailable = CoreFeatures.runtimeLogLevel || settings.logLevel != LogLevel.OFF
+        coreLogFactoryAvailable = true
         val mode = if (store.proxyOnly(settings)) RuntimeMode.PROXY else RuntimeMode.VPN
         runtime.submit(RuntimeCommand.Start(mode))
         startForeground(NOTIFICATION_ID, notification(runtime.snapshot().state))
@@ -1077,6 +1076,7 @@ class HydraVpnService : VpnService() {
         // core is running; on any failure below it is released in the tail of this function.
         var pendingLease: AdBlockRuleSets.Lease? = null
         val outcome = runCatching {
+            check(CoreAbi.isCompatible()) { "incompatible HydraCore client ABI" }
             callTransportTags = store.serverGroups()
                 .flatMap { it.servers }
                 .filter { it.type.equals("call", ignoreCase = true) }
