@@ -14,4 +14,7 @@
     <string name="notification_challenge_text">VK просит пройти капчу — нажмите, чтобы открыть</string>
     <string name="captcha_title">VK просит подтверждение</string>
     <string name="captcha_close">Закрыть</string>
+    <string name="captcha_loading">Загружаю страницу…</string>
+    <string name="captcha_failed">Страница с капчей не загрузилась</string>
+    <string name="captcha_retry">Повторить</string>
 </resources>

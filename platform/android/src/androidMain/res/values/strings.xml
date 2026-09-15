@@ -24,4 +24,7 @@
     <string name="notification_challenge_text">VK asks for a captcha — tap to answer it</string>
     <string name="captcha_title">VK asks for confirmation</string>
     <string name="captcha_close">Close</string>
+    <string name="captcha_loading">Loading the page…</string>
+    <string name="captcha_failed">The captcha page did not load</string>
+    <string name="captcha_retry">Try again</string>
 </resources>
