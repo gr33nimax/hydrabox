@@ -79,6 +79,35 @@ class ScreenProjectionTest {
     }
 
     @Test
+    fun `a subscription that has not been read yet is not an empty install`() {
+        // The first frame runs before the stored model is read, and the primed fact is all there
+        // is. Reading it as "no subscription" is what drew the first-run flow at somebody who
+        // already had one, so the source screen is held back instead.
+        val state =
+            ScreenProjection.project(
+                model(RuntimeState.STOPPED, sources = emptyList(), servers = emptyList())
+                    .copy(autoServer = null, legalAccepted = true, hasStoredSources = true),
+            )
+        assertTrue(state.onboardingComplete)
+        assertTrue(state.hasSources)
+        assertTrue(!state.storageRead)
+        assertEquals(Connection.NeedsServers, state.connection)
+    }
+
+    @Test
+    fun `an empty install is still an empty install once storage has been read`() {
+        val state =
+            ScreenProjection.project(
+                model(RuntimeState.STOPPED, sources = emptyList(), servers = emptyList())
+                    .copy(autoServer = null, legalAccepted = true, storageRead = true),
+            )
+        assertTrue(!state.onboardingComplete)
+        assertTrue(!state.hasSources)
+        assertTrue(state.storageRead)
+        assertEquals(Connection.NeedsSubscription, state.connection)
+    }
+
+    @Test
     fun `a source without servers is its own state, not an empty list`() {
         val state = ScreenProjection.project(
             model(RuntimeState.STOPPED, servers = emptyList()).copy(autoServer = null),

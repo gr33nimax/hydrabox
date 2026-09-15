@@ -320,7 +320,16 @@ class RuntimeControlActivity : ComponentActivity() {
         // Once, before the first frame: a read model that does not yet know whether the terms
         // were accepted would draw the first run at somebody who finished it months ago.
         runCatching { store.settings() }.onSuccess { settings ->
-            stored = stored.copy(legalAccepted = settings.acceptedLegalAtMillis != null, settings = store.settingsSummary(settings))
+            // Whether a subscription exists is the same kind of fact and has the same deadline.
+            // A failed probe is deliberately not read as "no subscription": that conclusion is the
+            // one that draws the first-run flow at the wrong person, and the read below corrects
+            // it a moment later.
+            val primed = runCatching { store.records().isNotEmpty() }.getOrDefault(true)
+            stored = stored.copy(
+                legalAccepted = settings.acceptedLegalAtMillis != null,
+                settings = store.settingsSummary(settings),
+                hasStoredSources = primed,
+            )
         }.onFailure { notice = Notice.OPERATION_FAILED }
         onBackPressedDispatcher.addCallback(
             this,
@@ -516,7 +525,10 @@ class RuntimeControlActivity : ComponentActivity() {
             main.post {
                 refreshPending = false
                 if (destroyed) return@post
-                result.onSuccess { next ->
+                result.onSuccess { loaded ->
+                    // Every completed read ends with the same two facts, whatever else it filled
+                    // in: what storage holds, and that storage has now been read at all.
+                    val next = loaded.copy(hasStoredSources = loaded.sources.isNotEmpty(), storageRead = true)
                     val scheduleChanged = stored.sources.map { listOf(it.id, it.enabled, it.updatedAtMillis, it.updateIntervalHours) } !=
                         next.sources.map { listOf(it.id, it.enabled, it.updatedAtMillis, it.updateIntervalHours) }
                     stored = next

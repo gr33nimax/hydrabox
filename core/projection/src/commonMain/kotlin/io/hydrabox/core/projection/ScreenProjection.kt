@@ -58,6 +58,10 @@ object ScreenProjection {
                 ?.copy(measuring = model.autoServer.id in measuringTags),
             selectedServerId = model.selectedServerId,
             sources = model.sources,
+            // Until the stored model is read, the primed answer is the only fact about sources
+            // there is: deriving it from an empty list would declare an absent subscription.
+            hasSources = model.hasStoredSources || model.sources.isNotEmpty(),
+            storageRead = model.storageRead,
             settings = model.settings,
             // The failure code is the one runtime fact a support conversation needs; the
             // phase, the transport and the lane count are not shown anywhere any more.
@@ -136,7 +140,7 @@ private fun connection(model: AppReadModel, server: ServerRef?): Connection {
     }
     return when (snapshot.state) {
         RuntimeState.STOPPED -> when {
-            model.sources.isEmpty() -> Connection.NeedsSubscription
+            model.sources.isEmpty() && !model.hasStoredSources -> Connection.NeedsSubscription
             model.servers.none { it.servers.isNotEmpty() } && model.autoServer == null -> Connection.NeedsServers
             else -> Connection.Idle(displayedServer)
         }

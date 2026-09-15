@@ -278,6 +278,14 @@ data class ScreenState(
     val autoServer: ServerRef? = null,
     val selectedServerId: String? = null,
     val sources: List<SubscriptionSummary> = emptyList(),
+    /**
+     * Whether a source exists. Set explicitly while the stored model is still unread — the same
+     * reason [legalAccepted] is a fact about storage rather than a state derived from a list
+     * that has not arrived yet.
+     */
+    val hasSources: Boolean = sources.isNotEmpty(),
+    /** False until the stored model has been read, so a screen full of them is not drawn yet. */
+    val storageRead: Boolean = false,
     val settings: SettingsSummary? = null,
     val diagnostics: DiagnosticsSummary? = null,
     val apps: List<InstalledApp> = emptyList(),
@@ -287,7 +295,6 @@ data class ScreenState(
     val notice: Notice? = null,
 ) {
     val serverCount get() = servers.sumOf { it.servers.size }
-    val hasSources get() = sources.isNotEmpty()
 
     /** The blocking first-run flow is over once the terms are accepted and a source exists. */
     val onboardingComplete get() = legalAccepted && hasSources
@@ -297,6 +304,14 @@ data class ScreenState(
 data class AppReadModel(
     val runtime: RuntimeSnapshot,
     val sources: List<SubscriptionSummary> = emptyList(),
+    /**
+     * Whether storage holds a source at all. The stored model arrives after the first
+     * composition, so `onCreate` primes this from a cheap synchronous read: without it the first
+     * frame draws an absent subscription and the first-run flow appears at somebody who has one.
+     */
+    val hasStoredSources: Boolean = false,
+    /** True once the stored model has been read; before that [hasStoredSources] is all we know. */
+    val storageRead: Boolean = false,
     val servers: List<ServerGroup> = emptyList(),
     val autoServer: ServerRef? = null,
     val selectedServerId: String? = null,

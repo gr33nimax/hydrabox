@@ -1,6 +1,7 @@
 package io.hydrabox.ui.app
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -28,6 +29,7 @@ import io.hydrabox.ui.app.resources.*
 import io.hydrabox.ui.design.DetailScreen
 import io.hydrabox.ui.design.AppShell
 import io.hydrabox.ui.design.HydraIcons
+import io.hydrabox.ui.design.LoadingRows
 import io.hydrabox.ui.design.HydraTheme
 import io.hydrabox.ui.design.ShellDestination
 import io.hydrabox.ui.design.UiTokens
@@ -112,6 +114,22 @@ fun HydraApp(
                 onOpenPrivacy = { navigation.open(Route.Document(privacy = true)) },
                 onFinish = { postponed = true; navigation.tab = Tab.HOME },
             )
+            return@HydraTheme
+        }
+        // The stored half of the read model arrives after the first composition. A subscription
+        // that has not been read yet must not be drawn as an absent one: without this the first
+        // frame showed the first-run flow — or a source that holds no server yet — at somebody
+        // whose subscription was there all along, and the real screen replaced it a moment later.
+        if (!state.storageRead && state.hasSources) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(UiTokens.spacing),
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = UiTokens.spacing * 2, vertical = UiTokens.spacing * 2),
+            ) {
+                LoadingRows(3)
+            }
             return@HydraTheme
         }
         when (val route = navigation.route) {
