@@ -67,13 +67,16 @@ jobs:
           INPUT_CODE: ${{ inputs.version_code }}
         run: |
           set -euo pipefail
-          file=platform/android/build.gradle.kts
-          from_file_name=$(sed -n 's/^ *versionName = "\(.*\)"/\1/p' "$file" | head -1)
-          from_file_code=$(sed -n 's/^ *versionCode = \([0-9]\+\)/\1/p' "$file" | head -1)
+          # The version lives in gradle.properties, which Gradle reads itself and this step reads as
+          # a file: a release must not depend on parsing Kotlin, which broke the first run of this
+          # workflow the moment the build script changed shape.
+          properties=gradle.properties
+          from_file_name=$(sed -n 's/^hydraboxVersionName=//p' "$properties" | head -1)
+          from_file_code=$(sed -n 's/^hydraboxVersionCode=//p' "$properties" | head -1)
           name="${INPUT_NAME:-$from_file_name}"
           code="${INPUT_CODE:-$from_file_code}"
           if [ -z "$name" ] || [ -z "$code" ]; then
-            echo "::error title=Version not resolved::ни versionName, ни versionCode не найдены в $file"
+            echo "::error title=Version not resolved::ни hydraboxVersionName, ни hydraboxVersionCode не найдены в $properties"
             exit 1
           fi
           echo "name=$name" >> "$GITHUB_OUTPUT"
