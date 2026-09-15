@@ -21,8 +21,15 @@ internal class OfflineSweep(
     private val publishHttp: (List<OutboundLatency>) -> Unit,
     private val reportStopped: (Int) -> Unit = {},
     private val onProgress: (String) -> Unit = {},
+    /** The pass's overall budget: after it, the remaining targets are left as they were. */
+    private val withinDeadline: () -> Boolean = { true },
+    /** How many targets the budget did not reach, so the pass never truncates silently. */
+    private val reportSkipped: (Int) -> Unit = {},
 ) {
-    data class Target(val id: String, val type: String?)
+    data class Target(
+        val id: String,
+        val type: String?,
+    )
 
     fun run(targets: List<Target>) {
         // The cheap questions go first, as their own pass: each costs a bounded couple of
@@ -41,11 +48,22 @@ internal class OfflineSweep(
         }
         // ponytail: sessions own a full core instance; parallelize only if sequential sweeps
         // become slower than the flood-control and memory cost of concurrent call transports.
-        for (target in targets) {
-            if (target.type.equals("call", ignoreCase = true)) continue
+        //
+        // Each session costs a core instance, and a refused server costs its whole timeout, so
+        // the pass needs a budget: without one it held the single runtime lifecycle thread for
+        // minutes on a long list, and start/stop queued behind it — which is exactly what "the
+        // app is stuck" turned out to be. Targets the budget does not reach keep the figures
+        // they had, and are reported rather than dropped in silence.
+        val httpTargets = targets.filterNot { it.type.equals("call", ignoreCase = true) }
+        var skipped = 0
+        for ((index, target) in httpTargets.withIndex()) {
             if (isCancelled()) {
                 reportStopped(completed)
                 return
+            }
+            if (!withinDeadline()) {
+                skipped = httpTargets.size - index
+                break
             }
             onProgress(target.id)
             val answer = measureHttp(target.id)
@@ -58,5 +76,6 @@ internal class OfflineSweep(
             publishHttp(listOf(answer))
             completed++
         }
+        if (skipped > 0) reportSkipped(skipped)
     }
 }

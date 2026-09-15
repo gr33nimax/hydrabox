@@ -22,15 +22,51 @@ class OfflineSweepTest {
         onEdge: (String) -> OutboundLatency? = { null },
         onHttp: (String) -> OutboundLatency = { OutboundLatency(it, 40, "available") },
         progress: MutableList<String> = mutableListOf(),
+        withinDeadline: () -> Boolean = { true },
+        skipped: MutableList<Int> = mutableListOf(),
     ) = OfflineSweep(
         isCancelled = moved,
         networkStillCurrent = { !moved() },
-        measureEdge = { tag -> measured += "edge:$tag"; onEdge(tag) },
-        measureHttp = { tag -> measured += "http:$tag"; onHttp(tag) },
+        measureEdge = { tag ->
+            measured += "edge:$tag"
+            onEdge(tag)
+        },
+        measureHttp = { tag ->
+            measured += "http:$tag"
+            onHttp(tag)
+        },
         publishEdge = { answers -> published += "edge:" + answers.joinToString(",") { it.tag } },
         publishHttp = { answers -> published += "http:" + answers.joinToString(",") { it.tag } },
         onProgress = { tag -> progress += tag },
+        withinDeadline = withinDeadline,
+        reportSkipped = { count -> skipped += count },
     )
+
+    @Test fun `a pass that runs out of budget stops and says how many it left`() {
+        val measured = mutableListOf<String>()
+        val published = mutableListOf<String>()
+        val skipped = mutableListOf<Int>()
+        var budgets = 0
+        pass(
+            moved = { false },
+            measured = measured,
+            published = published,
+            withinDeadline = { budgets++ < 1 },
+            skipped = skipped,
+        ).run(
+            listOf(
+                OfflineSweep.Target("amsterdam", "vless"),
+                OfflineSweep.Target("tokyo", "vless"),
+                OfflineSweep.Target("osaka", "vless"),
+            ),
+        )
+        // One session runs inside the budget; the two it does not reach are reported, not dropped
+        // in silence: a pass that stops early while a spinner ends is how a truncated measurement
+        // looked like a finished one.
+        assertEquals(listOf("http:amsterdam"), measured)
+        assertEquals(listOf("http:amsterdam"), published)
+        assertEquals(listOf(2), skipped)
+    }
 
     @Test fun `every server the pass asks is named before it is asked`() {
         val progress = mutableListOf<String>()

@@ -4,6 +4,7 @@ import io.nekohasekai.libbox.CommandClientHandler
 import io.nekohasekai.libbox.CommandClientOptions
 import io.nekohasekai.libbox.ConnectionEvents
 import io.nekohasekai.libbox.LogIterator
+import io.nekohasekai.libbox.OutboundGroupItemIterator
 import io.nekohasekai.libbox.OutboundGroupIterator
 import io.nekohasekai.libbox.StatusMessage
 import io.nekohasekai.libbox.StringIterator
@@ -21,7 +22,9 @@ import kotlin.test.assertTrue
  */
 class LogStreamTest {
     /** The handler the stream built, captured so the test can speak as the core would. */
-    private class Client(val handler: CommandClientHandler) : LogStream.Client {
+    private class Client(
+        val handler: CommandClientHandler,
+    ) : LogStream.Client {
         val connects = AtomicInteger(0)
         val disconnects = AtomicInteger(0)
         var refuseConnection: Boolean = false
@@ -38,18 +41,33 @@ class LogStreamTest {
         fun lost(reason: String? = "stream closed") = handler.disconnected(reason)
     }
 
-    private val base = object : CommandClientHandler {
-        override fun connected() = Unit
-        override fun disconnected(message: String?) = Unit
-        override fun clearLogs() = Unit
-        override fun initializeClashMode(modeList: StringIterator?, currentMode: String?) = Unit
-        override fun setDefaultLogLevel(level: Int) = Unit
-        override fun updateClashMode(newMode: String?) = Unit
-        override fun writeConnectionEvents(events: ConnectionEvents?) = Unit
-        override fun writeLogs(messageList: LogIterator?) = Unit
-        override fun writeStatus(message: StatusMessage?) = Unit
-        override fun writeGroups(message: OutboundGroupIterator?) = Unit
-    }
+    private val base =
+        object : CommandClientHandler {
+            override fun connected() = Unit
+
+            override fun disconnected(message: String?) = Unit
+
+            override fun clearLogs() = Unit
+
+            override fun initializeClashMode(
+                modeList: StringIterator?,
+                currentMode: String?,
+            ) = Unit
+
+            override fun setDefaultLogLevel(level: Int) = Unit
+
+            override fun updateClashMode(newMode: String?) = Unit
+
+            override fun writeConnectionEvents(events: ConnectionEvents?) = Unit
+
+            override fun writeLogs(messageList: LogIterator?) = Unit
+
+            override fun writeStatus(message: StatusMessage?) = Unit
+
+            override fun writeGroups(message: OutboundGroupIterator?) = Unit
+
+            override fun writeOutbounds(message: OutboundGroupItemIterator?) = Unit
+        }
 
     private fun stream(
         clients: MutableList<Client>,

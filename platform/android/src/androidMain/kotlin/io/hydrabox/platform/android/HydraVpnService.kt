@@ -12,6 +12,7 @@ import android.net.VpnService
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.os.SystemClock
 import io.hydrabox.core.contract.EdgeLatencyStatus
 import io.hydrabox.core.contract.NetworkGeneration
 import io.hydrabox.core.contract.OutboundLatency
@@ -459,22 +460,28 @@ class HydraVpnService : VpnService() {
         if (state != RuntimeState.RUNNING) return
         val settings = store.settings()
         val selected = store.selectedTag()
-        observer.measure(
-            group = io.hydrabox.core.config.SELECTOR_TAG,
-            request =
-                MeasureRequest(
-                    url = settings.urlTestUrl,
-                    timeoutMillis = settings.urlTestTimeoutSeconds * 1000,
-                    concurrency = settings.urlTestConcurrency,
-                    deadlineMillis = settings.urlTestTimeoutSeconds * 3000,
-                    priorityTag = selected,
-                    // The chosen call transport answers through its edge, not through an HTTP
-                    // round trip the group would raise a whole VK transport for: the workerless
-                    // question asks it separately, on its own thread, and its figure must not
-                    // be the group's to overwrite.
-                    excludeTag = selected?.takeIf { it in callTransportTags },
-                ),
-        )
+        val started =
+            observer.measure(
+                group = io.hydrabox.core.config.SELECTOR_TAG,
+                request =
+                    MeasureRequest(
+                        url = settings.urlTestUrl,
+                        timeoutMillis = settings.urlTestTimeoutSeconds * 1000,
+                        concurrency = settings.urlTestConcurrency,
+                        deadlineMillis = settings.urlTestTimeoutSeconds * 3000,
+                        priorityTag = selected,
+                        // The chosen call transport answers through its edge, not through an HTTP
+                        // round trip the group would raise a whole VK transport for: the workerless
+                        // question asks it separately, on its own thread, and its figure must not
+                        // be the group's to overwrite.
+                        excludeTag = selected?.takeIf { it in callTransportTags },
+                    ),
+            )
+        if (!started) {
+            // A press that cannot start has to leave a trace somewhere: the row spinner is the
+            // only other sign, and it never appears when the core refuses the request outright.
+            HydraLog.warn(AREA, "the on-demand measurement was refused by the core")
+        }
         // Call transports are not members of the running group — the configuration does not
         // even carry them unless one is the chosen route — so the on-demand measurement asks
         // their edges the workerless question on its own thread, never the lifecycle's.
@@ -749,6 +756,10 @@ class HydraVpnService : VpnService() {
         val targets = store.serverGroups().flatMap { it.servers }
         if (targets.isEmpty()) return
         ensureLibboxSetup()
+        // One budget for the whole pass, not one per session: the sessions run back to back on
+        // the runtime lifecycle thread, so an unbounded pass kept start and stop queued behind
+        // it for as long as the server list was long.
+        val deadline = SystemClock.elapsedRealtime() + settings.urlTestTimeoutSeconds * 3_000L
         // The edge questions of this sweep belong to a runtime that is not there: their
         // answers travel with generation zero, like every other result of this pass.
         val sweep =
@@ -774,6 +785,10 @@ class HydraVpnService : VpnService() {
             },
             reportStopped = { count ->
                 HydraLog.info(AREA, "the offline measurement stopped after $count servers")
+            },
+            withinDeadline = { SystemClock.elapsedRealtime() < deadline },
+            reportSkipped = { count ->
+                HydraLog.warn(AREA, "the offline measurement ran out of time with $count servers left")
             },
         ).run(targets.map { OfflineSweep.Target(it.id, it.type) })
         // The sweep is over, whatever it measured: a spinner must not outlive the question.
