@@ -12,8 +12,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: true
+      # The core is fetched on its own, without the action's recursive submodule walk. The pinned
+      # core commit carries an upstream gitlink (clients/desktop) whose .gitmodules entry is
+      # missing, so a recursive checkout dies on a URL nobody can supply — and none of the core's
+      # client submodules are used by this build. The submodule itself is needed: verifyLibboxProvenance
+      # compares its HEAD with the published provenance.
+      - name: Fetch the pinned core
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
+          git -c submodule.recurse=false submodule update --init --depth=1 hydracore
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
