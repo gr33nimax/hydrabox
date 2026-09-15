@@ -1,0 +1,205 @@
+name: HydraBox 2 · Android release
+
+# Cuts a signed APK of the Kotlin client from the current branch.
+#
+# Its own pipeline, separate from the Flutter 1.x line: those releases still exist and still have
+# their own update channel, and 1.x clients read the newest release to find it. A 2.x release is
+# therefore published as a prerelease and carries no update manifest, so nothing about it can be
+# mistaken for the older line's channel.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: "versionName (по умолчанию — из build-файла)"
+        required: false
+        type: string
+      version_code:
+        description: "versionCode (по умолчанию — из build-файла)"
+        required: false
+        type: string
+      dry_run:
+        description: "Только собрать и проверить, без публикации релиза"
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: hydrabox2-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build the signed APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The core is fetched on its own, without the action's recursive submodule walk: the pinned
+      # core commit carries a gitlink (clients/desktop) whose .gitmodules entry is missing, so a
+      # recursive checkout dies on a URL nobody can supply. The submodule itself is required:
+      # verifyLibboxProvenance compares its HEAD with the published provenance.
+      - name: Fetch the pinned core
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
+          git -c submodule.recurse=false submodule update --init --depth=1 hydracore
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Fetch the verified libbox release asset
+        run: python3 .github/scripts/hydrate_libbox.py
+
+      - name: Resolve the release version
+        id: version
+        env:
+          INPUT_NAME: ${{ inputs.version_name }}
+          INPUT_CODE: ${{ inputs.version_code }}
+        run: |
+          set -euo pipefail
+          file=platform/android/build.gradle.kts
+          from_file_name=$(sed -n 's/^ *versionName = "\(.*\)"/\1/p' "$file" | head -1)
+          from_file_code=$(sed -n 's/^ *versionCode = \([0-9]\+\)/\1/p' "$file" | head -1)
+          name="${INPUT_NAME:-$from_file_name}"
+          code="${INPUT_CODE:-$from_file_code}"
+          if [ -z "$name" ] || [ -z "$code" ]; then
+            echo "::error title=Version not resolved::ни versionName, ни versionCode не найдены в $file"
+            exit 1
+          fi
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "Версия: $name ($code)"
+
+      # A release without a signature is not a release: the build would happily produce an
+      # unsigned APK, and only this step stops it.
+      - name: Validate the signing secrets
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          CERT_PIN: ${{ vars.ANDROID_SIGNING_CERT_SHA256 }}
+        run: |
+          missing=0
+          for value in KEYSTORE STORE_PASSWORD KEY_ALIAS KEY_PASSWORD CERT_PIN; do
+            if [ -z "${!value:-}" ]; then
+              echo "::error title=Missing signing material::$value не задан"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Restore the signing key
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          keystore="$RUNNER_TEMP/hydrabox-release.jks"
+          printf '%s' "$KEYSTORE" | base64 -d > "$keystore"
+          chmod 600 "$keystore"
+          cat > local.properties <<EOF
+          HYDRABOX_KEYSTORE=$keystore
+          HYDRABOX_KEYSTORE_PASSWORD=$STORE_PASSWORD
+          HYDRABOX_KEY_ALIAS=$KEY_ALIAS
+          HYDRABOX_KEY_PASSWORD=$KEY_PASSWORD
+          EOF
+          chmod 600 local.properties
+
+      - name: Run the client checks
+        run: ./gradlew ciCheck --stacktrace
+
+      - name: Build the release APK
+        env:
+          NAME: ${{ steps.version.outputs.name }}
+          CODE: ${{ steps.version.outputs.code }}
+        run: |
+          ./gradlew :platform:android:assembleRelease --stacktrace \
+            -PhydraboxVersionName="$NAME" -PhydraboxVersionCode="$CODE"
+
+      # The tag, the file name and what the APK reports are three places the same version lives.
+      # The first two are ours to get right; this checks the third.
+      - name: Verify the built APK
+        env:
+          NAME: ${{ steps.version.outputs.name }}
+          CODE: ${{ steps.version.outputs.code }}
+          CERT_PIN: ${{ vars.ANDROID_SIGNING_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          build_tools=$(find "${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools" -maxdepth 2 -name apksigner | sort | tail -1)
+          aapt=$(find "${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools" -maxdepth 2 -name aapt2 | sort | tail -1)
+          apk=$(find platform/android/build/outputs/apk/release -name '*.apk' | head -1)
+          if [ -z "$apk" ]; then
+            echo "::error title=No APK::сборка не оставила артефакта"
+            exit 1
+          fi
+          badging=$("$aapt" dump badging "$apk")
+          reported_name=$(printf '%s\n' "$badging" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p" | head -1)
+          reported_code=$(printf '%s\n' "$badging" | sed -n "s/.*versionCode='\([^']*\)'.*/\1/p" | head -1)
+          if [ "$reported_name" != "$NAME" ] || [ "$reported_code" != "$CODE" ]; then
+            echo "::error title=Version mismatch::APK сообщает $reported_name ($reported_code), ожидалось $NAME ($CODE)"
+            exit 1
+          fi
+          digest=$("$build_tools" verify --print-certs "$apk" | sed -n 's/.*SHA-256 digest: //p' | head -1 | tr -d ':' | tr 'a-f' 'A-F')
+          if [ "$digest" != "$CERT_PIN" ]; then
+            echo "::error title=Wrong signing certificate::подпись $digest, ожидался $CERT_PIN"
+            exit 1
+          fi
+          echo "APK: $apk, версия $reported_name ($reported_code), сертификат совпадает"
+
+      - name: Collect the artifacts
+        id: collect
+        env:
+          NAME: ${{ steps.version.outputs.name }}
+        run: |
+          set -euo pipefail
+          apk=$(find platform/android/build/outputs/apk/release -name '*.apk' | head -1)
+          mkdir -p release
+          cp "$apk" "release/hydrabox-$NAME-arm64-v8a.apk"
+          # The mapping file is what makes a crash report readable; it stays in the run's
+          # artifacts rather than in the release, where it would help nobody but a reader.
+          mapping=platform/android/build/outputs/mapping/release/mapping.txt
+          if [ -f "$mapping" ]; then cp "$mapping" release/mapping.txt; fi
+          sha256sum "release/hydrabox-$NAME-arm64-v8a.apk" > release/SHA256SUMS
+          echo "sha256=$(cut -d' ' -f1 release/SHA256SUMS)" >> "$GITHUB_OUTPUT"
+          cat release/SHA256SUMS
+
+      - name: Upload the artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hydrabox-${{ steps.version.outputs.name }}
+          path: release/**
+          if-no-files-found: error
+
+      - name: Publish the release
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NAME: ${{ steps.version.outputs.name }}
+          SHA: ${{ steps.collect.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          notes=$(mktemp)
+          {
+            echo "HydraBox $NAME"
+            echo
+            echo "- коммит приложения: $(git rev-parse HEAD)"
+            echo "- коммит ядра: $(git -C hydracore rev-parse HEAD)"
+            echo "- APK SHA-256: $SHA"
+          } > "$notes"
+          gh release create "$NAME" release/hydrabox-*.apk release/SHA256SUMS \
+            --title "HydraBox $NAME" \
+            --notes-file "$notes" \
+            --prerelease

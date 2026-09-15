@@ -59,8 +59,11 @@ extensions.configure<ApplicationExtension> {
         applicationId = "io.hydrabox.client"
         minSdk = 26
         targetSdk = 36
-        versionCode = 200
-        versionName = "2.0.0-alpha1"
+        // The release pipeline passes these as Gradle properties so the tag, the artifact name and
+        // the APK itself cannot disagree; without them the checked-in values are used.
+        versionCode = (findProperty("hydraboxVersionCode") as String?)?.toIntOrNull() ?: 200
+        versionName =
+            (findProperty("hydraboxVersionName") as String?)?.takeIf(String::isNotBlank) ?: "2.0.0-alpha1"
         buildConfigField("String", "HYDRACORE_VERSION", "\"$hydraCoreVersion\"")
         // The alpha ships arm64 only: the other ABIs triple the artifact for devices we
         // are not testing on. Restore them when the alpha becomes a release candidate.
