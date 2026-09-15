@@ -24,13 +24,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import io.hydrabox.core.projection.Appearance
 import io.hydrabox.core.projection.ScreenState
-import io.hydrabox.ui.app.resources.Res
 import io.hydrabox.ui.app.resources.*
-import io.hydrabox.ui.design.DetailScreen
+import io.hydrabox.ui.app.resources.Res
 import io.hydrabox.ui.design.AppShell
+import io.hydrabox.ui.design.DetailScreen
 import io.hydrabox.ui.design.HydraIcons
-import io.hydrabox.ui.design.LoadingRows
 import io.hydrabox.ui.design.HydraTheme
+import io.hydrabox.ui.design.LoadingRows
 import io.hydrabox.ui.design.ShellDestination
 import io.hydrabox.ui.design.UiTokens
 import io.hydrabox.ui.design.WindowClass
@@ -41,14 +41,24 @@ enum class Tab { HOME, SERVERS, SETTINGS }
 
 sealed interface Route {
     data object Main : Route
+
     data object Sources : Route
+
     data object Traffic : Route
+
     data object Apps : Route
+
     data object Diagnostics : Route
+
     data object Journal : Route
+
     data object About : Route
+
     data object Appearance : Route
-    data class Document(val privacy: Boolean) : Route
+
+    data class Document(
+        val privacy: Boolean,
+    ) : Route
 }
 
 /**
@@ -83,11 +93,12 @@ fun HydraApp(
     versionName: String = "",
     coreVersion: String = "",
 ) {
-    val dark = when (state.settings?.appearance ?: Appearance.SYSTEM) {
-        Appearance.SYSTEM -> isSystemInDarkTheme()
-        Appearance.LIGHT -> false
-        Appearance.DARK -> true
-    }
+    val dark =
+        when (state.settings?.appearance ?: Appearance.SYSTEM) {
+            Appearance.SYSTEM -> isSystemInDarkTheme()
+            Appearance.LIGHT -> false
+            Appearance.DARK -> true
+        }
     HydraTheme(dark = dark, dynamicColour = state.settings?.dynamicColour == true) {
         val snackbar = remember { SnackbarHostState() }
         // "I will do this later" has to lead somewhere: the flow steps aside for this run,
@@ -99,11 +110,12 @@ fun HydraApp(
         // loaded yet, and reading the terms — which composes a detail screen and drops this
         // flow — lost it entirely.
         var welcomeSeen by remember { mutableStateOf(false) }
-        val onboardingStep = when {
-            !state.legalAccepted && !welcomeSeen -> OnboardingStep.WELCOME
-            !state.legalAccepted -> OnboardingStep.LEGAL
-            else -> OnboardingStep.SUBSCRIPTION
-        }
+        val onboardingStep =
+            when {
+                !state.legalAccepted && !welcomeSeen -> OnboardingStep.WELCOME
+                !state.legalAccepted -> OnboardingStep.LEGAL
+                else -> OnboardingStep.SUBSCRIPTION
+            }
         if (!state.onboardingComplete && !postponed && navigation.route !is Route.Document) {
             OnboardingFlow(
                 state = state,
@@ -112,7 +124,10 @@ fun HydraApp(
                 onStep = { next -> if (next != OnboardingStep.WELCOME) welcomeSeen = true },
                 onOpenTerms = { navigation.open(Route.Document(privacy = false)) },
                 onOpenPrivacy = { navigation.open(Route.Document(privacy = true)) },
-                onFinish = { postponed = true; navigation.tab = Tab.HOME },
+                onFinish = {
+                    postponed = true
+                    navigation.tab = Tab.HOME
+                },
             )
             return@HydraTheme
         }
@@ -139,51 +154,78 @@ fun HydraApp(
                 NoticeHost(state, actions, snackbar)
                 MainShell(state, actions, navigation, snackbar)
             }
-            is Route.Document -> Detail(
-                title = stringResource(if (route.privacy) Res.string.about_privacy else Res.string.about_terms),
-                navigation = navigation,
-            ) {
-                DocumentText(
-                    stringResource(if (route.privacy) Res.string.legal_privacy_body else Res.string.legal_terms_body),
-                )
+
+            is Route.Document -> {
+                Detail(
+                    title = stringResource(if (route.privacy) Res.string.about_privacy else Res.string.about_terms),
+                    navigation = navigation,
+                ) {
+                    DocumentText(
+                        stringResource(if (route.privacy) Res.string.legal_privacy_body else Res.string.legal_terms_body),
+                    )
+                }
             }
-            Route.Sources -> Detail(stringResource(Res.string.sources_title), navigation) {
-                SourcesScreen(state, actions, onOpenServers = { navigation.back(); navigation.tab = Tab.SERVERS })
+
+            Route.Sources -> {
+                Detail(stringResource(Res.string.sources_title), navigation) {
+                    SourcesScreen(state, actions, onOpenServers = {
+                        navigation.back()
+                        navigation.tab = Tab.SERVERS
+                    })
+                }
             }
-            Route.Traffic -> Detail(stringResource(Res.string.traffic_title), navigation) {
-                TrafficScreen(state)
+
+            Route.Traffic -> {
+                Detail(stringResource(Res.string.traffic_title), navigation) {
+                    TrafficScreen(state)
+                }
             }
-            Route.Apps -> Detail(stringResource(Res.string.apps_title), navigation) {
-                AppsScreen(state, actions)
+
+            Route.Apps -> {
+                Detail(stringResource(Res.string.apps_title), navigation) {
+                    AppsScreen(state, actions)
+                }
             }
-            Route.Diagnostics -> Detail(stringResource(Res.string.diagnostics_title), navigation) {
-                DiagnosticsScreen(state, actions, onOpenJournal = { navigation.open(Route.Journal) })
+
+            Route.Diagnostics -> {
+                Detail(stringResource(Res.string.diagnostics_title), navigation) {
+                    DiagnosticsScreen(state, actions, onOpenJournal = { navigation.open(Route.Journal) })
+                }
             }
-            Route.Journal -> Detail(
-                title = stringResource(Res.string.journal_title),
-                navigation = navigation,
-                scrollable = false,
-                actions = {
-                    IconButton(onClick = actions.onExportDiagnostics) {
-                        Icon(HydraIcons.Export, contentDescription = stringResource(Res.string.diagnostics_export))
-                    }
-                    IconButton(onClick = actions.onClearJournal) {
-                        Icon(HydraIcons.Delete, contentDescription = stringResource(Res.string.journal_clear))
-                    }
-                },
-            ) {
-                JournalScreen(state.diagnostics?.journal.orEmpty())
+
+            Route.Journal -> {
+                Detail(
+                    title = stringResource(Res.string.journal_title),
+                    navigation = navigation,
+                    scrollable = false,
+                    actions = {
+                        IconButton(onClick = actions.onExportDiagnostics) {
+                            Icon(HydraIcons.Export, contentDescription = stringResource(Res.string.diagnostics_export))
+                        }
+                        IconButton(onClick = actions.onClearJournal) {
+                            Icon(HydraIcons.Delete, contentDescription = stringResource(Res.string.journal_clear))
+                        }
+                    },
+                ) {
+                    JournalScreen(state.diagnostics?.journal.orEmpty())
+                }
             }
-            Route.Appearance -> Detail(stringResource(Res.string.settings_appearance), navigation) {
-                AppearanceScreen(state, actions)
+
+            Route.Appearance -> {
+                Detail(stringResource(Res.string.settings_appearance), navigation) {
+                    AppearanceScreen(state, actions)
+                }
             }
-            Route.About -> Detail(stringResource(Res.string.settings_about), navigation) {
-                AboutScreen(
-                    version = versionName,
-                    coreVersion = coreVersion,
-                    onOpenTerms = { navigation.open(Route.Document(privacy = false)) },
-                    onOpenPrivacy = { navigation.open(Route.Document(privacy = true)) },
-                )
+
+            Route.About -> {
+                Detail(stringResource(Res.string.settings_about), navigation) {
+                    AboutScreen(
+                        version = versionName,
+                        coreVersion = coreVersion,
+                        onOpenTerms = { navigation.open(Route.Document(privacy = false)) },
+                        onOpenPrivacy = { navigation.open(Route.Document(privacy = true)) },
+                    )
+                }
             }
         }
     }
@@ -196,15 +238,16 @@ private fun MainShell(
     navigation: AppNavigation,
     snackbar: SnackbarHostState,
 ) {
-    val destinations = listOf(
-        ShellDestination(stringResource(Res.string.nav_home), HydraIcons.Shield),
-        ShellDestination(
-            stringResource(Res.string.nav_servers),
-            HydraIcons.Server,
-            attention = state.sources.any { it.problem != null },
-        ),
-        ShellDestination(stringResource(Res.string.nav_settings), HydraIcons.Sliders),
-    )
+    val destinations =
+        listOf(
+            ShellDestination(stringResource(Res.string.nav_home), HydraIcons.Shield),
+            ShellDestination(
+                stringResource(Res.string.nav_servers),
+                HydraIcons.Server,
+                attention = state.sources.any { it.problem != null },
+            ),
+            ShellDestination(stringResource(Res.string.nav_settings), HydraIcons.Sliders),
+        )
     AppShell(
         destinations = destinations,
         selected = navigation.tab.ordinal,
@@ -215,51 +258,61 @@ private fun MainShell(
         // settings, which is how a tab could open already scrolled past its own first row.
         key(navigation.tab) {
             Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .then(if (navigation.tab == Tab.SERVERS) Modifier else Modifier.verticalScroll(rememberScrollState())),
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .then(if (navigation.tab == Tab.SERVERS) Modifier else Modifier.verticalScroll(rememberScrollState())),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Column(
-                    modifier = (
-                        if (shell.width == WindowClass.COMPACT) {
-                            Modifier.fillMaxWidth()
-                        } else {
-                            Modifier.widthIn(max = 720.dp).fillMaxWidth()
-                        }
-                        // A list needs room to clear the status bar and to end above the
-                        // navigation bar; the home screen centres itself in what is left and
-                        // must not be pushed off centre by either.
+                    modifier =
+                        (
+                            if (shell.width == WindowClass.COMPACT) {
+                                Modifier.fillMaxWidth()
+                            } else {
+                                Modifier.widthIn(max = 720.dp).fillMaxWidth()
+                            }
+                            // A list needs room to clear the status bar and to end above the
+                            // navigation bar; the home screen centres itself in what is left and
+                            // must not be pushed off centre by either.
                         ).padding(
                             top = if (navigation.tab == Tab.HOME) 0.dp else UiTokens.spacing,
                             bottom = if (navigation.tab == Tab.HOME) 0.dp else UiTokens.spacing * 3,
                         ),
                 ) {
                     when (navigation.tab) {
-                        Tab.HOME -> HomeScreen(
-                            state = state,
-                            actions = actions,
-                            onOpenServers = { navigation.tab = Tab.SERVERS },
-                            onOpenTraffic = { navigation.open(Route.Traffic) },
-                            onAddSource = { navigation.open(Route.Sources) },
-                            onOpenSources = { navigation.open(Route.Sources) },
-                            onOpenMode = { navigation.tab = Tab.SETTINGS },
-                            width = shell.widthDp,
-                            height = shell.height,
-                        )
-                        Tab.SERVERS -> ServersScreen(
-                            state = state,
-                            actions = actions,
-                            onOpenSources = { navigation.open(Route.Sources) },
-                        )
-                        Tab.SETTINGS -> SettingsScreen(
-                            state = state,
-                            actions = actions,
-                            onOpenApps = { navigation.open(Route.Apps) },
-                            onOpenDiagnostics = { navigation.open(Route.Diagnostics) },
-                            onOpenAbout = { navigation.open(Route.About) },
-                            onOpenAppearance = { navigation.open(Route.Appearance) },
-                        )
+                        Tab.HOME -> {
+                            HomeScreen(
+                                state = state,
+                                actions = actions,
+                                onOpenServers = { navigation.tab = Tab.SERVERS },
+                                onOpenTraffic = { navigation.open(Route.Traffic) },
+                                onAddSource = { navigation.open(Route.Sources) },
+                                onOpenSources = { navigation.open(Route.Sources) },
+                                onOpenMode = { navigation.tab = Tab.SETTINGS },
+                                width = shell.widthDp,
+                                height = shell.height,
+                            )
+                        }
+
+                        Tab.SERVERS -> {
+                            ServersScreen(
+                                state = state,
+                                actions = actions,
+                                onOpenSources = { navigation.open(Route.Sources) },
+                            )
+                        }
+
+                        Tab.SETTINGS -> {
+                            SettingsScreen(
+                                state = state,
+                                actions = actions,
+                                onOpenApps = { navigation.open(Route.Apps) },
+                                onOpenDiagnostics = { navigation.open(Route.Diagnostics) },
+                                onOpenAbout = { navigation.open(Route.About) },
+                                onOpenAppearance = { navigation.open(Route.Appearance) },
+                            )
+                        }
                     }
                 }
             }
@@ -292,7 +345,11 @@ private fun Detail(
 
 /** One place for transient messages, and it is never a screen element. */
 @Composable
-private fun NoticeHost(state: ScreenState, actions: AppActions, snackbar: SnackbarHostState) {
+private fun NoticeHost(
+    state: ScreenState,
+    actions: AppActions,
+    snackbar: SnackbarHostState,
+) {
     val notice = state.notice
     val text = notice?.let { noticeText(it) }
     LaunchedEffect(notice) {

@@ -71,9 +71,10 @@ class ScreenProjectionTest {
 
     @Test
     fun `an empty install asks for a subscription and nothing else`() {
-        val state = ScreenProjection.project(
-            model(RuntimeState.STOPPED, sources = emptyList(), servers = emptyList()).copy(autoServer = null),
-        )
+        val state =
+            ScreenProjection.project(
+                model(RuntimeState.STOPPED, sources = emptyList(), servers = emptyList()).copy(autoServer = null),
+            )
         assertEquals(Connection.NeedsSubscription, state.connection)
         assertEquals(PrimaryAction.ADD_SUBSCRIPTION, state.connection.primaryAction)
     }
@@ -109,27 +110,30 @@ class ScreenProjectionTest {
 
     @Test
     fun `a source without servers is its own state, not an empty list`() {
-        val state = ScreenProjection.project(
-            model(RuntimeState.STOPPED, servers = emptyList()).copy(autoServer = null),
-        )
+        val state =
+            ScreenProjection.project(
+                model(RuntimeState.STOPPED, servers = emptyList()).copy(autoServer = null),
+            )
         assertEquals(Connection.NeedsServers, state.connection)
         assertEquals(PrimaryAction.REFRESH_SOURCE, state.connection.primaryAction)
     }
 
     @Test
     fun `running without a transport lane is still connecting`() {
-        val state = ScreenProjection.project(
-            model(RuntimeState.RUNNING, health = TransportHealth(TransportHealthState.STARTING, activeLanes = 0)),
-        )
+        val state =
+            ScreenProjection.project(
+                model(RuntimeState.RUNNING, health = TransportHealth(TransportHealthState.STARTING, activeLanes = 0)),
+            )
         assertTrue(state.connection is Connection.Connecting)
         assertEquals(PrimaryAction.CANCEL, state.connection.primaryAction)
     }
 
     @Test
     fun `a lane loss under a running tunnel reads as reconnecting, not as an error`() {
-        val state = ScreenProjection.project(
-            model(RuntimeState.RUNNING, health = TransportHealth(TransportHealthState.RECOVERING, activeLanes = 0)),
-        )
+        val state =
+            ScreenProjection.project(
+                model(RuntimeState.RUNNING, health = TransportHealth(TransportHealthState.RECOVERING, activeLanes = 0)),
+            )
         assertTrue(state.connection is Connection.Reconnecting)
     }
 
@@ -141,29 +145,32 @@ class ScreenProjectionTest {
 
     @Test
     fun `every runtime failure becomes one of six situations with one action`() {
-        val cases = mapOf(
-            HydraCoreErrorCode.NETWORK_LOST to Trouble.NO_INTERNET,
-            HydraCoreErrorCode.QUIC_NO_PATHS to Trouble.SERVER_UNREACHABLE,
-            // A VK refusal is a server-level situation with a server-level action, not a dead
-            // subscription: its only action must not be "refresh the source".
-            HydraCoreErrorCode.VK_CREDENTIALS_REJECTED to Trouble.SERVER_UNREACHABLE,
-            HydraCoreErrorCode.VK_CAPTCHA_TIMEOUT to Trouble.SERVER_UNREACHABLE,
-            HydraCoreErrorCode.CONFIG_QUARANTINED to Trouble.CONFIG_REJECTED,
-            HydraCoreErrorCode.RUNTIME_SUPERSEDED to Trouble.UNKNOWN,
-        )
-        cases.forEach { (code, expected) ->
-            val state = ScreenProjection.project(
-                model(RuntimeState.FAILED, RuntimeFailure(FailureDomain.NETWORK, code, retryable = true)),
+        val cases =
+            mapOf(
+                HydraCoreErrorCode.NETWORK_LOST to Trouble.NO_INTERNET,
+                HydraCoreErrorCode.QUIC_NO_PATHS to Trouble.SERVER_UNREACHABLE,
+                // A VK refusal is a server-level situation with a server-level action, not a dead
+                // subscription: its only action must not be "refresh the source".
+                HydraCoreErrorCode.VK_CREDENTIALS_REJECTED to Trouble.SERVER_UNREACHABLE,
+                HydraCoreErrorCode.VK_CAPTCHA_TIMEOUT to Trouble.SERVER_UNREACHABLE,
+                HydraCoreErrorCode.CONFIG_QUARANTINED to Trouble.CONFIG_REJECTED,
+                HydraCoreErrorCode.RUNTIME_SUPERSEDED to Trouble.UNKNOWN,
             )
+        cases.forEach { (code, expected) ->
+            val state =
+                ScreenProjection.project(
+                    model(RuntimeState.FAILED, RuntimeFailure(FailureDomain.NETWORK, code, retryable = true)),
+                )
             val stopped = state.connection as Connection.Stopped
             assertEquals(expected, stopped.cause, "code $code")
         }
-        val unreachable = ScreenProjection.project(
-            model(
-                RuntimeState.FAILED,
-                RuntimeFailure(FailureDomain.QUIC, HydraCoreErrorCode.QUIC_DIAL_FAILED, retryable = true),
-            ),
-        )
+        val unreachable =
+            ScreenProjection.project(
+                model(
+                    RuntimeState.FAILED,
+                    RuntimeFailure(FailureDomain.QUIC, HydraCoreErrorCode.QUIC_DIAL_FAILED, retryable = true),
+                ),
+            )
         assertEquals(PrimaryAction.CHOOSE_SERVER, unreachable.connection.primaryAction)
     }
 
@@ -175,14 +182,15 @@ class ScreenProjectionTest {
 
     @Test
     fun `automatic selection names the server it landed on`() {
-        val state = ScreenProjection.project(
-            model(
-                RuntimeState.RUNNING,
-                selections = listOf(OutboundSelection("auto", "tokyo")),
-                latencies = listOf(OutboundLatency("tokyo", 42, "ok")),
-                selected = "auto",
-            ),
-        )
+        val state =
+            ScreenProjection.project(
+                model(
+                    RuntimeState.RUNNING,
+                    selections = listOf(OutboundSelection("auto", "tokyo")),
+                    latencies = listOf(OutboundLatency("tokyo", 42, "ok")),
+                    selected = "auto",
+                ),
+            )
         val connected = state.connection as Connection.Connected
         assertEquals("tokyo", connected.server?.resolvedName)
         assertEquals(42, connected.server?.latencyMillis)
@@ -191,14 +199,15 @@ class ScreenProjectionTest {
 
     @Test
     fun `a server that was asked and stayed silent is not a server without a figure`() {
-        val state = ScreenProjection.project(
-            model(
-                RuntimeState.RUNNING,
-                selections = listOf(OutboundSelection("auto", "tokyo")),
-                latencies = listOf(OutboundLatency("tokyo", 0, "unavailable")),
-                selected = "auto",
-            ),
-        )
+        val state =
+            ScreenProjection.project(
+                model(
+                    RuntimeState.RUNNING,
+                    selections = listOf(OutboundSelection("auto", "tokyo")),
+                    latencies = listOf(OutboundLatency("tokyo", 0, "unavailable")),
+                    selected = "auto",
+                ),
+            )
         val connected = state.connection as Connection.Connected
         assertNull(connected.server?.latencyMillis)
         assertEquals(ProbeState.SILENT, connected.server?.probe)
@@ -206,44 +215,48 @@ class ScreenProjectionTest {
 
     @Test
     fun `an old probe retains its age and stale verdict`() {
-        val state = ScreenProjection.project(
-            model(
-                RuntimeState.RUNNING,
-                latencies = listOf(
-                    OutboundLatency(
-                        tag = "tokyo",
-                        delayMillis = 42,
-                        status = "ok",
-                        observedAtMillis = 1_700_000_000_000,
-                        ageSeconds = 1_801,
-                        stale = true,
-                    ),
+        val state =
+            ScreenProjection.project(
+                model(
+                    RuntimeState.RUNNING,
+                    latencies =
+                        listOf(
+                            OutboundLatency(
+                                tag = "tokyo",
+                                delayMillis = 42,
+                                status = "ok",
+                                observedAtMillis = 1_700_000_000_000,
+                                ageSeconds = 1_801,
+                                stale = true,
+                            ),
+                        ),
+                    selected = "tokyo",
                 ),
-                selected = "tokyo",
-            ),
-        )
+            )
         val connected = state.connection as Connection.Connected
         assertTrue(connected.server?.latencyStale == true)
     }
 
     @Test
     fun `probe age and stale state advance when projected`() {
-        val state = ScreenProjection.project(
-            model(
-                RuntimeState.RUNNING,
-                latencies = listOf(
-                    OutboundLatency(
-                        tag = "tokyo",
-                        delayMillis = 42,
-                        status = "ok",
-                        observedAtMillis = 1_000,
-                        staleAfterMillis = 5_000,
-                    ),
+        val state =
+            ScreenProjection.project(
+                model(
+                    RuntimeState.RUNNING,
+                    latencies =
+                        listOf(
+                            OutboundLatency(
+                                tag = "tokyo",
+                                delayMillis = 42,
+                                status = "ok",
+                                observedAtMillis = 1_000,
+                                staleAfterMillis = 5_000,
+                            ),
+                        ),
+                    selected = "tokyo",
                 ),
-                selected = "tokyo",
-            ),
-            nowMillis = 7_500,
-        )
+                nowMillis = 7_500,
+            )
         val connected = state.connection as Connection.Connected
         assertTrue(connected.server?.latencyStale == true)
     }
@@ -260,9 +273,14 @@ class ScreenProjectionTest {
 
         // The number is only worth anything if it is the instant the projection changes its
         // mind, so ask the projection itself on both sides of it.
-        fun staleAt(nowMillis: Long) = ScreenProjection
-            .project(model(RuntimeState.RUNNING, latencies = listOf(tokyo)), nowMillis = nowMillis)
-            .servers.first().servers.first().latencyStale
+        fun staleAt(nowMillis: Long) =
+            ScreenProjection
+                .project(model(RuntimeState.RUNNING, latencies = listOf(tokyo)), nowMillis = nowMillis)
+                .servers
+                .first()
+                .servers
+                .first()
+                .latencyStale
         assertEquals(false, staleAt(boundary!! - 1))
         assertEquals(true, staleAt(boundary))
 
@@ -289,47 +307,70 @@ class ScreenProjectionTest {
     fun `an edge figure is an answer, and says what it measures`() {
         val callGroup = ServerGroup("s1", "Source", listOf(ServerRef("vk", "VK call", sourceId = "s1", type = "call")))
         val edge = OutboundLatency("vk", 120, "edge", observedAtMillis = 1_000, staleAfterMillis = 5_000)
-        val state = ScreenProjection.project(
-            model(RuntimeState.RUNNING, servers = listOf(callGroup), edgeLatencies = listOf(edge)),
-        )
+        val state =
+            ScreenProjection.project(
+                model(RuntimeState.RUNNING, servers = listOf(callGroup), edgeLatencies = listOf(edge)),
+            )
 
         // It answers — a figure, not silence — and it is labelled as the edge round trip,
         // never drawn like a measurement of the tunnel itself.
-        val server = state.servers.first().servers.first()
+        val server =
+            state.servers
+                .first()
+                .servers
+                .first()
         assertEquals(120, server.latencyMillis)
         assertTrue(server.latencyIsEdgeRtt, "the edge figure must be distinguishable from a tunnel probe")
 
         // A zero is a round trip faster than the clock's resolution — an answer, not silence.
-        val zero = ScreenProjection.project(
-            model(
-                RuntimeState.RUNNING,
-                servers = listOf(callGroup),
-                edgeLatencies = listOf(OutboundLatency("vk", 0, "edge", observedAtMillis = 1_000, staleAfterMillis = 5_000)),
-            ),
-        )
-        val zeroServer = zero.servers.first().servers.first()
+        val zero =
+            ScreenProjection.project(
+                model(
+                    RuntimeState.RUNNING,
+                    servers = listOf(callGroup),
+                    edgeLatencies = listOf(OutboundLatency("vk", 0, "edge", observedAtMillis = 1_000, staleAfterMillis = 5_000)),
+                ),
+            )
+        val zeroServer =
+            zero.servers
+                .first()
+                .servers
+                .first()
         assertEquals(0, zeroServer.latencyMillis)
         assertEquals(ProbeState.ANSWERING, zeroServer.probe)
 
         // A silent edge is a verdict about the edge — and an HTTP delay of the same server
         // must not paint over it, just as the edge must not erase the group's figures.
-        val silent = ScreenProjection.project(
-            model(
-                RuntimeState.RUNNING,
-                servers = listOf(callGroup),
-                latencies = listOf(OutboundLatency("vk", 80, "available", observedAtMillis = 1_000, staleAfterMillis = 5_000)),
-                edgeLatencies = listOf(OutboundLatency("vk", 0, "edge_silent", observedAtMillis = 1_000, staleAfterMillis = 5_000)),
-            ),
-        )
-        val silentServer = silent.servers.first().servers.first()
+        val silent =
+            ScreenProjection.project(
+                model(
+                    RuntimeState.RUNNING,
+                    servers = listOf(callGroup),
+                    latencies = listOf(OutboundLatency("vk", 80, "available", observedAtMillis = 1_000, staleAfterMillis = 5_000)),
+                    edgeLatencies = listOf(OutboundLatency("vk", 0, "edge_silent", observedAtMillis = 1_000, staleAfterMillis = 5_000)),
+                ),
+            )
+        val silentServer =
+            silent.servers
+                .first()
+                .servers
+                .first()
         assertNull(silentServer.latencyMillis, "an HTTP delay must not answer for a silent edge")
         assertEquals(ProbeState.SILENT, silentServer.probe)
 
         // An ordinary probe never claims the edge label.
-        val ordinary = ScreenProjection.project(
-            model(RuntimeState.RUNNING, latencies = listOf(OutboundLatency("tokyo", 80, "ok", 1_000, 5_000))),
+        val ordinary =
+            ScreenProjection.project(
+                model(RuntimeState.RUNNING, latencies = listOf(OutboundLatency("tokyo", 80, "ok", 1_000, 5_000))),
+            )
+        assertEquals(
+            false,
+            ordinary.servers
+                .first()
+                .servers
+                .first()
+                .latencyIsEdgeRtt,
         )
-        assertEquals(false, ordinary.servers.first().servers.first().latencyIsEdgeRtt)
     }
 
     // A sweep in flight marks the server it is asking right now, and only that one: the row it
@@ -337,10 +378,24 @@ class ScreenProjectionTest {
     @Test
     fun `the server being measured right now is marked`() {
         val state = ScreenProjection.project(model(RuntimeState.FAILED, measuringTags = setOf("tokyo")))
-        assertEquals(true, state.servers.first().servers.single { it.id == "tokyo" }.measuring)
+        assertEquals(
+            true,
+            state.servers
+                .first()
+                .servers
+                .single { it.id == "tokyo" }
+                .measuring,
+        )
 
         val idle = ScreenProjection.project(model(RuntimeState.FAILED))
-        assertEquals(false, idle.servers.first().servers.first().measuring)
+        assertEquals(
+            false,
+            idle.servers
+                .first()
+                .servers
+                .first()
+                .measuring,
+        )
     }
 
     // The offline sweep answers a mixed catalogue — HTTP servers and call transports — at
@@ -348,32 +403,40 @@ class ScreenProjectionTest {
     // the edge question could not be asked.
     @Test
     fun `an offline mixed catalogue answers every row in its own words`() {
-        val group = ServerGroup(
-            "s1", "Source",
-            listOf(
-                ServerRef("amsterdam", "Amsterdam", sourceId = "s1", type = "vless"),
-                ServerRef("vk", "VK call", sourceId = "s1", type = "call"),
-                ServerRef("vk-two", "VK call two", sourceId = "s1", type = "call"),
-                ServerRef("vk-three", "VK call three", sourceId = "s1", type = "call"),
-                ServerRef("vk-four", "VK call four", sourceId = "s1", type = "call"),
-                ServerRef("vk-five", "VK call five", sourceId = "s1", type = "call"),
-            ),
-        )
-        val state = ScreenProjection.project(
-            model(
-                RuntimeState.STOPPED,
-                servers = listOf(group),
-                latencies = listOf(OutboundLatency("amsterdam", 40, "available", observedAtMillis = 1_000, staleAfterMillis = 5_000)),
-                edgeLatencies = listOf(
-                    OutboundLatency("vk", 0, "edge", observedAtMillis = 1_000, staleAfterMillis = 5_000),
-                    OutboundLatency("vk-two", 0, "edge_silent", observedAtMillis = 1_000, staleAfterMillis = 5_000),
-                    OutboundLatency("vk-three", 0, "no_edge"),
-                    OutboundLatency("vk-four", 0, "unsupported"),
-                    OutboundLatency("vk-five", 0, "not_measured"),
+        val group =
+            ServerGroup(
+                "s1",
+                "Source",
+                listOf(
+                    ServerRef("amsterdam", "Amsterdam", sourceId = "s1", type = "vless"),
+                    ServerRef("vk", "VK call", sourceId = "s1", type = "call"),
+                    ServerRef("vk-two", "VK call two", sourceId = "s1", type = "call"),
+                    ServerRef("vk-three", "VK call three", sourceId = "s1", type = "call"),
+                    ServerRef("vk-four", "VK call four", sourceId = "s1", type = "call"),
+                    ServerRef("vk-five", "VK call five", sourceId = "s1", type = "call"),
                 ),
-            ),
-        )
-        val rows = state.servers.single().servers.associateBy { it.id }
+            )
+        val state =
+            ScreenProjection.project(
+                model(
+                    RuntimeState.STOPPED,
+                    servers = listOf(group),
+                    latencies = listOf(OutboundLatency("amsterdam", 40, "available", observedAtMillis = 1_000, staleAfterMillis = 5_000)),
+                    edgeLatencies =
+                        listOf(
+                            OutboundLatency("vk", 0, "edge", observedAtMillis = 1_000, staleAfterMillis = 5_000),
+                            OutboundLatency("vk-two", 0, "edge_silent", observedAtMillis = 1_000, staleAfterMillis = 5_000),
+                            OutboundLatency("vk-three", 0, "no_edge"),
+                            OutboundLatency("vk-four", 0, "unsupported"),
+                            OutboundLatency("vk-five", 0, "not_measured"),
+                        ),
+                ),
+            )
+        val rows =
+            state.servers
+                .single()
+                .servers
+                .associateBy { it.id }
 
         assertEquals(40, rows.getValue("amsterdam").latencyMillis)
         assertEquals(ProbeState.ANSWERING, rows.getValue("amsterdam").probe)
@@ -391,18 +454,20 @@ class ScreenProjectionTest {
 
     @Test
     fun `the running outbound is what the core observed, not what the app asked for`() {
-        fun snapshot(selections: List<OutboundSelection> = emptyList(), observed: List<OutboundSelection> = emptyList()) =
-            RuntimeSnapshot(
-                processEpoch = ProcessEpoch("p"),
-                commandGeneration = CommandGeneration(1),
-                runtimeGeneration = RuntimeGeneration(1),
-                networkGeneration = NetworkGeneration(1),
-                lastEventSequence = EventSequence(1),
-                state = RuntimeState.RUNNING,
-                mode = RuntimeMode.VPN,
-                selectedOutbounds = selections,
-                observedOutbounds = observed,
-            )
+        fun snapshot(
+            selections: List<OutboundSelection> = emptyList(),
+            observed: List<OutboundSelection> = emptyList(),
+        ) = RuntimeSnapshot(
+            processEpoch = ProcessEpoch("p"),
+            commandGeneration = CommandGeneration(1),
+            runtimeGeneration = RuntimeGeneration(1),
+            networkGeneration = NetworkGeneration(1),
+            lastEventSequence = EventSequence(1),
+            state = RuntimeState.RUNNING,
+            mode = RuntimeMode.VPN,
+            selectedOutbounds = selections,
+            observedOutbounds = observed,
+        )
 
         // After a plain start nothing was asked for; the core's own answer is all there is.
         assertNull(runningOutboundTag(snapshot()))
@@ -439,26 +504,28 @@ class ScreenProjectionTest {
 
     @Test
     fun `active QUIC health replaces the URL test figure with actual RTT`() {
-        val state = ScreenProjection.project(
-            model(
-                RuntimeState.RUNNING,
-                health = TransportHealth(TransportHealthState.HEALTHY, activeLanes = 1, quicRttMillis = 47),
-                latencies = listOf(OutboundLatency("tokyo", 42, "ok")),
-                selected = "tokyo",
-            ),
-        )
+        val state =
+            ScreenProjection.project(
+                model(
+                    RuntimeState.RUNNING,
+                    health = TransportHealth(TransportHealthState.HEALTHY, activeLanes = 1, quicRttMillis = 47),
+                    latencies = listOf(OutboundLatency("tokyo", 42, "ok")),
+                    selected = "tokyo",
+                ),
+            )
         assertEquals(47, (state.connection as Connection.Connected).server?.quicRttMillis)
     }
 
     @Test
     fun `an unmeasured server carries no verdict at all`() {
-        val state = ScreenProjection.project(
-            model(
-                RuntimeState.RUNNING,
-                selections = listOf(OutboundSelection("auto", "tokyo")),
-                selected = "auto",
-            ),
-        )
+        val state =
+            ScreenProjection.project(
+                model(
+                    RuntimeState.RUNNING,
+                    selections = listOf(OutboundSelection("auto", "tokyo")),
+                    selected = "auto",
+                ),
+            )
         val connected = state.connection as Connection.Connected
         assertNull(connected.server?.latencyMillis)
         assertEquals(ProbeState.UNKNOWN, connected.server?.probe)
@@ -466,14 +533,16 @@ class ScreenProjectionTest {
 
     @Test
     fun `the last failure reaches diagnostics and the runtime phase reaches nothing`() {
-        val state = ScreenProjection.project(
-            model(RuntimeState.FAILED, RuntimeFailure(FailureDomain.DNS, HydraCoreErrorCode.DNS_NO_ANSWER, true)),
-        )
+        val state =
+            ScreenProjection.project(
+                model(RuntimeState.FAILED, RuntimeFailure(FailureDomain.DNS, HydraCoreErrorCode.DNS_NO_ANSWER, true)),
+            )
         assertNull(state.diagnostics)
-        val withDiagnostics = ScreenProjection.project(
-            model(RuntimeState.FAILED, RuntimeFailure(FailureDomain.DNS, HydraCoreErrorCode.DNS_NO_ANSWER, true))
-                .copy(diagnostics = DiagnosticsSummary(level = "warn")),
-        )
+        val withDiagnostics =
+            ScreenProjection.project(
+                model(RuntimeState.FAILED, RuntimeFailure(FailureDomain.DNS, HydraCoreErrorCode.DNS_NO_ANSWER, true))
+                    .copy(diagnostics = DiagnosticsSummary(level = "warn")),
+            )
         assertEquals("dns / dns.no_answer", withDiagnostics.diagnostics?.lastError)
     }
 }

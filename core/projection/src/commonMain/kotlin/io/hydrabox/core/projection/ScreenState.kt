@@ -53,16 +53,21 @@ data class SubscriptionSummary(
 
     /** How much of the plan is gone, between 0 and 1, when there is a cap to compare with. */
     val quota: Float?
-        get() = totalBytes?.takeIf { it > 0 }?.let { total ->
-            ((usedBytes ?: 0L).toFloat() / total.toFloat()).coerceIn(0f, 1f)
-        }
+        get() =
+            totalBytes?.takeIf { it > 0 }?.let { total ->
+                ((usedBytes ?: 0L).toFloat() / total.toFloat()).coerceIn(0f, 1f)
+            }
 }
 
 /** What is wrong with a source, in the terms the person can act on. */
 enum class SourceProblem { EXPIRED, UNREACHABLE, EMPTY, REJECTED }
 
 /** Servers of one source, kept together because that is how a person recognises them. */
-data class ServerGroup(val sourceId: String, val sourceName: String, val servers: List<ServerRef>)
+data class ServerGroup(
+    val sourceId: String,
+    val sourceName: String,
+    val servers: List<ServerRef>,
+)
 
 /** How the chosen applications are treated, in the product's own words. */
 enum class AppsMode { OFF, BYPASS_SELECTED, ONLY_SELECTED }
@@ -150,7 +155,11 @@ data class ExitAddress(
 )
 
 /** One installed app, as the picker for apps outside the tunnel needs it. */
-data class InstalledApp(val packageName: String, val label: String, val excluded: Boolean)
+data class InstalledApp(
+    val packageName: String,
+    val label: String,
+    val excluded: Boolean,
+)
 
 /** How loud one journal line is. Four levels, because the core emits four. */
 enum class JournalLevel { ERROR, WARN, INFO, DEBUG }
@@ -230,11 +239,14 @@ enum class Notice {
     SOURCE_NEEDS_NEWER_APP,
     SOURCE_TOO_LARGE,
     SERVER_SWITCHED,
+
     /** The switch crossed the VK boundary, so the core restarted and its connections closed. */
     SERVER_SWITCH_RESTARTED,
     SETTINGS_NEED_RECONNECT,
+
     /** A setting the core reads at start was applied by starting the core again. */
     SETTINGS_APPLIED,
+
     /** The local proxy port is taken by something else; the running proxy kept the old one. */
     PROXY_PORT_TAKEN,
     BACKUP_EXPORTED,
@@ -247,10 +259,21 @@ enum class Notice {
     ;
 
     val failure: Boolean
-        get() = this !in setOf(
-            SOURCE_ADDED, SOURCE_UPDATED, SOURCE_REMOVED, SERVER_SWITCHED, SERVER_SWITCH_RESTARTED,
-            SETTINGS_NEED_RECONNECT, SETTINGS_APPLIED, BACKUP_EXPORTED, BACKUP_IMPORTED, SETTINGS_RESET, RULES_UPDATED,
-        )
+        get() =
+            this !in
+                setOf(
+                    SOURCE_ADDED,
+                    SOURCE_UPDATED,
+                    SOURCE_REMOVED,
+                    SERVER_SWITCHED,
+                    SERVER_SWITCH_RESTARTED,
+                    SETTINGS_NEED_RECONNECT,
+                    SETTINGS_APPLIED,
+                    BACKUP_EXPORTED,
+                    BACKUP_IMPORTED,
+                    SETTINGS_RESET,
+                    RULES_UPDATED,
+                )
 }
 
 /** Which long operation is running. Screens show progress where it belongs, not on top. */

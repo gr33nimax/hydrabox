@@ -14,7 +14,10 @@ import io.hydrabox.core.model.OperationState
 fun readableBytes(value: Long): String = formatBytes(value, "")
 
 /** Bytes as a person reads them. Formatting belongs here, not in a composable. */
-internal fun formatBytes(value: Long, suffix: String): String {
+internal fun formatBytes(
+    value: Long,
+    suffix: String,
+): String {
     val units = listOf("B", "KiB", "MiB", "GiB", "TiB")
     var amount = value.toDouble()
     var unit = 0
@@ -22,10 +25,13 @@ internal fun formatBytes(value: Long, suffix: String): String {
         amount /= 1024
         unit += 1
     }
-    val rendered = if (unit == 0) amount.toLong().toString() else {
-        val scaled = (amount * 10).toLong()
-        "${scaled / 10}.${scaled % 10}"
-    }
+    val rendered =
+        if (unit == 0) {
+            amount.toLong().toString()
+        } else {
+            val scaled = (amount * 10).toLong()
+            "${scaled / 10}.${scaled % 10}"
+        }
     return "$rendered ${units[unit]}$suffix"
 }
 
@@ -37,10 +43,15 @@ internal fun formatBytes(value: Long, suffix: String): String {
  * am I protected, through what, and what can I press.
  */
 object ScreenProjection {
-    fun project(snapshot: RuntimeSnapshot, nowMillis: Long? = null): ScreenState =
-        project(AppReadModel(runtime = snapshot), nowMillis)
+    fun project(
+        snapshot: RuntimeSnapshot,
+        nowMillis: Long? = null,
+    ): ScreenState = project(AppReadModel(runtime = snapshot), nowMillis)
 
-    fun project(model: AppReadModel, nowMillis: Long? = null): ScreenState {
+    fun project(
+        model: AppReadModel,
+        nowMillis: Long? = null,
+    ): ScreenState {
         val snapshot = model.runtime
         val latencies = snapshot.latencies.associateBy { it.tag }
         val edgeLatencies = snapshot.edgeLatencies.associateBy { it.tag }
@@ -49,13 +60,23 @@ object ScreenProjection {
         return ScreenState(
             connection = connection(model, server),
             legalAccepted = model.legalAccepted,
-            servers = model.servers.map { group ->
-                group.copy(servers = group.servers.map { it.withLatency(latencies, edgeLatencies, nowMillis).copy(measuring = it.id in measuringTags) })
-            },
-            autoServer = model.autoServer
-                ?.copy(resolvedName = resolvedAuto(model))
-                ?.withLatency(latencies, edgeLatencies, nowMillis)
-                ?.copy(measuring = model.autoServer.id in measuringTags),
+            servers =
+                model.servers.map { group ->
+                    group.copy(
+                        servers =
+                            group.servers.map {
+                                it.withLatency(latencies, edgeLatencies, nowMillis).copy(
+                                    measuring =
+                                        it.id in measuringTags,
+                                )
+                            },
+                    )
+                },
+            autoServer =
+                model.autoServer
+                    ?.copy(resolvedName = resolvedAuto(model))
+                    ?.withLatency(latencies, edgeLatencies, nowMillis)
+                    ?.copy(measuring = model.autoServer.id in measuringTags),
             selectedServerId = model.selectedServerId,
             sources = model.sources,
             // Until the stored model is read, the primed answer is the only fact about sources
@@ -65,20 +86,24 @@ object ScreenProjection {
             settings = model.settings,
             // The failure code is the one runtime fact a support conversation needs; the
             // phase, the transport and the lane count are not shown anywhere any more.
-            diagnostics = model.diagnostics?.copy(
-                lastError = snapshot.lastFailure?.let { "${it.domain.name.lowercase()} / ${it.code.code}" },
-            ),
+            diagnostics =
+                model.diagnostics?.copy(
+                    lastError = snapshot.lastFailure?.let { "${it.domain.name.lowercase()} / ${it.code.code}" },
+                ),
             ruleSets = model.ruleSets,
             exit = model.exit,
-            apps = model.apps.sortedWith(
-                compareByDescending<InstalledApp> { it.excluded }.thenBy { it.label.lowercase() },
-            ),
-            busy = Busy(
-                source = model.sourceOperation == OperationState.Running,
-                servers = snapshot.state == RuntimeState.RUNNING &&
-                    snapshot.latencies.isEmpty() && snapshot.edgeLatencies.isEmpty(),
-                backup = model.backupOperation == OperationState.Running,
-            ),
+            apps =
+                model.apps.sortedWith(
+                    compareByDescending<InstalledApp> { it.excluded }.thenBy { it.label.lowercase() },
+                ),
+            busy =
+                Busy(
+                    source = model.sourceOperation == OperationState.Running,
+                    servers =
+                        snapshot.state == RuntimeState.RUNNING &&
+                            snapshot.latencies.isEmpty() && snapshot.edgeLatencies.isEmpty(),
+                    backup = model.backupOperation == OperationState.Running,
+                ),
             notice = model.notice ?: operationNotice(model),
         )
     }
@@ -93,16 +118,20 @@ object ScreenProjection {
 fun nextLatencyStaleAtMillis(
     latencies: List<io.hydrabox.core.contract.OutboundLatency>,
     nowMillis: Long,
-): Long? = latencies.asSequence().mapNotNull { latency ->
-    if (latency.observedAtMillis <= 0 || latency.staleAfterMillis <= 0) return@mapNotNull null
-    val boundary = if (latency.observedAtMillis > Long.MAX_VALUE - latency.staleAfterMillis) {
-        Long.MAX_VALUE
-    } else {
-        latency.observedAtMillis + latency.staleAfterMillis
-    }
-    val staleAt = if (boundary == Long.MAX_VALUE) boundary else boundary + 1
-    staleAt.takeIf { it > nowMillis }
-}.minOrNull()
+): Long? =
+    latencies
+        .asSequence()
+        .mapNotNull { latency ->
+            if (latency.observedAtMillis <= 0 || latency.staleAfterMillis <= 0) return@mapNotNull null
+            val boundary =
+                if (latency.observedAtMillis > Long.MAX_VALUE - latency.staleAfterMillis) {
+                    Long.MAX_VALUE
+                } else {
+                    latency.observedAtMillis + latency.staleAfterMillis
+                }
+            val staleAt = if (boundary == Long.MAX_VALUE) boundary else boundary + 1
+            staleAt.takeIf { it > nowMillis }
+        }.minOrNull()
 
 /**
  * The outbound the running tunnel actually routes through, as the core itself reported it.
@@ -118,7 +147,9 @@ fun runningOutboundTag(snapshot: RuntimeSnapshot): String? {
     val actual = snapshot.observedOutbounds
     val chosen = actual.firstOrNull { it.groupId == "select" }?.outboundId ?: return null
     if (chosen != "auto") return chosen
-    return actual.firstOrNull { it.groupId == "auto" }?.outboundId
+    return actual
+        .firstOrNull { it.groupId == "auto" }
+        ?.outboundId
         ?.takeIf { it.isNotEmpty() }
 }
 
@@ -127,51 +158,73 @@ fun runningOutboundTag(snapshot: RuntimeSnapshot): String? {
  * only flows once the transport has a lane. Reporting "Connected" before that would lie
  * to the person, so readiness — not the phase name — decides.
  */
-private fun connection(model: AppReadModel, server: ServerRef?): Connection {
+private fun connection(
+    model: AppReadModel,
+    server: ServerRef?,
+): Connection {
     val snapshot = model.runtime
     val health = snapshot.transportHealth
-    val displayedServer = server?.let {
-        health.quicRttMillis.takeIf { value -> health.applicable && value > 0 }?.let { value ->
-            it.copy(quicRttMillis = value.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
-        } ?: it
-    }
+    val displayedServer =
+        server?.let {
+            health.quicRttMillis.takeIf { value -> health.applicable && value > 0 }?.let { value ->
+                it.copy(quicRttMillis = value.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+            } ?: it
+        }
     if (model.vpnPermissionMissing && snapshot.state == RuntimeState.STOPPED) {
         return Connection.Stopped(Trouble.PERMISSION_REQUIRED, displayedServer, retryable = true)
     }
     return when (snapshot.state) {
-        RuntimeState.STOPPED -> when {
-            model.sources.isEmpty() && !model.hasStoredSources -> Connection.NeedsSubscription
-            model.servers.none { it.servers.isNotEmpty() } && model.autoServer == null -> Connection.NeedsServers
-            else -> Connection.Idle(displayedServer)
+        RuntimeState.STOPPED -> {
+            when {
+                model.sources.isEmpty() && !model.hasStoredSources -> Connection.NeedsSubscription
+                model.servers.none { it.servers.isNotEmpty() } && model.autoServer == null -> Connection.NeedsServers
+                else -> Connection.Idle(displayedServer)
+            }
         }
-        RuntimeState.STARTING -> Connection.Connecting(displayedServer)
-        RuntimeState.RECOVERING -> Connection.Reconnecting(displayedServer)
-        RuntimeState.STOPPING -> Connection.Disconnecting
-        RuntimeState.FAILED -> Connection.Stopped(
-            cause = Trouble.of(snapshot.lastFailure),
-            server = displayedServer,
-            retryable = snapshot.lastFailure?.retryable == true,
-        )
-        RuntimeState.RUNNING -> when {
-            !health.isReady && health.state == TransportHealthState.RECOVERING -> Connection.Reconnecting(displayedServer)
-            !health.isReady -> Connection.Connecting(displayedServer)
-            else -> Connection.Connected(displayedServer, traffic(snapshot))
+
+        RuntimeState.STARTING -> {
+            Connection.Connecting(displayedServer)
+        }
+
+        RuntimeState.RECOVERING -> {
+            Connection.Reconnecting(displayedServer)
+        }
+
+        RuntimeState.STOPPING -> {
+            Connection.Disconnecting
+        }
+
+        RuntimeState.FAILED -> {
+            Connection.Stopped(
+                cause = Trouble.of(snapshot.lastFailure),
+                server = displayedServer,
+                retryable = snapshot.lastFailure?.retryable == true,
+            )
+        }
+
+        RuntimeState.RUNNING -> {
+            when {
+                !health.isReady && health.state == TransportHealthState.RECOVERING -> Connection.Reconnecting(displayedServer)
+                !health.isReady -> Connection.Connecting(displayedServer)
+                else -> Connection.Connected(displayedServer, traffic(snapshot))
+            }
         }
     }
 }
 
-private fun traffic(snapshot: RuntimeSnapshot) = snapshot.traffic.let { counters ->
-    TrafficSummary(
-        available = counters.available,
-        uplink = formatBytes(counters.uplink, "/s"),
-        downlink = formatBytes(counters.downlink, "/s"),
-        uplinkTotal = formatBytes(counters.uplinkTotal, ""),
-        downlinkTotal = formatBytes(counters.downlinkTotal, ""),
-        connections = counters.connectionsOut,
-        uplinkRate = counters.uplink,
-        downlinkRate = counters.downlink,
-    )
-}
+private fun traffic(snapshot: RuntimeSnapshot) =
+    snapshot.traffic.let { counters ->
+        TrafficSummary(
+            available = counters.available,
+            uplink = formatBytes(counters.uplink, "/s"),
+            downlink = formatBytes(counters.downlink, "/s"),
+            uplinkTotal = formatBytes(counters.uplinkTotal, ""),
+            downlinkTotal = formatBytes(counters.downlinkTotal, ""),
+            connections = counters.connectionsOut,
+            uplinkRate = counters.uplink,
+            downlinkRate = counters.downlink,
+        )
+    }
 
 /** What the home screen names as the destination: the picked server, or automatic. */
 private fun selectedServer(
@@ -183,7 +236,8 @@ private fun selectedServer(
     val auto = model.autoServer?.copy(resolvedName = resolvedAuto(model))
     val chosen = model.selectedServerId ?: return auto?.withLatency(latencies, edgeLatencies, nowMillis)
     if (auto != null && chosen == auto.id) return auto.withLatency(latencies, edgeLatencies, nowMillis)
-    return model.servers.asSequence()
+    return model.servers
+        .asSequence()
         .flatMap { it.servers.asSequence() }
         .firstOrNull { it.id == chosen }
         ?.withLatency(latencies, edgeLatencies, nowMillis)
@@ -201,7 +255,8 @@ private fun resolvedAuto(model: AppReadModel): String? {
     val autoId = model.autoServer?.id ?: return null
     val snapshot = model.runtime
     return (snapshot.observedOutbounds + snapshot.selectedOutbounds)
-        .firstOrNull { it.groupId == autoId }?.outboundId
+        .firstOrNull { it.groupId == autoId }
+        ?.outboundId
         ?.takeIf { it != autoId }
 }
 
@@ -226,20 +281,23 @@ private fun ServerRef.withLatency(
         edgeLatencies[tag]?.let { return withEdgeLatency(it, nowMillis) }
     }
     val measured = latencies[tag] ?: return this
-    val ageMillis = nowMillis
-        ?.takeIf { measured.observedAtMillis > 0 }
-        ?.minus(measured.observedAtMillis)
-        ?.coerceAtLeast(0)
-    val stale = if (ageMillis != null && measured.staleAfterMillis > 0) {
-        ageMillis > measured.staleAfterMillis
-    } else {
-        measured.stale
-    }
+    val ageMillis =
+        nowMillis
+            ?.takeIf { measured.observedAtMillis > 0 }
+            ?.minus(measured.observedAtMillis)
+            ?.coerceAtLeast(0)
+    val stale =
+        if (ageMillis != null && measured.staleAfterMillis > 0) {
+            ageMillis > measured.staleAfterMillis
+        } else {
+            measured.stale
+        }
     // Success is the verdict, not the figure: a zero is a round trip that took less than a
     // millisecond, and it used to read as "did not answer" — the one number indistinguishable
     // from silence.
-    val answered = (measured.status == PROBE_AVAILABLE || measured.delayMillis > 0) &&
-        measured.status != PROBE_UNAVAILABLE
+    val answered =
+        (measured.status == PROBE_AVAILABLE || measured.delayMillis > 0) &&
+            measured.status != PROBE_UNAVAILABLE
     return if (answered) {
         copy(
             latencyMillis = measured.delayMillis,
@@ -256,18 +314,20 @@ private fun ServerRef.withLatency(
 private fun ServerRef.withEdgeLatency(
     measured: io.hydrabox.core.contract.OutboundLatency,
     nowMillis: Long?,
-): ServerRef {
-    return when (measured.status) {
+): ServerRef =
+    when (measured.status) {
         EdgeLatencyStatus.ANSWERED -> {
-            val ageMillis = nowMillis
-                ?.takeIf { measured.observedAtMillis > 0 }
-                ?.minus(measured.observedAtMillis)
-                ?.coerceAtLeast(0)
-            val stale = if (ageMillis != null && measured.staleAfterMillis > 0) {
-                ageMillis > measured.staleAfterMillis
-            } else {
-                measured.stale
-            }
+            val ageMillis =
+                nowMillis
+                    ?.takeIf { measured.observedAtMillis > 0 }
+                    ?.minus(measured.observedAtMillis)
+                    ?.coerceAtLeast(0)
+            val stale =
+                if (ageMillis != null && measured.staleAfterMillis > 0) {
+                    ageMillis > measured.staleAfterMillis
+                } else {
+                    measured.stale
+                }
             copy(
                 latencyMillis = measured.delayMillis,
                 probe = ProbeState.ANSWERING,
@@ -275,16 +335,30 @@ private fun ServerRef.withEdgeLatency(
                 latencyIsEdgeRtt = true,
             )
         }
+
         // The edge was asked and stayed silent — a fact about the edge, shown as one.
-        EdgeLatencyStatus.SILENT -> copy(latencyMillis = null, probe = ProbeState.SILENT)
+        EdgeLatencyStatus.SILENT -> {
+            copy(latencyMillis = null, probe = ProbeState.SILENT)
+        }
+
         // Why the question could not be asked, each in its own words: no address to send
         // it to, one a datagram cannot reach, or a budget that ran out first.
-        EdgeLatencyStatus.NO_EDGE -> copy(latencyMillis = null, probe = ProbeState.NO_EDGE)
-        EdgeLatencyStatus.UNSUPPORTED -> copy(latencyMillis = null, probe = ProbeState.EDGE_UNSUPPORTED)
-        EdgeLatencyStatus.NOT_MEASURED -> copy(latencyMillis = null, probe = ProbeState.NOT_MEASURED)
-        else -> this
+        EdgeLatencyStatus.NO_EDGE -> {
+            copy(latencyMillis = null, probe = ProbeState.NO_EDGE)
+        }
+
+        EdgeLatencyStatus.UNSUPPORTED -> {
+            copy(latencyMillis = null, probe = ProbeState.EDGE_UNSUPPORTED)
+        }
+
+        EdgeLatencyStatus.NOT_MEASURED -> {
+            copy(latencyMillis = null, probe = ProbeState.NOT_MEASURED)
+        }
+
+        else -> {
+            this
+        }
     }
-}
 
 /** The core's own word for a probe that came back. */
 private const val PROBE_AVAILABLE = "available"
@@ -292,8 +366,9 @@ private const val PROBE_AVAILABLE = "available"
 /** The core's own word for a probe that did not come back. */
 private const val PROBE_UNAVAILABLE = "unavailable"
 
-private fun operationNotice(model: AppReadModel): Notice? = when {
-    model.sourceOperation is OperationState.Failed -> Notice.SOURCE_FAILED
-    model.backupOperation is OperationState.Failed -> Notice.OPERATION_FAILED
-    else -> null
-}
+private fun operationNotice(model: AppReadModel): Notice? =
+    when {
+        model.sourceOperation is OperationState.Failed -> Notice.SOURCE_FAILED
+        model.backupOperation is OperationState.Failed -> Notice.OPERATION_FAILED
+        else -> null
+    }
