@@ -358,6 +358,14 @@ class RuntimeControlActivity : ComponentActivity() {
             this,
             object : OnBackPressedCallback(true) {
                 override fun handleOnBackPressed() {
+                    // The question is modal, and its "close" is the only way to tell the core to
+                    // stop waiting: without this, Back hid the screen and left the core waiting
+                    // out its window for an answer that could no longer be given.
+                    val challenge = snapshot.challenge
+                    if (challenge != null) {
+                        send(RuntimeCommand.CancelChallenge(challenge.id))
+                        return
+                    }
                     if (!navigation.back()) {
                         isEnabled = false
                         onBackPressedDispatcher.onBackPressed()
