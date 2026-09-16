@@ -11,33 +11,54 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class TunnelConfigGeneratorTest {
-    private fun outbound(tag: String) = CatalogOutbound(
-        tag = tag,
-        type = "vless",
-        json = buildJsonObject { put("type", "vless"); put("tag", tag); put("server", "example") },
-    )
+    private fun outbound(tag: String) =
+        CatalogOutbound(
+            tag = tag,
+            type = "vless",
+            json =
+                buildJsonObject {
+                    put("type", "vless")
+                    put("tag", tag)
+                    put("server", "example")
+                },
+        )
 
-    private fun callOutbound(tag: String, detour: String? = null) = CatalogOutbound(
+    private fun callOutbound(
+        tag: String,
+        detour: String? = null,
+    ) = CatalogOutbound(
         tag = tag,
         type = "call",
-        json = buildJsonObject {
-            put("type", "call")
-            put("tag", tag)
-            detour?.let { put("detour", it) }
-        },
+        json =
+            buildJsonObject {
+                put("type", "call")
+                put("tag", tag)
+                detour?.let { put("detour", it) }
+            },
     )
 
     private fun tags(input: TunnelInput): List<String> =
-        TunnelConfigGenerator.build(input).jsonObject["outbounds"]!!.jsonArray
+        TunnelConfigGenerator
+            .build(input)
+            .jsonObject["outbounds"]!!
+            .jsonArray
             .map { it.jsonObject.field("tag").orEmpty() }
 
     private fun rules(input: TunnelInput): JsonArray =
-        TunnelConfigGenerator.build(input).jsonObject["route"]!!.jsonObject["rules"]!!.jsonArray
+        TunnelConfigGenerator
+            .build(input)
+            .jsonObject["route"]!!
+            .jsonObject["rules"]!!
+            .jsonArray
 
-    private fun input(blockLeaks: Boolean = true, bypassLocal: Boolean = true) = TunnelInput(
+    private fun input(
+        blockLeaks: Boolean = true,
+        bypassLocal: Boolean = true,
+    ) = TunnelInput(
         outbounds = listOf(outbound("tokyo")),
         selectedTag = "tokyo",
         blockLeaks = blockLeaks,
@@ -58,11 +79,17 @@ class TunnelConfigGeneratorTest {
 
     @Test
     fun `a VK transport another outbound dials through is never dropped`() {
-        val chain = CatalogOutbound(
-            tag = "tokyo",
-            type = "vless",
-            json = buildJsonObject { put("type", "vless"); put("tag", "tokyo"); put("detour", "bypass") },
-        )
+        val chain =
+            CatalogOutbound(
+                tag = "tokyo",
+                type = "vless",
+                json =
+                    buildJsonObject {
+                        put("type", "vless")
+                        put("tag", "tokyo")
+                        put("detour", "bypass")
+                    },
+            )
         val tags = tags(TunnelInput(outbounds = listOf(chain, callOutbound("bypass")), selectedTag = "tokyo"))
         assertTrue(tags.contains("bypass"), "dropping a referenced tag makes the core refuse the document")
     }
@@ -97,40 +124,58 @@ class TunnelConfigGeneratorTest {
 
     @Test
     fun `the local network is reachable while the tunnel is up, unless asked otherwise`() {
-        val on = rules(input(bypassLocal = true)).map { it.jsonObject }
-            .firstOrNull { it["ip_is_private"] != null }
+        val on =
+            rules(input(bypassLocal = true))
+                .map { it.jsonObject }
+                .firstOrNull { it["ip_is_private"] != null }
         assertEquals(DIRECT_TAG, on?.field("outbound"))
         assertTrue(rules(input(bypassLocal = false)).map { it.jsonObject }.none { it["ip_is_private"] != null })
     }
 
     @Test
     fun `the tunnel implementation and strict route come from the settings, not a constant`() {
-        val tun = TunnelConfigGenerator
-            .build(input().copy(strictRoute = true, tunStack = "gvisor"))
-            .jsonObject["inbounds"]!!.jsonArray.first().jsonObject
+        val tun =
+            TunnelConfigGenerator
+                .build(input().copy(strictRoute = true, tunStack = "gvisor"))
+                .jsonObject["inbounds"]!!
+                .jsonArray
+                .first()
+                .jsonObject
         assertEquals("true", tun.field("strict_route"))
         assertEquals("gvisor", tun.field("stack"))
     }
 
     @Test
     fun `TLS fragmentation is applied to the handshake, and only when there is one`() {
-        val withTls = TunnelInput(
-            outbounds = listOf(
-                CatalogOutbound(
-                    tag = "tls-node",
-                    type = "vless",
-                    json = buildJsonObject {
-                        put("type", "vless"); put("tag", "tls-node"); put("server", "example")
-                        putJsonObject("tls") { put("enabled", true); put("server_name", "example") }
-                    },
-                ),
-                outbound("plain"),
-            ),
-            selectedTag = "tls-node",
-            tlsFragmentation = "fragment",
-        )
-        val outbounds = TunnelConfigGenerator.build(withTls).jsonObject["outbounds"]!!.jsonArray
-            .map { it.jsonObject }
+        val withTls =
+            TunnelInput(
+                outbounds =
+                    listOf(
+                        CatalogOutbound(
+                            tag = "tls-node",
+                            type = "vless",
+                            json =
+                                buildJsonObject {
+                                    put("type", "vless")
+                                    put("tag", "tls-node")
+                                    put("server", "example")
+                                    putJsonObject("tls") {
+                                        put("enabled", true)
+                                        put("server_name", "example")
+                                    }
+                                },
+                        ),
+                        outbound("plain"),
+                    ),
+                selectedTag = "tls-node",
+                tlsFragmentation = "fragment",
+            )
+        val outbounds =
+            TunnelConfigGenerator
+                .build(withTls)
+                .jsonObject["outbounds"]!!
+                .jsonArray
+                .map { it.jsonObject }
         val fragmented = outbounds.first { it.field("tag") == "tls-node" }["tls"]!!.jsonObject
         assertEquals("true", fragmented["fragment"]?.jsonPrimitive?.content)
         assertEquals("300ms", fragmented["fragment_fallback_delay"]?.jsonPrimitive?.content)
@@ -140,23 +185,36 @@ class TunnelConfigGeneratorTest {
 
     @Test
     fun `record fragmentation replaces fragment rather than adding to it`() {
-        val tls = buildJsonObject {
-            put("type", "trojan"); put("tag", "t"); put("server", "example")
-            putJsonObject("tls") { put("enabled", true); put("fragment", true) }
-        }
-        val outbound = TunnelConfigGenerator
-            .build(TunnelInput(listOf(CatalogOutbound("t", "trojan", tls)), "t", tlsFragmentation = "record"))
-            .jsonObject["outbounds"]!!.jsonArray.map { it.jsonObject }
-            .first { it.field("tag") == "t" }["tls"]!!.jsonObject
+        val tls =
+            buildJsonObject {
+                put("type", "trojan")
+                put("tag", "t")
+                put("server", "example")
+                putJsonObject("tls") {
+                    put("enabled", true)
+                    put("fragment", true)
+                }
+            }
+        val outbound =
+            TunnelConfigGenerator
+                .build(TunnelInput(listOf(CatalogOutbound("t", "trojan", tls)), "t", tlsFragmentation = "record"))
+                .jsonObject["outbounds"]!!
+                .jsonArray
+                .map { it.jsonObject }
+                .first { it.field("tag") == "t" }["tls"]!!
+                .jsonObject
         assertEquals("true", outbound["record_fragment"]?.jsonPrimitive?.content)
         assertTrue(outbound["fragment"] == null)
     }
 
     @Test
     fun `dial options land on servers and never on the groups`() {
-        val outbounds = TunnelConfigGenerator
-            .build(input().copy(tcpFastOpen = true, tcpMultiPath = true))
-            .jsonObject["outbounds"]!!.jsonArray.map { it.jsonObject }
+        val outbounds =
+            TunnelConfigGenerator
+                .build(input().copy(tcpFastOpen = true, tcpMultiPath = true))
+                .jsonObject["outbounds"]!!
+                .jsonArray
+                .map { it.jsonObject }
         val server = outbounds.first { it.field("tag") == "tokyo" }
         assertEquals("true", server.field("tcp_fast_open"))
         assertEquals("true", server.field("tcp_multi_path"))
@@ -166,21 +224,49 @@ class TunnelConfigGeneratorTest {
 
     @Test
     fun `the automatic group carries the chosen tolerance and idle timeout`() {
-        val strict = TunnelConfigGenerator
-            .build(input().copy(urlTestToleranceMillis = 1, urlTestIntervalSeconds = 300))
-            .jsonObject["outbounds"]!!.jsonArray.map { it.jsonObject }
-            .first { it.field("type") == "urltest" }
+        val strict =
+            TunnelConfigGenerator
+                .build(input().copy(urlTestToleranceMillis = 1, urlTestIntervalSeconds = 300))
+                .jsonObject["outbounds"]!!
+                .jsonArray
+                .map { it.jsonObject }
+                .first { it.field("type") == "urltest" }
         assertEquals("1", strict.field("tolerance"))
         assertEquals("300s", strict.field("interval"))
         assertEquals("300s", strict.field("idle_timeout"))
     }
 
     @Test
+    fun `an unavailable interval reaches the group, and stays out when unset`() {
+        val withInterval =
+            TunnelConfigGenerator
+                .build(input().copy(urlTestUnavailableCheckIntervalSeconds = 60))
+                .jsonObject["outbounds"]!!
+                .jsonArray
+                .map { it.jsonObject }
+                .first { it.field("type") == "urltest" }
+        assertEquals("60s", withInterval.field("unavailable_interval"))
+
+        val withoutInterval =
+            TunnelConfigGenerator
+                .build(input())
+                .jsonObject["outbounds"]!!
+                .jsonArray
+                .map { it.jsonObject }
+                .first { it.field("type") == "urltest" }
+        // Ноль — это «поля нет»: ядро без него повторяет пробу по общему интервалу, как раньше.
+        assertNull(withoutInterval.field("unavailable_interval"))
+    }
+
+    @Test
     fun `whether a server change drops open connections is a setting, not a constant`() {
-        val selector = TunnelConfigGenerator
-            .build(input().copy(interruptExistingConnections = true))
-            .jsonObject["outbounds"]!!.jsonArray.map { it.jsonObject }
-            .first { it.field("type") == "selector" }
+        val selector =
+            TunnelConfigGenerator
+                .build(input().copy(interruptExistingConnections = true))
+                .jsonObject["outbounds"]!!
+                .jsonArray
+                .map { it.jsonObject }
+                .first { it.field("type") == "selector" }
         assertEquals("true", selector.field("interrupt_exist_connections"))
     }
 
@@ -196,10 +282,11 @@ class TunnelConfigGeneratorTest {
 
     @Test
     fun `a compiled rule set is referenced and rejected, with the allow list winning`() {
-        val withRules = input().copy(
-            adBlock = true,
-            routeData = RouteData(adBlockPath = "/data/block.srs", adBlockAllowPath = "/data/allow.srs"),
-        )
+        val withRules =
+            input().copy(
+                adBlock = true,
+                routeData = RouteData(adBlockPath = "/data/block.srs", adBlockAllowPath = "/data/allow.srs"),
+            )
         val route = TunnelConfigGenerator.build(withRules).jsonObject["route"]!!.jsonObject
         val sets = route["rule_set"]!!.jsonArray.map { it.jsonObject }
         assertEquals(listOf(ADBLOCK_BLOCK, ADBLOCK_ALLOW), sets.map { it.field("tag") })
@@ -218,9 +305,12 @@ class TunnelConfigGeneratorTest {
 
     @Test
     fun `proxy-only replaces the tunnel with one local port`() {
-        val inbounds = TunnelConfigGenerator
-            .build(input().copy(vpnInbound = false, proxyInbound = true, proxyPort = 3080))
-            .jsonObject["inbounds"]!!.jsonArray.map { it.jsonObject }
+        val inbounds =
+            TunnelConfigGenerator
+                .build(input().copy(vpnInbound = false, proxyInbound = true, proxyPort = 3080))
+                .jsonObject["inbounds"]!!
+                .jsonArray
+                .map { it.jsonObject }
         assertEquals(listOf("mixed"), inbounds.map { it.field("type") })
         assertEquals("127.0.0.1", inbounds.single().field("listen"))
         assertEquals("3080", inbounds.single().field("listen_port"))
@@ -228,46 +318,76 @@ class TunnelConfigGeneratorTest {
 
     @Test
     fun `a proxy port with credentials asks for them, and without them does not`() {
-        val guarded = TunnelConfigGenerator
-            .build(
-                input().copy(
-                    vpnInbound = false,
-                    proxyInbound = true,
-                    proxyUsername = "hydrabox",
-                    proxyPassword = "secret",
-                ),
-            )
-            .jsonObject["inbounds"]!!.jsonArray.first().jsonObject
+        val guarded =
+            TunnelConfigGenerator
+                .build(
+                    input().copy(
+                        vpnInbound = false,
+                        proxyInbound = true,
+                        proxyUsername = "hydrabox",
+                        proxyPassword = "secret",
+                    ),
+                ).jsonObject["inbounds"]!!
+                .jsonArray
+                .first()
+                .jsonObject
         val user = guarded["users"]!!.jsonArray.single().jsonObject
         assertEquals("hydrabox", user.field("username"))
         assertEquals("secret", user.field("password"))
-        val open = TunnelConfigGenerator
-            .build(input().copy(vpnInbound = false, proxyInbound = true, proxyUsername = "hydrabox"))
-            .jsonObject["inbounds"]!!.jsonArray.first().jsonObject
+        val open =
+            TunnelConfigGenerator
+                .build(input().copy(vpnInbound = false, proxyInbound = true, proxyUsername = "hydrabox"))
+                .jsonObject["inbounds"]!!
+                .jsonArray
+                .first()
+                .jsonObject
         assertTrue(open["users"] == null)
     }
 
     @Test
     fun `both inbounds can run at once`() {
-        val inbounds = TunnelConfigGenerator
-            .build(input().copy(vpnInbound = true, proxyInbound = true))
-            .jsonObject["inbounds"]!!.jsonArray.map { it.jsonObject }
+        val inbounds =
+            TunnelConfigGenerator
+                .build(input().copy(vpnInbound = true, proxyInbound = true))
+                .jsonObject["inbounds"]!!
+                .jsonArray
+                .map { it.jsonObject }
         assertEquals(listOf("tun", "mixed"), inbounds.map { it.field("type") })
     }
 
     @Test
     fun `apps kept outside the tunnel reach the inbound, not the route rules`() {
-        val tun = TunnelConfigGenerator
-            .build(input().copy(excludePackages = listOf("com.example.bank")))
-            .jsonObject["inbounds"]!!.jsonArray.first().jsonObject
-        assertEquals("com.example.bank", tun["exclude_package"]!!.jsonArray.first().jsonPrimitive.content)
+        val tun =
+            TunnelConfigGenerator
+                .build(input().copy(excludePackages = listOf("com.example.bank")))
+                .jsonObject["inbounds"]!!
+                .jsonArray
+                .first()
+                .jsonObject
+        assertEquals(
+            "com.example.bank",
+            tun["exclude_package"]!!
+                .jsonArray
+                .first()
+                .jsonPrimitive.content,
+        )
     }
 
     @Test
     fun `only the selected apps use the tunnel when that is the chosen mode`() {
-        val tun = TunnelConfigGenerator
-            .build(input().copy(includePackages = listOf("com.example.browser")))
-            .jsonObject["inbounds"]!!.jsonArray.first().jsonObject
-        assertEquals("com.example.browser", tun["include_package"]!!.jsonArray.first().jsonPrimitive.content)
+        val tun =
+            TunnelConfigGenerator
+                .build(input().copy(includePackages = listOf("com.example.browser")))
+                .jsonObject["inbounds"]!!
+                .jsonArray
+                .first()
+                .jsonObject
+        assertEquals(
+            "com.example.browser",
+            tun["include_package"]!!
+                .jsonArray
+                .first()
+                .jsonPrimitive.content,
+        )
     }
 }

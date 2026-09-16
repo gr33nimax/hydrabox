@@ -10,30 +10,30 @@ import io.hydrabox.core.diagnostics.Secret
 import io.hydrabox.core.projection.Appearance
 import io.hydrabox.core.projection.AppsMode
 import io.hydrabox.core.projection.DnsMode
-import io.hydrabox.core.projection.NotificationDetail
 import io.hydrabox.core.projection.Language
 import io.hydrabox.core.projection.LogDetail
-import io.hydrabox.core.projection.TlsFragmentation
-import io.hydrabox.core.projection.TunnelStack
-import io.hydrabox.core.ruleset.RuleSetPaths
-import io.hydrabox.core.ruleset.RuleSetStatus
+import io.hydrabox.core.projection.NotificationDetail
 import io.hydrabox.core.projection.ServerGroup
 import io.hydrabox.core.projection.ServerRef
 import io.hydrabox.core.projection.SettingsSummary
 import io.hydrabox.core.projection.SourceProblem
 import io.hydrabox.core.projection.SubscriptionSummary
-import io.hydrabox.core.settings.NotificationTrafficDisplayMode
-import io.hydrabox.core.settings.PerformanceMode
+import io.hydrabox.core.projection.TlsFragmentation
+import io.hydrabox.core.projection.TunnelStack
+import io.hydrabox.core.ruleset.RuleSetPaths
+import io.hydrabox.core.ruleset.RuleSetStatus
 import io.hydrabox.core.settings.AppLanguage
 import io.hydrabox.core.settings.DnsStrategy
+import io.hydrabox.core.settings.LogLevel
+import io.hydrabox.core.settings.NotificationTrafficDisplayMode
+import io.hydrabox.core.settings.PerformanceMode
 import io.hydrabox.core.settings.Settings
 import io.hydrabox.core.settings.SettingsCodec
 import io.hydrabox.core.settings.SettingsStore
-import io.hydrabox.core.settings.LogLevel
 import io.hydrabox.core.settings.SplitRoutingMode
 import io.hydrabox.core.settings.ThemeMode
-import io.hydrabox.core.settings.TunStack
 import io.hydrabox.core.settings.TlsFragmentationMode
+import io.hydrabox.core.settings.TunStack
 import io.hydrabox.core.settings.normalizeSplitRoutingPackages
 import io.hydrabox.core.storage.BackupService
 import io.hydrabox.core.storage.BackupTransfer
@@ -59,7 +59,9 @@ import io.hydrabox.core.subscription.SubscriptionStore
  * reads them when it builds a configuration. That is why the engine is SQLite and not a
  * document file.
  */
-class AppStore(context: Context) : AutoCloseable {
+class AppStore(
+    context: Context,
+) : AutoCloseable {
     private val appContext = context.applicationContext
     private val driver = openStorageDriver(StorageContext(context.applicationContext), DATABASE_NAME)
     private val database = StorageDatabase(driver)
@@ -73,6 +75,7 @@ class AppStore(context: Context) : AutoCloseable {
     private val backups = BackupService(database)
     private val transfer = BackupTransfer(codec, codec)
     private val queries = database.storageDatabaseQueries
+
     @Volatile private var catalogCache: CatalogCache? = null
 
     private data class CatalogCache(
@@ -81,15 +84,15 @@ class AppStore(context: Context) : AutoCloseable {
         val selections: Map<String, ScopedSelection>,
     )
 
-
     /** Closes this process's connection; callers must stop its work before invoking this. */
     override fun close() = driver.close()
 
     // --- settings -----------------------------------------------------------------
 
-    fun settings(): Settings = runCatching { settingsStore.load() }
-        .onFailure { HydraLog.error(AREA, "the settings could not be read; using the defaults", it) }
-        .getOrElse { defaultSettings() }
+    fun settings(): Settings =
+        runCatching { settingsStore.load() }
+            .onFailure { HydraLog.error(AREA, "the settings could not be read; using the defaults", it) }
+            .getOrElse { defaultSettings() }
 
     /** Back to the values a fresh install would have, keeping the accepted terms. */
     fun resetSettings() {
@@ -130,113 +133,127 @@ class AppStore(context: Context) : AutoCloseable {
     fun updateRuleSets(): RuleSetStatus = AdBlockRuleSets.update(appContext)
 
     /** True when the person asked for a local proxy and no system tunnel. */
-    fun proxyOnly(settings: Settings = settings()) =
-        settings.proxyInboundEnabled && !settings.vpnInboundEnabled
+    fun proxyOnly(settings: Settings = settings()) = settings.proxyInboundEnabled && !settings.vpnInboundEnabled
 
-    fun settingsSummary(settings: Settings = settings()) = SettingsSummary(
-        economyMode = settings.performanceMode == PerformanceMode.ECONOMY,
-        proxyDnsResolver = settings.dnsProxyResolver,
-        directDnsResolver = settings.dnsDirectResolver,
-        bootstrapDnsResolver = settings.bootstrapDnsResolver,
-        vpnMtu = settings.vpnMtu,
-        appsOutsideTunnel = settings.splitRoutingPackages.size,
-        statusNotificationEnabled = settings.statusNotificationEnabled,
-        notificationDetail = if (!settings.statusNotificationEnabled) {
-            NotificationDetail.OFF
-        } else {
-            when (settings.notificationTrafficDisplayMode) {
-                NotificationTrafficDisplayMode.SPEED -> NotificationDetail.SPEED
-                NotificationTrafficDisplayMode.TOTAL -> NotificationDetail.TOTAL
-                NotificationTrafficDisplayMode.BOTH -> NotificationDetail.BOTH
-            }
-        },
-        dnsMode = when (settings.dnsStrategy) {
-            DnsStrategy.AUTO -> DnsMode.AUTO
-            DnsStrategy.IPV4_ONLY -> DnsMode.IPV4
-            DnsStrategy.IPV6_ONLY -> DnsMode.IPV6
-        },
-        interruptConnections = settings.interruptExistingConnections,
-        fakeIp = settings.fakeIpEnabled,
-        blockLeaks = settings.blockLeaks,
-        bypassLocalNetwork = settings.bypassLocalNetwork,
-        adBlock = settings.adBlockEnabled,
-        proxyOnly = proxyOnly(settings),
-        proxyPort = settings.proxyMixedPort,
-        proxyAllowLan = settings.proxyAllowLan,
-        tcpFastOpen = settings.tcpFastOpen,
-        tcpMultiPath = settings.tcpMultiPath,
-        appsMode = when (settings.splitRoutingMode) {
-            SplitRoutingMode.OFF -> AppsMode.OFF
-            SplitRoutingMode.BYPASS_SELECTED -> AppsMode.BYPASS_SELECTED
-            SplitRoutingMode.ONLY_SELECTED -> AppsMode.ONLY_SELECTED
-        },
-        dynamicColour = settings.dynamicColour,
-        appearance = when (settings.themeMode) {
-            ThemeMode.SYSTEM -> Appearance.SYSTEM
-            ThemeMode.LIGHT -> Appearance.LIGHT
-            ThemeMode.DARK -> Appearance.DARK
-        },
-        strictRoute = settings.vpnStrictRoute,
-        stack = when (settings.vpnTunStack) {
-            TunStack.SYSTEM -> TunnelStack.SYSTEM
-            TunStack.GVISOR -> TunnelStack.GVISOR
-            TunStack.MIXED -> TunnelStack.MIXED
-        },
-        fragmentation = when (settings.tlsFragmentationMode) {
-            TlsFragmentationMode.DISABLED -> TlsFragmentation.OFF
-            TlsFragmentationMode.RECORD -> TlsFragmentation.RECORD
-            TlsFragmentationMode.FRAGMENT -> TlsFragmentation.FRAGMENT
-        },
-        logDetail = when (settings.logLevel) {
-            LogLevel.OFF -> LogDetail.OFF
-            LogLevel.TRACE -> LogDetail.TRACE
-            LogLevel.DEBUG -> LogDetail.DEBUG
-            LogLevel.INFO -> LogDetail.INFO
-            LogLevel.WARN -> LogDetail.WARN
-            LogLevel.ERROR -> LogDetail.ERROR
-        },
-        languageChoice = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU,
-        language = when (settings.language) {
-            AppLanguage.SYSTEM -> Language.SYSTEM
-            AppLanguage.RUSSIAN -> Language.RUSSIAN
-            AppLanguage.ENGLISH -> Language.ENGLISH
-        },
-    )
+    fun settingsSummary(settings: Settings = settings()) =
+        SettingsSummary(
+            economyMode = settings.performanceMode == PerformanceMode.ECONOMY,
+            proxyDnsResolver = settings.dnsProxyResolver,
+            directDnsResolver = settings.dnsDirectResolver,
+            bootstrapDnsResolver = settings.bootstrapDnsResolver,
+            vpnMtu = settings.vpnMtu,
+            appsOutsideTunnel = settings.splitRoutingPackages.size,
+            statusNotificationEnabled = settings.statusNotificationEnabled,
+            notificationDetail =
+                if (!settings.statusNotificationEnabled) {
+                    NotificationDetail.OFF
+                } else {
+                    when (settings.notificationTrafficDisplayMode) {
+                        NotificationTrafficDisplayMode.SPEED -> NotificationDetail.SPEED
+                        NotificationTrafficDisplayMode.TOTAL -> NotificationDetail.TOTAL
+                        NotificationTrafficDisplayMode.BOTH -> NotificationDetail.BOTH
+                    }
+                },
+            dnsMode =
+                when (settings.dnsStrategy) {
+                    DnsStrategy.AUTO -> DnsMode.AUTO
+                    DnsStrategy.IPV4_ONLY -> DnsMode.IPV4
+                    DnsStrategy.IPV6_ONLY -> DnsMode.IPV6
+                },
+            interruptConnections = settings.interruptExistingConnections,
+            fakeIp = settings.fakeIpEnabled,
+            blockLeaks = settings.blockLeaks,
+            bypassLocalNetwork = settings.bypassLocalNetwork,
+            adBlock = settings.adBlockEnabled,
+            proxyOnly = proxyOnly(settings),
+            proxyPort = settings.proxyMixedPort,
+            proxyAllowLan = settings.proxyAllowLan,
+            tcpFastOpen = settings.tcpFastOpen,
+            tcpMultiPath = settings.tcpMultiPath,
+            appsMode =
+                when (settings.splitRoutingMode) {
+                    SplitRoutingMode.OFF -> AppsMode.OFF
+                    SplitRoutingMode.BYPASS_SELECTED -> AppsMode.BYPASS_SELECTED
+                    SplitRoutingMode.ONLY_SELECTED -> AppsMode.ONLY_SELECTED
+                },
+            dynamicColour = settings.dynamicColour,
+            appearance =
+                when (settings.themeMode) {
+                    ThemeMode.SYSTEM -> Appearance.SYSTEM
+                    ThemeMode.LIGHT -> Appearance.LIGHT
+                    ThemeMode.DARK -> Appearance.DARK
+                },
+            strictRoute = settings.vpnStrictRoute,
+            stack =
+                when (settings.vpnTunStack) {
+                    TunStack.SYSTEM -> TunnelStack.SYSTEM
+                    TunStack.GVISOR -> TunnelStack.GVISOR
+                    TunStack.MIXED -> TunnelStack.MIXED
+                },
+            fragmentation =
+                when (settings.tlsFragmentationMode) {
+                    TlsFragmentationMode.DISABLED -> TlsFragmentation.OFF
+                    TlsFragmentationMode.RECORD -> TlsFragmentation.RECORD
+                    TlsFragmentationMode.FRAGMENT -> TlsFragmentation.FRAGMENT
+                },
+            logDetail =
+                when (settings.logLevel) {
+                    LogLevel.OFF -> LogDetail.OFF
+                    LogLevel.TRACE -> LogDetail.TRACE
+                    LogLevel.DEBUG -> LogDetail.DEBUG
+                    LogLevel.INFO -> LogDetail.INFO
+                    LogLevel.WARN -> LogDetail.WARN
+                    LogLevel.ERROR -> LogDetail.ERROR
+                },
+            languageChoice = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU,
+            language =
+                when (settings.language) {
+                    AppLanguage.SYSTEM -> Language.SYSTEM
+                    AppLanguage.RUSSIAN -> Language.RUSSIAN
+                    AppLanguage.ENGLISH -> Language.ENGLISH
+                },
+        )
 
     /** Launchable apps, with the ones currently kept outside the tunnel marked. */
     fun installedApps(): List<io.hydrabox.core.projection.InstalledApp> {
         val excluded = settings().splitRoutingPackages.toSet()
         val manager = appContext.packageManager
-        val intent = android.content.Intent(android.content.Intent.ACTION_MAIN)
-            .addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+        val intent =
+            android.content
+                .Intent(android.content.Intent.ACTION_MAIN)
+                .addCategory(android.content.Intent.CATEGORY_LAUNCHER)
         return runCatching {
-            manager.queryIntentActivities(intent, 0).mapNotNull { resolved ->
-                val name = resolved.activityInfo?.packageName ?: return@mapNotNull null
-                if (name == appContext.packageName) return@mapNotNull null
-                io.hydrabox.core.projection.InstalledApp(
-                    packageName = name,
-                    label = runCatching { resolved.loadLabel(manager).toString() }.getOrDefault(name),
-                    excluded = name in excluded,
-                )
-            }.distinctBy { it.packageName }
+            manager
+                .queryIntentActivities(intent, 0)
+                .mapNotNull { resolved ->
+                    val name = resolved.activityInfo?.packageName ?: return@mapNotNull null
+                    if (name == appContext.packageName) return@mapNotNull null
+                    io.hydrabox.core.projection.InstalledApp(
+                        packageName = name,
+                        label = runCatching { resolved.loadLabel(manager).toString() }.getOrDefault(name),
+                        excluded = name in excluded,
+                    )
+                }.distinctBy { it.packageName }
         }.getOrDefault(emptyList())
     }
 
     fun toggleExcludedApp(packageName: String) {
         val current = settings()
-        val updated = if (packageName in current.splitRoutingPackages) {
-            current.splitRoutingPackages - packageName
-        } else {
-            current.splitRoutingPackages + packageName
-        }
+        val updated =
+            if (packageName in current.splitRoutingPackages) {
+                current.splitRoutingPackages - packageName
+            } else {
+                current.splitRoutingPackages + packageName
+            }
         saveSettings(current.copy(splitRoutingPackages = normalizeSplitRoutingPackages(updated)))
     }
 
-    fun setSplitRoutingPackages(raw: String) = saveSettings(
-        settings().copy(
-            splitRoutingPackages = normalizeSplitRoutingPackages(raw.split(',', '\n', ' ')),
-        ),
-    )
+    fun setSplitRoutingPackages(raw: String) =
+        saveSettings(
+            settings().copy(
+                splitRoutingPackages = normalizeSplitRoutingPackages(raw.split(',', '\n', ' ')),
+            ),
+        )
 
     // --- subscriptions ------------------------------------------------------------
 
@@ -248,49 +265,60 @@ class AppStore(context: Context) : AutoCloseable {
      * A failure to open one body is not "there are no subscriptions": the sources screen has to
      * keep showing the sources that work and say what is wrong with the one that does not.
      */
-    private fun stored(): SubscriptionRecords = runCatching { subscriptions.read() }
-        .onFailure { HydraLog.error(AREA, "the subscription table could not be read", it) }
-        .getOrDefault(SubscriptionRecords())
-        .also { read ->
-            read.failures.forEach { failure ->
-                HydraLog.error(AREA, "the stored body of ${failure.id} could not be opened: ${failure.reason}")
+    private fun stored(): SubscriptionRecords =
+        runCatching { subscriptions.read() }
+            .onFailure { HydraLog.error(AREA, "the subscription table could not be read", it) }
+            .getOrDefault(SubscriptionRecords())
+            .also { read ->
+                read.failures.forEach { failure ->
+                    HydraLog.error(AREA, "the stored body of ${failure.id} could not be opened: ${failure.reason}")
+                }
             }
-        }
 
     /**
      * Accepts a subscription URL or an inline body. A URL is fetched now and its body is
      * stored, so the core process never needs the network to build a configuration.
      */
-    fun addSubscription(name: String, source: String): String = mutate {
-        val trimmed = source.trim()
-        val remote = trimmed.startsWith("http://") || trimmed.startsWith("https://")
-        HydraLog.info(AREA, if (remote) "adding a remote source" else "adding an inline source, ${trimmed.length} chars")
-        val opened = if (remote) retrieve(trimmed) else Opened(openInline(trimmed), null)
-        val catalog = parseCatalog(opened.document)
-        // The same address is the same source: adding a link twice refreshes the entry it
-        // already has instead of leaving two that drift apart.
-        val known = records().associateBy { it.id }
-        val existing = if (remote) idOfUrl(trimmed) else null
-        val id = existing ?: SubscriptionId.of(trimmed, known.keys)
-        val inspection = if (HydraCoreGate.looksHydra(opened.document)) HydraCoreGate.inspect(opened.document) else null
-        val label = name.trim().takeIf(String::isNotEmpty)
-            ?: inspection?.displayName?.takeIf(String::isNotEmpty)
-            ?: catalog.selectable.firstOrNull()?.tag?.takeIf { catalog.selectable.size == 1 }
-            ?: "Subscription ${records().size + 1}"
-        database.transaction {
-            subscriptions.save(SubscriptionRecord(id, label, Secret.of(opened.document), System.currentTimeMillis()))
-            if (remote) queries.upsertValue(urlKey(id), HydraSubscriptionUri.withoutSecretFragment(trimmed).encodeToByteArray())
-            rememberMetadata(id, opened.metadata)
-            rememberFailure(id, null)
-            // The key is a secret: it goes into the encrypted field, never beside the URL.
-            opened.key?.let { key -> queries.upsertSetting(keyKey(id), "", codec.seal(key)) }
-            inspection?.notAfter?.let { queries.upsertValue(validityKey(id), it.encodeToByteArray()) }
-            bumpCatalogRevision()
+    fun addSubscription(
+        name: String,
+        source: String,
+    ): String =
+        mutate {
+            val trimmed = source.trim()
+            val remote = trimmed.startsWith("http://") || trimmed.startsWith("https://")
+            HydraLog.info(AREA, if (remote) "adding a remote source" else "adding an inline source, ${trimmed.length} chars")
+            val opened = if (remote) retrieve(trimmed) else Opened(openInline(trimmed), null)
+            val catalog = parseCatalog(opened.document)
+            // The same address is the same source: adding a link twice refreshes the entry it
+            // already has instead of leaving two that drift apart.
+            val known = records().associateBy { it.id }
+            val existing = if (remote) idOfUrl(trimmed) else null
+            val id = existing ?: SubscriptionId.of(trimmed, known.keys)
+            val inspection = if (HydraCoreGate.looksHydra(opened.document)) HydraCoreGate.inspect(opened.document) else null
+            val label =
+                name.trim().takeIf(String::isNotEmpty)
+                    ?: inspection?.displayName?.takeIf(String::isNotEmpty)
+                    ?: catalog.selectable
+                        .firstOrNull()
+                        ?.tag
+                        ?.takeIf { catalog.selectable.size == 1 }
+                    ?: "Subscription ${records().size + 1}"
+            database.transaction {
+                subscriptions.save(SubscriptionRecord(id, label, Secret.of(opened.document), System.currentTimeMillis()))
+                if (remote) queries.upsertValue(urlKey(id), HydraSubscriptionUri.withoutSecretFragment(trimmed).encodeToByteArray())
+                rememberMetadata(id, opened.metadata)
+                rememberFailure(id, null)
+                // The key is a secret: it goes into the encrypted field, never beside the URL.
+                opened.key?.let { key -> queries.upsertSetting(keyKey(id), "", codec.seal(key)) }
+                inspection?.notAfter?.let { queries.upsertValue(validityKey(id), it.encodeToByteArray()) }
+                bumpCatalogRevision()
+            }
+            if (selectedTag() == null) {
+                catalog.defaultTag?.let(::select)
+                    ?: catalog.selectable.firstOrNull()?.let { select(it.tag) }
+            }
+            id
         }
-        if (selectedTag() == null) catalog.defaultTag?.let(::select)
-            ?: catalog.selectable.firstOrNull()?.let { select(it.tag) }
-        id
-    }
 
     /**
      * Parses a document and says in the journal what came out of it: the format, how many
@@ -311,9 +339,10 @@ class AppStore(context: Context) : AutoCloseable {
     /** Which stored source already points at this address, if any. */
     private fun idOfUrl(url: String): String? {
         val target = HydraSubscriptionUri.withoutSecretFragment(url)
-        return records().firstOrNull { record ->
-            queries.selectValue(urlKey(record.id)).executeAsOneOrNull()?.decodeToString() == target
-        }?.id
+        return records()
+            .firstOrNull { record ->
+                queries.selectValue(urlKey(record.id)).executeAsOneOrNull()?.decodeToString() == target
+            }?.id
     }
 
     /**
@@ -344,14 +373,15 @@ class AppStore(context: Context) : AutoCloseable {
             "the Hydra key belongs in the URL fragment, not the query, or it is sent to the server"
         }
         val key = HydraSubscriptionUri.keyOf(url) ?: storedKey
-        val fetched = SubscriptionFetcher.fetch(
-            context = appContext,
-            url = HydraSubscriptionUri.withoutSecretFragment(url),
-            // A link that carries a Hydra key is a Hydra subscription, and only those receive
-            // the per-origin identifier — which is what the shipped privacy policy promises.
-            identify = key != null,
-            cancellation = cancellation,
-        )
+        val fetched =
+            SubscriptionFetcher.fetch(
+                context = appContext,
+                url = HydraSubscriptionUri.withoutSecretFragment(url),
+                // A link that carries a Hydra key is a Hydra subscription, and only those receive
+                // the per-origin identifier — which is what the shipped privacy policy promises.
+                identify = key != null,
+                cancellation = cancellation,
+            )
         val body = fetched.body
         if (!HydraCoreGate.looksEncrypted(body)) {
             return Opened(body, key, fetched.metadata)
@@ -378,28 +408,37 @@ class AppStore(context: Context) : AutoCloseable {
      * and a new chance to fail. Karing separates the two for good reason: wanting to know the
      * remaining traffic is not wanting a different set of servers.
      */
-    fun refreshUsage(id: String) = mutate {
-        val url = urlOf(id) ?: error("subscription has no source URL to refresh")
-        HydraLog.info(AREA, "refreshing the usage figures only")
-        val fetched = SubscriptionFetcher.fetch(appContext, url, metadataOnly = true)
-        rememberMetadata(id, fetched.metadata)
-        rememberFailure(id, null)
-    }
+    fun refreshUsage(id: String) =
+        mutate {
+            val url = urlOf(id) ?: error("subscription has no source URL to refresh")
+            HydraLog.info(AREA, "refreshing the usage figures only")
+            val fetched = SubscriptionFetcher.fetch(appContext, url, metadataOnly = true)
+            rememberMetadata(id, fetched.metadata)
+            rememberFailure(id, null)
+        }
 
-    fun refreshSubscription(id: String, cancellation: SubscriptionFetcher.Cancellation? = null) = mutate {
+    fun refreshSubscription(
+        id: String,
+        cancellation: SubscriptionFetcher.Cancellation? = null,
+    ) = mutate {
         HydraLog.info(AREA, "refreshing a source")
         val url = queries.selectValue(urlKey(id)).executeAsOneOrNull()?.decodeToString()
         checkNotNull(url) { "subscription has no source URL to refresh" }
-        val stored: String? = queries.selectSecretValue(keyKey(id)).executeAsOneOrNull()
-            ?.secret_value?.let(codec::open)
+        val stored: String? =
+            queries
+                .selectSecretValue(keyKey(id))
+                .executeAsOneOrNull()
+                ?.secret_value
+                ?.let(codec::open)
         // A failed refresh is remembered on the source itself, so its row can say what is
         // wrong long after the message about it has gone.
-        val opened = try {
-            retrieve(url, stored, cancellation)
-        } catch (failure: SubscriptionException) {
-            rememberFailure(id, failure.failure)
-            throw failure
-        }
+        val opened =
+            try {
+                retrieve(url, stored, cancellation)
+            } catch (failure: SubscriptionException) {
+                rememberFailure(id, failure.failure)
+                throw failure
+            }
         parseCatalog(opened.document)
         val current = records().firstOrNull { it.id == id } ?: error("unknown subscription")
         database.transaction {
@@ -407,7 +446,9 @@ class AppStore(context: Context) : AutoCloseable {
             rememberFailure(id, null)
             subscriptions.save(SubscriptionRecord(id, current.name, Secret.of(opened.document), System.currentTimeMillis()))
             if (HydraCoreGate.looksHydra(opened.document)) {
-                HydraCoreGate.inspect(opened.document).notAfter
+                HydraCoreGate
+                    .inspect(opened.document)
+                    .notAfter
                     ?.let { queries.upsertValue(validityKey(id), it.encodeToByteArray()) }
             }
             bumpCatalogRevision()
@@ -424,22 +465,26 @@ class AppStore(context: Context) : AutoCloseable {
      * explanation; `hydra-key` survived it too, which left the material for decrypting a
      * subscription on the device after the subscription was gone.
      */
-    fun removeSubscription(id: String) = mutate {
-        database.transaction {
-            // The TURN edges recorded for this source's servers go with it: a row removed
-            // from the list must not leave a stale address a future server of the same name
-            // would be probed through.
-            catalogs().firstOrNull { it.first.id == id }?.second?.forEach { outbound ->
-                queries.deleteMetadataWithPrefix(turnEdgeKey(outbound.tag))
+    fun removeSubscription(id: String) =
+        mutate {
+            database.transaction {
+                // The TURN edges recorded for this source's servers go with it: a row removed
+                // from the list must not leave a stale address a future server of the same name
+                // would be probed through.
+                catalogs().firstOrNull { it.first.id == id }?.second?.forEach { outbound ->
+                    queries.deleteMetadataWithPrefix(turnEdgeKey(outbound.tag))
+                }
+                queries.deleteSubscription(id)
+                queries.deleteMetadataWithPrefix(metadataPrefix(id))
+                queries.deleteSetting(keyKey(id))
+                bumpCatalogRevision()
             }
-            queries.deleteSubscription(id)
-            queries.deleteMetadataWithPrefix(metadataPrefix(id))
-            queries.deleteSetting(keyKey(id))
-            bumpCatalogRevision()
         }
-    }
 
-    fun renameSubscription(id: String, name: String) {
+    fun renameSubscription(
+        id: String,
+        name: String,
+    ) {
         val current = records().firstOrNull { it.id == id } ?: return
         database.transaction {
             subscriptions.save(SubscriptionRecord(id, name.trim().ifEmpty { current.name }, current.source, current.updatedAtMillis))
@@ -460,9 +505,16 @@ class AppStore(context: Context) : AutoCloseable {
      * measured", because no VK authorisation is ever performed just to obtain an address.
      */
     fun turnEdge(tag: String): String? =
-        queries.selectValue(turnEdgeKey(tag)).executeAsOneOrNull()?.decodeToString()?.takeIf(String::isNotEmpty)
+        queries
+            .selectValue(turnEdgeKey(tag))
+            .executeAsOneOrNull()
+            ?.decodeToString()
+            ?.takeIf(String::isNotEmpty)
 
-    fun recordTurnEdge(tag: String, endpoint: String) = mutate {
+    fun recordTurnEdge(
+        tag: String,
+        endpoint: String,
+    ) = mutate {
         if (turnEdge(tag) != endpoint) {
             database.transaction { queries.upsertValue(turnEdgeKey(tag), endpoint.encodeToByteArray()) }
         }
@@ -471,17 +523,22 @@ class AppStore(context: Context) : AutoCloseable {
     private fun turnEdgeKey(tag: String) = "turn-edge:$tag"
 
     /** Sources due under the provider's interval; pasted sources have no URL and are excluded. */
-    fun refreshableSources(nowMillis: Long = System.currentTimeMillis()): List<SubscriptionRecord> = records().filter { record ->
-        sourceEnabled(record.id) && urlOf(record.id) != null &&
-            nowMillis >= refreshAt(record.updatedAtMillis, metadataOf(record.id, "interval"))
-    }
+    fun refreshableSources(nowMillis: Long = System.currentTimeMillis()): List<SubscriptionRecord> =
+        records().filter { record ->
+            sourceEnabled(record.id) && urlOf(record.id) != null &&
+                nowMillis >= refreshAt(record.updatedAtMillis, metadataOf(record.id, "interval"))
+        }
 
-    fun nextRefreshAtMillis(nowMillis: Long = System.currentTimeMillis()): Long? = records()
-        .filter { sourceEnabled(it.id) && urlOf(it.id) != null }
-        .minOfOrNull { record -> refreshAt(record.updatedAtMillis, metadataOf(record.id, "interval")) }
-        ?.coerceAtLeast(nowMillis)
+    fun nextRefreshAtMillis(nowMillis: Long = System.currentTimeMillis()): Long? =
+        records()
+            .filter { sourceEnabled(it.id) && urlOf(it.id) != null }
+            .minOfOrNull { record -> refreshAt(record.updatedAtMillis, metadataOf(record.id, "interval")) }
+            ?.coerceAtLeast(nowMillis)
 
-    fun setSourceEnabled(id: String, enabled: Boolean) = database.transaction {
+    fun setSourceEnabled(
+        id: String,
+        enabled: Boolean,
+    ) = database.transaction {
         queries.upsertValue(metadataKey(id, "enabled"), (if (enabled) "1" else "0").encodeToByteArray())
         bumpCatalogRevision()
     }
@@ -501,9 +558,10 @@ class AppStore(context: Context) : AutoCloseable {
      * is the chosen route, so this is also the answer to "does switching to it need the core
      * started again".
      */
-    fun isCallTransport(tag: String): Boolean = activeCatalogs().any { (_, outbounds) ->
-        outbounds.any { it.tag == tag && it.type.equals(CALL_TYPE, ignoreCase = true) }
-    }
+    fun isCallTransport(tag: String): Boolean =
+        activeCatalogs().any { (_, outbounds) ->
+            outbounds.any { it.tag == tag && it.type.equals(CALL_TYPE, ignoreCase = true) }
+        }
 
     /** Only the sources that are switched on, which is what the configuration may use. */
     private fun activeCatalogs() = catalogs().filter { (record, _) -> sourceEnabled(record.id) }
@@ -519,75 +577,101 @@ class AppStore(context: Context) : AutoCloseable {
     private fun catalogs(): List<Pair<SubscriptionRecord, List<CatalogOutbound>>> {
         val revision = metadataOf(CATALOG_REVISION_ID, CATALOG_REVISION_FIELD)
         catalogCache?.takeIf { it.revision == revision }?.let { return it.catalogs }
-        val parsed = records().map { record ->
-            record to runCatching {
-                record.source.use(OutboundCatalogParser::parse).outbounds.map { it.copy(scope = record.id) }
-            }.getOrDefault(emptyList())
-        }
+        val parsed =
+            records().map { record ->
+                record to
+                    runCatching {
+                        record.source
+                            .use(OutboundCatalogParser::parse)
+                            .outbounds
+                            .map { it.copy(scope = record.id) }
+                    }.getOrDefault(emptyList())
+            }
         val originals = parsed.flatMap { it.second }
         val normalized = OutboundTags.normalize(originals).outbounds
-        val unique = normalized
-            .groupBy(CatalogOutbound::scope)
+        val unique =
+            normalized
+                .groupBy(CatalogOutbound::scope)
         val catalogs = parsed.map { (record, outbounds) -> record to (unique[record.id] ?: outbounds) }
-        val selections = normalized.zip(originals).associate { (normalized, original) ->
-            normalized.tag to ScopedSelection(original.scope, original.tag)
-        }
+        val selections =
+            normalized.zip(originals).associate { (normalized, original) ->
+                normalized.tag to ScopedSelection(original.scope, original.tag)
+            }
         return catalogs.also { catalogCache = CatalogCache(revision, it, selections) }
     }
 
-    fun summaries(): List<SubscriptionSummary> = catalogs().map { (record, outbounds) ->
-        SubscriptionSummary(
-            id = record.id,
-            name = record.name,
-            serverCount = outbounds.count(CatalogOutbound::selectable),
-            updatedAtMillis = record.updatedAtMillis,
-            // Both validity fields end up as a plain day: a person reads 2026-10-12, not
-            // 2026-10-12T00:00:00Z, and the row has one line for it.
-            expiresAt = (validityOf(record.id) ?: expiryOf(record.id))?.substringBefore("T"),
-            encrypted = queries.selectSecretValue(keyKey(record.id)).executeAsOneOrNull()?.secret_value != null,
-            problem = problemOf(record.id, outbounds),
-            // A provider that reports usage without a cap — `total=0` — still knows how much
-            // has gone through, and that is worth showing on its own.
-            usedTraffic = metadataOf(record.id, "used")?.toLongOrNull()?.let(::readableBytes),
-            totalTraffic = metadataOf(record.id, "total")?.toLongOrNull()?.takeIf { it > 0 }?.let(::readableBytes),
-            usedBytes = metadataOf(record.id, "used")?.toLongOrNull(),
-            totalBytes = metadataOf(record.id, "total")?.toLongOrNull()?.takeIf { it > 0 },
-            expiresInDays = daysLeft(record.id),
-            updateIntervalHours = metadataOf(record.id, "interval")?.toIntOrNull()?.takeIf { it > 0 },
-            updatedAt = readableDay(record.updatedAtMillis),
-            protocols = outbounds.filter(CatalogOutbound::selectable)
-                .groupingBy { it.type.uppercase() }.eachCount(),
-            link = urlOf(record.id),
-            enabled = sourceEnabled(record.id),
-        )
-    } + stored().failures.map { failure ->
-        // A row whose body will not open still has a name and still has to be removable.
-        SubscriptionSummary(
-            id = failure.id,
-            name = failure.name,
-            serverCount = 0,
-            updatedAtMillis = 0,
-            problem = SourceProblem.REJECTED,
-            link = urlOf(failure.id),
-            enabled = sourceEnabled(failure.id),
-        )
-    }
+    fun summaries(): List<SubscriptionSummary> =
+        catalogs().map { (record, outbounds) ->
+            SubscriptionSummary(
+                id = record.id,
+                name = record.name,
+                serverCount = outbounds.count(CatalogOutbound::selectable),
+                updatedAtMillis = record.updatedAtMillis,
+                // Both validity fields end up as a plain day: a person reads 2026-10-12, not
+                // 2026-10-12T00:00:00Z, and the row has one line for it.
+                expiresAt = (validityOf(record.id) ?: expiryOf(record.id))?.substringBefore("T"),
+                encrypted = queries.selectSecretValue(keyKey(record.id)).executeAsOneOrNull()?.secret_value != null,
+                problem = problemOf(record.id, outbounds),
+                // A provider that reports usage without a cap — `total=0` — still knows how much
+                // has gone through, and that is worth showing on its own.
+                usedTraffic = metadataOf(record.id, "used")?.toLongOrNull()?.let(::readableBytes),
+                totalTraffic = metadataOf(record.id, "total")?.toLongOrNull()?.takeIf { it > 0 }?.let(::readableBytes),
+                usedBytes = metadataOf(record.id, "used")?.toLongOrNull(),
+                totalBytes = metadataOf(record.id, "total")?.toLongOrNull()?.takeIf { it > 0 },
+                expiresInDays = daysLeft(record.id),
+                updateIntervalHours = metadataOf(record.id, "interval")?.toIntOrNull()?.takeIf { it > 0 },
+                updatedAt = readableDay(record.updatedAtMillis),
+                protocols =
+                    outbounds
+                        .filter(CatalogOutbound::selectable)
+                        .groupingBy { it.type.uppercase() }
+                        .eachCount(),
+                link = urlOf(record.id),
+                enabled = sourceEnabled(record.id),
+            )
+        } +
+            stored().failures.map { failure ->
+                // A row whose body will not open still has a name and still has to be removable.
+                SubscriptionSummary(
+                    id = failure.id,
+                    name = failure.name,
+                    serverCount = 0,
+                    updatedAtMillis = 0,
+                    problem = SourceProblem.REJECTED,
+                    link = urlOf(failure.id),
+                    enabled = sourceEnabled(failure.id),
+                )
+            }
 
     /**
      * How many days the plan still has, from whichever of the two validity fields the document
      * carried. Negative days are not shown as "minus three": an expired source is a problem
      * state, and [problemOf] already says so.
      */
+
     /** The day a source was last read, as a person reads a date. */
-    private fun readableDay(millis: Long): String? = millis.takeIf { it > 0 }?.let {
-        java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault())
-            .format(java.time.format.DateTimeFormatter.ofPattern("dd.MM HH:mm"))
-    }
+    private fun readableDay(millis: Long): String? =
+        millis.takeIf { it > 0 }?.let {
+            java.time.Instant
+                .ofEpochMilli(it)
+                .atZone(java.time.ZoneId.systemDefault())
+                .format(
+                    java.time.format.DateTimeFormatter
+                        .ofPattern("dd.MM HH:mm"),
+                )
+        }
 
     private fun daysLeft(id: String): Int? {
-        val seconds = metadataOf(id, "expire")?.toLongOrNull()
-            ?: validityOf(id)?.let { runCatching { java.time.Instant.parse(it).epochSecond }.getOrNull() }
-            ?: return null
+        val seconds =
+            metadataOf(id, "expire")?.toLongOrNull()
+                ?: validityOf(id)?.let {
+                    runCatching {
+                        java.time.Instant
+                            .parse(it)
+                            .epochSecond
+                    }.getOrNull()
+                }
+                ?: return null
         val left = seconds - System.currentTimeMillis() / 1000
         return if (left <= 0) 0 else (left / 86_400).toInt()
     }
@@ -596,70 +680,116 @@ class AppStore(context: Context) : AutoCloseable {
      * What is wrong with a source, as one of four situations. The parser's own message is a
      * developer sentence; it goes to diagnostics, not to the person.
      */
-    private fun problemOf(id: String, outbounds: List<CatalogOutbound>): SourceProblem? {
-        val expired = validityOf(id)?.let { it < java.time.Instant.now().toString() } == true ||
-            metadataOf(id, "expire")?.toLongOrNull()?.let { it < System.currentTimeMillis() / 1000 } == true
+    private fun problemOf(
+        id: String,
+        outbounds: List<CatalogOutbound>,
+    ): SourceProblem? {
+        val expired =
+            validityOf(id)?.let {
+                it <
+                    java.time.Instant
+                        .now()
+                        .toString()
+            } == true ||
+                metadataOf(id, "expire")?.toLongOrNull()?.let { it < System.currentTimeMillis() / 1000 } == true
         val failure = failureOf(id)
         return when {
-            expired || failure == SourceFailure.EXPIRED -> SourceProblem.EXPIRED
-            failure in setOf(SourceFailure.TIMEOUT, SourceFailure.NO_NETWORK, SourceFailure.TLS) ->
+            expired || failure == SourceFailure.EXPIRED -> {
+                SourceProblem.EXPIRED
+            }
+
+            failure in setOf(SourceFailure.TIMEOUT, SourceFailure.NO_NETWORK, SourceFailure.TLS) -> {
                 SourceProblem.UNREACHABLE
-            failure in setOf(
-                SourceFailure.HTTP_STATUS,
-                SourceFailure.HTML_RESPONSE,
-                SourceFailure.INVALID_CONTENT,
-                SourceFailure.INVALID_URL,
-                SourceFailure.CREDENTIALS_REQUIRE_HTTPS,
-                SourceFailure.UNSAFE_REDIRECT,
-                SourceFailure.TOO_MANY_REDIRECTS,
-                SourceFailure.TOO_LARGE,
-                SourceFailure.ENCRYPTED_WITHOUT_KEY,
-                SourceFailure.CORE_TOO_OLD,
-            ) -> SourceProblem.REJECTED
-            outbounds.isEmpty() && parseError(id) != null -> SourceProblem.REJECTED
-            outbounds.none(CatalogOutbound::selectable) -> SourceProblem.EMPTY
-            else -> null
+            }
+
+            failure in
+                setOf(
+                    SourceFailure.HTTP_STATUS,
+                    SourceFailure.HTML_RESPONSE,
+                    SourceFailure.INVALID_CONTENT,
+                    SourceFailure.INVALID_URL,
+                    SourceFailure.CREDENTIALS_REQUIRE_HTTPS,
+                    SourceFailure.UNSAFE_REDIRECT,
+                    SourceFailure.TOO_MANY_REDIRECTS,
+                    SourceFailure.TOO_LARGE,
+                    SourceFailure.ENCRYPTED_WITHOUT_KEY,
+                    SourceFailure.CORE_TOO_OLD,
+                )
+            -> {
+                SourceProblem.REJECTED
+            }
+
+            outbounds.isEmpty() && parseError(id) != null -> {
+                SourceProblem.REJECTED
+            }
+
+            outbounds.none(CatalogOutbound::selectable) -> {
+                SourceProblem.EMPTY
+            }
+
+            else -> {
+                null
+            }
         }
     }
 
     /** The provider's own expiry, as a date rather than a number of seconds. */
-    private fun expiryOf(id: String): String? = metadataOf(id, "expire")?.toLongOrNull()
-        ?.let { java.time.Instant.ofEpochSecond(it).toString().substringBefore('T') }
+    private fun expiryOf(id: String): String? =
+        metadataOf(id, "expire")
+            ?.toLongOrNull()
+            ?.let {
+                java.time.Instant
+                    .ofEpochSecond(it)
+                    .toString()
+                    .substringBefore('T')
+            }
 
     /** One implementation, in the projection, where the screens already read it from. */
-    private fun readableBytes(value: Long): String = io.hydrabox.core.projection.readableBytes(value)
+    private fun readableBytes(value: Long): String =
+        io.hydrabox.core.projection
+            .readableBytes(value)
 
     /** Servers grouped by the source they came from, which is how a person recognises them. */
-    fun serverGroups(): List<ServerGroup> = activeCatalogs().mapNotNull { (record, outbounds) ->
-        val servers = outbounds.filter(CatalogOutbound::selectable).map { outbound ->
-            ServerRef(
-                id = outbound.tag,
-                displayName = outbound.label ?: outbound.tag,
-                sourceId = record.id,
-                type = outbound.type.takeIf(String::isNotBlank),
-            )
+    fun serverGroups(): List<ServerGroup> =
+        activeCatalogs().mapNotNull { (record, outbounds) ->
+            val servers =
+                outbounds.filter(CatalogOutbound::selectable).map { outbound ->
+                    ServerRef(
+                        id = outbound.tag,
+                        displayName = outbound.label ?: outbound.tag,
+                        sourceId = record.id,
+                        type = outbound.type.takeIf(String::isNotBlank),
+                    )
+                }
+            if (servers.isEmpty()) null else ServerGroup(record.id, record.name, servers)
         }
-        if (servers.isEmpty()) null else ServerGroup(record.id, record.name, servers)
-    }
 
     /**
      * The automatic choice, offered only when there is more than nothing to choose from.
      * It is a real outbound in the generated configuration, which is why the runtime can
      * report which server it landed on.
      */
-    fun autoServer(): ServerRef? = if (serverGroups().isEmpty()) null else {
-        ServerRef(id = AUTO_TAG, displayName = AUTO_TAG, auto = true)
-    }
+    fun autoServer(): ServerRef? =
+        if (serverGroups().isEmpty()) {
+            null
+        } else {
+            ServerRef(id = AUTO_TAG, displayName = AUTO_TAG, auto = true)
+        }
 
-    fun parseError(id: String): String? = records().firstOrNull { it.id == id }?.let { record ->
-        runCatching { record.source.use(OutboundCatalogParser::parse) }.exceptionOrNull()?.message
-    }
+    fun parseError(id: String): String? =
+        records().firstOrNull { it.id == id }?.let { record ->
+            runCatching { record.source.use(OutboundCatalogParser::parse) }.exceptionOrNull()?.message
+        }
 
     // --- selection and configuration ----------------------------------------------
 
     fun selectedTag(): String? {
-        val stored = queries.selectValue(SELECTED_KEY).executeAsOneOrNull()
-            ?.decodeToString()?.takeIf(String::isNotEmpty) ?: return null
+        val stored =
+            queries
+                .selectValue(SELECTED_KEY)
+                .executeAsOneOrNull()
+                ?.decodeToString()
+                ?.takeIf(String::isNotEmpty) ?: return null
         if (stored == AUTO_TAG) return stored
         catalogs()
         val source = queries.selectValue(SELECTED_SOURCE_KEY).executeAsOneOrNull()?.decodeToString()
@@ -707,7 +837,11 @@ class AppStore(context: Context) : AutoCloseable {
         only: String? = null,
     ): String? {
         val all = activeCatalogs().flatMap { it.second }
-        val outbounds = only?.let { tag -> io.hydrabox.core.config.isolateOutbound(all, tag) } ?: all
+        val outbounds =
+            only?.let { tag ->
+                io.hydrabox.core.config
+                    .isolateOutbound(all, tag)
+            } ?: all
         if (outbounds.none(CatalogOutbound::selectable)) return null
         val settings = settings()
         return TunnelConfigGenerator.generate(
@@ -720,18 +854,21 @@ class AppStore(context: Context) : AutoCloseable {
                 mtu = settings.vpnMtu,
                 // One list, two meanings: the mode decides whether the chosen apps are the
                 // ones that skip the tunnel or the only ones allowed into it.
-                excludePackages = if (settings.splitRoutingMode == SplitRoutingMode.BYPASS_SELECTED) {
-                    settings.splitRoutingPackages
-                } else {
-                    emptyList()
-                },
-                includePackages = if (settings.splitRoutingMode == SplitRoutingMode.ONLY_SELECTED) {
-                    settings.splitRoutingPackages
-                } else {
-                    emptyList()
-                },
+                excludePackages =
+                    if (settings.splitRoutingMode == SplitRoutingMode.BYPASS_SELECTED) {
+                        settings.splitRoutingPackages
+                    } else {
+                        emptyList()
+                    },
+                includePackages =
+                    if (settings.splitRoutingMode == SplitRoutingMode.ONLY_SELECTED) {
+                        settings.splitRoutingPackages
+                    } else {
+                        emptyList()
+                    },
                 urlTestUrl = settings.urlTestUrl,
                 urlTestIntervalSeconds = settings.urlTestIntervalSeconds,
+                urlTestUnavailableCheckIntervalSeconds = settings.urlTestUnavailableCheckIntervalSeconds,
                 blockLeaks = settings.blockLeaks,
                 bypassLocalNetwork = settings.bypassLocalNetwork,
                 strictRoute = settings.vpnStrictRoute,
@@ -739,7 +876,8 @@ class AppStore(context: Context) : AutoCloseable {
                 tcpFastOpen = settings.tcpFastOpen,
                 tcpMultiPath = settings.tcpMultiPath,
                 tlsFragmentation = settings.tlsFragmentationMode.name.lowercase(),
-                urlTestToleranceMillis = if (settings.urlTestStrictTolerance) 1 else 50,                urlTestProbeTimeoutMillis =
+                urlTestToleranceMillis = if (settings.urlTestStrictTolerance) 1 else 50,
+                urlTestProbeTimeoutMillis =
                     settings.urlTestTimeoutSeconds * 1000L,
                 urlTestProbeConcurrency = settings.urlTestConcurrency,
                 // A DoH query string reaches the resolver only on a core that carries one.
@@ -775,8 +913,12 @@ class AppStore(context: Context) : AutoCloseable {
 
     fun clearStartFailure() = queries.upsertValue(START_FAILURE_KEY, ByteArray(0))
 
-    fun startFailure(): String? = queries.selectValue(START_FAILURE_KEY).executeAsOneOrNull()
-        ?.decodeToString()?.takeIf(String::isNotEmpty)
+    fun startFailure(): String? =
+        queries
+            .selectValue(START_FAILURE_KEY)
+            .executeAsOneOrNull()
+            ?.decodeToString()
+            ?.takeIf(String::isNotEmpty)
 
     /** The configuration as the core will see it, for the diagnostics screen. */
     fun configPreview(): String? = runCatching { generateConfig() }.getOrElse { "generation failed: ${it.message}" }
@@ -784,13 +926,17 @@ class AppStore(context: Context) : AutoCloseable {
     /** The outbound type of the VK transport, as the subscription writes it. */
     private val CALL_TYPE = "call"
 
-    private fun metadataKey(id: String, field: String) = "subscription.$id.$field"
+    private fun metadataKey(
+        id: String,
+        field: String,
+    ) = "subscription.$id.$field"
 
     /** A cross-process token for parsed sources; journal writes deliberately do not touch it. */
-    private fun bumpCatalogRevision() = queries.upsertValue(
-        metadataKey(CATALOG_REVISION_ID, CATALOG_REVISION_FIELD),
-        (System.currentTimeMillis().toString() + "." + System.nanoTime()).encodeToByteArray(),
-    )
+    private fun bumpCatalogRevision() =
+        queries.upsertValue(
+            metadataKey(CATALOG_REVISION_ID, CATALOG_REVISION_FIELD),
+            (System.currentTimeMillis().toString() + "." + System.nanoTime()).encodeToByteArray(),
+        )
 
     /**
      * Every metadata key belonging to one source, as a `LIKE` pattern.
@@ -798,11 +944,13 @@ class AppStore(context: Context) : AutoCloseable {
      * The trailing dot is what keeps `sub-abcd1234` from matching `sub-abcd1234-2`, and the
      * wildcards an id could contain are escaped so an id can never widen the pattern.
      */
-    private fun metadataPrefix(id: String) =
-        "subscription." + id.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + ".%"
+    private fun metadataPrefix(id: String) = "subscription." + id.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + ".%"
 
     /** What the provider said, kept so the row can show it without another request. */
-    fun rememberMetadata(id: String, metadata: SubscriptionMetadata) {
+    fun rememberMetadata(
+        id: String,
+        metadata: SubscriptionMetadata,
+    ) {
         if (metadata.empty) return
         listOf(
             "used" to metadata.usedBytes?.toString(),
@@ -815,28 +963,39 @@ class AppStore(context: Context) : AutoCloseable {
         }
     }
 
-    private fun metadataOf(id: String, field: String): String? =
-        queries.selectValue(metadataKey(id, field)).executeAsOneOrNull()
-            ?.decodeToString()?.takeIf(String::isNotEmpty)
+    private fun metadataOf(
+        id: String,
+        field: String,
+    ): String? =
+        queries
+            .selectValue(metadataKey(id, field))
+            .executeAsOneOrNull()
+            ?.decodeToString()
+            ?.takeIf(String::isNotEmpty)
 
     /**
      * Why the last import failed, kept for the diagnostics screen. A person who cannot add a
      * subscription has to be able to say what happened without a cable and a log viewer.
      */
     fun rememberImportFailure(failure: Throwable?) {
-        val text = failure?.let { error ->
-            val typed = (error as? SubscriptionException)
-            buildString {
-                append(typed?.failure?.name ?: error::class.java.simpleName)
-                typed?.httpStatus?.let { append(" http=").append(it) }
-                error.message?.takeIf { it.isNotEmpty() && typed == null }?.let { append(": ").append(it.take(120)) }
+        val text =
+            failure?.let { error ->
+                val typed = (error as? SubscriptionException)
+                buildString {
+                    append(typed?.failure?.name ?: error::class.java.simpleName)
+                    typed?.httpStatus?.let { append(" http=").append(it) }
+                    error.message?.takeIf { it.isNotEmpty() && typed == null }?.let { append(": ").append(it.take(120)) }
+                }
             }
-        }
         queries.upsertValue(IMPORT_FAILURE_KEY, (text ?: "").encodeToByteArray())
     }
 
-    fun importFailure(): String? = queries.selectValue(IMPORT_FAILURE_KEY).executeAsOneOrNull()
-        ?.decodeToString()?.takeIf(String::isNotEmpty)
+    fun importFailure(): String? =
+        queries
+            .selectValue(IMPORT_FAILURE_KEY)
+            .executeAsOneOrNull()
+            ?.decodeToString()
+            ?.takeIf(String::isNotEmpty)
 
     /**
      * Lines the core process wants the diagnostics screen to show. The two processes share
@@ -853,58 +1012,79 @@ class AppStore(context: Context) : AutoCloseable {
      * and an fsync every 1.2 s. Each kind is trimmed to its own budget, so tracing cannot evict
      * the operational entry that explains a failure.
      */
-    fun recordJournal(entries: List<HydraLog.Entry>) = synchronized(writeLock) {
-        if (entries.isEmpty()) return@synchronized
-        database.transaction {
-            entries.forEach { entry ->
-                queries.appendJournal(
-                    kind = if (entry.area == CORE_AREA) KIND_TRACE else KIND_EVENT,
-                    at_millis = entry.atMillis,
-                    level = entry.level.name.lowercase(),
-                    area = entry.area,
-                    message = entry.message.replace('\n', ' ').replace('\r', ' '),
-                )
+    fun recordJournal(entries: List<HydraLog.Entry>) =
+        synchronized(writeLock) {
+            if (entries.isEmpty()) return@synchronized
+            database.transaction {
+                entries.forEach { entry ->
+                    queries.appendJournal(
+                        kind = if (entry.area == CORE_AREA) KIND_TRACE else KIND_EVENT,
+                        at_millis = entry.atMillis,
+                        level = entry.level.name.lowercase(),
+                        area = entry.area,
+                        message = entry.message.replace('\n', ' ').replace('\r', ' '),
+                    )
+                }
+                queries.trimJournal(KIND_TRACE, TRACE_LIMIT)
+                queries.trimJournal(KIND_EVENT, EVENT_LIMIT)
             }
-            queries.trimJournal(KIND_TRACE, TRACE_LIMIT)
-            queries.trimJournal(KIND_EVENT, EVENT_LIMIT)
+            // The blob this replaced is 24 KB of dead weight on every device that ran the old build.
+            if (!legacyJournalDropped) {
+                legacyJournalDropped = true
+                runCatching { queries.upsertValue(LEGACY_EVENTS_KEY, ByteArray(0)) }
+            }
         }
-        // The blob this replaced is 24 KB of dead weight on every device that ran the old build.
-        if (!legacyJournalDropped) {
-            legacyJournalDropped = true
-            runCatching { queries.upsertValue(LEGACY_EVENTS_KEY, ByteArray(0)) }
-        }
-    }
 
     fun clearCoreEvents() = synchronized(writeLock) { queries.clearJournal() }
 
     /** One journal line as it crossed the process boundary. */
-    data class CoreEvent(val atMillis: Long, val level: String, val area: String, val message: String)
+    data class CoreEvent(
+        val atMillis: Long,
+        val level: String,
+        val area: String,
+        val message: String,
+    )
 
-    fun coreEvents(): List<CoreEvent> = runCatching {
-        queries.selectJournal { atMillis, level, area, message -> CoreEvent(atMillis, level, area, message) }
-            .executeAsList()
-    }.getOrDefault(emptyList())
+    fun coreEvents(): List<CoreEvent> =
+        runCatching {
+            queries
+                .selectJournal { atMillis, level, area, message -> CoreEvent(atMillis, level, area, message) }
+                .executeAsList()
+        }.getOrDefault(emptyList())
 
     /** A cheap change token for the foreground journal reader. */
     fun journalRevision(): Long = queries.journalRevision().executeAsOne()
 
     /** The last reason this source could not be read, in the words the product uses. */
-    fun rememberFailure(id: String, failure: SourceFailure?) =
-        queries.upsertValue(metadataKey(id, "failure"), (failure?.name ?: "").encodeToByteArray())
+    fun rememberFailure(
+        id: String,
+        failure: SourceFailure?,
+    ) = queries.upsertValue(metadataKey(id, "failure"), (failure?.name ?: "").encodeToByteArray())
 
-    private fun failureOf(id: String): SourceFailure? = metadataOf(id, "failure")
-        ?.let { name -> runCatching { SourceFailure.valueOf(name) }.getOrNull() }
+    private fun failureOf(id: String): SourceFailure? =
+        metadataOf(id, "failure")
+            ?.let { name -> runCatching { SourceFailure.valueOf(name) }.getOrNull() }
 
     private fun urlKey(id: String) = "subscription.$id.url"
 
     /** The address a remote source is fetched from, without its secret fragment. */
-    fun urlOf(id: String): String? = queries.selectValue(urlKey(id)).executeAsOneOrNull()
-        ?.decodeToString()?.takeIf(String::isNotEmpty)
+    fun urlOf(id: String): String? =
+        queries
+            .selectValue(urlKey(id))
+            .executeAsOneOrNull()
+            ?.decodeToString()
+            ?.takeIf(String::isNotEmpty)
+
     private fun keyKey(id: String) = "subscription.$id.hydra-key"
+
     private fun validityKey(id: String) = "subscription.$id.not-after"
 
-    fun validityOf(id: String): String? = queries.selectValue(validityKey(id)).executeAsOneOrNull()
-        ?.decodeToString()?.takeIf(String::isNotEmpty)
+    fun validityOf(id: String): String? =
+        queries
+            .selectValue(validityKey(id))
+            .executeAsOneOrNull()
+            ?.decodeToString()
+            ?.takeIf(String::isNotEmpty)
 
     /**
      * What a fresh install has, which is exactly what the codec makes of an empty table.
@@ -927,6 +1107,7 @@ class AppStore(context: Context) : AutoCloseable {
         const val IMPORT_FAILURE_KEY = "subscription.last.import.failure"
         const val CATALOG_REVISION_ID = "catalog"
         const val CATALOG_REVISION_FIELD = "revision"
+
         /** The blob the journal used to live in, kept only so it can be emptied once. */
         const val LEGACY_EVENTS_KEY = "diagnostics.core.events.v2"
 

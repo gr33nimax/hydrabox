@@ -32,6 +32,12 @@ data class TunnelInput(
     val urlTestUrl: String = "https://cp.cloudflare.com/generate_204",
     val urlTestIntervalSeconds: Int = 600,
     /**
+     * How soon a server whose last probe failed is asked again. Zero keeps the field out of the
+     * configuration and the core falls back to the general interval, which is what a core without
+     * the field requires and what every build older than this one carries.
+     */
+    val urlTestUnavailableCheckIntervalSeconds: Int = 0,
+    /**
      * Rejects STUN. A WebRTC handshake asks a STUN server for the real address, and the
      * answer travels outside the tunnel unless the rule below drops it.
      */
@@ -129,6 +135,7 @@ private const val PLATFORM_RESOLVER = "device://network"
  * resolver bootstraps through the local resolver and never routes application queries
  * outside the tunnel.
  */
+
 /** The outbound type of the VK transport, as a subscription writes it. */
 private const val CALL_TYPE = "call"
 
@@ -160,17 +167,19 @@ private fun withoutIdleCallTransports(
 }
 
 /** Every tag one outbound points at: what it dials through, and what its group holds. */
-private fun referencesOf(outbound: CatalogOutbound): Set<String> = buildSet {
-    (outbound.json["detour"] as? JsonPrimitive)?.contentOrNull?.let(::add)
-    (outbound.json["outbounds"] as? JsonArray)?.forEach { member ->
-        (member as? JsonPrimitive)?.contentOrNull?.let(::add)
+private fun referencesOf(outbound: CatalogOutbound): Set<String> =
+    buildSet {
+        (outbound.json["detour"] as? JsonPrimitive)?.contentOrNull?.let(::add)
+        (outbound.json["outbounds"] as? JsonArray)?.forEach { member ->
+            (member as? JsonPrimitive)?.contentOrNull?.let(::add)
+        }
     }
-}
 
 /** Every tag the embedded documents point at: a detour, or a member of a group they carry. */
-private fun referencedTags(outbounds: List<CatalogOutbound>): Set<String> = buildSet {
-    outbounds.forEach { outbound -> addAll(referencesOf(outbound)) }
-}
+private fun referencedTags(outbounds: List<CatalogOutbound>): Set<String> =
+    buildSet {
+        outbounds.forEach { outbound -> addAll(referencesOf(outbound)) }
+    }
 
 /**
  * One server and the chain it dials through, and nothing else.
@@ -186,7 +195,10 @@ private fun referencedTags(outbounds: List<CatalogOutbound>): Set<String> = buil
  * its server is a measurement of nothing, and the caller is the one that knows whether the
  * tag was real.
  */
-fun isolateOutbound(outbounds: List<CatalogOutbound>, tag: String): List<CatalogOutbound> {
+fun isolateOutbound(
+    outbounds: List<CatalogOutbound>,
+    tag: String,
+): List<CatalogOutbound> {
     val byTag = outbounds.associateBy(CatalogOutbound::tag)
     if (tag !in byTag) return outbounds
     val keep = mutableSetOf<String>()
@@ -218,7 +230,11 @@ fun selectionCrossesCallBoundary(
 ): Boolean = previous != null && isCallTransport(previous) != isCallTransport(next)
 
 object TunnelConfigGenerator {
-    private val json = Json { prettyPrint = false; encodeDefaults = true }
+    private val json =
+        Json {
+            prettyPrint = false
+            encodeDefaults = true
+        }
 
     /**
      * Whether a stored resolver names a DoH query string.
@@ -305,6 +321,9 @@ object TunnelConfigGenerator {
                             put("url", input.urlTestUrl)
                             put("interval", "${input.urlTestIntervalSeconds}s")
                             put("idle_timeout", "${input.urlTestIntervalSeconds}s")
+                            if (input.urlTestUnavailableCheckIntervalSeconds > 0) {
+                                put("unavailable_interval", "${input.urlTestUnavailableCheckIntervalSeconds}s")
+                            }
                             put("tolerance", input.urlTestToleranceMillis)
                             input.urlTestProbeTimeoutMillis?.let { put("probe_timeout", "${it}ms") }
                             input.urlTestProbeConcurrency?.let { put("probe_concurrency", it) }
@@ -347,9 +366,17 @@ object TunnelConfigGenerator {
         }
     }
 
-    private fun dns(input: TunnelInput, hasProxies: Boolean) = buildJsonObject {
+    private fun dns(
+        input: TunnelInput,
+        hasProxies: Boolean,
+    ) = buildJsonObject {
         putJsonArray("servers") {
-            add(buildJsonObject { put("type", "local"); put("tag", "dns-local") })
+            add(
+                buildJsonObject {
+                    put("type", "local")
+                    put("tag", "dns-local")
+                },
+            )
             add(resolverServer(BOOTSTRAP_DNS_TAG, input.bootstrapDnsResolver, DIRECT_TAG))
             add(resolverServer("dns-direct", input.directDnsResolver, DIRECT_TAG))
             if (hasProxies) {
@@ -375,7 +402,10 @@ object TunnelConfigGenerator {
             putJsonArray("rules") {
                 add(
                     buildJsonObject {
-                        putJsonArray("query_type") { add(JsonPrimitive("A")); add(JsonPrimitive("AAAA")) }
+                        putJsonArray("query_type") {
+                            add(JsonPrimitive("A"))
+                            add(JsonPrimitive("AAAA"))
+                        }
                         put("server", "dns-fake")
                     },
                 )
@@ -400,7 +430,10 @@ object TunnelConfigGenerator {
      * contributed. 1.x did the same in `_applyTlsFragmentation` and its dial override, and
      * only for the types that accept those fields — a `selector` has no socket to tune.
      */
-    private fun dialOptions(outbound: JsonObject, input: TunnelInput): JsonObject {
+    private fun dialOptions(
+        outbound: JsonObject,
+        input: TunnelInput,
+    ): JsonObject {
         val type = outbound["type"]?.jsonPrimitive?.contentOrNull.orEmpty()
         if (type !in dialCapableTypes) return outbound
         val fragmented = fragmentation(outbound["tls"] as? JsonObject, input.tlsFragmentation)
@@ -414,7 +447,10 @@ object TunnelConfigGenerator {
     }
 
     /** Only a handshake that is actually TLS can be fragmented. */
-    private fun fragmentation(tls: JsonObject?, mode: String): JsonObject? {
+    private fun fragmentation(
+        tls: JsonObject?,
+        mode: String,
+    ): JsonObject? {
         if (tls == null || mode == "disabled") return null
         if (tls["enabled"]?.jsonPrimitive?.contentOrNull != "true") return null
         return buildJsonObject {
@@ -422,32 +458,55 @@ object TunnelConfigGenerator {
                 if (key !in setOf("fragment", "fragment_fallback_delay", "record_fragment")) put(key, value)
             }
             when (mode) {
-                "record" -> put("record_fragment", true)
-                "fragment" -> { put("fragment", true); put("fragment_fallback_delay", "300ms") }
+                "record" -> {
+                    put("record_fragment", true)
+                }
+
+                "fragment" -> {
+                    put("fragment", true)
+                    put("fragment_fallback_delay", "300ms")
+                }
             }
         }
     }
 
-    private val dialCapableTypes = setOf(
-        "socks", "http", "shadowsocks", "vmess", "trojan", "naive",
-        "hysteria", "hysteria2", "tuic", "anytls", "vless", "mieru", "shadowtls", "ssh",
-    )
+    private val dialCapableTypes =
+        setOf(
+            "socks",
+            "http",
+            "shadowsocks",
+            "vmess",
+            "trojan",
+            "naive",
+            "hysteria",
+            "hysteria2",
+            "tuic",
+            "anytls",
+            "vless",
+            "mieru",
+            "shadowtls",
+            "ssh",
+        )
 
-    private fun tun(input: TunnelInput) = buildJsonObject {
-        put("type", "tun")
-        put("tag", "tun-in")
-        putJsonArray("address") { add(JsonPrimitive("172.19.0.1/30")); add(JsonPrimitive("fdfe:dcba:9876::1/126")) }
-        put("mtu", input.mtu)
-        put("auto_route", true)
-        put("strict_route", input.strictRoute)
-        put("stack", input.tunStack)
-        if (input.includePackages.isNotEmpty()) {
-            putJsonArray("include_package") { input.includePackages.forEach { add(JsonPrimitive(it)) } }
+    private fun tun(input: TunnelInput) =
+        buildJsonObject {
+            put("type", "tun")
+            put("tag", "tun-in")
+            putJsonArray("address") {
+                add(JsonPrimitive("172.19.0.1/30"))
+                add(JsonPrimitive("fdfe:dcba:9876::1/126"))
+            }
+            put("mtu", input.mtu)
+            put("auto_route", true)
+            put("strict_route", input.strictRoute)
+            put("stack", input.tunStack)
+            if (input.includePackages.isNotEmpty()) {
+                putJsonArray("include_package") { input.includePackages.forEach { add(JsonPrimitive(it)) } }
+            }
+            if (input.excludePackages.isNotEmpty()) {
+                putJsonArray("exclude_package") { input.excludePackages.forEach { add(JsonPrimitive(it)) } }
+            }
         }
-        if (input.excludePackages.isNotEmpty()) {
-            putJsonArray("exclude_package") { input.excludePackages.forEach { add(JsonPrimitive(it)) } }
-        }
-    }
 
     /**
      * The local proxy port, which is the whole of 1.x's proxy-only mode: no system tunnel,
@@ -455,24 +514,33 @@ object TunnelConfigGenerator {
      * when there are any, because a port that answers the whole machine without one is a
      * hole in it.
      */
-    private fun mixed(input: TunnelInput) = buildJsonObject {
-        put("type", "mixed")
-        put("tag", "mixed-in")
-        put("listen", input.proxyListen)
-        put("listen_port", input.proxyPort)
-        val user = input.proxyUsername?.takeIf(String::isNotEmpty)
-        val password = input.proxyPassword?.takeIf(String::isNotEmpty)
-        if (user != null && password != null) {
-            putJsonArray("users") {
-                add(buildJsonObject { put("username", user); put("password", password) })
+    private fun mixed(input: TunnelInput) =
+        buildJsonObject {
+            put("type", "mixed")
+            put("tag", "mixed-in")
+            put("listen", input.proxyListen)
+            put("listen_port", input.proxyPort)
+            val user = input.proxyUsername?.takeIf(String::isNotEmpty)
+            val password = input.proxyPassword?.takeIf(String::isNotEmpty)
+            if (user != null && password != null) {
+                putJsonArray("users") {
+                    add(
+                        buildJsonObject {
+                            put("username", user)
+                            put("password", password)
+                        },
+                    )
+                }
             }
         }
-    }
 
     /** True only when the person asked for blocking and the compiled set is on disk. */
     private fun adBlockActive(input: TunnelInput) = input.adBlock && input.routeData.adBlockAvailable
 
-    private fun route(input: TunnelInput, hasProxies: Boolean) = buildJsonObject {
+    private fun route(
+        input: TunnelInput,
+        hasProxies: Boolean,
+    ) = buildJsonObject {
         // What resolves a name when an outbound has to dial one — the server's own hostname
         // above all. It was `dns-local`, the platform resolver, which means the network's own:
         // every direct-routed name was asked of the provider, and behind an operator white
@@ -489,15 +557,19 @@ object TunnelConfigGenerator {
             putJsonArray("rule_set") {
                 add(
                     buildJsonObject {
-                        put("type", "local"); put("tag", ADBLOCK_BLOCK)
-                        put("format", "binary"); put("path", input.routeData.adBlockPath!!)
+                        put("type", "local")
+                        put("tag", ADBLOCK_BLOCK)
+                        put("format", "binary")
+                        put("path", input.routeData.adBlockPath!!)
                     },
                 )
                 input.routeData.adBlockAllowPath?.let { path ->
                     add(
                         buildJsonObject {
-                            put("type", "local"); put("tag", ADBLOCK_ALLOW)
-                            put("format", "binary"); put("path", path)
+                            put("type", "local")
+                            put("tag", ADBLOCK_ALLOW)
+                            put("format", "binary")
+                            put("path", path)
                         },
                     )
                 }
@@ -529,10 +601,20 @@ object TunnelConfigGenerator {
                 },
             )
             if (input.blockLeaks) {
-                add(buildJsonObject { put("protocol", "stun"); put("action", "reject") })
+                add(
+                    buildJsonObject {
+                        put("protocol", "stun")
+                        put("action", "reject")
+                    },
+                )
             }
             if (input.bypassLocalNetwork) {
-                add(buildJsonObject { put("ip_is_private", true); put("outbound", DIRECT_TAG) })
+                add(
+                    buildJsonObject {
+                        put("ip_is_private", true)
+                        put("outbound", DIRECT_TAG)
+                    },
+                )
             }
             // The allow list comes first, as in 1.x: an exception has to win over the block.
             if (adBlockActive(input)) {
@@ -544,7 +626,12 @@ object TunnelConfigGenerator {
                         },
                     )
                 }
-                add(buildJsonObject { put("rule_set", ADBLOCK_BLOCK); put("action", "reject") })
+                add(
+                    buildJsonObject {
+                        put("rule_set", ADBLOCK_BLOCK)
+                        put("action", "reject")
+                    },
+                )
             }
         }
     }
@@ -568,7 +655,11 @@ object TunnelConfigGenerator {
      * port 53; and it dropped the query of a DoH address, which for a provider that keys on it is
      * a resolver that refuses. All three looked like a value that had been saved successfully.
      */
-    private fun resolverServer(tag: String, resolver: String, detour: String) = buildJsonObject {
+    private fun resolverServer(
+        tag: String,
+        resolver: String,
+        detour: String,
+    ) = buildJsonObject {
         val trimmed = resolver.trim()
         if (trimmed.lowercase() == PLATFORM_RESOLVER) {
             put("type", "local")
@@ -651,7 +742,13 @@ object TunnelConfigGenerator {
 
     private fun isAddress(value: String) = ':' in value || (value.isNotEmpty() && value.all { it.isDigit() || it == '.' })
 
-    private fun hasInvalidPercentEncoding(value: String): Boolean = value.indices.any { index ->
-        value[index] == '%' && (index + 2 >= value.length || value[index + 1].digitToIntOrNull(16) == null || value[index + 2].digitToIntOrNull(16) == null)
-    }
+    private fun hasInvalidPercentEncoding(value: String): Boolean =
+        value.indices.any { index ->
+            value[index] == '%' &&
+                (
+                    index + 2 >= value.length || value[index + 1].digitToIntOrNull(
+                        16,
+                    ) == null || value[index + 2].digitToIntOrNull(16) == null
+                )
+        }
 }
