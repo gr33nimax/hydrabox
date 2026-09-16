@@ -199,4 +199,39 @@ class ShareLinkFidelityTest {
         assertEquals(true, amnezia["random_trailers"]?.jsonPrimitive?.booleanOrNull)
         assertEquals(false, amnezia["disable_cookies"]?.jsonPrimitive?.booleanOrNull)
     }
+
+    @Test fun `a snell link becomes an outbound with its generation and obfuscation`() {
+        val parsed =
+            assertIs<ShareLink.Proxy>(
+                SubscriptionParser.parse(
+                    "snell://super-secret-psk@snell.example:32489" +
+                        "?version=4&obfs-mode=http&obfs-host=cdn.example&udp-relay=true#Snell",
+                ),
+            )
+        assertEquals("snell", parsed.type)
+
+        val outbound = ShareLinkOutbound.toJson(parsed, "tag")
+        assertEquals("snell", outbound.text("type"))
+        assertEquals("snell.example", outbound.text("server"))
+        assertEquals("32489", outbound.text("server_port"))
+        assertEquals("super-secret-psk", outbound.text("psk"))
+        assertEquals("4", outbound.text("version"))
+        assertEquals("http", outbound.text("obfs_mode"))
+        assertEquals("cdn.example", outbound.text("obfs_host"))
+        assertEquals(listOf("tcp", "udp"), outbound["network"]?.jsonArray?.map { it.jsonPrimitive.content })
+        assertNull(outbound.text("password"))
+    }
+
+    @Test fun `a sixth-generation snell link carries its mode and no obfuscation`() {
+        val parsed =
+            assertIs<ShareLink.Proxy>(
+                SubscriptionParser.parse("snell://another-psk@snell.example:32489?version=6&mode=unshaped#Snell"),
+            )
+
+        val outbound = ShareLinkOutbound.toJson(parsed, "tag")
+        assertEquals("6", outbound.text("version"))
+        assertEquals("unshaped", outbound.text("mode"))
+        assertNull(outbound.text("obfs_mode"))
+        assertNull(outbound.text("obfs_host"))
+    }
 }

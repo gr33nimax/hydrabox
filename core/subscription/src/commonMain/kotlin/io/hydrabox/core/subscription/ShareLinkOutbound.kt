@@ -128,6 +128,24 @@ object ShareLinkOutbound {
                             (link.password ?: link.username)?.use { put("password", it) }
                         }
 
+                        "snell" -> {
+                            // The link's userinfo is the PSK; the generation and its obfuscation or
+                            // its traffic mode travel in the query. A fifth-generation server is
+                            // answered by a fourth-generation client: the core has no client 5.
+                            link.username?.use { put("psk", it) }
+                            put("version", link.query["version"]?.toIntOrNull()?.takeIf { it == 4 || it == 6 } ?: 4)
+                            link.query["obfs-mode"]?.takeIf(String::isNotEmpty)?.let { put("obfs_mode", it) }
+                            link.query["obfs-host"]?.takeIf(String::isNotEmpty)?.let { put("obfs_host", it) }
+                            link.query["mode"]?.takeIf(String::isNotEmpty)?.let { put("mode", it) }
+                            link.query["userkey"]?.takeIf(String::isNotEmpty)?.let { put("userkey", it) }
+                            if (link.query["udp-relay"] == "true") {
+                                putJsonArray("network") {
+                                    add(JsonPrimitive("tcp"))
+                                    add(JsonPrimitive("udp"))
+                                }
+                            }
+                        }
+
                         else -> {
                             link.username?.use { put("username", it) }
                             link.password?.use { put("password", it) }

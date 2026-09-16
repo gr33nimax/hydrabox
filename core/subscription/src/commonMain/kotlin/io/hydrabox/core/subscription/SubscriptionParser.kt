@@ -94,6 +94,7 @@ object SubscriptionParser {
             "naive+quic",
             "tuic",
             "anytls",
+            "snell",
         )
 
     fun parse(value: String): ShareLink {
@@ -412,6 +413,9 @@ object SubscriptionParser {
                 scheme.startsWith("naive+") -> "naive"
                 scheme == "tuic" -> "tuic"
                 scheme == "anytls" -> "anytls"
+                // `snell://` carries the PSK as its userinfo and the generation in the query; the
+                // core runs it as an outbound of its own type.
+                scheme == "snell" -> "snell"
                 else -> "http"
             }
         val secured =
