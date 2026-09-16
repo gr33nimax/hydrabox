@@ -134,7 +134,11 @@ object ShareLinkOutbound {
                             // answered by a fourth-generation client: the core has no client 5.
                             link.username?.use { put("psk", it) }
                             put("version", link.query["version"]?.toIntOrNull()?.takeIf { it == 4 || it == 6 } ?: 4)
-                            link.query["obfs-mode"]?.takeIf(String::isNotEmpty)?.let { put("obfs_mode", it) }
+                            // `obfs` is the name clients write and read; `obfs-mode` is what this
+                            // server wrote before, and a link from either side must keep its mode.
+                            (link.query["obfs"] ?: link.query["obfs-mode"])
+                                ?.takeIf(String::isNotEmpty)
+                                ?.let { put("obfs_mode", it) }
                             link.query["obfs-host"]?.takeIf(String::isNotEmpty)?.let { put("obfs_host", it) }
                             link.query["mode"]?.takeIf(String::isNotEmpty)?.let { put("mode", it) }
                             link.query["userkey"]?.takeIf(String::isNotEmpty)?.let { put("userkey", it) }
