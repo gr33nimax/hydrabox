@@ -91,6 +91,9 @@ class CoreObserver(
         @Volatile var coreResponding = false
 
         @Volatile var coreHealth: io.nekohasekai.libbox.TransportHealth? = null
+
+        /** Which servers each group holds, so a running measurement can mark exactly those rows. */
+        @Volatile var groupMembers: Map<String, Set<String>> = emptyMap()
     }
 
     /** Replacing this object invalidates every callback that captured the previous session. */
@@ -438,6 +441,7 @@ class CoreObserver(
     ) {
         if (!isCurrent(current)) return
         val collected = mutableListOf<OutboundLatency>()
+        val members = mutableMapOf<String, Set<String>>()
         while (message?.hasNext() == true) {
             val group = message.next()
             group.selected?.takeIf { it.isNotEmpty() }?.let {
@@ -452,8 +456,10 @@ class CoreObserver(
                 )
             }
             val items = group.items
+            val tags = mutableSetOf<String>()
             while (items.hasNext()) {
                 val item = items.next()
+                tags += item.tag
                 val status = item.urlTestStatus.orEmpty()
                 if (item.urlTestDelay > 0 || status.isNotEmpty()) {
                     collected +=
@@ -466,10 +472,49 @@ class CoreObserver(
                         )
                 }
             }
+            members[group.tag.orEmpty()] = tags
         }
         if (!isCurrent(current)) return
+        current.groupMembers = members
         dispatch(RuntimeInput.Latencies(collected, current.generation))
         publishTransport(current)
+    }
+
+    /**
+     * Which servers an online measurement is asking right now.
+     *
+     * The core counts the session (`total`, `completed`, `succeeded`, `failed`) and says whether it
+     * is still running; the observer listened to none of it, so pressing "measure" left the screen
+     * silent. The group's members become the measuring set while the session runs, and the set is
+     * cleared the moment it ends — however it ends.
+     */
+    private fun handleURLTestSessions(
+        current: Observation,
+        sessions: io.nekohasekai.libbox.URLTestSessionIterator?,
+    ) {
+        if (!isCurrent(current)) return
+        sessions ?: return
+        val measuring = mutableSetOf<String>()
+        var finished: io.nekohasekai.libbox.URLTestSession? = null
+        while (sessions.hasNext()) {
+            val session = sessions.next() ?: continue
+            when (session.state) {
+                Libbox.URLTestSessionQueued,
+                Libbox.URLTestSessionRunning,
+                -> measuring += current.groupMembers[session.groupTag].orEmpty()
+
+                else -> finished = session
+            }
+        }
+        dispatch(RuntimeInput.SweepProgress(measuring))
+        finished?.let { session ->
+            HydraLog.info(
+                AREA,
+                "замер ${session.groupTag}: готово ${session.completed} из ${session.total}, " +
+                    "успешно ${session.succeeded}, не ответили ${session.failed}" +
+                    if (session.errorMessage.isNotEmpty()) " — ${session.errorMessage}" else "",
+            )
+        }
     }
 
     private fun handleSnapshot(
@@ -615,6 +660,10 @@ class CoreObserver(
                         Libbox.RuntimeEventTransportHealth -> {
                             current.coreHealth = event.transportHealth
                             publishTransport(current)
+                        }
+
+                        Libbox.RuntimeEventURLTestSessions -> {
+                            handleURLTestSessions(current, event.urlTestSessions())
                         }
                     }
                 }
