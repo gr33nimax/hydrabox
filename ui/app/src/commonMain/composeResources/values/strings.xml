@@ -267,6 +267,30 @@ Logs are stored locally until the user exports or sends them. Review exported fi
     <string name="settings_economy">Save battery</string>
     <string name="settings_economy_hint">Measures servers less often</string>
     <string name="settings_compatibility">Compatibility</string>
+    <string name="settings_updates">Updates</string>
+    <string name="settings_update_channel">Update channel</string>
+    <string name="update_channel_stable">Stable</string>
+    <string name="update_channel_canary">Canary</string>
+    <string name="update_check">Check</string>
+    <string name="update_checking">Checking…</string>
+    <string name="update_none">No updates</string>
+    <string name="update_install">Install %1$s</string>
+    <!--
+      Each reason is named for what a person can do about it: an unreachable list is the network,
+      while an unconfirmed signature is a decision rather than a failed download.
+    -->
+    <string name="update_unreachable">The update list could not be reached</string>
+    <string name="update_unverified">The signature was not confirmed</string>
+    <string name="update_wrong_channel">That release belongs to another channel</string>
+    <string name="update_malformed">The update document is damaged</string>
+    <string name="update_unsupported_schema">The document is newer than this app</string>
+    <string name="update_empty_field">The update document is missing data</string>
+    <string name="update_insecure_url">The update address is not secure</string>
+    <string name="update_bad_digest">The checksum does not look right</string>
+    <string name="update_install_too_large">The update file is too large</string>
+    <string name="update_install_digest">The downloaded file is not the one promised</string>
+    <string name="update_install_certificate">The file is signed with a different key</string>
+    <string name="update_install_denied">The system did not allow the install</string>
     <string name="settings_fragmentation">TLS fragmentation</string>
     <string name="fragmentation_off">Off</string>
     <string name="fragmentation_record">By record</string>

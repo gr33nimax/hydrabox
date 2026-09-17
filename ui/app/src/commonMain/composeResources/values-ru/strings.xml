@@ -263,6 +263,30 @@ HydraBox предоставляется **как есть**. Мы исправл
     <string name="settings_economy">Экономить батарею</string>
     <string name="settings_economy_hint">Реже измеряет серверы</string>
     <string name="settings_compatibility">Совместимость</string>
+    <string name="settings_updates">Обновления</string>
+    <string name="settings_update_channel">Канал обновлений</string>
+    <string name="update_channel_stable">Стабильный</string>
+    <string name="update_channel_canary">Канареечный</string>
+    <string name="update_check">Проверить</string>
+    <string name="update_checking">Проверяем…</string>
+    <string name="update_none">Обновлений нет</string>
+    <string name="update_install">Установить %1$s</string>
+    <!--
+      Причины названы по тому, что человек может сделать: недоступность — это сеть, а
+      неподтверждённая подпись — это решение, а не сбой загрузки.
+    -->
+    <string name="update_unreachable">Не удалось получить список обновлений</string>
+    <string name="update_unverified">Подпись не подтверждена</string>
+    <string name="update_wrong_channel">Это релиз другого канала</string>
+    <string name="update_malformed">Документ обновления повреждён</string>
+    <string name="update_unsupported_schema">Документ новее этого приложения</string>
+    <string name="update_empty_field">В документе обновления не хватает данных</string>
+    <string name="update_insecure_url">Адрес обновления не защищён</string>
+    <string name="update_bad_digest">Контрольная сумма не похожа на верную</string>
+    <string name="update_install_too_large">Файл обновления слишком велик</string>
+    <string name="update_install_digest">Скачанный файл не совпал с обещанным</string>
+    <string name="update_install_certificate">Файл подписан не тем ключом</string>
+    <string name="update_install_denied">Система не разрешила установку</string>
     <string name="settings_fragmentation">Фрагментация TLS</string>
     <string name="fragmentation_off">Выключена</string>
     <string name="fragmentation_record">По записям</string>
