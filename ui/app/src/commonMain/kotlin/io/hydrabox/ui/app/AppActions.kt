@@ -53,6 +53,7 @@ data class AppActions(
     val onSetStack: (TunnelStack) -> Unit = {},
     val onSetFragmentation: (TlsFragmentation) -> Unit = {},
     val onSetLogDetail: (LogDetail) -> Unit = {},
+    val onSetPprof: (Boolean) -> Unit = {},
     val onSetAppearance: (Appearance) -> Unit = {},
     val onSetDynamicColour: (Boolean) -> Unit = {},
     val onSetLanguage: (Language) -> Unit = {},

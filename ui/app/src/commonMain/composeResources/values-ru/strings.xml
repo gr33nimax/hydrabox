@@ -108,6 +108,8 @@
     <string name="about_privacy">Политика конфиденциальности</string>
     <string name="diagnostics_title">Диагностика</string>
     <string name="diagnostics_level">Уровень журнала</string>
+    <string name="diagnostics_pprof">Профилировщик ядра</string>
+    <string name="diagnostics_pprof_hint">Поднимает pprof на 127.0.0.1:9091 после переподключения. Только для отладочной сборки.</string>
     <string name="diagnostics_export">Выгрузить журнал</string>
     <string name="diagnostics_error">Последняя ошибка</string>
     <string name="onboarding_welcome_title">HydraBox</string>

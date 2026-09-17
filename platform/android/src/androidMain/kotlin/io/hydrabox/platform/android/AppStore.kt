@@ -212,6 +212,10 @@ class AppStore(
                     AppLanguage.RUSSIAN -> Language.RUSSIAN
                     AppLanguage.ENGLISH -> Language.ENGLISH
                 },
+            // The profiler exists only where the build carries it, so the switch is offered only
+            // there rather than shown and ignored on a shipped build.
+            pprofAvailable = BuildConfig.DEBUG,
+            pprofEnabled = settings.pprofEnabled,
         )
 
     /** Launchable apps, with the ones currently kept outside the tunnel marked. */
@@ -896,9 +900,16 @@ class AppStore(
                 dnsStrategy = settings.dnsStrategy.name.lowercase(),
                 fakeIp = settings.fakeIpEnabled,
                 routeData = rules,
-                // Only a debug build, only loopback. pprof hands out stacks and heap contents,
-                // and this is the process that holds the tunnel.
-                debugListen = if (BuildConfig.DEBUG) "127.0.0.1:$DEBUG_PPROF_PORT" else "",
+                // Only a debug build, only loopback, and now only when someone asked for it:
+                // pprof hands out stacks and heap contents, and this is the process that holds
+                // the tunnel. A shipped build keeps the field out of the configuration whatever
+                // the stored setting says.
+                debugListen =
+                    if (BuildConfig.DEBUG && settings.pprofEnabled) {
+                        "127.0.0.1:$DEBUG_PPROF_PORT"
+                    } else {
+                        ""
+                    },
             ),
         )
     }

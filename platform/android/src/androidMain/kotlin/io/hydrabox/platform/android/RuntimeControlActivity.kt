@@ -1015,6 +1015,11 @@ class RuntimeControlActivity : ComponentActivity() {
                     }
                 }
             },
+            // A new listener is a new configuration rather than a running-instance knob: the core
+            // reads `debug.listen` when it starts, so this one really does need the tunnel rebuilt.
+            onSetPprof = { enabled ->
+                reconnectAware { store.saveSettings(store.settings().copy(pprofEnabled = enabled)) }
+            },
             onSetAppearance = { appearance ->
                 background(null) {
                     store.saveSettings(

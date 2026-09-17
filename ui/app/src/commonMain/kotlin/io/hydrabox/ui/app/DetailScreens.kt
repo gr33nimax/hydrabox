@@ -169,6 +169,9 @@ fun TrafficScreen(state: ScreenState) {
 @Composable
 fun DiagnosticsScreen(state: ScreenState, actions: AppActions, onOpenJournal: () -> Unit) {
     val diagnostics = state.diagnostics
+    // Held locally so the null check can be smart cast: `settings` is a property of another
+    // module, and Kotlin will not narrow that on its own.
+    val settings = state.settings
     var pickingLevel by remember { mutableStateOf(false) }
     Column(
         verticalArrangement = Arrangement.spacedBy(UiTokens.spacing),
@@ -203,6 +206,16 @@ fun DiagnosticsScreen(state: ScreenState, actions: AppActions, onOpenJournal: ()
             value = diagnostics?.level?.uppercase(),
             onClick = { pickingLevel = true },
             )
+            // Only a build that can serve a profiler offers the switch: an option that cannot
+            // work is worse than no option at all.
+            if (settings?.pprofAvailable == true) {
+                ToggleRow(
+                    title = stringResource(Res.string.diagnostics_pprof),
+                    supporting = stringResource(Res.string.diagnostics_pprof_hint),
+                    checked = settings.pprofEnabled,
+                    onCheckedChange = actions.onSetPprof,
+                )
+            }
         }
         SecondaryAction(stringResource(Res.string.diagnostics_export), onClick = actions.onExportDiagnostics)
     }

@@ -128,6 +128,13 @@ data class SettingsSummary(
      * offered and ignored.
      */
     val languageChoice: Boolean = false,
+    /**
+     * Whether this build may serve the core's profiler at all, and whether it is switched on.
+     * The profiler hands out stacks and heap contents, so a shipped build answers false and the
+     * switch is never drawn: an option that cannot work is worse than no option at all.
+     */
+    val pprofAvailable: Boolean = false,
+    val pprofEnabled: Boolean = false,
 )
 
 /**
