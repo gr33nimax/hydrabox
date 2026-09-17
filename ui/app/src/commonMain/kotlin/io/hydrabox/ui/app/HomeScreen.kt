@@ -322,7 +322,7 @@ private fun routeDetail(server: ServerRef?): String? {
     server ?: return null
     serverDetail(server)?.let { return it }
     val protocol = server.type?.takeIf { !it.equals(server.displayName, ignoreCase = true) }?.uppercase()
-    return listOfNotNull(protocol, latencyLabel(server)).joinToString(" В· ").ifEmpty { null }
+    return listOfNotNull(protocol, latencyLabel(server)).joinToString(" · ").ifEmpty { null }
 }
 
 /** The state in as few words as fit inside the aperture. The hint under it says what to do. */
