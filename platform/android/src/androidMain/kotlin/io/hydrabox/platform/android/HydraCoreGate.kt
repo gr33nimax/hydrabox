@@ -144,6 +144,28 @@ object HydraCoreGate {
             ?: translations.values.firstNotNullOfOrNull { it.jsonPrimitive.contentOrNull?.takeIf(String::isNotBlank) }
     }
 
+    /**
+     * The core's verdict on an update manifest, over the exact bytes that arrived. The caller hands
+     * over the received document rather than a re-encoded copy of it: verifying a copy is how two
+     * different documents come to share one signature, and the pinned keys live in the core, which
+     * is where the trust anchor belongs while Android itself cannot check Ed25519 below API 33.
+     *
+     * A core that cannot answer is a refusal, not an assumption: an update nobody vouched for is
+     * not an update.
+     */
+    fun verifyUpdateManifest(
+        manifestBase64: String,
+        signatureBase64: String,
+        keyId: String,
+        keysJson: String,
+    ): Boolean =
+        runCatching {
+            Libbox.hydraCoreVerifyUpdateManifest(manifestBase64, signatureBase64, keyId, keysJson)
+        }.onFailure { HydraLog.warn(AREA, "the core could not verify an update manifest", it) }
+            .getOrNull()
+            ?.let { diagnose(it).isEmpty() }
+            ?: false
+
     private fun diagnose(result: String): List<String> {
         val root =
             runCatching { json.parseToJsonElement(result) }.getOrNull() as? JsonObject
