@@ -169,7 +169,7 @@ object UpdateClient {
         return try {
             val session = installer.openSession(installer.createSession(params))
             try {
-                session.openWrite(APK_NAME, 0, apk.length).use { output ->
+                session.openWrite(APK_NAME, 0, apk.length()).use { output ->
                     apk.inputStream().use { input -> input.copyTo(output) }
                     session.fsync(output)
                 }
