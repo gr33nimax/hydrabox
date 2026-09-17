@@ -1,8 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  The adaptive-icon foreground layer is a 108dp canvas; the mask only guarantees the central
+  72dp, so the artwork keeps a >=16.7% margin on every side. The bitmap is square, so
+  gravity="fill" scales it uniformly.
+-->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item
-        android:width="50dp"
-        android:height="50dp"
+        android:width="108dp"
+        android:height="108dp"
         android:gravity="center">
         <bitmap
             android:gravity="fill"
