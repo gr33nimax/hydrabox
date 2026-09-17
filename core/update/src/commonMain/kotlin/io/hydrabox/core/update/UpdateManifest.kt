@@ -27,7 +27,6 @@ data class UpdateManifest(
     val sha256: String,
     val certificateSha256: String,
     val keyId: String,
-    val signature: String,
 ) {
     /**
      * Whether this release is newer than the installed build. Equal is not newer: an update
@@ -84,7 +83,7 @@ object UpdateManifestParser {
         val versionCode = root.number("versionCode") ?: return ManifestOutcome.Rejected(ManifestFault.MALFORMED)
         if (versionCode <= 0) return ManifestOutcome.Rejected(ManifestFault.MALFORMED)
         val fields =
-            listOf("channel", "versionName", "releaseTag", "apkUrl", "sha256", "certificateSha256", "keyId", "signature")
+            listOf("channel", "versionName", "releaseTag", "apkUrl", "sha256", "certificateSha256", "keyId")
                 .associateWith { root.text(it) }
         if (fields.values.any { it.isNullOrBlank() }) return ManifestOutcome.Rejected(ManifestFault.EMPTY_FIELD)
         val apkUrl = fields.getValue("apkUrl")!!
@@ -107,7 +106,6 @@ object UpdateManifestParser {
                 sha256 = sha256.lowercase(),
                 certificateSha256 = certificateSha256.uppercase(),
                 keyId = fields.getValue("keyId")!!.trim(),
-                signature = fields.getValue("signature")!!.trim(),
             ),
         )
     }

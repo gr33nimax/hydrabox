@@ -21,8 +21,7 @@ class UpdateDecisionTest {
           "apkUrl": "$apkUrl",
           "sha256": "$digest",
           "certificateSha256": "$digest",
-          "keyId": "update-2026-01",
-          "signature": "signature"
+          "keyId": "update-2026-01"
         }
         """.trimIndent()
 

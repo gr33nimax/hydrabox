@@ -17,7 +17,6 @@ class UpdateManifestTest {
         sha256: String = digest,
         certificateSha256: String = digest,
         keyId: String = "update-2026-01",
-        signature: String = "signature",
     ) = """
         {
           "schema": $schema,
@@ -28,8 +27,7 @@ class UpdateManifestTest {
           "apkUrl": "$apkUrl",
           "sha256": "$sha256",
           "certificateSha256": "$certificateSha256",
-          "keyId": "$keyId",
-          "signature": "$signature"
+          "keyId": "$keyId"
         }
         """.trimIndent()
 
@@ -60,7 +58,7 @@ class UpdateManifestTest {
 
     @Test fun `an empty field stops the manifest before any of it is used`() {
         assertEquals(ManifestFault.EMPTY_FIELD, rejected(manifest(keyId = "")))
-        assertEquals(ManifestFault.EMPTY_FIELD, rejected(manifest(signature = "  ")))
+        assertEquals(ManifestFault.EMPTY_FIELD, rejected(manifest(channel = "  ")))
     }
 
     @Test fun `an update fetched in the clear is refused`() {
