@@ -7,6 +7,7 @@ import io.hydrabox.core.storage.StorageDatabase
 
 const val MAX_SPLIT_ROUTING_PACKAGE_COUNT = 128
 const val DEFAULT_URL_TEST_URL = "https://cp.cloudflare.com/generate_204"
+
 /**
  * The resolver everything else is reached through before the tunnel exists.
  *
@@ -23,7 +24,9 @@ const val DEFAULT_PROXY_USERNAME = "hydrabox"
 const val DEFAULT_PROXY_PORT = 2080
 
 enum class PerformanceMode { STANDARD, ECONOMY }
+
 enum class NotificationTrafficDisplayMode { SPEED, TOTAL, BOTH }
+
 enum class TlsFragmentationMode { DISABLED, RECORD, FRAGMENT }
 
 /**
@@ -126,7 +129,11 @@ data class Settings(
     val pprofEnabled: Boolean = false,
 )
 
-class SettingsStore(private val database: StorageDatabase, private val secretSealer: SecretSealer, private val secretOpener: SecretOpener) {
+class SettingsStore(
+    private val database: StorageDatabase,
+    private val secretSealer: SecretSealer,
+    private val secretOpener: SecretOpener,
+) {
     private val codec = SettingsCodec()
 
     fun load(): Settings {
@@ -147,8 +154,15 @@ class SettingsStore(private val database: StorageDatabase, private val secretSea
 }
 
 class SettingsCodec {
-    fun decode(values: Map<String, String>, proxyPassword: Secret? = null): Settings {
-        fun bool(key: String, default: Boolean) = values[key]?.let { it == "1" } ?: default
+    fun decode(
+        values: Map<String, String>,
+        proxyPassword: Secret? = null,
+    ): Settings {
+        fun bool(
+            key: String,
+            default: Boolean,
+        ) = values[key]?.let { it == "1" } ?: default
+
         fun number(key: String) = values[key]?.toIntOrNull()
         val performance = if (values[PERFORMANCE_MODE] == "economy") PerformanceMode.ECONOMY else PerformanceMode.STANDARD
         val economy = performance == PerformanceMode.ECONOMY
@@ -156,32 +170,95 @@ class SettingsCodec {
         val defaultUnavailable = if (economy) 300 else 120
         val migratedMtu = values[VPN_MTU_MIGRATED] == "1"
         val rawMtu = number(VPN_MTU)
-        val mtu = if (!migratedMtu && (rawMtu == null || rawMtu == 1500 || rawMtu == 3400)) 9000 else rawMtu?.takeUnless { it == 3400 } ?: 9000
+        val mtu =
+            if (!migratedMtu &&
+                (rawMtu == null || rawMtu == 1500 || rawMtu == 3400)
+            ) {
+                9000
+            } else {
+                rawMtu?.takeUnless { it == 3400 } ?: 9000
+            }
         return Settings(
             performanceMode = performance,
-            urlTestUrl = if (values[URL_TEST_URL] == "https://www.gstatic.com/generate_204") DEFAULT_URL_TEST_URL else values[URL_TEST_URL] ?: DEFAULT_URL_TEST_URL,
-            urlTestIntervalSeconds = if (number(URL_TEST_INTERVAL) in setOf(null, 120, 180, 300, 900) || economy && number(URL_TEST_INTERVAL) == 1800) if (economy) 3600 else 1800 else number(URL_TEST_INTERVAL)!!,
+            urlTestUrl =
+                if (values[URL_TEST_URL] ==
+                    "https://www.gstatic.com/generate_204"
+                ) {
+                    DEFAULT_URL_TEST_URL
+                } else {
+                    values[URL_TEST_URL] ?: DEFAULT_URL_TEST_URL
+                },
+            urlTestIntervalSeconds =
+                if (number(URL_TEST_INTERVAL) in setOf(null, 120, 180, 300, 900) ||
+                    economy && number(URL_TEST_INTERVAL) == 1800
+                ) {
+                    if (economy) {
+                        3600
+                    } else {
+                        1800
+                    }
+                } else {
+                    number(URL_TEST_INTERVAL)!!
+                },
             urlTestTimeoutSeconds = if (number(URL_TEST_TIMEOUT) in setOf(null, 4, 5, 10, 15)) 15 else number(URL_TEST_TIMEOUT)!!,
             urlTestConcurrency = (number(URL_TEST_CONCURRENCY) ?: defaultConcurrency).coerceIn(1, defaultConcurrency),
-            urlTestUnavailableCheckIntervalSeconds = if (number(URL_TEST_UNAVAILABLE) in setOf(null, 5, 15, 60, 120, 300) || economy && number(URL_TEST_UNAVAILABLE) == 10) defaultUnavailable else number(URL_TEST_UNAVAILABLE)!!.coerceIn(defaultUnavailable, 3600),
-            locationLookupLimit = when (number(LOCATION_LOOKUP_LIMIT)) { null -> if (economy) 0 else 1; 2 -> if (economy) 2 else 1; else -> number(LOCATION_LOOKUP_LIMIT)!! },
-            locationLookupTimeoutSeconds = if (number(LOCATION_LOOKUP_TIMEOUT) in setOf(null, 5)) 3 else number(LOCATION_LOOKUP_TIMEOUT)!!,
-            locationLookupConcurrency = if (number(LOCATION_LOOKUP_CONCURRENCY) == null || !economy && number(LOCATION_LOOKUP_CONCURRENCY) in setOf(2, 3)) 1 else number(LOCATION_LOOKUP_CONCURRENCY)!!,
+            urlTestUnavailableCheckIntervalSeconds =
+                if (number(URL_TEST_UNAVAILABLE) in setOf(null, 5, 15, 60, 120, 300) ||
+                    economy && number(URL_TEST_UNAVAILABLE) == 10
+                ) {
+                    defaultUnavailable
+                } else {
+                    number(URL_TEST_UNAVAILABLE)!!.coerceIn(defaultUnavailable, 3600)
+                },
+            locationLookupLimit =
+                when (number(LOCATION_LOOKUP_LIMIT)) {
+                    null -> if (economy) 0 else 1
+                    2 -> if (economy) 2 else 1
+                    else -> number(LOCATION_LOOKUP_LIMIT)!!
+                },
+            locationLookupTimeoutSeconds =
+                if (number(
+                        LOCATION_LOOKUP_TIMEOUT,
+                    ) in setOf(null, 5)
+                ) {
+                    3
+                } else {
+                    number(LOCATION_LOOKUP_TIMEOUT)!!
+                },
+            locationLookupConcurrency =
+                if (number(LOCATION_LOOKUP_CONCURRENCY) == null ||
+                    !economy && number(LOCATION_LOOKUP_CONCURRENCY) in setOf(2, 3)
+                ) {
+                    1
+                } else {
+                    number(LOCATION_LOOKUP_CONCURRENCY)!!
+                },
             // The old key is read once so a device that had chosen a resolver for the
             // Russian direct route keeps it as its bootstrap; they are the same value.
-            bootstrapDnsResolver = resolver(
-                values[BOOTSTRAP_DNS_RESOLVER] ?: values[RUSSIA_DNS_DIRECT_RESOLVER],
-                DEFAULT_BOOTSTRAP_DNS_RESOLVER,
-            ),
+            bootstrapDnsResolver =
+                resolver(
+                    values[BOOTSTRAP_DNS_RESOLVER] ?: values[RUSSIA_DNS_DIRECT_RESOLVER],
+                    DEFAULT_BOOTSTRAP_DNS_RESOLVER,
+                ),
             dnsDirectResolver = resolver(values[DNS_DIRECT_RESOLVER], "udp://1.1.1.1"),
             dnsProxyResolver = resolver(values[DNS_PROXY_RESOLVER], "https://dns.cloudflare.com/dns-query"),
             memoryLimitEnabled = bool(MEMORY_LIMIT_ENABLED, true),
             memoryLimitWarningDismissed = bool(MEMORY_LIMIT_WARNING_DISMISSED, false),
             statusNotificationEnabled = bool(STATUS_NOTIFICATION_ENABLED, true),
-            notificationTrafficDisplayMode = when (values[NOTIFICATION_TRAFFIC_DISPLAY_MODE]) { "total" -> NotificationTrafficDisplayMode.TOTAL; "both" -> NotificationTrafficDisplayMode.BOTH; else -> NotificationTrafficDisplayMode.SPEED },
+            notificationTrafficDisplayMode =
+                when (values[NOTIFICATION_TRAFFIC_DISPLAY_MODE]) {
+                    "total" -> NotificationTrafficDisplayMode.TOTAL
+                    "both" -> NotificationTrafficDisplayMode.BOTH
+                    else -> NotificationTrafficDisplayMode.SPEED
+                },
             acceptedLegalVersion = values[ACCEPTED_LEGAL_VERSION].orEmpty().trim(),
             acceptedLegalAtMillis = values[ACCEPTED_LEGAL_AT_MILLIS]?.toLongOrNull(),
-            tlsFragmentationMode = when (values[TLS_FRAGMENTATION_MODE]) { "record" -> TlsFragmentationMode.RECORD; "fragment" -> TlsFragmentationMode.FRAGMENT; else -> TlsFragmentationMode.DISABLED },
+            tlsFragmentationMode =
+                when (values[TLS_FRAGMENTATION_MODE]) {
+                    "record" -> TlsFragmentationMode.RECORD
+                    "fragment" -> TlsFragmentationMode.FRAGMENT
+                    else -> TlsFragmentationMode.DISABLED
+                },
             proxyUsername = normalizeProxyUsername(values[PROXY_USERNAME].orEmpty()),
             proxyPassword = proxyPassword,
             proxySort = values[PROXY_SORT].takeIf { it in setOf("latency", "working", "name", "country") } ?: "source",
@@ -189,39 +266,44 @@ class SettingsCodec {
             splitRoutingPackages = normalizeSplitRoutingPackages(values[SPLIT_ROUTING_PACKAGES].orEmpty().split(Regex("[\\n,;]"))),
             blockLeaks = bool(BLOCK_LEAKS, true),
             bypassLocalNetwork = bool(BYPASS_LOCAL_NETWORK, true),
-            splitRoutingMode = when (values[SPLIT_ROUTING_MODE]) {
-                "off" -> SplitRoutingMode.OFF
-                "only_selected" -> SplitRoutingMode.ONLY_SELECTED
-                else -> SplitRoutingMode.BYPASS_SELECTED
-            },
-            themeMode = when (values[THEME_MODE]) {
-                "light" -> ThemeMode.LIGHT
-                "dark" -> ThemeMode.DARK
-                else -> ThemeMode.SYSTEM
-            },
-            language = when (values[LANGUAGE]) {
-                "russian" -> AppLanguage.RUSSIAN
-                "english" -> AppLanguage.ENGLISH
-                else -> AppLanguage.SYSTEM
-            },
+            splitRoutingMode =
+                when (values[SPLIT_ROUTING_MODE]) {
+                    "off" -> SplitRoutingMode.OFF
+                    "only_selected" -> SplitRoutingMode.ONLY_SELECTED
+                    else -> SplitRoutingMode.BYPASS_SELECTED
+                },
+            themeMode =
+                when (values[THEME_MODE]) {
+                    "light" -> ThemeMode.LIGHT
+                    "dark" -> ThemeMode.DARK
+                    else -> ThemeMode.SYSTEM
+                },
+            language =
+                when (values[LANGUAGE]) {
+                    "russian" -> AppLanguage.RUSSIAN
+                    "english" -> AppLanguage.ENGLISH
+                    else -> AppLanguage.SYSTEM
+                },
             vpnStrictRoute = bool(VPN_STRICT_ROUTE, false),
-            vpnTunStack = when (values[VPN_TUN_IMPLEMENTATION]) {
-                "system" -> TunStack.SYSTEM
-                "gvisor" -> TunStack.GVISOR
-                else -> TunStack.MIXED
-            },
+            vpnTunStack =
+                when (values[VPN_TUN_IMPLEMENTATION]) {
+                    "system" -> TunStack.SYSTEM
+                    "gvisor" -> TunStack.GVISOR
+                    else -> TunStack.MIXED
+                },
             tcpFastOpen = bool(TCP_FAST_OPEN, false),
             tcpMultiPath = bool(TCP_MULTI_PATH, false),
             urlTestStrictTolerance = bool(URL_TEST_STRICT_TOLERANCE, false),
             interruptExistingConnections = bool(INTERRUPT_EXISTING_CONNECTIONS, false),
-            logLevel = when (values[LOG_LEVEL]) {
-                "off" -> LogLevel.OFF
-                "trace" -> LogLevel.TRACE
-                "debug" -> LogLevel.DEBUG
-                "info" -> LogLevel.INFO
-                "error" -> LogLevel.ERROR
-                else -> LogLevel.WARN
-            },
+            logLevel =
+                when (values[LOG_LEVEL]) {
+                    "off" -> LogLevel.OFF
+                    "trace" -> LogLevel.TRACE
+                    "debug" -> LogLevel.DEBUG
+                    "info" -> LogLevel.INFO
+                    "error" -> LogLevel.ERROR
+                    else -> LogLevel.WARN
+                },
             vpnInboundEnabled = bool(VPN_INBOUND_ENABLED, true),
             proxyInboundEnabled = bool(PROXY_INBOUND_ENABLED, false),
             proxyMixedPort = number(PROXY_MIXED_PORT)?.takeIf { it in 1024..65535 } ?: DEFAULT_PROXY_PORT,
@@ -237,33 +319,91 @@ class SettingsCodec {
                     else -> UpdateChannel.STABLE
                 },
             pprofEnabled = bool(PPROF_ENABLED, false),
-            dnsStrategy = when (values[DNS_STRATEGY]) {
-                "auto" -> DnsStrategy.AUTO
-                "ipv6_only" -> DnsStrategy.IPV6_ONLY
-                else -> DnsStrategy.IPV4_ONLY
-            },
+            dnsStrategy =
+                when (values[DNS_STRATEGY]) {
+                    "auto" -> DnsStrategy.AUTO
+                    "ipv6_only" -> DnsStrategy.IPV6_ONLY
+                    else -> DnsStrategy.IPV4_ONLY
+                },
         )
     }
 
-    fun encode(settings: Settings): Map<String, String> = mapOf(
-        PERFORMANCE_MODE to if (settings.performanceMode == PerformanceMode.ECONOMY) "economy" else "standard",
-        URL_TEST_URL to settings.urlTestUrl, URL_TEST_INTERVAL to settings.urlTestIntervalSeconds.toString(), URL_TEST_TIMEOUT to settings.urlTestTimeoutSeconds.toString(), URL_TEST_CONCURRENCY to settings.urlTestConcurrency.toString(), URL_TEST_UNAVAILABLE to settings.urlTestUnavailableCheckIntervalSeconds.toString(),
-        LOCATION_LOOKUP_LIMIT to settings.locationLookupLimit.toString(), LOCATION_LOOKUP_TIMEOUT to settings.locationLookupTimeoutSeconds.toString(), LOCATION_LOOKUP_CONCURRENCY to settings.locationLookupConcurrency.toString(),
-        BOOTSTRAP_DNS_RESOLVER to settings.bootstrapDnsResolver, DNS_DIRECT_RESOLVER to settings.dnsDirectResolver, DNS_PROXY_RESOLVER to settings.dnsProxyResolver,
-        MEMORY_LIMIT_ENABLED to flag(settings.memoryLimitEnabled), MEMORY_LIMIT_WARNING_DISMISSED to flag(settings.memoryLimitWarningDismissed), STATUS_NOTIFICATION_ENABLED to flag(settings.statusNotificationEnabled), NOTIFICATION_TRAFFIC_DISPLAY_MODE to settings.notificationTrafficDisplayMode.name.lowercase(),
-        ACCEPTED_LEGAL_VERSION to settings.acceptedLegalVersion, ACCEPTED_LEGAL_AT_MILLIS to settings.acceptedLegalAtMillis?.toString().orEmpty(), TLS_FRAGMENTATION_MODE to settings.tlsFragmentationMode.name.lowercase(), PROXY_USERNAME to normalizeProxyUsername(settings.proxyUsername), PROXY_SORT to settings.proxySort, VPN_MTU to settings.vpnMtu.toString(), VPN_MTU_MIGRATED to "1", SPLIT_ROUTING_PACKAGES to normalizeSplitRoutingPackages(settings.splitRoutingPackages).joinToString("\n"),
-        BLOCK_LEAKS to flag(settings.blockLeaks), BYPASS_LOCAL_NETWORK to flag(settings.bypassLocalNetwork), SPLIT_ROUTING_MODE to settings.splitRoutingMode.name.lowercase(), THEME_MODE to settings.themeMode.name.lowercase(), LANGUAGE to settings.language.name.lowercase(), VPN_STRICT_ROUTE to flag(settings.vpnStrictRoute), VPN_TUN_IMPLEMENTATION to settings.vpnTunStack.name.lowercase(), TCP_FAST_OPEN to flag(settings.tcpFastOpen), TCP_MULTI_PATH to flag(settings.tcpMultiPath), URL_TEST_STRICT_TOLERANCE to flag(settings.urlTestStrictTolerance), INTERRUPT_EXISTING_CONNECTIONS to flag(settings.interruptExistingConnections), LOG_LEVEL to settings.logLevel.name.lowercase(), VPN_INBOUND_ENABLED to flag(settings.vpnInboundEnabled), PROXY_INBOUND_ENABLED to flag(settings.proxyInboundEnabled), PROXY_MIXED_PORT to settings.proxyMixedPort.toString(), PROXY_ALLOW_LAN to flag(settings.proxyAllowLan), AD_BLOCK_ENABLED to flag(settings.adBlockEnabled), DNS_STRATEGY to settings.dnsStrategy.name.lowercase(), DNS_FAKEIP to flag(settings.fakeIpEnabled), DYNAMIC_COLOUR to flag(settings.dynamicColour), UPDATE_CHANNEL to settings.updateChannel.name.lowercase(), PPROF_ENABLED to flag(settings.pprofEnabled),
-    )
+    fun encode(settings: Settings): Map<String, String> =
+        mapOf(
+            PERFORMANCE_MODE to if (settings.performanceMode == PerformanceMode.ECONOMY) "economy" else "standard",
+            URL_TEST_URL to settings.urlTestUrl,
+            URL_TEST_INTERVAL to settings.urlTestIntervalSeconds.toString(),
+            URL_TEST_TIMEOUT to settings.urlTestTimeoutSeconds.toString(),
+            URL_TEST_CONCURRENCY to settings.urlTestConcurrency.toString(),
+            URL_TEST_UNAVAILABLE to settings.urlTestUnavailableCheckIntervalSeconds.toString(),
+            LOCATION_LOOKUP_LIMIT to settings.locationLookupLimit.toString(),
+            LOCATION_LOOKUP_TIMEOUT to settings.locationLookupTimeoutSeconds.toString(),
+            LOCATION_LOOKUP_CONCURRENCY to settings.locationLookupConcurrency.toString(),
+            BOOTSTRAP_DNS_RESOLVER to settings.bootstrapDnsResolver,
+            DNS_DIRECT_RESOLVER to settings.dnsDirectResolver,
+            DNS_PROXY_RESOLVER to settings.dnsProxyResolver,
+            MEMORY_LIMIT_ENABLED to flag(settings.memoryLimitEnabled),
+            MEMORY_LIMIT_WARNING_DISMISSED to flag(settings.memoryLimitWarningDismissed),
+            STATUS_NOTIFICATION_ENABLED to flag(settings.statusNotificationEnabled),
+            NOTIFICATION_TRAFFIC_DISPLAY_MODE to settings.notificationTrafficDisplayMode.name.lowercase(),
+            ACCEPTED_LEGAL_VERSION to settings.acceptedLegalVersion,
+            ACCEPTED_LEGAL_AT_MILLIS to settings.acceptedLegalAtMillis?.toString().orEmpty(),
+            TLS_FRAGMENTATION_MODE to settings.tlsFragmentationMode.name.lowercase(),
+            PROXY_USERNAME to normalizeProxyUsername(settings.proxyUsername),
+            PROXY_SORT to settings.proxySort,
+            VPN_MTU to settings.vpnMtu.toString(),
+            VPN_MTU_MIGRATED to "1",
+            SPLIT_ROUTING_PACKAGES to normalizeSplitRoutingPackages(settings.splitRoutingPackages).joinToString("\n"),
+            BLOCK_LEAKS to flag(settings.blockLeaks),
+            BYPASS_LOCAL_NETWORK to flag(settings.bypassLocalNetwork),
+            SPLIT_ROUTING_MODE to settings.splitRoutingMode.name.lowercase(),
+            THEME_MODE to settings.themeMode.name.lowercase(),
+            LANGUAGE to settings.language.name.lowercase(),
+            VPN_STRICT_ROUTE to flag(settings.vpnStrictRoute),
+            VPN_TUN_IMPLEMENTATION to settings.vpnTunStack.name.lowercase(),
+            TCP_FAST_OPEN to flag(settings.tcpFastOpen),
+            TCP_MULTI_PATH to flag(settings.tcpMultiPath),
+            URL_TEST_STRICT_TOLERANCE to flag(settings.urlTestStrictTolerance),
+            INTERRUPT_EXISTING_CONNECTIONS to flag(settings.interruptExistingConnections),
+            LOG_LEVEL to settings.logLevel.name.lowercase(),
+            VPN_INBOUND_ENABLED to flag(settings.vpnInboundEnabled),
+            PROXY_INBOUND_ENABLED to flag(settings.proxyInboundEnabled),
+            PROXY_MIXED_PORT to settings.proxyMixedPort.toString(),
+            PROXY_ALLOW_LAN to flag(settings.proxyAllowLan),
+            AD_BLOCK_ENABLED to flag(settings.adBlockEnabled),
+            DNS_STRATEGY to settings.dnsStrategy.name.lowercase(),
+            DNS_FAKEIP to flag(settings.fakeIpEnabled),
+            DYNAMIC_COLOUR to flag(settings.dynamicColour),
+            UPDATE_CHANNEL to settings.updateChannel.name.lowercase(),
+            PPROF_ENABLED to flag(settings.pprofEnabled),
+        )
 
     fun safeExport(settings: Settings) = encode(settings)
 }
 
 fun normalizeProxyUsername(value: String): String {
     val normalized = value.trim()
-    return if (normalized.isNotEmpty() && normalized.length <= 64 && normalized.none { it.isWhitespace() || it == ':' || it.code < 32 || it.code == 127 }) normalized else DEFAULT_PROXY_USERNAME
+    return if (normalized.isNotEmpty() && normalized.length <= 64 &&
+        normalized.none { it.isWhitespace() || it == ':' || it.code < 32 || it.code == 127 }
+    ) {
+        normalized
+    } else {
+        DEFAULT_PROXY_USERNAME
+    }
 }
 
-fun normalizeSplitRoutingPackages(values: Iterable<String>): List<String> = values.asSequence().map(String::trim).filter { it != "io.hydrabox.client" && it.matches(Regex("^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+$")) && it.length <= 255 }.distinct().take(MAX_SPLIT_ROUTING_PACKAGE_COUNT).toList()
+fun normalizeSplitRoutingPackages(values: Iterable<String>): List<String> =
+    values
+        .asSequence()
+        .map(String::trim)
+        .filter {
+            it !=
+                "io.hydrabox.client" &&
+                it.matches(Regex("^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+$")) &&
+                it.length <= 255
+        }.distinct()
+        .take(MAX_SPLIT_ROUTING_PACKAGE_COUNT)
+        .toList()
 
 /**
  * A stored resolver, or the default when what was stored cannot be used as one.
@@ -274,7 +414,10 @@ fun normalizeSplitRoutingPackages(values: Iterable<String>): List<String> = valu
  * pass and then mean something else — a scheme the core has no transport for, a port outside the
  * range, and a URI fragment that a DNS request never sends.
  */
-private fun resolver(value: String?, fallback: String): String {
+private fun resolver(
+    value: String?,
+    fallback: String,
+): String {
     val normalized = value?.trim().orEmpty()
     if (normalized.isEmpty()) return fallback
     val lower = normalized.lowercase()
@@ -303,19 +446,27 @@ private val RESOLVER_SCHEMES = setOf("udp", "tcp", "tls", "https", "quic", "h3")
 /** A host with an optional port, where the host may be a bare or bracketed IPv6 address. */
 private fun isResolverAuthority(authority: String): Boolean {
     if (authority.isEmpty()) return false
-    val port = when {
-        authority.startsWith("[") -> {
-            if (!authority.contains("]")) return false
-            authority.substringAfter("]", "").let { if (it.isEmpty()) null else it.removePrefix(":") }
+    val port =
+        when {
+            authority.startsWith("[") -> {
+                if (!authority.contains("]")) return false
+                authority.substringAfter("]", "").let { if (it.isEmpty()) null else it.removePrefix(":") }
+            }
+
+            authority.count { it == ':' } > 1 -> {
+                null
+            }
+
+            else -> {
+                authority.substringAfter(':', "").takeIf(String::isNotEmpty)
+            }
         }
-        authority.count { it == ':' } > 1 -> null
-        else -> authority.substringAfter(':', "").takeIf(String::isNotEmpty)
-    }
-    val host = when {
-        authority.startsWith("[") -> authority.substringAfter('[').substringBefore(']')
-        authority.count { it == ':' } > 1 -> authority
-        else -> authority.substringBefore(':')
-    }
+    val host =
+        when {
+            authority.startsWith("[") -> authority.substringAfter('[').substringBefore(']')
+            authority.count { it == ':' } > 1 -> authority
+            else -> authority.substringBefore(':')
+        }
     if (host.isEmpty()) return false
     if (port != null) {
         val number = port.toIntOrNull() ?: return false
@@ -324,9 +475,11 @@ private fun isResolverAuthority(authority: String): Boolean {
     return host.all { it.isLetterOrDigit() || it in ".-:_" }
 }
 
-private fun hasInvalidPercentEncoding(value: String): Boolean = value.indices.any { index ->
-    value[index] == '%' && (index + 2 >= value.length || value[index + 1].digitToIntOrNull(16) == null || value[index + 2].digitToIntOrNull(16) == null)
-}
+private fun hasInvalidPercentEncoding(value: String): Boolean =
+    value.indices.any { index ->
+        value[index] == '%' &&
+            (index + 2 >= value.length || value[index + 1].digitToIntOrNull(16) == null || value[index + 2].digitToIntOrNull(16) == null)
+    }
 
 private fun flag(value: Boolean) = if (value) "1" else "0"
 

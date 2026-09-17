@@ -12,15 +12,24 @@ plugins {
 val libboxAar = file("libs/libbox.aar")
 val provenance = file("libs/libbox.provenance.json")
 val provenanceText = provenance.readText()
-val hydraCoreVersion = Regex("""\"version\"\s*:\s*\"([^\"]+)\"""")
-    .find(provenanceText)?.groupValues?.get(1)
-    ?: error("libbox provenance has no distribution version")
-val hydraCoreCommit = Regex("""\"commit\"\s*:\s*\"([0-9a-f]{40})\"""")
-    .find(provenanceText)?.groupValues?.get(1)
-    ?: error("libbox provenance has no source commit")
-val libboxSha256 = Regex("""\"sha256\"\s*:\s*\"([0-9a-f]{64})\"""")
-    .find(provenanceText)?.groupValues?.get(1)
-    ?: error("libbox provenance has no AAR digest")
+val hydraCoreVersion =
+    Regex("""\"version\"\s*:\s*\"([^\"]+)\"""")
+        .find(provenanceText)
+        ?.groupValues
+        ?.get(1)
+        ?: error("libbox provenance has no distribution version")
+val hydraCoreCommit =
+    Regex("""\"commit\"\s*:\s*\"([0-9a-f]{40})\"""")
+        .find(provenanceText)
+        ?.groupValues
+        ?.get(1)
+        ?: error("libbox provenance has no source commit")
+val libboxSha256 =
+    Regex("""\"sha256\"\s*:\s*\"([0-9a-f]{64})\"""")
+        .find(provenanceText)
+        ?.groupValues
+        ?.get(1)
+        ?: error("libbox provenance has no AAR digest")
 
 /**
  * A signing value from `local.properties` or the environment, in that order. Neither is in the
@@ -28,11 +37,12 @@ val libboxSha256 = Regex("""\"sha256\"\s*:\s*\"([0-9a-f]{64})\"""")
  */
 fun releaseSigningProperty(name: String): String? {
     val local = rootProject.file("local.properties")
-    val fromFile = if (local.isFile) {
-        Properties().apply { local.inputStream().use { load(it) } }.getProperty(name)
-    } else {
-        null
-    }
+    val fromFile =
+        if (local.isFile) {
+            Properties().apply { local.inputStream().use { load(it) } }.getProperty(name)
+        } else {
+            null
+        }
     return (fromFile ?: System.getenv(name))?.takeIf(String::isNotBlank)
 }
 
@@ -142,9 +152,13 @@ tasks.register("verifyNativeLoaderSeam") {
     val loader = file("src/androidMain/java/go/HydraNativeLoader.java")
     inputs.files(libboxAar, loader)
     doLast {
-        val patched = zipTree(libboxAar).matching { include("classes.jar") }.singleFile.let { jar ->
-            zipTree(jar).matching { include("go/Seq.class") }.singleFile.readBytes()
-        }.let { bytes -> String(bytes, Charsets.ISO_8859_1).contains("go/HydraNativeLoader") }
+        val patched =
+            zipTree(libboxAar)
+                .matching { include("classes.jar") }
+                .singleFile
+                .let { jar ->
+                    zipTree(jar).matching { include("go/Seq.class") }.singleFile.readBytes()
+                }.let { bytes -> String(bytes, Charsets.ISO_8859_1).contains("go/HydraNativeLoader") }
         if (!patched) return@doLast
         check(loader.isFile) {
             "The bundled core loads its library through go.HydraNativeLoader; " +
@@ -161,10 +175,14 @@ tasks.register("verifyLibboxProvenance") {
     inputs.files(provenance, libboxAar)
     doLast {
         check(libboxAar.isFile) { "Missing ${libboxAar.path}; hydrate the published libbox release." }
-        val gitlink = providers.exec {
-            workingDir(rootProject.file("hydracore"))
-            commandLine("git", "rev-parse", "HEAD")
-        }.standardOutput.asText.get().trim()
+        val gitlink =
+            providers
+                .exec {
+                    workingDir(rootProject.file("hydracore"))
+                    commandLine("git", "rev-parse", "HEAD")
+                }.standardOutput.asText
+                .get()
+                .trim()
         check(gitlink == hydraCoreCommit) { "HydraCore gitlink does not match libbox provenance" }
         val digest = MessageDigest.getInstance("SHA-256")
         libboxAar.inputStream().use { input ->

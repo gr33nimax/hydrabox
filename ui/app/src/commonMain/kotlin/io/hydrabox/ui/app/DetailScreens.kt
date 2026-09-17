@@ -9,11 +9,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import io.hydrabox.core.projection.Appearance
@@ -22,8 +22,8 @@ import io.hydrabox.core.projection.Connection
 import io.hydrabox.core.projection.Language
 import io.hydrabox.core.projection.LogDetail
 import io.hydrabox.core.projection.ScreenState
-import io.hydrabox.ui.app.resources.Res
 import io.hydrabox.ui.app.resources.*
+import io.hydrabox.ui.app.resources.Res
 import io.hydrabox.ui.design.ChoiceDialog
 import io.hydrabox.ui.design.EmptyState
 import io.hydrabox.ui.design.HydraField
@@ -31,9 +31,9 @@ import io.hydrabox.ui.design.HydraIcons
 import io.hydrabox.ui.design.HydraRow
 import io.hydrabox.ui.design.MetricTile
 import io.hydrabox.ui.design.OptionRow
+import io.hydrabox.ui.design.SecondaryAction
 import io.hydrabox.ui.design.SectionGroup
 import io.hydrabox.ui.design.Sparkline
-import io.hydrabox.ui.design.SecondaryAction
 import io.hydrabox.ui.design.ToggleRow
 import io.hydrabox.ui.design.UiTokens
 import io.hydrabox.ui.design.ValueRow
@@ -42,7 +42,10 @@ import org.jetbrains.compose.resources.stringResource
 
 /** Which apps use the tunnel. A list of apps with switches, not a comma-separated field. */
 @Composable
-fun AppsScreen(state: ScreenState, actions: AppActions) {
+fun AppsScreen(
+    state: ScreenState,
+    actions: AppActions,
+) {
     var filter by remember { mutableStateOf("") }
     val mode = state.settings?.appsMode ?: AppsMode.BYPASS_SELECTED
     Column(
@@ -51,22 +54,22 @@ fun AppsScreen(state: ScreenState, actions: AppActions) {
     ) {
         SectionGroup(stringResource(Res.string.apps_mode_title)) {
             OptionRow(
-            title = stringResource(Res.string.apps_mode_off),
-            supporting = stringResource(Res.string.apps_mode_off_hint),
-            selected = mode == AppsMode.OFF,
-            onClick = { actions.onSetAppsMode(AppsMode.OFF) },
-        )
+                title = stringResource(Res.string.apps_mode_off),
+                supporting = stringResource(Res.string.apps_mode_off_hint),
+                selected = mode == AppsMode.OFF,
+                onClick = { actions.onSetAppsMode(AppsMode.OFF) },
+            )
             OptionRow(
-            title = stringResource(Res.string.apps_mode_bypass),
-            supporting = stringResource(Res.string.apps_mode_bypass_hint),
-            selected = mode == AppsMode.BYPASS_SELECTED,
-            onClick = { actions.onSetAppsMode(AppsMode.BYPASS_SELECTED) },
-        )
+                title = stringResource(Res.string.apps_mode_bypass),
+                supporting = stringResource(Res.string.apps_mode_bypass_hint),
+                selected = mode == AppsMode.BYPASS_SELECTED,
+                onClick = { actions.onSetAppsMode(AppsMode.BYPASS_SELECTED) },
+            )
             OptionRow(
-            title = stringResource(Res.string.apps_mode_only),
-            supporting = stringResource(Res.string.apps_mode_only_hint),
-            selected = mode == AppsMode.ONLY_SELECTED,
-            onClick = { actions.onSetAppsMode(AppsMode.ONLY_SELECTED) },
+                title = stringResource(Res.string.apps_mode_only),
+                supporting = stringResource(Res.string.apps_mode_only_hint),
+                selected = mode == AppsMode.ONLY_SELECTED,
+                onClick = { actions.onSetAppsMode(AppsMode.ONLY_SELECTED) },
             )
         }
         if (state.apps.isEmpty()) {
@@ -167,7 +170,11 @@ fun TrafficScreen(state: ScreenState) {
  * connected, which resolver it asks, the last failure, and the way into the journal.
  */
 @Composable
-fun DiagnosticsScreen(state: ScreenState, actions: AppActions, onOpenJournal: () -> Unit) {
+fun DiagnosticsScreen(
+    state: ScreenState,
+    actions: AppActions,
+    onOpenJournal: () -> Unit,
+) {
     val diagnostics = state.diagnostics
     // Held locally so the null check can be smart cast: `settings` is a property of another
     // module, and Kotlin will not narrow that on its own.
@@ -179,32 +186,33 @@ fun DiagnosticsScreen(state: ScreenState, actions: AppActions, onOpenJournal: ()
     ) {
         SectionGroup {
             HydraRow(
-            title = stringResource(Res.string.diagnostics_version),
-            supporting = listOfNotNull(
-                diagnostics?.appVersion?.takeIf(String::isNotBlank),
-                diagnostics?.coreVersion?.takeIf(String::isNotBlank),
-            ).joinToString(" · "),
-        )
+                title = stringResource(Res.string.diagnostics_version),
+                supporting =
+                    listOfNotNull(
+                        diagnostics?.appVersion?.takeIf(String::isNotBlank),
+                        diagnostics?.coreVersion?.takeIf(String::isNotBlank),
+                    ).joinToString(" · "),
+            )
             HydraRow(
-            title = stringResource(Res.string.diagnostics_server),
-            supporting = diagnostics?.activeServer ?: stringResource(Res.string.server_auto),
-        )
+                title = stringResource(Res.string.diagnostics_server),
+                supporting = diagnostics?.activeServer ?: stringResource(Res.string.server_auto),
+            )
             HydraRow(
-            title = stringResource(Res.string.diagnostics_dns),
-            supporting = diagnostics?.dnsResolver?.takeIf(String::isNotBlank),
-        )
+                title = stringResource(Res.string.diagnostics_dns),
+                supporting = diagnostics?.dnsResolver?.takeIf(String::isNotBlank),
+            )
             diagnostics?.lastError?.let {
                 HydraRow(title = stringResource(Res.string.diagnostics_error), supporting = it)
             }
             ValueRow(
-            title = stringResource(Res.string.journal_title),
-            value = stringResource(Res.string.journal_count, diagnostics?.journal?.size ?: 0),
-            onClick = onOpenJournal,
-        )
+                title = stringResource(Res.string.journal_title),
+                value = stringResource(Res.string.journal_count, diagnostics?.journal?.size ?: 0),
+                onClick = onOpenJournal,
+            )
             ValueRow(
-            title = stringResource(Res.string.diagnostics_level),
-            value = diagnostics?.level?.uppercase(),
-            onClick = { pickingLevel = true },
+                title = stringResource(Res.string.diagnostics_level),
+                value = diagnostics?.level?.uppercase(),
+                onClick = { pickingLevel = true },
             )
             // Only a build that can serve a profiler offers the switch: an option that cannot
             // work is worse than no option at all.
@@ -237,7 +245,10 @@ fun DiagnosticsScreen(state: ScreenState, actions: AppActions, onOpenJournal: ()
                     title = stringResource(label),
                     supporting = null,
                     selected = (state.settings?.logDetail ?: LogDetail.WARN) == value,
-                    onClick = { actions.onSetLogDetail(value); pickingLevel = false },
+                    onClick = {
+                        actions.onSetLogDetail(value)
+                        pickingLevel = false
+                    },
                 )
             }
         }
@@ -246,7 +257,12 @@ fun DiagnosticsScreen(state: ScreenState, actions: AppActions, onOpenJournal: ()
 
 /** Version, the legal documents, and nothing that pretends to be a feature. */
 @Composable
-fun AboutScreen(version: String, coreVersion: String, onOpenTerms: () -> Unit, onOpenPrivacy: () -> Unit) {
+fun AboutScreen(
+    version: String,
+    coreVersion: String,
+    onOpenTerms: () -> Unit,
+    onOpenPrivacy: () -> Unit,
+) {
     Column(
         verticalArrangement = Arrangement.spacedBy(UiTokens.spacing),
         modifier = Modifier.fillMaxWidth().padding(horizontal = UiTokens.spacing * 2),
@@ -262,7 +278,10 @@ fun AboutScreen(version: String, coreVersion: String, onOpenTerms: () -> Unit, o
 
 /** Theme and language: two choices, each with a visible effect and nothing to explain. */
 @Composable
-fun AppearanceScreen(state: ScreenState, actions: AppActions) {
+fun AppearanceScreen(
+    state: ScreenState,
+    actions: AppActions,
+) {
     val settings = state.settings
     Column(
         verticalArrangement = Arrangement.spacedBy(UiTokens.spacing),
@@ -270,44 +289,44 @@ fun AppearanceScreen(state: ScreenState, actions: AppActions) {
     ) {
         SectionGroup(stringResource(Res.string.appearance_theme)) {
             listOf(
-            Appearance.SYSTEM to Res.string.theme_system,
-            Appearance.LIGHT to Res.string.theme_light,
-            Appearance.DARK to Res.string.theme_dark,
+                Appearance.SYSTEM to Res.string.theme_system,
+                Appearance.LIGHT to Res.string.theme_light,
+                Appearance.DARK to Res.string.theme_dark,
             ).forEach { (value, label) ->
                 OptionRow(
-                title = stringResource(label),
-                supporting = null,
-                selected = (settings?.appearance ?: Appearance.SYSTEM) == value,
-                onClick = { actions.onSetAppearance(value) },
+                    title = stringResource(label),
+                    supporting = null,
+                    selected = (settings?.appearance ?: Appearance.SYSTEM) == value,
+                    onClick = { actions.onSetAppearance(value) },
                 )
             }
         }
         SectionGroup(stringResource(Res.string.appearance_colour)) {
             OptionRow(
-            title = stringResource(Res.string.colour_brand),
-            supporting = stringResource(Res.string.colour_brand_hint),
-            selected = settings?.dynamicColour != true,
-            onClick = { actions.onSetDynamicColour(false) },
-        )
+                title = stringResource(Res.string.colour_brand),
+                supporting = stringResource(Res.string.colour_brand_hint),
+                selected = settings?.dynamicColour != true,
+                onClick = { actions.onSetDynamicColour(false) },
+            )
             OptionRow(
-            title = stringResource(Res.string.colour_system),
-            supporting = stringResource(Res.string.colour_system_hint),
-            selected = settings?.dynamicColour == true,
-            onClick = { actions.onSetDynamicColour(true) },
+                title = stringResource(Res.string.colour_system),
+                supporting = stringResource(Res.string.colour_system_hint),
+                selected = settings?.dynamicColour == true,
+                onClick = { actions.onSetDynamicColour(true) },
             )
         }
         if (settings?.languageChoice != true) return@Column
         SectionGroup(stringResource(Res.string.appearance_language)) {
             listOf(
-            Language.SYSTEM to Res.string.language_system,
-            Language.RUSSIAN to Res.string.language_ru,
-            Language.ENGLISH to Res.string.language_en,
+                Language.SYSTEM to Res.string.language_system,
+                Language.RUSSIAN to Res.string.language_ru,
+                Language.ENGLISH to Res.string.language_en,
             ).forEach { (value, label) ->
                 OptionRow(
-                title = stringResource(label),
-                supporting = null,
-                selected = (settings?.language ?: Language.SYSTEM) == value,
-                onClick = { actions.onSetLanguage(value) },
+                    title = stringResource(label),
+                    supporting = null,
+                    selected = (settings?.language ?: Language.SYSTEM) == value,
+                    onClick = { actions.onSetLanguage(value) },
                 )
             }
         }
@@ -324,7 +343,10 @@ private const val APP_SELECTION_LIMIT = 128
  * arrives once a second, and a chart of the last minute is a screen's own memory.
  */
 @Composable
-private fun rememberThroughput(down: Long, up: Long): Pair<List<Long>, List<Long>> {
+private fun rememberThroughput(
+    down: Long,
+    up: Long,
+): Pair<List<Long>, List<Long>> {
     val downs = remember { mutableStateListOf<Long>() }
     val ups = remember { mutableStateListOf<Long>() }
     val latest = rememberUpdatedState(down to up)

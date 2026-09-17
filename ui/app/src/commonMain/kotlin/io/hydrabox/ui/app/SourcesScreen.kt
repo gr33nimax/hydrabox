@@ -3,12 +3,12 @@ package io.hydrabox.ui.app
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -34,8 +34,8 @@ import androidx.compose.ui.unit.dp
 import io.hydrabox.core.projection.Notice
 import io.hydrabox.core.projection.ScreenState
 import io.hydrabox.core.projection.SubscriptionSummary
-import io.hydrabox.ui.app.resources.Res
 import io.hydrabox.ui.app.resources.*
+import io.hydrabox.ui.app.resources.Res
 import io.hydrabox.ui.design.ActionRow
 import io.hydrabox.ui.design.ConfirmDialog
 import io.hydrabox.ui.design.EmptyState
@@ -62,7 +62,11 @@ import org.jetbrains.compose.resources.stringResource
  * long it is still valid.
  */
 @Composable
-fun SourcesScreen(state: ScreenState, actions: AppActions, onOpenServers: () -> Unit) {
+fun SourcesScreen(
+    state: ScreenState,
+    actions: AppActions,
+    onOpenServers: () -> Unit,
+) {
     var adding by remember { mutableStateOf(false) }
     var pendingRemoval by remember { mutableStateOf<SubscriptionSummary?>(null) }
     var renaming by remember { mutableStateOf<SubscriptionSummary?>(null) }
@@ -121,7 +125,10 @@ fun SourcesScreen(state: ScreenState, actions: AppActions, onOpenServers: () -> 
             confirmLabel = stringResource(Res.string.action_remove),
             dismissLabel = stringResource(Res.string.action_cancel),
             destructive = true,
-            onConfirm = { actions.onRemoveSource(source.id); pendingRemoval = null },
+            onConfirm = {
+                actions.onRemoveSource(source.id)
+                pendingRemoval = null
+            },
             onDismiss = { pendingRemoval = null },
         )
     }
@@ -293,7 +300,11 @@ private fun ProtocolBadges(source: SubscriptionSummary) {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AddSourceSheet(state: ScreenState, actions: AppActions, onClose: () -> Unit) {
+private fun AddSourceSheet(
+    state: ScreenState,
+    actions: AppActions,
+    onClose: () -> Unit,
+) {
     var link by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
     var submitted by remember { mutableStateOf(false) }
@@ -357,7 +368,11 @@ private fun AddSourceSheet(state: ScreenState, actions: AppActions, onClose: () 
 }
 
 @Composable
-private fun RenameDialog(source: SubscriptionSummary, actions: AppActions, onClose: () -> Unit) {
+private fun RenameDialog(
+    source: SubscriptionSummary,
+    actions: AppActions,
+    onClose: () -> Unit,
+) {
     var draft by remember(source.id) { mutableStateOf(source.name) }
     InputDialog(
         title = stringResource(Res.string.sources_rename_title),
@@ -366,7 +381,10 @@ private fun RenameDialog(source: SubscriptionSummary, actions: AppActions, onClo
         label = stringResource(Res.string.sources_add_name),
         confirmLabel = stringResource(Res.string.action_save),
         dismissLabel = stringResource(Res.string.action_cancel),
-        onConfirm = { actions.onRenameSource(source.id, draft.trim()); onClose() },
+        onConfirm = {
+            actions.onRenameSource(source.id, draft.trim())
+            onClose()
+        },
         onDismiss = onClose,
     )
 }

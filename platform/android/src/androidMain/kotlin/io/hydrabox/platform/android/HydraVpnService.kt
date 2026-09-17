@@ -1500,8 +1500,7 @@ class HydraVpnService : VpnService() {
                         Intent(this, HydraVpnService::class.java).setAction(ACTION_NOTIFICATION_DISMISSED),
                         android.app.PendingIntent.FLAG_IMMUTABLE,
                     ),
-                )
-                .setContentIntent(
+                ).setContentIntent(
                     android.app.PendingIntent.getActivity(
                         this,
                         0,

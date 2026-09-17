@@ -18,8 +18,8 @@ import androidx.compose.ui.Modifier
 import io.hydrabox.core.projection.Connection
 import io.hydrabox.core.projection.ScreenState
 import io.hydrabox.core.projection.ServerRef
-import io.hydrabox.ui.app.resources.Res
 import io.hydrabox.ui.app.resources.*
+import io.hydrabox.ui.app.resources.Res
 import io.hydrabox.ui.design.ActionRow
 import io.hydrabox.ui.design.EmptyState
 import io.hydrabox.ui.design.HydraField
@@ -60,13 +60,18 @@ fun ServersScreen(
     // dismissal that survived a restart would hide a true fact rather than an annoyance.
     var dismissedStale by remember { mutableStateOf<String?>(null) }
     val canMeasure = canMeasure(state.connection)
-    val groups = remember(state.servers, filter, order) {
-        state.servers.map { group ->
-            group to order.arrange(group.servers.filter {
-                filter.isBlank() || it.displayName.contains(filter, ignoreCase = true)
-            })
-        }.filter { it.second.isNotEmpty() }
-    }
+    val groups =
+        remember(state.servers, filter, order) {
+            state.servers
+                .map { group ->
+                    group to
+                        order.arrange(
+                            group.servers.filter {
+                                filter.isBlank() || it.displayName.contains(filter, ignoreCase = true)
+                            },
+                        )
+                }.filter { it.second.isNotEmpty() }
+        }
     LazyColumn(
         verticalArrangement = Arrangement.spacedBy(UiTokens.spacing),
         modifier = Modifier.fillMaxWidth().padding(horizontal = UiTokens.spacing * 2),
@@ -155,26 +160,43 @@ internal fun canMeasure(connection: Connection): Boolean =
  * them in, and it says so now.
  */
 private enum class ServerOrder {
-    LISTED, LATENCY, NAME;
+    LISTED,
+    LATENCY,
+    NAME,
+    ;
 
-    fun arrange(servers: List<ServerRef>): List<ServerRef> = when (this) {
-        LISTED -> servers
-        // Unknown and stale results sort last: neither is evidence of a fast server.
-        LATENCY -> servers.sortedWith(
-            compareBy<ServerRef> { it.latencyStale }.thenBy { it.latencyMillis ?: Int.MAX_VALUE },
-        )
-        NAME -> servers.sortedBy { it.displayName.lowercase() }
-    }
+    fun arrange(servers: List<ServerRef>): List<ServerRef> =
+        when (this) {
+            LISTED -> {
+                servers
+            }
 
-    fun label() = when (this) {
-        LISTED -> Res.string.servers_order_source
-        LATENCY -> Res.string.servers_order_latency
-        NAME -> Res.string.servers_order_name
-    }
+            // Unknown and stale results sort last: neither is evidence of a fast server.
+            LATENCY -> {
+                servers.sortedWith(
+                    compareBy<ServerRef> { it.latencyStale }.thenBy { it.latencyMillis ?: Int.MAX_VALUE },
+                )
+            }
+
+            NAME -> {
+                servers.sortedBy { it.displayName.lowercase() }
+            }
+        }
+
+    fun label() =
+        when (this) {
+            LISTED -> Res.string.servers_order_source
+            LATENCY -> Res.string.servers_order_latency
+            NAME -> Res.string.servers_order_name
+        }
 }
 
 @Composable
-private fun ServerEntry(server: ServerRef, selectedId: String?, actions: AppActions) = ServerRow(
+private fun ServerEntry(
+    server: ServerRef,
+    selectedId: String?,
+    actions: AppActions,
+) = ServerRow(
     name = server.displayName,
     detail = null,
     latency = latencyLabel(server),

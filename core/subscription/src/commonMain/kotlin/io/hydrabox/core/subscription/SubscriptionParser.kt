@@ -408,14 +408,21 @@ object SubscriptionParser {
         val type =
             when {
                 scheme.startsWith("socks") -> "socks"
+
                 scheme == "hy2" || scheme == "hysteria2" -> "hysteria2"
+
                 scheme == "hysteria" || scheme == "hy" -> "hysteria"
+
                 scheme.startsWith("naive+") -> "naive"
+
                 scheme == "tuic" -> "tuic"
+
                 scheme == "anytls" -> "anytls"
+
                 // `snell://` carries the PSK as its userinfo and the generation in the query; the
                 // core runs it as an outbound of its own type.
                 scheme == "snell" -> "snell"
+
                 else -> "http"
             }
         val secured =
