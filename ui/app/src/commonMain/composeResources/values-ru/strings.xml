@@ -296,6 +296,7 @@ HydraBox предоставляется **как есть**. Мы исправл
     <string name="home_days_left">Осталось %1$d дн.</string>
     <string name="sources_refresh_all">Обновить все</string>
     <string name="sources_updated">Обновлено %1$s</string>
+    <string name="servers_stale_list">Список «%1$s» не обновлялся</string>
     <string name="appearance_colour">Цвет</string>
     <string name="colour_brand">HydraBox</string>
     <string name="colour_brand_hint">Собственная палитра приложения</string>

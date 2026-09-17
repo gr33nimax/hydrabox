@@ -56,6 +56,9 @@ fun ServersScreen(
     }
     var filter by remember { mutableStateOf("") }
     var order by remember { mutableStateOf(ServerOrder.LISTED) }
+    // Put away for this visit only: the list really is dated until the source refreshes, so a
+    // dismissal that survived a restart would hide a true fact rather than an annoyance.
+    var dismissedStale by remember { mutableStateOf<String?>(null) }
     val canMeasure = canMeasure(state.connection)
     val groups = remember(state.servers, filter, order) {
         state.servers.map { group ->
@@ -78,13 +81,20 @@ fun ServersScreen(
                         onClick = onOpenSources,
                     )
                 }
-                state.sources.firstOrNull { it.problem != null }?.let { source ->
-                    WarningStrip(
-                        text = "${source.name} · ${sourceProblemText(source.problem!!)}",
-                        actionLabel = stringResource(Res.string.action_refresh),
-                        onAction = { actions.onRefreshSource(source.id) },
-                    )
-                }
+                // A failed refresh leaves the servers this source already contributed, so the
+                // honest thing to say is that the list is dated — not that the app is broken.
+                // The source screen still owns the failure itself.
+                state.sources
+                    .firstOrNull { it.problem != null && it.id != dismissedStale }
+                    ?.let { source ->
+                        WarningStrip(
+                            text = stringResource(Res.string.servers_stale_list, source.name),
+                            actionLabel = stringResource(Res.string.action_refresh),
+                            onAction = { actions.onRefreshSource(source.id) },
+                            dismissLabel = stringResource(Res.string.action_close),
+                            onDismiss = { dismissedStale = source.id },
+                        )
+                    }
                 state.autoServer?.let { auto ->
                     SectionGroup {
                         ServerRow(

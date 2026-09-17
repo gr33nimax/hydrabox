@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -103,7 +104,13 @@ fun LoadingRows(count: Int = 3) {
 
 /** A problem attached to the thing that has it, not a banner over the app. */
 @Composable
-fun WarningStrip(text: String, actionLabel: String? = null, onAction: (() -> Unit)? = null) {
+fun WarningStrip(
+    text: String,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
+    dismissLabel: String? = null,
+    onDismiss: (() -> Unit)? = null,
+) {
     Surface(
         shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.errorContainer,
@@ -128,6 +135,16 @@ fun WarningStrip(text: String, actionLabel: String? = null, onAction: (() -> Uni
             )
             if (actionLabel != null && onAction != null) {
                 SecondaryAction(actionLabel, onClick = onAction)
+            }
+            if (dismissLabel != null && onDismiss != null) {
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        HydraIcons.Close,
+                        contentDescription = dismissLabel,
+                        tint = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
             }
         }
     }

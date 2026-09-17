@@ -300,6 +300,7 @@ Logs are stored locally until the user exports or sends them. Review exported fi
     <string name="home_days_left">%1$d days left</string>
     <string name="sources_refresh_all">Update all</string>
     <string name="sources_updated">Updated %1$s</string>
+    <string name="servers_stale_list">The list from %1$s has not been updated</string>
     <string name="appearance_colour">Colour</string>
     <string name="colour_brand">HydraBox</string>
     <string name="colour_brand_hint">The app’s own palette</string>
