@@ -23,6 +23,11 @@ on:
         required: false
         default: true
         type: boolean
+      channel:
+        description: "Канал обновлений: canary или stable. Должен совпадать с веткой запуска."
+        required: false
+        default: canary
+        type: string
 
 permissions:
   contents: write
@@ -135,6 +140,7 @@ jobs:
       # The tag, the file name and what the APK reports are three places the same version lives.
       # The first two are ours to get right; this checks the third.
       - name: Verify the built APK
+        id: verify
         env:
           NAME: ${{ steps.version.outputs.name }}
           CODE: ${{ steps.version.outputs.code }}
@@ -161,6 +167,9 @@ jobs:
             exit 1
           fi
           echo "APK: $apk, версия $reported_name ($reported_code), сертификат совпадает"
+          # The channel manifest has to name the certificate that signed this artifact, and the
+          # figure is already in hand here.
+          echo "cert=$digest" >> "$GITHUB_OUTPUT"
 
       - name: Collect the artifacts
         id: collect
@@ -206,3 +215,75 @@ jobs:
             --title "HydraBox $NAME" \
             --notes-file "$notes" \
             --prerelease
+
+      # The release exists; this is what a client can actually find. The manifest is signed rather
+      # than trusted, and published at a fixed path on the channel's own branch (ADR 0009), so a
+      # client reads one constant address and every decision lives inside the signed bytes.
+      - name: Publish the channel manifest
+        if: ${{ !inputs.dry_run }}
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          NAME: ${{ steps.version.outputs.name }}
+          CODE: ${{ steps.version.outputs.code }}
+          SHA: ${{ steps.collect.outputs.sha256 }}
+          CERT: ${{ steps.verify.outputs.cert }}
+          KEY_ID: ${{ vars.HYDRABOX_UPDATE_KEY_ID }}
+          PRIVATE_KEY: ${{ secrets.HYDRABOX_UPDATE_ED25519_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          # A channel publishes from its own branch and nowhere else: the address a client reads is
+          # fixed, and a manifest that appeared out of some other ref would be unreviewable.
+          expected="refs/heads/$CHANNEL"
+          if [ "$GITHUB_REF" != "$expected" ]; then
+            echo "::error title=Channel and branch disagree::канал $CHANNEL публикуется только из $expected, а запуск из $GITHUB_REF"
+            exit 1
+          fi
+          for value in KEY_ID PRIVATE_KEY SHA CERT; do
+            if [ -z "${!value:-}" ]; then
+              echo "::error title=Missing update signing material::$value не задан"
+              exit 1
+            fi
+          done
+
+          mkdir -p update
+          manifest="update/$CHANNEL.json"
+          {
+            printf '{\n'
+            printf '  "schema": 1,\n'
+            printf '  "channel": "%s",\n' "$CHANNEL"
+            printf '  "versionCode": %s,\n' "$CODE"
+            printf '  "versionName": "%s",\n' "$NAME"
+            printf '  "releaseTag": "%s",\n' "$NAME"
+            printf '  "apkUrl": "https://github.com/%s/releases/download/%s/hydrabox-%s-arm64-v8a.apk",\n' "$GITHUB_REPOSITORY" "$NAME" "$NAME"
+            printf '  "sha256": "%s",\n' "$SHA"
+            printf '  "certificateSha256": "%s",\n' "$CERT"
+            printf '  "keyId": "%s"\n' "$KEY_ID"
+            printf '}\n'
+          } > "$manifest"
+
+          # The signature is detached and lives beside the document. A signature inside the bytes it
+          # signs cannot be checked without re-serialising them, and re-serialising is how two
+          # different documents come to share one signature.
+          key="$RUNNER_TEMP/update-key.pem"
+          case "$PRIVATE_KEY" in
+            -----BEGIN*) printf '%s\n' "$PRIVATE_KEY" > "$key" ;;
+            *)
+              # A base64 PKCS#8 body rather than a PEM block; converted once so signing has one shape.
+              printf '%s' "$PRIVATE_KEY" | base64 -d > "$RUNNER_TEMP/update-key.der"
+              openssl pkey -inform DER -in "$RUNNER_TEMP/update-key.der" -out "$key"
+              rm -f "$RUNNER_TEMP/update-key.der"
+              ;;
+          esac
+          openssl pkeyutl -sign -rawin -inkey "$key" -in "$manifest" -out "$RUNNER_TEMP/manifest.sig"
+          base64 -w0 "$RUNNER_TEMP/manifest.sig" | tr '+/' '-_' | tr -d '=' > "update/$CHANNEL.sig"
+          rm -f "$key" "$RUNNER_TEMP/manifest.sig"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "update/$CHANNEL.json" "update/$CHANNEL.sig"
+          if git diff --cached --quiet; then
+            echo "канал $CHANNEL уже указывает на $NAME"
+          else
+            git commit -m "update($CHANNEL): point the channel at $NAME"
+            git push origin "HEAD:refs/heads/$CHANNEL"
+          fi
