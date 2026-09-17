@@ -75,6 +75,24 @@ extensions.configure<ApplicationExtension> {
         versionName =
             (findProperty("hydraboxVersionName") as String?)?.takeIf(String::isNotBlank) ?: "2.0.0-alpha1"
         buildConfigField("String", "HYDRACORE_VERSION", "\"$hydraCoreVersion\"")
+        // The pinned update keys travel with the build rather than with the update: an updater that
+        // could be told which key to trust would only prove that somebody signed the document. No
+        // keys leaves the field empty, and an empty key list verifies nothing — which is the
+        // direction this has to fail in.
+        val updatePublicKeys =
+            releaseSigningProperty("HYDRABOX_UPDATE_PUBLIC_KEYS")
+                ?.replace("\\", "\\\\")
+                ?.replace("\"", "\\\"")
+                .orEmpty()
+        buildConfigField("String", "HYDRABOX_UPDATE_PUBLIC_KEYS", "\"$updatePublicKeys\"")
+        // Pinned beside the keys rather than read from the document: a manifest that names its own
+        // key would get to choose which of the pinned keys vouches for it.
+        val updateKeyId =
+            releaseSigningProperty("HYDRABOX_UPDATE_KEY_ID")
+                ?.replace("\\", "\\\\")
+                ?.replace("\"", "\\\"")
+                .orEmpty()
+        buildConfigField("String", "HYDRABOX_UPDATE_KEY_ID", "\"$updateKeyId\"")
         // The alpha ships arm64 only: the other ABIs triple the artifact for devices we
         // are not testing on. Restore them when the alpha becomes a release candidate.
         ndk { abiFilters += "arm64-v8a" }
@@ -127,6 +145,7 @@ dependencies {
     implementation(project(":core:diagnostics"))
     implementation(project(":core:model"))
     implementation(project(":core:projection"))
+    implementation(project(":core:update"))
     implementation(project(":ui:app"))
     implementation("androidx.activity:activity-compose:1.10.1")
     // The captcha overlay is the one screen that is Android-only — a WebView pointing at the

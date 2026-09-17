@@ -11,6 +11,12 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!--
+      The in-app updater hands a verified APK to Android's installer. The permission only
+      allows asking; Android still shows its own confirmation and, from Android 8, requires the
+      person to allow this source to install. Nothing is installed without that.
+    -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- So the periodic subscription refresh survives a reboot, as it did in 1.x. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
@@ -95,6 +101,13 @@
             android:name=".SubscriptionRefreshJob"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
+        <!--
+          The installer answers a committed session here. Not exported: the broadcast is sent by
+          the system as this application, and nobody else has any business speaking for it.
+        -->
+        <receiver
+            android:name=".UpdateInstallReceiver"
+            android:exported="false" />
         <service
             android:name=".HydraTileService"
             android:exported="true"
