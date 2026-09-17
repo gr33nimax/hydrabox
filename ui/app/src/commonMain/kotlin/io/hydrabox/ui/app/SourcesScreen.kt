@@ -20,6 +20,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,6 +31,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import io.hydrabox.core.projection.Notice
 import io.hydrabox.core.projection.ScreenState
 import io.hydrabox.core.projection.SubscriptionSummary
 import io.hydrabox.ui.app.resources.Res
@@ -294,10 +296,17 @@ private fun ProtocolBadges(source: SubscriptionSummary) {
 private fun AddSourceSheet(state: ScreenState, actions: AppActions, onClose: () -> Unit) {
     var link by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
+    var submitted by remember { mutableStateOf(false) }
     val clipboard = LocalClipboardManager.current
+    // The sheet now waits for the import it asked for. Closing on the press moved the failure
+    // somewhere the person was no longer looking and took the typed link with it, so success is
+    // the only thing that closes this.
+    LaunchedEffect(submitted, state.notice) {
+        if (submitted && state.notice == Notice.SOURCE_ADDED) onClose()
+    }
     ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState()) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = UiTokens.spacing * 3).padding(bottom = UiTokens.spacing * 4),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = UiTokens.spacing * 2).padding(bottom = UiTokens.spacing * 3),
             verticalArrangement = Arrangement.spacedBy(UiTokens.spacing),
         ) {
             Text(
@@ -317,11 +326,19 @@ private fun AddSourceSheet(state: ScreenState, actions: AppActions, onClose: () 
                 onValueChange = { name = it },
                 label = stringResource(Res.string.sources_add_name),
             )
+            // The reason the import failed belongs here, next to what was typed, not on the
+            // screen behind a sheet the person is still looking at.
+            state.notice?.takeIf { it.failure }?.let { failure ->
+                WarningStrip(text = noticeText(failure), actionLabel = null, onAction = null)
+            }
             ActionRow {
                 PrimaryAction(
                     label = stringResource(Res.string.action_add),
                     enabled = link.isNotBlank() && !state.busy.source,
-                    onClick = { actions.onAddSource(name.trim(), link.trim()); onClose() },
+                    onClick = {
+                        submitted = true
+                        actions.onAddSource(name.trim(), link.trim())
+                    },
                 )
                 SecondaryAction(
                     label = stringResource(Res.string.action_paste),
@@ -329,7 +346,10 @@ private fun AddSourceSheet(state: ScreenState, actions: AppActions, onClose: () 
                 )
                 SecondaryAction(
                     label = stringResource(Res.string.sources_add_file),
-                    onClick = { actions.onAddSourceFromFile(); onClose() },
+                    onClick = {
+                        submitted = true
+                        actions.onAddSourceFromFile()
+                    },
                 )
             }
         }
