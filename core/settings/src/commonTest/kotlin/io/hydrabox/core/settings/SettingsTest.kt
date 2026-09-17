@@ -159,4 +159,25 @@ class SettingsTest {
         assertEquals(DnsStrategy.AUTO, codec.decode(mapOf("dns_strategy" to "auto")).dnsStrategy)
         assertEquals("auto", codec.encode(codec.decode(mapOf("dns_strategy" to "auto")))["dns_strategy"])
     }
+
+    @Test fun `the update channel fails closed and the profiler is opt-in`() {
+        // Neither value may be inferred from whatever happens to be in storage: an unknown
+        // channel is the stable line rather than a guessed one, and pprof hands out stacks and
+        // heap contents, so it stays off until someone asks for it.
+        val defaults = codec.decode(emptyMap())
+        assertEquals(UpdateChannel.STABLE, defaults.updateChannel)
+        assertFalse(defaults.pprofEnabled)
+
+        assertEquals(UpdateChannel.CANARY, codec.decode(mapOf("update_channel" to "canary")).updateChannel)
+        assertEquals(UpdateChannel.STABLE, codec.decode(mapOf("update_channel" to "nightly")).updateChannel)
+        assertTrue(codec.decode(mapOf("pprof_enabled" to "1")).pprofEnabled)
+
+        val chosen = codec.encode(codec.decode(mapOf("update_channel" to "canary", "pprof_enabled" to "1")))
+        assertEquals("canary", chosen["update_channel"])
+        assertEquals("1", chosen["pprof_enabled"])
+
+        val exported = codec.decode(codec.encode(defaults))
+        assertEquals(UpdateChannel.STABLE, exported.updateChannel)
+        assertFalse(exported.pprofEnabled)
+    }
 }

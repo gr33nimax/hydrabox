@@ -56,6 +56,12 @@ enum class LogLevel { OFF, TRACE, DEBUG, INFO, WARN, ERROR }
 
 enum class AppLanguage { SYSTEM, RUSSIAN, ENGLISH }
 
+/**
+ * Which release line the updater follows. Two fixed values rather than a branch name: a branch
+ * is build input, and only a signed manifest for a known channel may be installed.
+ */
+enum class UpdateChannel { STABLE, CANARY }
+
 data class Settings(
     val performanceMode: PerformanceMode,
     val urlTestUrl: String,
@@ -111,6 +117,13 @@ data class Settings(
     val fakeIpEnabled: Boolean = false,
     /** Whether the interface follows the system's wallpaper colours instead of the brand's. */
     val dynamicColour: Boolean = false,
+    /** Which release line the in-app updater follows. */
+    val updateChannel: UpdateChannel = UpdateChannel.STABLE,
+    /**
+     * Whether the core serves its profiler on loopback. Off unless someone asks for it: pprof
+     * hands out stacks and heap contents, and a shipped build defaults to silence.
+     */
+    val pprofEnabled: Boolean = false,
 )
 
 class SettingsStore(private val database: StorageDatabase, private val secretSealer: SecretSealer, private val secretOpener: SecretOpener) {
@@ -216,6 +229,14 @@ class SettingsCodec {
             adBlockEnabled = bool(AD_BLOCK_ENABLED, false),
             fakeIpEnabled = bool(DNS_FAKEIP, false),
             dynamicColour = bool(DYNAMIC_COLOUR, false),
+            // An unknown stored value is not guessed at: a channel this build does not know is
+            // the stable line, which is the one that installs the least surprising build.
+            updateChannel =
+                when (values[UPDATE_CHANNEL]) {
+                    "canary" -> UpdateChannel.CANARY
+                    else -> UpdateChannel.STABLE
+                },
+            pprofEnabled = bool(PPROF_ENABLED, false),
             dnsStrategy = when (values[DNS_STRATEGY]) {
                 "auto" -> DnsStrategy.AUTO
                 "ipv6_only" -> DnsStrategy.IPV6_ONLY
@@ -231,7 +252,7 @@ class SettingsCodec {
         BOOTSTRAP_DNS_RESOLVER to settings.bootstrapDnsResolver, DNS_DIRECT_RESOLVER to settings.dnsDirectResolver, DNS_PROXY_RESOLVER to settings.dnsProxyResolver,
         MEMORY_LIMIT_ENABLED to flag(settings.memoryLimitEnabled), MEMORY_LIMIT_WARNING_DISMISSED to flag(settings.memoryLimitWarningDismissed), STATUS_NOTIFICATION_ENABLED to flag(settings.statusNotificationEnabled), NOTIFICATION_TRAFFIC_DISPLAY_MODE to settings.notificationTrafficDisplayMode.name.lowercase(),
         ACCEPTED_LEGAL_VERSION to settings.acceptedLegalVersion, ACCEPTED_LEGAL_AT_MILLIS to settings.acceptedLegalAtMillis?.toString().orEmpty(), TLS_FRAGMENTATION_MODE to settings.tlsFragmentationMode.name.lowercase(), PROXY_USERNAME to normalizeProxyUsername(settings.proxyUsername), PROXY_SORT to settings.proxySort, VPN_MTU to settings.vpnMtu.toString(), VPN_MTU_MIGRATED to "1", SPLIT_ROUTING_PACKAGES to normalizeSplitRoutingPackages(settings.splitRoutingPackages).joinToString("\n"),
-        BLOCK_LEAKS to flag(settings.blockLeaks), BYPASS_LOCAL_NETWORK to flag(settings.bypassLocalNetwork), SPLIT_ROUTING_MODE to settings.splitRoutingMode.name.lowercase(), THEME_MODE to settings.themeMode.name.lowercase(), LANGUAGE to settings.language.name.lowercase(), VPN_STRICT_ROUTE to flag(settings.vpnStrictRoute), VPN_TUN_IMPLEMENTATION to settings.vpnTunStack.name.lowercase(), TCP_FAST_OPEN to flag(settings.tcpFastOpen), TCP_MULTI_PATH to flag(settings.tcpMultiPath), URL_TEST_STRICT_TOLERANCE to flag(settings.urlTestStrictTolerance), INTERRUPT_EXISTING_CONNECTIONS to flag(settings.interruptExistingConnections), LOG_LEVEL to settings.logLevel.name.lowercase(), VPN_INBOUND_ENABLED to flag(settings.vpnInboundEnabled), PROXY_INBOUND_ENABLED to flag(settings.proxyInboundEnabled), PROXY_MIXED_PORT to settings.proxyMixedPort.toString(), PROXY_ALLOW_LAN to flag(settings.proxyAllowLan), AD_BLOCK_ENABLED to flag(settings.adBlockEnabled), DNS_STRATEGY to settings.dnsStrategy.name.lowercase(), DNS_FAKEIP to flag(settings.fakeIpEnabled), DYNAMIC_COLOUR to flag(settings.dynamicColour),
+        BLOCK_LEAKS to flag(settings.blockLeaks), BYPASS_LOCAL_NETWORK to flag(settings.bypassLocalNetwork), SPLIT_ROUTING_MODE to settings.splitRoutingMode.name.lowercase(), THEME_MODE to settings.themeMode.name.lowercase(), LANGUAGE to settings.language.name.lowercase(), VPN_STRICT_ROUTE to flag(settings.vpnStrictRoute), VPN_TUN_IMPLEMENTATION to settings.vpnTunStack.name.lowercase(), TCP_FAST_OPEN to flag(settings.tcpFastOpen), TCP_MULTI_PATH to flag(settings.tcpMultiPath), URL_TEST_STRICT_TOLERANCE to flag(settings.urlTestStrictTolerance), INTERRUPT_EXISTING_CONNECTIONS to flag(settings.interruptExistingConnections), LOG_LEVEL to settings.logLevel.name.lowercase(), VPN_INBOUND_ENABLED to flag(settings.vpnInboundEnabled), PROXY_INBOUND_ENABLED to flag(settings.proxyInboundEnabled), PROXY_MIXED_PORT to settings.proxyMixedPort.toString(), PROXY_ALLOW_LAN to flag(settings.proxyAllowLan), AD_BLOCK_ENABLED to flag(settings.adBlockEnabled), DNS_STRATEGY to settings.dnsStrategy.name.lowercase(), DNS_FAKEIP to flag(settings.fakeIpEnabled), DYNAMIC_COLOUR to flag(settings.dynamicColour), UPDATE_CHANNEL to settings.updateChannel.name.lowercase(), PPROF_ENABLED to flag(settings.pprofEnabled),
     )
 
     fun safeExport(settings: Settings) = encode(settings)
@@ -355,3 +376,5 @@ private const val AD_BLOCK_ENABLED = "ad_block_enabled"
 private const val DNS_STRATEGY = "dns_strategy"
 private const val DNS_FAKEIP = "dns_fakeip"
 private const val DYNAMIC_COLOUR = "dynamic_colour"
+private const val UPDATE_CHANNEL = "update_channel"
+private const val PPROF_ENABLED = "pprof_enabled"
