@@ -1058,7 +1058,11 @@ class RuntimeControlActivity : ComponentActivity() {
                 pendingUpdate = null
             },
             onCheckUpdate = {
-                val channel = store.settings().updateChannel.name.lowercase()
+                val channel =
+                    store
+                        .settings()
+                        .updateChannel.name
+                        .lowercase()
                 updateState = UpdateSummary(checking = true)
                 pendingUpdate = null
                 io.execute {
@@ -1067,19 +1071,26 @@ class RuntimeControlActivity : ComponentActivity() {
                         // Writing to `stored` would rebuild the whole read model; the projection
                         // reads this field, so assigning it is enough.
                         when (result) {
-                            UpdateCheck.Unreachable -> updateState = UpdateSummary(reachable = false)
+                            UpdateCheck.Unreachable -> {
+                                updateState = UpdateSummary(reachable = false)
+                            }
 
-                            is UpdateCheck.Decided ->
+                            is UpdateCheck.Decided -> {
                                 when (val decision = result.decision) {
                                     is UpdateDecision.Available -> {
                                         pendingUpdate = decision.manifest
                                         updateState = UpdateSummary(availableVersion = decision.manifest.versionName)
                                     }
 
-                                    UpdateDecision.NoUpdate -> updateState = UpdateSummary()
+                                    UpdateDecision.NoUpdate -> {
+                                        updateState = UpdateSummary()
+                                    }
 
-                                    is UpdateDecision.Refused -> updateState = UpdateSummary(fault = decision.fault)
+                                    is UpdateDecision.Refused -> {
+                                        updateState = UpdateSummary(fault = decision.fault)
+                                    }
                                 }
+                            }
                         }
                     }
                 }
@@ -1088,8 +1099,9 @@ class RuntimeControlActivity : ComponentActivity() {
                 val manifest = pendingUpdate ?: return@AppActions
                 updateState = updateState.copy(installing = true, installFault = null)
                 io.execute {
-                    val outcome = runCatching { UpdateClient.install(this@RuntimeControlActivity, manifest) }
-                        .getOrElse { InstallOutcome.Refused(InstallFault.NO_INSTALLER) }
+                    val outcome =
+                        runCatching { UpdateClient.install(this@RuntimeControlActivity, manifest) }
+                            .getOrElse { InstallOutcome.Refused(InstallFault.NO_INSTALLER) }
                     main.post {
                         updateState =
                             when (outcome) {

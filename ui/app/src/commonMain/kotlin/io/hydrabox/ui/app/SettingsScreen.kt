@@ -22,8 +22,8 @@ import io.hydrabox.core.projection.UpdateChannel
 import io.hydrabox.core.projection.UpdateSummary
 import io.hydrabox.core.update.InstallFault
 import io.hydrabox.core.update.UpdateFault
-import io.hydrabox.ui.app.resources.Res
 import io.hydrabox.ui.app.resources.*
+import io.hydrabox.ui.app.resources.Res
 import io.hydrabox.ui.design.ChoiceDialog
 import io.hydrabox.ui.design.ConfirmDialog
 import io.hydrabox.ui.design.HydraRow
@@ -65,136 +65,137 @@ fun SettingsScreen(
     ) {
         SectionGroup(stringResource(Res.string.settings_connection)) {
             OptionRow(
-            title = stringResource(Res.string.settings_mode_vpn),
-            supporting = stringResource(Res.string.settings_mode_vpn_hint),
-            selected = settings?.proxyOnly != true,
-            onClick = { actions.onSetProxyOnly(false) },
-        )
+                title = stringResource(Res.string.settings_mode_vpn),
+                supporting = stringResource(Res.string.settings_mode_vpn_hint),
+                selected = settings?.proxyOnly != true,
+                onClick = { actions.onSetProxyOnly(false) },
+            )
             OptionRow(
-            title = stringResource(Res.string.settings_mode_proxy),
-            supporting = stringResource(Res.string.settings_mode_proxy_hint),
-            selected = settings?.proxyOnly == true,
-            onClick = { actions.onSetProxyOnly(true) },
-        )
+                title = stringResource(Res.string.settings_mode_proxy),
+                supporting = stringResource(Res.string.settings_mode_proxy_hint),
+                selected = settings?.proxyOnly == true,
+                onClick = { actions.onSetProxyOnly(true) },
+            )
             if (settings?.proxyOnly == true) {
                 ValueRow(
-                title = stringResource(Res.string.settings_proxy_port),
-                value = settings.proxyPort.toString(),
-                onClick = { ask = SettingsAsk.PROXY_PORT },
-            )
+                    title = stringResource(Res.string.settings_proxy_port),
+                    value = settings.proxyPort.toString(),
+                    onClick = { ask = SettingsAsk.PROXY_PORT },
+                )
                 ToggleRow(
-                title = stringResource(Res.string.settings_proxy_lan),
-                supporting = null,
-                checked = settings.proxyAllowLan,
-                onCheckedChange = actions.onSetProxyAllowLan,
-            )
+                    title = stringResource(Res.string.settings_proxy_lan),
+                    supporting = null,
+                    checked = settings.proxyAllowLan,
+                    onCheckedChange = actions.onSetProxyAllowLan,
+                )
             }
             ValueRow(
-            title = stringResource(Res.string.settings_notification),
-            value = notificationLabel(settings?.notificationDetail ?: NotificationDetail.SPEED),
-            onClick = { ask = SettingsAsk.NOTIFICATION },
-        )
+                title = stringResource(Res.string.settings_notification),
+                value = notificationLabel(settings?.notificationDetail ?: NotificationDetail.SPEED),
+                onClick = { ask = SettingsAsk.NOTIFICATION },
+            )
             ToggleRow(
-            title = stringResource(Res.string.settings_interrupt),
-            supporting = null,
-            checked = settings?.interruptConnections == true,
-            onCheckedChange = actions.onSetInterruptConnections,
+                title = stringResource(Res.string.settings_interrupt),
+                supporting = null,
+                checked = settings?.interruptConnections == true,
+                onCheckedChange = actions.onSetInterruptConnections,
             )
         }
         SectionGroup(stringResource(Res.string.settings_dns)) {
             ValueRow(
-            title = stringResource(Res.string.settings_dns_answers),
-            value = dnsModeLabel(settings?.dnsMode ?: DnsMode.IPV4),
-            onClick = { ask = SettingsAsk.DNS_ANSWERS },
-        )
+                title = stringResource(Res.string.settings_dns_answers),
+                value = dnsModeLabel(settings?.dnsMode ?: DnsMode.IPV4),
+                onClick = { ask = SettingsAsk.DNS_ANSWERS },
+            )
             ValueRow(
-            title = stringResource(Res.string.settings_dns_proxy),
-            value = settings?.proxyDnsResolver,
-            onClick = { ask = SettingsAsk.DNS_PROXY },
-        )
+                title = stringResource(Res.string.settings_dns_proxy),
+                value = settings?.proxyDnsResolver,
+                onClick = { ask = SettingsAsk.DNS_PROXY },
+            )
             ValueRow(
-            title = stringResource(Res.string.settings_dns_bootstrap),
-            value = settings?.bootstrapDnsResolver,
-            onClick = { ask = SettingsAsk.DNS_BOOTSTRAP },
-        )
+                title = stringResource(Res.string.settings_dns_bootstrap),
+                value = settings?.bootstrapDnsResolver,
+                onClick = { ask = SettingsAsk.DNS_BOOTSTRAP },
+            )
             ValueRow(
-            title = stringResource(Res.string.settings_dns_direct),
-            value = settings?.directDnsResolver,
-            onClick = { ask = SettingsAsk.DNS_DIRECT },
-        )
+                title = stringResource(Res.string.settings_dns_direct),
+                value = settings?.directDnsResolver,
+                onClick = { ask = SettingsAsk.DNS_DIRECT },
+            )
             ToggleRow(
-            title = stringResource(Res.string.settings_fakeip),
-            supporting = stringResource(Res.string.settings_fakeip_hint),
-            checked = settings?.fakeIp == true,
-            onCheckedChange = actions.onSetFakeIp,
+                title = stringResource(Res.string.settings_fakeip),
+                supporting = stringResource(Res.string.settings_fakeip_hint),
+                checked = settings?.fakeIp == true,
+                onCheckedChange = actions.onSetFakeIp,
             )
         }
         SectionGroup(stringResource(Res.string.settings_routing)) {
             ToggleRow(
-            title = stringResource(Res.string.rules_bypass_local),
-            supporting = stringResource(Res.string.rules_bypass_local_hint),
-            checked = settings?.bypassLocalNetwork != false,
-            onCheckedChange = actions.onSetBypassLocalNetwork,
-        )
+                title = stringResource(Res.string.rules_bypass_local),
+                supporting = stringResource(Res.string.rules_bypass_local_hint),
+                checked = settings?.bypassLocalNetwork != false,
+                onCheckedChange = actions.onSetBypassLocalNetwork,
+            )
             ToggleRow(
-            title = stringResource(Res.string.rules_block_leaks),
-            supporting = stringResource(Res.string.rules_block_leaks_hint),
-            checked = settings?.blockLeaks != false,
-            onCheckedChange = actions.onSetBlockLeaks,
-        )
+                title = stringResource(Res.string.rules_block_leaks),
+                supporting = stringResource(Res.string.rules_block_leaks_hint),
+                checked = settings?.blockLeaks != false,
+                onCheckedChange = actions.onSetBlockLeaks,
+            )
             ToggleRow(
-            title = stringResource(Res.string.settings_strict_route),
-            supporting = stringResource(Res.string.settings_strict_route_hint),
-            checked = settings?.strictRoute == true,
-            onCheckedChange = actions.onSetStrictRoute,
+                title = stringResource(Res.string.settings_strict_route),
+                supporting = stringResource(Res.string.settings_strict_route_hint),
+                checked = settings?.strictRoute == true,
+                onCheckedChange = actions.onSetStrictRoute,
             )
         }
         SectionGroup(stringResource(Res.string.settings_apps)) {
             ValueRow(
-            title = stringResource(Res.string.settings_apps_manage),
-            value = appsSummary(
-                mode = settings?.appsMode ?: AppsMode.BYPASS_SELECTED,
-                selectedCount = settings?.appsOutsideTunnel ?: 0,
-            ),
-            onClick = onOpenApps,
+                title = stringResource(Res.string.settings_apps_manage),
+                value =
+                    appsSummary(
+                        mode = settings?.appsMode ?: AppsMode.BYPASS_SELECTED,
+                        selectedCount = settings?.appsOutsideTunnel ?: 0,
+                    ),
+                onClick = onOpenApps,
             )
         }
         SectionGroup(stringResource(Res.string.settings_ad_block)) { AdBlockRow(state, actions) }
         SectionGroup(stringResource(Res.string.settings_performance)) {
             ToggleRow(
-            title = stringResource(Res.string.settings_economy),
-            supporting = stringResource(Res.string.settings_economy_hint),
-            checked = settings?.economyMode == true,
-            onCheckedChange = actions.onSetEconomy,
-        )
+                title = stringResource(Res.string.settings_economy),
+                supporting = stringResource(Res.string.settings_economy_hint),
+                checked = settings?.economyMode == true,
+                onCheckedChange = actions.onSetEconomy,
+            )
             ToggleRow(
-            title = stringResource(Res.string.settings_tcp_fast_open),
-            supporting = stringResource(Res.string.settings_tcp_fast_open_hint),
-            checked = settings?.tcpFastOpen == true,
-            onCheckedChange = actions.onSetTcpFastOpen,
-        )
+                title = stringResource(Res.string.settings_tcp_fast_open),
+                supporting = stringResource(Res.string.settings_tcp_fast_open_hint),
+                checked = settings?.tcpFastOpen == true,
+                onCheckedChange = actions.onSetTcpFastOpen,
+            )
             ToggleRow(
-            title = stringResource(Res.string.settings_tcp_multipath),
-            supporting = stringResource(Res.string.settings_tcp_multipath_hint),
-            checked = settings?.tcpMultiPath == true,
-            onCheckedChange = actions.onSetTcpMultiPath,
-        )
+                title = stringResource(Res.string.settings_tcp_multipath),
+                supporting = stringResource(Res.string.settings_tcp_multipath_hint),
+                checked = settings?.tcpMultiPath == true,
+                onCheckedChange = actions.onSetTcpMultiPath,
+            )
             ValueRow(
-            title = stringResource(Res.string.settings_mtu),
-            value = (settings?.vpnMtu ?: 9000).toString(),
-            onClick = { ask = SettingsAsk.MTU },
+                title = stringResource(Res.string.settings_mtu),
+                value = (settings?.vpnMtu ?: 9000).toString(),
+                onClick = { ask = SettingsAsk.MTU },
             )
         }
         SectionGroup(stringResource(Res.string.settings_compatibility)) {
             ValueRow(
-            title = stringResource(Res.string.settings_fragmentation),
-            value = fragmentationLabel(settings?.fragmentation ?: TlsFragmentation.OFF),
-            onClick = { ask = SettingsAsk.FRAGMENTATION },
-        )
+                title = stringResource(Res.string.settings_fragmentation),
+                value = fragmentationLabel(settings?.fragmentation ?: TlsFragmentation.OFF),
+                onClick = { ask = SettingsAsk.FRAGMENTATION },
+            )
             ValueRow(
-            title = stringResource(Res.string.settings_stack),
-            value = stackLabel(settings?.stack ?: TunnelStack.MIXED),
-            onClick = { ask = SettingsAsk.STACK },
+                title = stringResource(Res.string.settings_stack),
+                value = stackLabel(settings?.stack ?: TunnelStack.MIXED),
+                onClick = { ask = SettingsAsk.STACK },
             )
         }
         SectionGroup(stringResource(Res.string.settings_updates)) {
@@ -257,157 +258,217 @@ fun SettingsScreen(
  * so the everyday screen stays a list of answers rather than a list of radio buttons.
  */
 @Composable
-private fun Asks(ask: SettingsAsk?, state: ScreenState, actions: AppActions, onClose: () -> Unit) {
+private fun Asks(
+    ask: SettingsAsk?,
+    state: ScreenState,
+    actions: AppActions,
+    onClose: () -> Unit,
+) {
     val settings = state.settings
     val cancel = stringResource(Res.string.action_cancel)
     when (ask) {
-        null -> Unit
-        SettingsAsk.NOTIFICATION -> ChoiceDialog(stringResource(Res.string.settings_notification), cancel, onClose) {
-            listOf(
-                NotificationDetail.OFF to Res.string.notification_off,
-                NotificationDetail.SPEED to Res.string.notification_speed,
-                NotificationDetail.TOTAL to Res.string.notification_total,
-                NotificationDetail.BOTH to Res.string.notification_both,
-            ).forEach { (value, label) ->
-                OptionRow(
-                    title = stringResource(label),
-                    supporting = null,
-                    selected = (settings?.notificationDetail ?: NotificationDetail.SPEED) == value,
-                    onClick = { actions.onSetNotificationDetail(value); onClose() },
-                )
+        null -> {
+            Unit
+        }
+
+        SettingsAsk.NOTIFICATION -> {
+            ChoiceDialog(stringResource(Res.string.settings_notification), cancel, onClose) {
+                listOf(
+                    NotificationDetail.OFF to Res.string.notification_off,
+                    NotificationDetail.SPEED to Res.string.notification_speed,
+                    NotificationDetail.TOTAL to Res.string.notification_total,
+                    NotificationDetail.BOTH to Res.string.notification_both,
+                ).forEach { (value, label) ->
+                    OptionRow(
+                        title = stringResource(label),
+                        supporting = null,
+                        selected = (settings?.notificationDetail ?: NotificationDetail.SPEED) == value,
+                        onClick = {
+                            actions.onSetNotificationDetail(value)
+                            onClose()
+                        },
+                    )
+                }
             }
         }
-        SettingsAsk.DNS_ANSWERS -> ChoiceDialog(stringResource(Res.string.settings_dns_answers), cancel, onClose) {
-            listOf(
-                DnsMode.AUTO to Res.string.dns_auto,
-                DnsMode.IPV4 to Res.string.dns_ipv4,
-                DnsMode.IPV6 to Res.string.dns_ipv6,
-            ).forEach { (value, label) ->
-                OptionRow(
-                    title = stringResource(label),
-                    supporting = null,
-                    selected = (settings?.dnsMode ?: DnsMode.IPV4) == value,
-                    onClick = { actions.onSetDnsMode(value); onClose() },
-                )
+
+        SettingsAsk.DNS_ANSWERS -> {
+            ChoiceDialog(stringResource(Res.string.settings_dns_answers), cancel, onClose) {
+                listOf(
+                    DnsMode.AUTO to Res.string.dns_auto,
+                    DnsMode.IPV4 to Res.string.dns_ipv4,
+                    DnsMode.IPV6 to Res.string.dns_ipv6,
+                ).forEach { (value, label) ->
+                    OptionRow(
+                        title = stringResource(label),
+                        supporting = null,
+                        selected = (settings?.dnsMode ?: DnsMode.IPV4) == value,
+                        onClick = {
+                            actions.onSetDnsMode(value)
+                            onClose()
+                        },
+                    )
+                }
             }
         }
-        SettingsAsk.DNS_PROXY -> ResolverAsk(
-            title = stringResource(Res.string.settings_dns_proxy),
-            current = settings?.proxyDnsResolver.orEmpty(),
-            // Reached through the proxy, so a hostname is fine here: the bootstrap resolver
-            // finds it before the tunnel carries anything.
-            groups = listOf(
-                "DoH" to listOf(
-                    "Cloudflare" to "https://dns.cloudflare.com/dns-query",
-                    "Google" to "https://dns.google/dns-query",
-                    "Quad9" to "https://dns.quad9.net/dns-query",
-                    "AdGuard" to "https://dns.adguard-dns.com/dns-query",
-                    "Mullvad" to "https://dns.mullvad.net/dns-query",
-                ),
-                "DoT" to listOf(
-                    "Cloudflare" to "tls://one.one.one.one",
-                    "Google" to "tls://dns.google",
-                    "Quad9" to "tls://dns.quad9.net",
-                    "AdGuard" to "tls://dns.adguard-dns.com",
-                ),
-                "UDP" to listOf(
-                    "Cloudflare" to "udp://1.1.1.1",
-                    "Google" to "udp://8.8.8.8",
-                    "Quad9" to "udp://9.9.9.9",
-                ),
-            ),
-            onSelect = actions.onSetProxyDns,
-            onDismiss = onClose,
-        )
-        SettingsAsk.DNS_DIRECT -> ResolverAsk(
-            title = stringResource(Res.string.settings_dns_direct),
-            current = settings?.directDnsResolver.orEmpty(),
-            // By address, and encrypted first: a plain port 53 query outside the tunnel is
-            // answered by whatever the network redirects it to — a router with its own DNS
-            // replies in place of the address that was asked.
-            groups = listOf(
-                "DoH" to listOf(
-                    "Cloudflare" to "https://1.1.1.1/dns-query",
-                    "Google" to "https://8.8.8.8/dns-query",
-                    "Quad9" to "https://9.9.9.9/dns-query",
-                ),
-                "DoT" to listOf(
-                    "Cloudflare" to "tls://1.1.1.1",
-                    "Google" to "tls://8.8.8.8",
-                    "Quad9" to "tls://9.9.9.9",
-                ),
-                "UDP" to listOf(
-                    "Cloudflare" to "udp://1.1.1.1",
-                    "Google" to "udp://8.8.8.8",
-                    "Quad9" to "udp://9.9.9.9",
-                    "Yandex" to "udp://77.88.8.8",
-                    "AdGuard" to "udp://94.140.14.14",
-                ),
-            ),
-            onSelect = actions.onSetDirectDns,
-            onDismiss = onClose,
-        )
-        SettingsAsk.DNS_BOOTSTRAP -> ResolverAsk(
-            title = stringResource(Res.string.settings_dns_bootstrap),
-            current = settings?.bootstrapDnsResolver.orEmpty(),
-            // Whatever is chosen here has to answer on a network that allows almost nothing,
-            // which is why Yandex's is first: behind an operator white list it is reachable
-            // when 1.1.1.1 is not, and nothing at all works until this one answers.
-            groups = listOf(
-                "UDP" to listOf(
-                    "Yandex" to "udp://77.88.8.8",
-                    "Cloudflare" to "udp://1.1.1.1",
-                    "Google" to "udp://8.8.8.8",
-                    "Quad9" to "udp://9.9.9.9",
-                ),
-                "DoH" to listOf(
-                    "Cloudflare" to "https://1.1.1.1/dns-query",
-                    "Google" to "https://8.8.8.8/dns-query",
-                ),
-            ),
-            platform = true,
-            onSelect = actions.onSetBootstrapDns,
-            onDismiss = onClose,
-        )
-        SettingsAsk.MTU -> ChoiceDialog(stringResource(Res.string.settings_mtu), cancel, onClose) {
-            listOf(1280, 1500, 9000).forEach { value ->
-                OptionRow(
-                    title = value.toString(),
-                    supporting = null,
-                    selected = (settings?.vpnMtu ?: 9000) == value,
-                    onClick = { actions.onSetMtu(value); onClose() },
-                )
+
+        SettingsAsk.DNS_PROXY -> {
+            ResolverAsk(
+                title = stringResource(Res.string.settings_dns_proxy),
+                current = settings?.proxyDnsResolver.orEmpty(),
+                // Reached through the proxy, so a hostname is fine here: the bootstrap resolver
+                // finds it before the tunnel carries anything.
+                groups =
+                    listOf(
+                        "DoH" to
+                            listOf(
+                                "Cloudflare" to "https://dns.cloudflare.com/dns-query",
+                                "Google" to "https://dns.google/dns-query",
+                                "Quad9" to "https://dns.quad9.net/dns-query",
+                                "AdGuard" to "https://dns.adguard-dns.com/dns-query",
+                                "Mullvad" to "https://dns.mullvad.net/dns-query",
+                            ),
+                        "DoT" to
+                            listOf(
+                                "Cloudflare" to "tls://one.one.one.one",
+                                "Google" to "tls://dns.google",
+                                "Quad9" to "tls://dns.quad9.net",
+                                "AdGuard" to "tls://dns.adguard-dns.com",
+                            ),
+                        "UDP" to
+                            listOf(
+                                "Cloudflare" to "udp://1.1.1.1",
+                                "Google" to "udp://8.8.8.8",
+                                "Quad9" to "udp://9.9.9.9",
+                            ),
+                    ),
+                onSelect = actions.onSetProxyDns,
+                onDismiss = onClose,
+            )
+        }
+
+        SettingsAsk.DNS_DIRECT -> {
+            ResolverAsk(
+                title = stringResource(Res.string.settings_dns_direct),
+                current = settings?.directDnsResolver.orEmpty(),
+                // By address, and encrypted first: a plain port 53 query outside the tunnel is
+                // answered by whatever the network redirects it to — a router with its own DNS
+                // replies in place of the address that was asked.
+                groups =
+                    listOf(
+                        "DoH" to
+                            listOf(
+                                "Cloudflare" to "https://1.1.1.1/dns-query",
+                                "Google" to "https://8.8.8.8/dns-query",
+                                "Quad9" to "https://9.9.9.9/dns-query",
+                            ),
+                        "DoT" to
+                            listOf(
+                                "Cloudflare" to "tls://1.1.1.1",
+                                "Google" to "tls://8.8.8.8",
+                                "Quad9" to "tls://9.9.9.9",
+                            ),
+                        "UDP" to
+                            listOf(
+                                "Cloudflare" to "udp://1.1.1.1",
+                                "Google" to "udp://8.8.8.8",
+                                "Quad9" to "udp://9.9.9.9",
+                                "Yandex" to "udp://77.88.8.8",
+                                "AdGuard" to "udp://94.140.14.14",
+                            ),
+                    ),
+                onSelect = actions.onSetDirectDns,
+                onDismiss = onClose,
+            )
+        }
+
+        SettingsAsk.DNS_BOOTSTRAP -> {
+            ResolverAsk(
+                title = stringResource(Res.string.settings_dns_bootstrap),
+                current = settings?.bootstrapDnsResolver.orEmpty(),
+                // Whatever is chosen here has to answer on a network that allows almost nothing,
+                // which is why Yandex's is first: behind an operator white list it is reachable
+                // when 1.1.1.1 is not, and nothing at all works until this one answers.
+                groups =
+                    listOf(
+                        "UDP" to
+                            listOf(
+                                "Yandex" to "udp://77.88.8.8",
+                                "Cloudflare" to "udp://1.1.1.1",
+                                "Google" to "udp://8.8.8.8",
+                                "Quad9" to "udp://9.9.9.9",
+                            ),
+                        "DoH" to
+                            listOf(
+                                "Cloudflare" to "https://1.1.1.1/dns-query",
+                                "Google" to "https://8.8.8.8/dns-query",
+                            ),
+                    ),
+                platform = true,
+                onSelect = actions.onSetBootstrapDns,
+                onDismiss = onClose,
+            )
+        }
+
+        SettingsAsk.MTU -> {
+            ChoiceDialog(stringResource(Res.string.settings_mtu), cancel, onClose) {
+                listOf(1280, 1500, 9000).forEach { value ->
+                    OptionRow(
+                        title = value.toString(),
+                        supporting = null,
+                        selected = (settings?.vpnMtu ?: 9000) == value,
+                        onClick = {
+                            actions.onSetMtu(value)
+                            onClose()
+                        },
+                    )
+                }
             }
         }
-        SettingsAsk.FRAGMENTATION -> ChoiceDialog(stringResource(Res.string.settings_fragmentation), cancel, onClose) {
-            listOf(
-                TlsFragmentation.OFF to Res.string.fragmentation_off,
-                TlsFragmentation.RECORD to Res.string.fragmentation_record,
-                TlsFragmentation.FRAGMENT to Res.string.fragmentation_fragment,
-            ).forEach { (value, label) ->
-                OptionRow(
-                    title = stringResource(label),
-                    supporting = null,
-                    selected = (settings?.fragmentation ?: TlsFragmentation.OFF) == value,
-                    onClick = { actions.onSetFragmentation(value); onClose() },
-                )
+
+        SettingsAsk.FRAGMENTATION -> {
+            ChoiceDialog(stringResource(Res.string.settings_fragmentation), cancel, onClose) {
+                listOf(
+                    TlsFragmentation.OFF to Res.string.fragmentation_off,
+                    TlsFragmentation.RECORD to Res.string.fragmentation_record,
+                    TlsFragmentation.FRAGMENT to Res.string.fragmentation_fragment,
+                ).forEach { (value, label) ->
+                    OptionRow(
+                        title = stringResource(label),
+                        supporting = null,
+                        selected = (settings?.fragmentation ?: TlsFragmentation.OFF) == value,
+                        onClick = {
+                            actions.onSetFragmentation(value)
+                            onClose()
+                        },
+                    )
+                }
             }
         }
-        SettingsAsk.STACK -> ChoiceDialog(stringResource(Res.string.settings_stack), cancel, onClose) {
-            listOf(
-                TunnelStack.MIXED to Res.string.stack_mixed,
-                TunnelStack.SYSTEM to Res.string.stack_system,
-                TunnelStack.GVISOR to Res.string.stack_gvisor,
-            ).forEach { (value, label) ->
-                OptionRow(
-                    title = stringResource(label),
-                    supporting = null,
-                    selected = (settings?.stack ?: TunnelStack.MIXED) == value,
-                    onClick = { actions.onSetStack(value); onClose() },
-                )
+
+        SettingsAsk.STACK -> {
+            ChoiceDialog(stringResource(Res.string.settings_stack), cancel, onClose) {
+                listOf(
+                    TunnelStack.MIXED to Res.string.stack_mixed,
+                    TunnelStack.SYSTEM to Res.string.stack_system,
+                    TunnelStack.GVISOR to Res.string.stack_gvisor,
+                ).forEach { (value, label) ->
+                    OptionRow(
+                        title = stringResource(label),
+                        supporting = null,
+                        selected = (settings?.stack ?: TunnelStack.MIXED) == value,
+                        onClick = {
+                            actions.onSetStack(value)
+                            onClose()
+                        },
+                    )
+                }
             }
         }
-        SettingsAsk.PROXY_PORT -> PortAsk(settings?.proxyPort ?: 2080, actions.onSetProxyPort, onClose)
+
+        SettingsAsk.PROXY_PORT -> {
+            PortAsk(settings?.proxyPort ?: 2080, actions.onSetProxyPort, onClose)
+        }
     }
 }
 
@@ -436,7 +497,10 @@ private fun ResolverAsk(
             label = stringResource(Res.string.dns_custom),
             confirmLabel = stringResource(Res.string.action_save),
             dismissLabel = stringResource(Res.string.action_cancel),
-            onConfirm = { onSelect(draft.trim()); onDismiss() },
+            onConfirm = {
+                onSelect(draft.trim())
+                onDismiss()
+            },
             onDismiss = onDismiss,
         )
         return
@@ -449,7 +513,10 @@ private fun ResolverAsk(
                 title = stringResource(Res.string.dns_platform),
                 supporting = null,
                 selected = current == PLATFORM_RESOLVER,
-                onClick = { onSelect(PLATFORM_RESOLVER); onDismiss() },
+                onClick = {
+                    onSelect(PLATFORM_RESOLVER)
+                    onDismiss()
+                },
             )
         }
         groups.forEach { (category, options) ->
@@ -459,7 +526,10 @@ private fun ResolverAsk(
                     title = label,
                     supporting = value.substringAfter("://"),
                     selected = current == value,
-                    onClick = { onSelect(value); onDismiss() },
+                    onClick = {
+                        onSelect(value)
+                        onDismiss()
+                    },
                 )
             }
         }
@@ -474,19 +544,24 @@ private fun ResolverAsk(
 }
 
 @Composable
-private fun ResolverCategory(text: String) = Text(
-    text = text,
-    style = MaterialTheme.typography.labelLarge,
-    color = MaterialTheme.colorScheme.primary,
-    modifier = Modifier.padding(top = UiTokens.spacing / 2),
-)
+private fun ResolverCategory(text: String) =
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(top = UiTokens.spacing / 2),
+    )
 
 /** 1.x's marker for "whatever the network's own resolver is". */
 private const val PLATFORM_RESOLVER = "device://network"
 
 /** A port is a number in a range, and a number outside it is not saved. */
 @Composable
-private fun PortAsk(current: Int, onSelect: (Int) -> Unit, onDismiss: () -> Unit) {
+private fun PortAsk(
+    current: Int,
+    onSelect: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
     var draft by remember { mutableStateOf(current.toString()) }
     val port = draft.trim().toIntOrNull()
     InputDialog(
@@ -496,18 +571,22 @@ private fun PortAsk(current: Int, onSelect: (Int) -> Unit, onDismiss: () -> Unit
         label = stringResource(Res.string.settings_proxy_port),
         confirmLabel = stringResource(Res.string.action_save),
         dismissLabel = stringResource(Res.string.action_cancel),
-        onConfirm = { if (port != null && port in 1024..65535) onSelect(port); onDismiss() },
+        onConfirm = {
+            if (port != null && port in 1024..65535) onSelect(port)
+            onDismiss()
+        },
         onDismiss = onDismiss,
     )
 }
 
 @Composable
-private fun channelLabel(channel: UpdateChannel) = stringResource(
-    when (channel) {
-        UpdateChannel.STABLE -> Res.string.update_channel_stable
-        UpdateChannel.CANARY -> Res.string.update_channel_canary
-    },
-)
+private fun channelLabel(channel: UpdateChannel) =
+    stringResource(
+        when (channel) {
+            UpdateChannel.STABLE -> Res.string.update_channel_stable
+            UpdateChannel.CANARY -> Res.string.update_channel_canary
+        },
+    )
 
 /**
  * What the updater says right now, as one line. "Could not ask" is deliberately not "nothing to
@@ -531,76 +610,96 @@ private fun updateStatus(update: UpdateSummary): String? {
 }
 
 @Composable
-private fun updateFaultLabel(fault: UpdateFault) = stringResource(
-    when (fault) {
-        UpdateFault.UNVERIFIED -> Res.string.update_unverified
-        UpdateFault.WRONG_CHANNEL -> Res.string.update_wrong_channel
-        UpdateFault.MALFORMED -> Res.string.update_malformed
-        UpdateFault.UNSUPPORTED_SCHEMA -> Res.string.update_unsupported_schema
-        UpdateFault.EMPTY_FIELD -> Res.string.update_empty_field
-        UpdateFault.INSECURE_URL -> Res.string.update_insecure_url
-        UpdateFault.BAD_DIGEST -> Res.string.update_bad_digest
-    },
-)
+private fun updateFaultLabel(fault: UpdateFault) =
+    stringResource(
+        when (fault) {
+            UpdateFault.UNVERIFIED -> Res.string.update_unverified
+            UpdateFault.WRONG_CHANNEL -> Res.string.update_wrong_channel
+            UpdateFault.MALFORMED -> Res.string.update_malformed
+            UpdateFault.UNSUPPORTED_SCHEMA -> Res.string.update_unsupported_schema
+            UpdateFault.EMPTY_FIELD -> Res.string.update_empty_field
+            UpdateFault.INSECURE_URL -> Res.string.update_insecure_url
+            UpdateFault.BAD_DIGEST -> Res.string.update_bad_digest
+        },
+    )
 
 @Composable
-private fun installFaultLabel(fault: InstallFault) = stringResource(
-    when (fault) {
-        InstallFault.UNREACHABLE -> Res.string.update_unreachable
-        InstallFault.TOO_LARGE -> Res.string.update_install_too_large
-        InstallFault.DIGEST_MISMATCH -> Res.string.update_install_digest
-        InstallFault.CERTIFICATE_MISMATCH -> Res.string.update_install_certificate
-        InstallFault.NO_INSTALLER -> Res.string.update_install_denied
-    },
-)
+private fun installFaultLabel(fault: InstallFault) =
+    stringResource(
+        when (fault) {
+            InstallFault.UNREACHABLE -> Res.string.update_unreachable
+            InstallFault.TOO_LARGE -> Res.string.update_install_too_large
+            InstallFault.DIGEST_MISMATCH -> Res.string.update_install_digest
+            InstallFault.CERTIFICATE_MISMATCH -> Res.string.update_install_certificate
+            InstallFault.NO_INSTALLER -> Res.string.update_install_denied
+        },
+    )
 
 @Composable
-private fun notificationLabel(detail: NotificationDetail) = stringResource(
-    when (detail) {
-        NotificationDetail.OFF -> Res.string.notification_off
-        NotificationDetail.SPEED -> Res.string.notification_speed
-        NotificationDetail.TOTAL -> Res.string.notification_total
-        NotificationDetail.BOTH -> Res.string.notification_both
-    },
-)
+private fun notificationLabel(detail: NotificationDetail) =
+    stringResource(
+        when (detail) {
+            NotificationDetail.OFF -> Res.string.notification_off
+            NotificationDetail.SPEED -> Res.string.notification_speed
+            NotificationDetail.TOTAL -> Res.string.notification_total
+            NotificationDetail.BOTH -> Res.string.notification_both
+        },
+    )
 
 @Composable
-private fun dnsModeLabel(mode: DnsMode) = stringResource(
+private fun dnsModeLabel(mode: DnsMode) =
+    stringResource(
+        when (mode) {
+            DnsMode.AUTO -> Res.string.dns_auto
+            DnsMode.IPV4 -> Res.string.dns_ipv4
+            DnsMode.IPV6 -> Res.string.dns_ipv6
+        },
+    )
+
+@Composable
+private fun fragmentationLabel(mode: TlsFragmentation) =
+    stringResource(
+        when (mode) {
+            TlsFragmentation.OFF -> Res.string.fragmentation_off
+            TlsFragmentation.RECORD -> Res.string.fragmentation_record
+            TlsFragmentation.FRAGMENT -> Res.string.fragmentation_fragment
+        },
+    )
+
+@Composable
+private fun stackLabel(stack: TunnelStack) =
+    stringResource(
+        when (stack) {
+            TunnelStack.SYSTEM -> Res.string.stack_system
+            TunnelStack.GVISOR -> Res.string.stack_gvisor
+            TunnelStack.MIXED -> Res.string.stack_mixed
+        },
+    )
+
+@Composable
+private fun appsSummary(
+    mode: AppsMode,
+    selectedCount: Int,
+): String =
     when (mode) {
-        DnsMode.AUTO -> Res.string.dns_auto
-        DnsMode.IPV4 -> Res.string.dns_ipv4
-        DnsMode.IPV6 -> Res.string.dns_ipv6
-    },
-)
+        AppsMode.OFF -> {
+            stringResource(Res.string.settings_apps_all_vpn)
+        }
 
-@Composable
-private fun fragmentationLabel(mode: TlsFragmentation) = stringResource(
-    when (mode) {
-        TlsFragmentation.OFF -> Res.string.fragmentation_off
-        TlsFragmentation.RECORD -> Res.string.fragmentation_record
-        TlsFragmentation.FRAGMENT -> Res.string.fragmentation_fragment
-    },
-)
+        AppsMode.BYPASS_SELECTED -> {
+            selectedCount
+                .takeIf { it > 0 }
+                ?.let { stringResource(Res.string.settings_apps_bypass_count, it) }
+                ?: stringResource(Res.string.settings_apps_all_vpn)
+        }
 
-@Composable
-private fun stackLabel(stack: TunnelStack) = stringResource(
-    when (stack) {
-        TunnelStack.SYSTEM -> Res.string.stack_system
-        TunnelStack.GVISOR -> Res.string.stack_gvisor
-        TunnelStack.MIXED -> Res.string.stack_mixed
-    },
-)
-
-@Composable
-private fun appsSummary(mode: AppsMode, selectedCount: Int): String = when (mode) {
-    AppsMode.OFF -> stringResource(Res.string.settings_apps_all_vpn)
-    AppsMode.BYPASS_SELECTED -> selectedCount.takeIf { it > 0 }
-        ?.let { stringResource(Res.string.settings_apps_bypass_count, it) }
-        ?: stringResource(Res.string.settings_apps_all_vpn)
-    AppsMode.ONLY_SELECTED -> selectedCount.takeIf { it > 0 }
-        ?.let { stringResource(Res.string.settings_apps_vpn_count, it) }
-        ?: stringResource(Res.string.settings_apps_select)
-}
+        AppsMode.ONLY_SELECTED -> {
+            selectedCount
+                .takeIf { it > 0 }
+                ?.let { stringResource(Res.string.settings_apps_vpn_count, it) }
+                ?: stringResource(Res.string.settings_apps_select)
+        }
+    }
 
 /**
  * The blocking switch, and what it is allowed to promise. Until the compiled list is on the
@@ -608,7 +707,10 @@ private fun appsSummary(mode: AppsMode, selectedCount: Int): String = when (mode
  * that would do nothing.
  */
 @Composable
-private fun AdBlockRow(state: ScreenState, actions: AppActions) {
+private fun AdBlockRow(
+    state: ScreenState,
+    actions: AppActions,
+) {
     val rules = state.ruleSets
     if (!rules.available) {
         HydraRow(
@@ -621,11 +723,12 @@ private fun AdBlockRow(state: ScreenState, actions: AppActions) {
     }
     ToggleRow(
         title = stringResource(Res.string.rules_ad_block),
-        supporting = stringResource(
-            Res.string.rules_ad_block_hint,
-            rules.blockedDomains,
-            rules.updatedAt.orEmpty(),
-        ),
+        supporting =
+            stringResource(
+                Res.string.rules_ad_block_hint,
+                rules.blockedDomains,
+                rules.updatedAt.orEmpty(),
+            ),
         checked = state.settings?.adBlock == true,
         onCheckedChange = actions.onSetAdBlock,
     )
@@ -658,11 +761,17 @@ private fun BackupSettings(actions: AppActions) {
         )
         HydraRow(
             title = stringResource(Res.string.backup_export),
-            onClick = { passphrase = ""; intent = BackupIntent.EXPORT },
+            onClick = {
+                passphrase = ""
+                intent = BackupIntent.EXPORT
+            },
         )
         HydraRow(
             title = stringResource(Res.string.backup_import),
-            onClick = { passphrase = ""; confirmImport = true },
+            onClick = {
+                passphrase = ""
+                confirmImport = true
+            },
         )
         HydraRow(
             title = stringResource(Res.string.settings_reset),
@@ -676,7 +785,10 @@ private fun BackupSettings(actions: AppActions) {
             confirmLabel = stringResource(Res.string.action_continue),
             dismissLabel = stringResource(Res.string.action_cancel),
             destructive = true,
-            onConfirm = { confirmImport = false; intent = BackupIntent.IMPORT },
+            onConfirm = {
+                confirmImport = false
+                intent = BackupIntent.IMPORT
+            },
             onDismiss = { confirmImport = false },
         )
     }
@@ -686,9 +798,10 @@ private fun BackupSettings(actions: AppActions) {
             value = passphrase,
             onValueChange = { passphrase = it },
             label = stringResource(Res.string.backup_passphrase),
-            confirmLabel = stringResource(
-                if (open == BackupIntent.EXPORT) Res.string.action_export else Res.string.action_import,
-            ),
+            confirmLabel =
+                stringResource(
+                    if (open == BackupIntent.EXPORT) Res.string.action_export else Res.string.action_import,
+                ),
             dismissLabel = stringResource(Res.string.action_cancel),
             onConfirm = {
                 if (open == BackupIntent.EXPORT) actions.onExportBackup(passphrase) else actions.onImportBackup(passphrase)
@@ -704,7 +817,10 @@ private fun BackupSettings(actions: AppActions) {
             confirmLabel = stringResource(Res.string.action_continue),
             dismissLabel = stringResource(Res.string.action_cancel),
             destructive = true,
-            onConfirm = { actions.onResetSettings(); resetting = false },
+            onConfirm = {
+                actions.onResetSettings()
+                resetting = false
+            },
             onDismiss = { resetting = false },
         )
     }
