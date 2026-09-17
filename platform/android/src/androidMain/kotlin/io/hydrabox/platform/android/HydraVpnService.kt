@@ -946,6 +946,18 @@ class HydraVpnService : VpnService() {
                 measureNow(startId)
             }
 
+            ACTION_NOTIFICATION_DISMISSED -> {
+                // A swipe is not an opt-out — the switch in settings is — so a running tunnel
+                // puts its notification back. A tunnel that is down has nothing to announce,
+                // and no reason for this service to have been woken at all.
+                val state = runtime.snapshot().state
+                if (state == RuntimeState.STOPPED || state == RuntimeState.FAILED) {
+                    stopSelfResult(startId)
+                } else if (liveTraffic) {
+                    startForeground(NOTIFICATION_ID, notification(state))
+                }
+            }
+
             ACTION_UI_VISIBILITY -> {
                 uiVisible = intent.getBooleanExtra(EXTRA_UI_VISIBLE, false)
                 // A visibility report is not a reason for this service to exist: with no tunnel
@@ -1481,6 +1493,14 @@ class HydraVpnService : VpnService() {
                 .setSmallIcon(R.drawable.ic_hydrabox_notification)
                 .setOngoing(state != RuntimeState.STOPPED)
                 .setOnlyAlertOnce(true)
+                .setDeleteIntent(
+                    android.app.PendingIntent.getService(
+                        this,
+                        2,
+                        Intent(this, HydraVpnService::class.java).setAction(ACTION_NOTIFICATION_DISMISSED),
+                        android.app.PendingIntent.FLAG_IMMUTABLE,
+                    ),
+                )
                 .setContentIntent(
                     android.app.PendingIntent.getActivity(
                         this,
@@ -1582,6 +1602,13 @@ class HydraVpnService : VpnService() {
         const val ACTION_START = "io.hydrabox.platform.android.START"
         const val ACTION_STOP = "io.hydrabox.platform.android.STOP"
         const val ACTION_MEASURE = "io.hydrabox.platform.android.MEASURE"
+
+        /**
+         * The system's answer to a swiped-away notification, not a user command. Android 14
+         * lets a person dismiss even an ongoing foreground notification while the tunnel keeps
+         * running, and the notice that it is running has to come back on its own.
+         */
+        const val ACTION_NOTIFICATION_DISMISSED = "io.hydrabox.platform.android.NOTIFICATION_DISMISSED"
         const val ACTION_UI_VISIBILITY = "io.hydrabox.platform.android.UI_VISIBILITY"
         const val EXTRA_UI_VISIBLE = "visible"
         const val ACTION_REFRESH_SETTINGS = "io.hydrabox.platform.android.REFRESH_SETTINGS"
