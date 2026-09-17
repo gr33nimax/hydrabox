@@ -2,6 +2,8 @@ package io.hydrabox.core.projection
 
 import io.hydrabox.core.contract.RuntimeSnapshot
 import io.hydrabox.core.model.OperationState
+import io.hydrabox.core.update.InstallFault
+import io.hydrabox.core.update.UpdateFault
 
 /** One stored source of servers, as the screens need it. */
 data class SubscriptionSummary(
@@ -91,6 +93,29 @@ enum class DnsMode { AUTO, IPV4, IPV6 }
 enum class NotificationDetail { OFF, SPEED, TOTAL, BOTH }
 
 /** Settings as shown. Only what a screen displays; every value already resolved. */
+
+/**
+ * Which release line the updater follows. Two fixed values rather than a branch name: a branch is
+ * build input, and only a signed manifest for a known channel may be installed.
+ */
+enum class UpdateChannel { STABLE, CANARY }
+
+/**
+ * What the updater knows as a screen has to show it: a version and a reason, never the document
+ * behind them. A manifest is bytes somebody signed; a person reads "2.0.0-alpha9" and "the
+ * signature could not be confirmed".
+ */
+data class UpdateSummary(
+    val checking: Boolean = false,
+    val installing: Boolean = false,
+    /** The version a verified manifest offers, or null when there is nothing to install. */
+    val availableVersion: String? = null,
+    /** Why the last check produced no offer. */
+    val fault: UpdateFault? = null,
+    /** Why staging the install did not reach Android's confirmation. */
+    val installFault: InstallFault? = null,
+)
+
 data class SettingsSummary(
     val economyMode: Boolean,
     val proxyDnsResolver: String,
@@ -135,6 +160,8 @@ data class SettingsSummary(
      */
     val pprofAvailable: Boolean = false,
     val pprofEnabled: Boolean = false,
+    /** The release line the updater follows. */
+    val updateChannel: UpdateChannel = UpdateChannel.STABLE,
 )
 
 /**
@@ -318,6 +345,7 @@ data class ScreenState(
     val storageRead: Boolean = false,
     val settings: SettingsSummary? = null,
     val diagnostics: DiagnosticsSummary? = null,
+    val update: UpdateSummary = UpdateSummary(),
     val apps: List<InstalledApp> = emptyList(),
     val ruleSets: RuleSetsSummary = RuleSetsSummary(),
     val exit: ExitAddress = ExitAddress(),
@@ -347,6 +375,7 @@ data class AppReadModel(
     val selectedServerId: String? = null,
     val settings: SettingsSummary? = null,
     val diagnostics: DiagnosticsSummary? = null,
+    val update: UpdateSummary = UpdateSummary(),
     val sourceOperation: OperationState<Unit> = OperationState.Idle,
     val backupOperation: OperationState<Unit> = OperationState.Idle,
     val legalAccepted: Boolean = false,

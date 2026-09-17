@@ -35,6 +35,27 @@ enum class UpdateFault {
 }
 
 /**
+ * Why staging an install did not reach Android's confirmation. Separate from [UpdateFault]
+ * because a document can be perfectly sound and the artifact still unusable.
+ */
+enum class InstallFault {
+    /** The artifact could not be read. */
+    UNREACHABLE,
+
+    /** Larger than this client will hold, declared or counted. */
+    TOO_LARGE,
+
+    /** The bytes do not hash to what the manifest promised. */
+    DIGEST_MISMATCH,
+
+    /** Signed by a key this application does not install from. */
+    CERTIFICATE_MISMATCH,
+
+    /** Android's installer refused to open a session, or this build may not ask it to. */
+    NO_INSTALLER,
+}
+
+/**
  * Decides what to do with a fetched release document.
  *
  * The order is the point, and it is the reason this is one function rather than a few checks

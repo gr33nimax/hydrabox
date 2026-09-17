@@ -7,6 +7,7 @@ import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Base64
+import io.hydrabox.core.update.InstallFault
 import io.hydrabox.core.update.UpdateDecision
 import io.hydrabox.core.update.UpdateManifest
 import io.hydrabox.core.update.decideUpdate
@@ -35,14 +36,6 @@ sealed interface InstallOutcome {
     data class Refused(
         val fault: InstallFault,
     ) : InstallOutcome
-}
-
-enum class InstallFault {
-    UNREACHABLE,
-    TOO_LARGE,
-    DIGEST_MISMATCH,
-    CERTIFICATE_MISMATCH,
-    NO_INSTALLER,
 }
 
 /**

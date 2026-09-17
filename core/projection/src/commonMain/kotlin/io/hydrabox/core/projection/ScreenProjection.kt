@@ -92,6 +92,7 @@ object ScreenProjection {
                 ),
             ruleSets = model.ruleSets,
             exit = model.exit,
+            update = model.update,
             apps =
                 model.apps.sortedWith(
                     compareByDescending<InstalledApp> { it.excluded }.thenBy { it.label.lowercase() },
