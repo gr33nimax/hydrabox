@@ -20,6 +20,7 @@ import io.hydrabox.core.projection.SourceProblem
 import io.hydrabox.core.projection.SubscriptionSummary
 import io.hydrabox.core.projection.TlsFragmentation
 import io.hydrabox.core.projection.TunnelStack
+import io.hydrabox.core.projection.UpdateChannel
 import io.hydrabox.core.ruleset.RuleSetPaths
 import io.hydrabox.core.ruleset.RuleSetStatus
 import io.hydrabox.core.settings.AppLanguage
@@ -29,6 +30,9 @@ import io.hydrabox.core.settings.NotificationTrafficDisplayMode
 import io.hydrabox.core.settings.PerformanceMode
 import io.hydrabox.core.settings.Settings
 import io.hydrabox.core.settings.SettingsCodec
+// Two channels share a name: the one a person chose, and the one a screen shows. Aliased rather
+// than renamed, because both are the same product concept seen from either side of the projection.
+import io.hydrabox.core.settings.UpdateChannel as SettingsUpdateChannel
 import io.hydrabox.core.settings.SettingsStore
 import io.hydrabox.core.settings.SplitRoutingMode
 import io.hydrabox.core.settings.ThemeMode
@@ -216,6 +220,11 @@ class AppStore(
             // there rather than shown and ignored on a shipped build.
             pprofAvailable = BuildConfig.DEBUG,
             pprofEnabled = settings.pprofEnabled,
+            updateChannel =
+                when (settings.updateChannel) {
+                    SettingsUpdateChannel.STABLE -> UpdateChannel.STABLE
+                    SettingsUpdateChannel.CANARY -> UpdateChannel.CANARY
+                },
         )
 
     /** Launchable apps, with the ones currently kept outside the tunnel marked. */

@@ -8,6 +8,7 @@ import io.hydrabox.core.projection.LogDetail
 import io.hydrabox.core.projection.NotificationDetail
 import io.hydrabox.core.projection.TlsFragmentation
 import io.hydrabox.core.projection.TunnelStack
+import io.hydrabox.core.projection.UpdateChannel
 
 /**
  * Everything the screens can ask the platform to do. No screen performs an action itself,
@@ -54,6 +55,9 @@ data class AppActions(
     val onSetFragmentation: (TlsFragmentation) -> Unit = {},
     val onSetLogDetail: (LogDetail) -> Unit = {},
     val onSetPprof: (Boolean) -> Unit = {},
+    val onSetUpdateChannel: (UpdateChannel) -> Unit = {},
+    val onCheckUpdate: () -> Unit = {},
+    val onInstallUpdate: () -> Unit = {},
     val onSetAppearance: (Appearance) -> Unit = {},
     val onSetDynamicColour: (Boolean) -> Unit = {},
     val onSetLanguage: (Language) -> Unit = {},

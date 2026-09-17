@@ -18,6 +18,10 @@ import io.hydrabox.core.projection.NotificationDetail
 import io.hydrabox.core.projection.ScreenState
 import io.hydrabox.core.projection.TlsFragmentation
 import io.hydrabox.core.projection.TunnelStack
+import io.hydrabox.core.projection.UpdateChannel
+import io.hydrabox.core.projection.UpdateSummary
+import io.hydrabox.core.update.InstallFault
+import io.hydrabox.core.update.UpdateFault
 import io.hydrabox.ui.app.resources.Res
 import io.hydrabox.ui.app.resources.*
 import io.hydrabox.ui.design.ChoiceDialog
@@ -52,6 +56,9 @@ fun SettingsScreen(
 ) {
     val settings = state.settings
     var ask by remember { mutableStateOf<SettingsAsk?>(null) }
+    // The channel choice uses its own small dialog rather than `SettingsAsk`: it is the only choice
+    // on this screen whose answer changes what another screen may install.
+    var pickingChannel by remember { mutableStateOf(false) }
     Column(
         verticalArrangement = Arrangement.spacedBy(UiTokens.spacing),
         modifier = Modifier.fillMaxWidth().padding(horizontal = UiTokens.spacing * 2),
@@ -190,6 +197,27 @@ fun SettingsScreen(
             onClick = { ask = SettingsAsk.STACK },
             )
         }
+        SectionGroup(stringResource(Res.string.settings_updates)) {
+            ValueRow(
+                title = stringResource(Res.string.settings_update_channel),
+                value = channelLabel(settings?.updateChannel ?: UpdateChannel.STABLE),
+                onClick = { pickingChannel = true },
+            )
+            ValueRow(
+                title = stringResource(Res.string.update_check),
+                value = updateStatus(state.update),
+                onClick = actions.onCheckUpdate,
+            )
+            // Only a verified, newer release for this channel earns a row, and pressing it is what
+            // hands the file to Android; nothing installs by itself.
+            state.update.availableVersion?.let { version ->
+                ValueRow(
+                    title = stringResource(Res.string.update_install, version),
+                    value = null,
+                    onClick = actions.onInstallUpdate,
+                )
+            }
+        }
         SectionGroup(stringResource(Res.string.settings_interface)) {
             ValueRow(stringResource(Res.string.settings_appearance), null, onClick = onOpenAppearance)
         }
@@ -200,6 +228,28 @@ fun SettingsScreen(
         SectionGroup(stringResource(Res.string.backup_title)) { BackupSettings(actions) }
     }
     Asks(ask, state, actions) { ask = null }
+    if (pickingChannel) {
+        ChoiceDialog(
+            title = stringResource(Res.string.settings_update_channel),
+            dismissLabel = stringResource(Res.string.action_cancel),
+            onDismiss = { pickingChannel = false },
+        ) {
+            listOf(
+                UpdateChannel.STABLE to Res.string.update_channel_stable,
+                UpdateChannel.CANARY to Res.string.update_channel_canary,
+            ).forEach { (value, label) ->
+                OptionRow(
+                    title = stringResource(label),
+                    supporting = null,
+                    selected = (settings?.updateChannel ?: UpdateChannel.STABLE) == value,
+                    onClick = {
+                        actions.onSetUpdateChannel(value)
+                        pickingChannel = false
+                    },
+                )
+            }
+        }
+    }
 }
 
 /**
@@ -450,6 +500,59 @@ private fun PortAsk(current: Int, onSelect: (Int) -> Unit, onDismiss: () -> Unit
         onDismiss = onDismiss,
     )
 }
+
+@Composable
+private fun channelLabel(channel: UpdateChannel) = stringResource(
+    when (channel) {
+        UpdateChannel.STABLE -> Res.string.update_channel_stable
+        UpdateChannel.CANARY -> Res.string.update_channel_canary
+    },
+)
+
+/**
+ * What the updater says right now, as one line. "Could not ask" is deliberately not "nothing to
+ * install": telling somebody they are up to date when the question never arrived is a lie the
+ * screen can easily tell and this one does not.
+ */
+@Composable
+private fun updateStatus(update: UpdateSummary): String? {
+    // Held in locals before the check: these are properties of another module, and Kotlin will not
+    // narrow those on its own.
+    val installFault = update.installFault
+    val fault = update.fault
+    return when {
+        update.checking -> stringResource(Res.string.update_checking)
+        !update.reachable -> stringResource(Res.string.update_unreachable)
+        installFault != null -> installFaultLabel(installFault)
+        update.availableVersion != null -> update.availableVersion
+        fault != null -> updateFaultLabel(fault)
+        else -> null
+    }
+}
+
+@Composable
+private fun updateFaultLabel(fault: UpdateFault) = stringResource(
+    when (fault) {
+        UpdateFault.UNVERIFIED -> Res.string.update_unverified
+        UpdateFault.WRONG_CHANNEL -> Res.string.update_wrong_channel
+        UpdateFault.MALFORMED -> Res.string.update_malformed
+        UpdateFault.UNSUPPORTED_SCHEMA -> Res.string.update_unsupported_schema
+        UpdateFault.EMPTY_FIELD -> Res.string.update_empty_field
+        UpdateFault.INSECURE_URL -> Res.string.update_insecure_url
+        UpdateFault.BAD_DIGEST -> Res.string.update_bad_digest
+    },
+)
+
+@Composable
+private fun installFaultLabel(fault: InstallFault) = stringResource(
+    when (fault) {
+        InstallFault.UNREACHABLE -> Res.string.update_unreachable
+        InstallFault.TOO_LARGE -> Res.string.update_install_too_large
+        InstallFault.DIGEST_MISMATCH -> Res.string.update_install_digest
+        InstallFault.CERTIFICATE_MISMATCH -> Res.string.update_install_certificate
+        InstallFault.NO_INSTALLER -> Res.string.update_install_denied
+    },
+)
 
 @Composable
 private fun notificationLabel(detail: NotificationDetail) = stringResource(

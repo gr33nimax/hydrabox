@@ -108,6 +108,11 @@ enum class UpdateChannel { STABLE, CANARY }
 data class UpdateSummary(
     val checking: Boolean = false,
     val installing: Boolean = false,
+    /**
+     * Whether the question could be asked at all. When it could not, there is no fault to show:
+     * a document nobody fetched cannot be malformed, and saying so would blame the wrong thing.
+     */
+    val reachable: Boolean = true,
     /** The version a verified manifest offers, or null when there is nothing to install. */
     val availableVersion: String? = null,
     /** Why the last check produced no offer. */

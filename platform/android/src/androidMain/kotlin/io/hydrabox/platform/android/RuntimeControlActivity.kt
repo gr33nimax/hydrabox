@@ -52,9 +52,17 @@ import io.hydrabox.core.projection.RuleSetsSummary
 import io.hydrabox.core.projection.ScreenProjection
 import io.hydrabox.core.projection.TlsFragmentation
 import io.hydrabox.core.projection.TunnelStack
+import io.hydrabox.core.projection.UpdateChannel
+import io.hydrabox.core.projection.UpdateSummary
 import io.hydrabox.core.projection.nextLatencyStaleAtMillis
 import io.hydrabox.core.projection.runningOutboundTag
 import io.hydrabox.core.settings.AppLanguage
+// The chosen channel and the shown one are the same product concept seen from either side of the
+// projection, so they share a name and only one of them can be imported plainly.
+import io.hydrabox.core.settings.UpdateChannel as SettingsUpdateChannel
+import io.hydrabox.core.update.InstallFault
+import io.hydrabox.core.update.UpdateDecision
+import io.hydrabox.core.update.UpdateManifest
 import io.hydrabox.core.settings.DnsStrategy
 import io.hydrabox.core.settings.LogLevel
 import io.hydrabox.core.settings.NotificationTrafficDisplayMode
@@ -113,6 +121,18 @@ class RuntimeControlActivity : ComponentActivity() {
     private var showApps by mutableStateOf(false)
     private var updatingRules by mutableStateOf(false)
     private var permissionMissing by mutableStateOf(false)
+
+    /**
+     * What the updater last found. Held here rather than in the store because it is a fact about
+     * this visit: nothing is remembered between runs, and a check nobody asked for leaves no trace.
+     */
+    private var updateState by mutableStateOf(UpdateSummary())
+
+    /**
+     * The verified document a check produced. Installing needs its digests, so the manifest is kept
+     * rather than only the version a person sees.
+     */
+    private var pendingUpdate by mutableStateOf<UpdateManifest?>(null)
 
     /**
      * Where the tunnel comes out. Probed once per connection and on demand, never on the main
@@ -700,6 +720,7 @@ class RuntimeControlActivity : ComponentActivity() {
             selectedServerId = store.selectedTag(),
             settings = store.settingsSummary(settings),
             diagnostics = diagnostics(),
+            update = updateState,
             apps = if (withApps) store.installedApps() else emptyList(),
             ruleSets =
                 store.ruleSetStatus().let { status ->
@@ -1019,6 +1040,64 @@ class RuntimeControlActivity : ComponentActivity() {
             // reads `debug.listen` when it starts, so this one really does need the tunnel rebuilt.
             onSetPprof = { enabled ->
                 reconnectAware { store.saveSettings(store.settings().copy(pprofEnabled = enabled)) }
+            },
+            onSetUpdateChannel = { channel ->
+                background(null) {
+                    store.saveSettings(
+                        store.settings().copy(
+                            updateChannel =
+                                when (channel) {
+                                    UpdateChannel.STABLE -> SettingsUpdateChannel.STABLE
+                                    UpdateChannel.CANARY -> SettingsUpdateChannel.CANARY
+                                },
+                        ),
+                    )
+                }
+                // A channel change makes the last answer meaningless: it was about the other line.
+                updateState = UpdateSummary()
+                pendingUpdate = null
+            },
+            onCheckUpdate = {
+                val channel = store.settings().updateChannel.name.lowercase()
+                updateState = UpdateSummary(checking = true)
+                pendingUpdate = null
+                io.execute {
+                    val result = runCatching { UpdateClient.check(channel) }.getOrElse { UpdateCheck.Unreachable }
+                    main.post {
+                        // Writing to `stored` would rebuild the whole read model; the projection
+                        // reads this field, so assigning it is enough.
+                        when (result) {
+                            UpdateCheck.Unreachable -> updateState = UpdateSummary(reachable = false)
+
+                            is UpdateCheck.Decided ->
+                                when (val decision = result.decision) {
+                                    is UpdateDecision.Available -> {
+                                        pendingUpdate = decision.manifest
+                                        updateState = UpdateSummary(availableVersion = decision.manifest.versionName)
+                                    }
+
+                                    UpdateDecision.NoUpdate -> updateState = UpdateSummary()
+
+                                    is UpdateDecision.Refused -> updateState = UpdateSummary(fault = decision.fault)
+                                }
+                        }
+                    }
+                }
+            },
+            onInstallUpdate = {
+                val manifest = pendingUpdate ?: return@AppActions
+                updateState = updateState.copy(installing = true, installFault = null)
+                io.execute {
+                    val outcome = runCatching { UpdateClient.install(this@RuntimeControlActivity, manifest) }
+                        .getOrElse { InstallOutcome.Refused(InstallFault.NO_INSTALLER) }
+                    main.post {
+                        updateState =
+                            when (outcome) {
+                                InstallOutcome.Started -> UpdateSummary(availableVersion = manifest.versionName, installing = true)
+                                is InstallOutcome.Refused -> UpdateSummary(installFault = outcome.fault)
+                            }
+                    }
+                }
             },
             onSetAppearance = { appearance ->
                 background(null) {
