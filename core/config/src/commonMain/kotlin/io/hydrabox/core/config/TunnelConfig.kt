@@ -436,7 +436,12 @@ object TunnelConfigGenerator {
     ): JsonObject {
         val type = outbound["type"]?.jsonPrimitive?.contentOrNull.orEmpty()
         if (type !in dialCapableTypes) return outbound
-        val fragmented = fragmentation(outbound["tls"] as? JsonObject, input.tlsFragmentation)
+        val fragmented =
+            if (type in tlsFragmentCapableTypes) {
+                fragmentation(outbound["tls"] as? JsonObject, input.tlsFragmentation)
+            } else {
+                null
+            }
         if (fragmented == null && !input.tcpFastOpen && !input.tcpMultiPath) return outbound
         return buildJsonObject {
             outbound.forEach { (key, value) -> if (key != "tls") put(key, value) }
@@ -485,7 +490,25 @@ object TunnelConfigGenerator {
             "vless",
             "mieru",
             "shadowtls",
+            "trusttunnel",
             "ssh",
+        )
+
+    /**
+     * Types that hand their TLS config to a stream dialer, where the core really wraps the
+     * connection with its fragmenter. QUIC transports (`hysteria`, `hysteria2`, `tuic`) accept
+     * these fields without an error and then ignore them, so they are not listed: emitting them
+     * would promise behaviour the core does not deliver.
+     */
+    private val tlsFragmentCapableTypes =
+        setOf(
+            "http",
+            "vmess",
+            "trojan",
+            "vless",
+            "anytls",
+            "shadowtls",
+            "trusttunnel",
         )
 
     private fun tun(input: TunnelInput) =

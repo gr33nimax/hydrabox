@@ -208,6 +208,81 @@ class TunnelConfigGeneratorTest {
     }
 
     @Test
+    fun `TLS fragmentation is emitted only for core validated outbound types`() {
+        val types =
+            listOf(
+                "socks",
+                "http",
+                "shadowsocks",
+                "vmess",
+                "trojan",
+                "naive",
+                "hysteria",
+                "hysteria2",
+                "tuic",
+                "anytls",
+                "vless",
+                "mieru",
+                "shadowtls",
+                "trusttunnel",
+                "ssh",
+            )
+        // Only the stream/TCP TLS transports: the core wires its fragmenter inside
+        // `Client(conn net.Conn)`, so `hysteria`, `hysteria2` and `tuic` accept these fields
+        // and silently ignore them. Emitting them there would promise nothing.
+        val fragmentCapable =
+            setOf(
+                "http",
+                "vmess",
+                "trojan",
+                "anytls",
+                "vless",
+                "shadowtls",
+                "trusttunnel",
+            )
+        listOf("record", "fragment").forEach { mode ->
+            val generated =
+                TunnelConfigGenerator
+                    .build(
+                        TunnelInput(
+                            outbounds =
+                                types.map { type ->
+                                    CatalogOutbound(
+                                        tag = type,
+                                        type = type,
+                                        json =
+                                            buildJsonObject {
+                                                put("type", type)
+                                                put("tag", type)
+                                                put("server", "$type.invalid")
+                                                putJsonObject("tls") {
+                                                    put("enabled", true)
+                                                    put("server_name", "$type.invalid")
+                                                }
+                                            },
+                                    )
+                                },
+                            selectedTag = AUTO_TAG,
+                            tlsFragmentation = mode,
+                        ),
+                    ).jsonObject["outbounds"]!!
+                    .jsonArray
+                    .map { it.jsonObject }
+                    .associateBy { it.field("tag") }
+            types.forEach { type ->
+                val tls = generated.getValue(type)["tls"]!!.jsonObject
+                if (type in fragmentCapable) {
+                    assertEquals("true", tls[if (mode == "record") "record_fragment" else "fragment"]?.jsonPrimitive?.content)
+                } else {
+                    assertNull(tls["record_fragment"], "$type must not receive record fragmentation")
+                    assertNull(tls["fragment"], "$type must not receive TLS fragmentation")
+                    assertNull(tls["fragment_fallback_delay"], "$type must not receive a fragment delay")
+                }
+            }
+        }
+    }
+
+    @Test
     fun `dial options land on servers and never on the groups`() {
         val outbounds =
             TunnelConfigGenerator
