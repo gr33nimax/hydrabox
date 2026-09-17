@@ -6,3 +6,6 @@ platform/android/libs/libbox.aar
 platform/android/libs/libbox-sources.jar
 .kotlin/
 __pycache__/
+
+# Agent runtime: task output and transcripts, never part of the product.
+.pi/
