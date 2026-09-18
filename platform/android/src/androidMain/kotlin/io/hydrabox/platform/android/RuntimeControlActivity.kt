@@ -1079,11 +1079,12 @@ class RuntimeControlActivity : ComponentActivity() {
                                 when (val decision = result.decision) {
                                     is UpdateDecision.Available -> {
                                         pendingUpdate = decision.manifest
-                                        updateState = UpdateSummary(availableVersion = decision.manifest.versionName)
+                                        updateState =
+                                            UpdateSummary(availableVersion = decision.manifest.versionName, checked = true)
                                     }
 
                                     UpdateDecision.NoUpdate -> {
-                                        updateState = UpdateSummary()
+                                        updateState = UpdateSummary(checked = true)
                                     }
 
                                     is UpdateDecision.Refused -> {

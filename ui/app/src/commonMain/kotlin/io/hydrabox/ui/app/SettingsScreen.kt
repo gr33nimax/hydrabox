@@ -601,10 +601,19 @@ private fun updateStatus(update: UpdateSummary): String? {
     val fault = update.fault
     return when {
         update.checking -> stringResource(Res.string.update_checking)
+
         !update.reachable -> stringResource(Res.string.update_unreachable)
+
         installFault != null -> installFaultLabel(installFault)
+
         update.availableVersion != null -> update.availableVersion
+
         fault != null -> updateFaultLabel(fault)
+
+        // An answer, not silence: a check that found nothing newer has to say so, or the button
+        // reads as broken.
+        update.checked -> stringResource(Res.string.update_none)
+
         else -> null
     }
 }

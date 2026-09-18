@@ -109,6 +109,12 @@ data class UpdateSummary(
     val checking: Boolean = false,
     val installing: Boolean = false,
     /**
+     * Whether a check has finished for this channel. Without it, pressing the button and finding
+     * nothing newer would show nothing at all, which reads as a button that does not work rather
+     * than as an answer.
+     */
+    val checked: Boolean = false,
+    /**
      * Whether the question could be asked at all. When it could not, there is no fault to show:
      * a document nobody fetched cannot be malformed, and saying so would blame the wrong thing.
      */
