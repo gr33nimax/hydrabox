@@ -266,7 +266,7 @@ HydraBox предоставляется **как есть**. Мы исправл
     <string name="settings_updates">Обновления</string>
     <string name="settings_update_channel">Канал обновлений</string>
     <string name="update_channel_stable">Стабильный</string>
-    <string name="update_channel_canary">Канареечный</string>
+    <string name="update_channel_canary">Канарейка</string>
     <string name="update_check">Проверить</string>
     <string name="update_checking">Проверяем…</string>
     <string name="update_none">Обновлений нет</string>

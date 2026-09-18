@@ -1065,11 +1065,13 @@ class RuntimeControlActivity : ComponentActivity() {
                         .lowercase()
                 updateState = UpdateSummary(checking = true)
                 pendingUpdate = null
+                // The screen reads the update state out of the read model, so the model has to be
+                // rebuilt for anything to appear at all. Assigning the field alone left the row
+                // unchanged, which made a running check look like a button that does nothing.
+                refresh()
                 io.execute {
                     val result = runCatching { UpdateClient.check(channel) }.getOrElse { UpdateCheck.Unreachable }
                     main.post {
-                        // Writing to `stored` would rebuild the whole read model; the projection
-                        // reads this field, so assigning it is enough.
                         when (result) {
                             UpdateCheck.Unreachable -> {
                                 updateState = UpdateSummary(reachable = false)
@@ -1093,12 +1095,15 @@ class RuntimeControlActivity : ComponentActivity() {
                                 }
                             }
                         }
+                        refresh()
                     }
                 }
             },
             onInstallUpdate = {
                 val manifest = pendingUpdate ?: return@AppActions
                 updateState = updateState.copy(installing = true, installFault = null)
+                // The same read model as the check: nothing reaches the screen until it is rebuilt.
+                refresh()
                 io.execute {
                     val outcome =
                         runCatching { UpdateClient.install(this@RuntimeControlActivity, manifest) }
@@ -1109,6 +1114,7 @@ class RuntimeControlActivity : ComponentActivity() {
                                 InstallOutcome.Started -> UpdateSummary(availableVersion = manifest.versionName, installing = true)
                                 is InstallOutcome.Refused -> UpdateSummary(installFault = outcome.fault)
                             }
+                        refresh()
                     }
                 }
             },
