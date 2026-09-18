@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Base64
 import io.hydrabox.core.update.InstallFault
+import io.hydrabox.core.update.PinnedUpdateKeys
 import io.hydrabox.core.update.UpdateDecision
 import io.hydrabox.core.update.UpdateManifest
 import io.hydrabox.core.update.decideUpdate
@@ -64,6 +65,10 @@ object UpdateClient {
         val address = "$REPOSITORY/$name/update/$name"
         val body = read("$address.json", MAX_MANIFEST_BYTES) ?: return UpdateCheck.Unreachable
         val signature = read("$address.sig", MAX_MANIFEST_BYTES)?.decodeToString()?.trim().orEmpty()
+        // The build carries `keyId=base64` pairs while the verifier reads a JSON list with the key
+        // in base64url, so the shapes are translated here. A list that cannot be read becomes an
+        // empty string, which verifies nothing — the only safe direction for this to fail in.
+        val keys = PinnedUpdateKeys.toCoreJson(BuildConfig.HYDRABOX_UPDATE_PUBLIC_KEYS).orEmpty()
         // The key is the pinned one, never the one the document claims: a manifest that named its
         // own key would get to choose which of the pinned keys vouches for it.
         val verified =
@@ -71,7 +76,7 @@ object UpdateClient {
                 manifestBase64 = base64Url(body),
                 signatureBase64 = signature,
                 keyId = BuildConfig.HYDRABOX_UPDATE_KEY_ID,
-                keysJson = BuildConfig.HYDRABOX_UPDATE_PUBLIC_KEYS,
+                keysJson = keys,
             )
         return UpdateCheck.Decided(
             decideUpdate(

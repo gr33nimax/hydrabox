@@ -133,6 +133,11 @@ jobs:
         env:
           NAME: ${{ steps.version.outputs.name }}
           CODE: ${{ steps.version.outputs.code }}
+          # The pinned keys have to be inside the build, not fetched by it: an updater that could be
+          # told which key to trust would only prove that somebody signed the document. Absent keys
+          # leave the field empty, and an empty list verifies nothing — the direction this fails in.
+          HYDRABOX_UPDATE_RELEASE_PUBLIC_KEYS: ${{ vars.HYDRABOX_UPDATE_RELEASE_PUBLIC_KEYS }}
+          HYDRABOX_UPDATE_KEY_ID: ${{ vars.HYDRABOX_UPDATE_KEY_ID }}
         run: |
           ./gradlew :platform:android:assembleRelease --stacktrace \
             -PhydraboxVersionName="$NAME" -PhydraboxVersionCode="$CODE"

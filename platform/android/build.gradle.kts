@@ -80,7 +80,7 @@ extensions.configure<ApplicationExtension> {
         // keys leaves the field empty, and an empty key list verifies nothing — which is the
         // direction this has to fail in.
         val updatePublicKeys =
-            releaseSigningProperty("HYDRABOX_UPDATE_PUBLIC_KEYS")
+            releaseSigningProperty("HYDRABOX_UPDATE_RELEASE_PUBLIC_KEYS")
                 ?.replace("\\", "\\\\")
                 ?.replace("\"", "\\\"")
                 .orEmpty()
