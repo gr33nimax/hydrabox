@@ -38,7 +38,10 @@ class PinnedUpdateKeysTest {
         // the verifier's decoder expects, and this decoder has to be told to accept that.
         assertEquals(
             publishedKeyBytes.toList(),
-            Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT_OPTIONAL).decode(translated).toList(),
+            Base64.UrlSafe
+                .withPadding(Base64.PaddingOption.ABSENT_OPTIONAL)
+                .decode(translated)
+                .toList(),
         )
     }
 
