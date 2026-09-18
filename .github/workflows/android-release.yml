@@ -216,10 +216,17 @@ jobs:
             echo "- коммит ядра: $(git -C hydracore rev-parse HEAD)"
             echo "- APK SHA-256: $SHA"
           } > "$notes"
-          gh release create "$NAME" release/hydrabox-*.apk release/SHA256SUMS \
-            --title "HydraBox $NAME" \
-            --notes-file "$notes" \
-            --prerelease
+          # A re-run has to be able to finish what a later step failed at, rather than tripping over
+          # the tag its own first attempt created.
+          if gh release view "$NAME" >/dev/null 2>&1; then
+            gh release upload "$NAME" release/hydrabox-*.apk release/SHA256SUMS --clobber
+            gh release edit "$NAME" --title "HydraBox $NAME" --notes-file "$notes" --prerelease
+          else
+            gh release create "$NAME" release/hydrabox-*.apk release/SHA256SUMS \
+              --title "HydraBox $NAME" \
+              --notes-file "$notes" \
+              --prerelease
+          fi
 
       # The release exists; this is what a client can actually find. The manifest is signed rather
       # than trusted, and published at a fixed path on the channel's own branch (ADR 0009), so a
@@ -270,15 +277,10 @@ jobs:
           # signs cannot be checked without re-serialising them, and re-serialising is how two
           # different documents come to share one signature.
           key="$RUNNER_TEMP/update-key.pem"
-          case "$PRIVATE_KEY" in
-            -----BEGIN*) printf '%s\n' "$PRIVATE_KEY" > "$key" ;;
-            *)
-              # A base64 PKCS#8 body rather than a PEM block; converted once so signing has one shape.
-              printf '%s' "$PRIVATE_KEY" | base64 -d > "$RUNNER_TEMP/update-key.der"
-              openssl pkey -inform DER -in "$RUNNER_TEMP/update-key.der" -out "$key"
-              rm -f "$RUNNER_TEMP/update-key.der"
-              ;;
-          esac
+          # The secret's shape is not knowable from here, so it is normalised rather than assumed:
+          # a bare 32-byte seed, a PKCS#8 body or a PEM block are all the same key to a signer that
+          # is told what it received.
+          printf '%s' "$PRIVATE_KEY" | python3 .github/scripts/update_signing_key.py "$key"
           openssl pkeyutl -sign -rawin -inkey "$key" -in "$manifest" -out "$RUNNER_TEMP/manifest.sig"
           base64 -w0 "$RUNNER_TEMP/manifest.sig" | tr '+/' '-_' | tr -d '=' > "update/$CHANNEL.sig"
           rm -f "$key" "$RUNNER_TEMP/manifest.sig"
