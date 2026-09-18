@@ -442,11 +442,15 @@ object TunnelConfigGenerator {
             } else {
                 null
             }
-        if (fragmented == null && !input.tcpFastOpen && !input.tcpMultiPath) return outbound
+        // One refusal, and a refused field rejects the whole document: the core stops anytls with
+        // fast open rather than crash on the lazy connection it would create. Excluding it here is
+        // what keeps one such server in a subscription from stopping every other server.
+        val fastOpen = input.tcpFastOpen && type in fastOpenCapableTypes
+        if (fragmented == null && !fastOpen && !input.tcpMultiPath) return outbound
         return buildJsonObject {
             outbound.forEach { (key, value) -> if (key != "tls") put(key, value) }
             (fragmented ?: outbound["tls"])?.let { put("tls", it) }
-            if (input.tcpFastOpen) put("tcp_fast_open", true)
+            if (fastOpen) put("tcp_fast_open", true)
             if (input.tcpMultiPath) put("tcp_multi_path", true)
         }
     }
@@ -510,6 +514,16 @@ object TunnelConfigGenerator {
             "shadowtls",
             "trusttunnel",
         )
+
+    /**
+     * Types that take `tcp_fast_open`: every dial-capable type except anytls.
+     *
+     * The core refuses that pair deliberately. Fast open opens a lazy connection that establishes on
+     * the first write, while the anytls handshake reads the remote address before that and would
+     * dereference a nil — so the core stops it instead of crashing. `tcp_multi_path` has no such
+     * refusal anywhere and stays available to every dial-capable type.
+     */
+    private val fastOpenCapableTypes = dialCapableTypes - "anytls"
 
     private fun tun(input: TunnelInput) =
         buildJsonObject {

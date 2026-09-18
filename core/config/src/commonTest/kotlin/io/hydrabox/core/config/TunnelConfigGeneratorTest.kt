@@ -465,4 +465,63 @@ class TunnelConfigGeneratorTest {
                 .jsonPrimitive.content,
         )
     }
+
+    @Test
+    fun `socket options reach every dial capable transport except the one the core refuses`() {
+        val types =
+            listOf(
+                "socks",
+                "http",
+                "shadowsocks",
+                "vmess",
+                "trojan",
+                "naive",
+                "hysteria",
+                "hysteria2",
+                "tuic",
+                "anytls",
+                "vless",
+                "mieru",
+                "shadowtls",
+                "trusttunnel",
+                "ssh",
+            )
+        val generated =
+            TunnelConfigGenerator
+                .build(
+                    TunnelInput(
+                        outbounds =
+                            types.map { type ->
+                                CatalogOutbound(
+                                    tag = type,
+                                    type = type,
+                                    json =
+                                        buildJsonObject {
+                                            put("type", type)
+                                            put("tag", type)
+                                            put("server", "$type.invalid")
+                                        },
+                                )
+                            },
+                        selectedTag = AUTO_TAG,
+                        tcpFastOpen = true,
+                        tcpMultiPath = true,
+                    ),
+                ).jsonObject["outbounds"]!!
+                .jsonArray
+                .map { it.jsonObject }
+                .associateBy { it.field("tag") }
+        types.forEach { type ->
+            val outbound = generated.getValue(type)
+            assertEquals("true", outbound["tcp_multi_path"]?.jsonPrimitive?.content, "$type takes multipath")
+            if (type == "anytls") {
+                // The core stops anytls with fast open — it would dereference a nil on the lazy
+                // connection TFO creates — and a refused field rejects the whole document, which is
+                // how one such server used to stop every other server from connecting.
+                assertNull(outbound["tcp_fast_open"], "anytls must not be given fast open")
+            } else {
+                assertEquals("true", outbound["tcp_fast_open"]?.jsonPrimitive?.content, "$type takes fast open")
+            }
+        }
+    }
 }
