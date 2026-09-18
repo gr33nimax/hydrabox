@@ -30,6 +30,7 @@ import io.hydrabox.ui.design.HydraRow
 import io.hydrabox.ui.design.InputDialog
 import io.hydrabox.ui.design.LoadingRows
 import io.hydrabox.ui.design.OptionRow
+import io.hydrabox.ui.design.RefreshButton
 import io.hydrabox.ui.design.SectionGroup
 import io.hydrabox.ui.design.ToggleRow
 import io.hydrabox.ui.design.UiTokens
@@ -204,10 +205,19 @@ fun SettingsScreen(
                 value = channelLabel(settings?.updateChannel ?: UpdateChannel.STABLE),
                 onClick = { pickingChannel = true },
             )
-            ValueRow(
+            HydraRow(
                 title = stringResource(Res.string.update_check),
-                value = updateStatus(state.update),
+                supporting = updateStatus(state.update),
                 onClick = actions.onCheckUpdate,
+                trailing = {
+                    // The same turning icon the plan header uses: a check that is running has to look
+                    // like one, or pressing it reads as nothing happening.
+                    RefreshButton(
+                        busy = state.update.checking,
+                        contentDescription = stringResource(Res.string.update_check),
+                        onClick = actions.onCheckUpdate,
+                    )
+                },
             )
             // Only a verified, newer release for this channel earns a row, and pressing it is what
             // hands the file to Android; nothing installs by itself.
