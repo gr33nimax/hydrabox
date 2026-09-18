@@ -3,13 +3,13 @@
   "distribution": {
     "id": "io.hydrabox.hydracore",
     "name": "HydraCore",
-    "version": "v1.14.0-extended-2.7.1-hydracore.12-debug.11",
+    "version": "hydracore-sbe-1.14.0",
     "role": "client"
   },
   "source": {
     "repository": "https://github.com/gr33nimax/hydracore",
-    "commit": "855a8ac617f917688d0377a990f8634b9cf9c91c",
-    "version": "v1.14.0-extended-2.7.1-hydracore.12-debug.11"
+    "commit": "f5c0e83a105bf38a9b855b030775b6cd757c28ab",
+    "version": "hydracore-sbe-1.14.0"
   },
   "upstream": {
     "project": "sing-box-extended",
@@ -17,7 +17,7 @@
   },
   "artifacts": {
     "hydracore-client-libbox.aar": {
-      "sha256": "abe9f01451d439fb1e95bc3afa780431283d04bdb89efce995acc98e5e03f30e"
+      "sha256": "a45240603563521beeeaba530063660a4678719f0ea00cf14b76c24dfa17aaa4"
     }
   }
 }
