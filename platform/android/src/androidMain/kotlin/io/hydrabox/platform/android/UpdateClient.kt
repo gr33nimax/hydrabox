@@ -49,7 +49,11 @@ object UpdateClient {
     // One fixed address per channel (ADR 0009). The address carries no version, no tag and no
     // decision of its own: everything that decides whether the document may be used is inside the
     // signed bytes, because a URL is a place rather than a claim.
-    private const val BASE = "https://raw.githubusercontent.com/gr33nimax/hydrabox/canary/update/"
+    // One fixed address per channel, and the branch is the channel: a release publishes its own
+    // channel file into its own branch, so nothing has to cross between release lines. Reading
+    // every channel out of `canary` would have left the stable line unreachable the moment it
+    // started releasing from anywhere else (ADR 0009).
+    private const val REPOSITORY = "https://raw.githubusercontent.com/gr33nimax/hydrabox"
     private const val MAX_MANIFEST_BYTES = 64 * 1024
     private const val MAX_APK_BYTES = 256L * 1024 * 1024
     private const val TIMEOUT_MILLIS = 20_000
@@ -57,8 +61,9 @@ object UpdateClient {
 
     fun check(channel: String): UpdateCheck {
         val name = channel.trim().lowercase()
-        val body = read("$BASE$name.json", MAX_MANIFEST_BYTES) ?: return UpdateCheck.Unreachable
-        val signature = read("$BASE$name.sig", MAX_MANIFEST_BYTES)?.decodeToString()?.trim().orEmpty()
+        val address = "$REPOSITORY/$name/update/$name"
+        val body = read("$address.json", MAX_MANIFEST_BYTES) ?: return UpdateCheck.Unreachable
+        val signature = read("$address.sig", MAX_MANIFEST_BYTES)?.decodeToString()?.trim().orEmpty()
         // The key is the pinned one, never the one the document claims: a manifest that named its
         // own key would get to choose which of the pinned keys vouches for it.
         val verified =
