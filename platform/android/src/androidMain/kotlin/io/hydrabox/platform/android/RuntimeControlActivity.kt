@@ -1071,6 +1071,18 @@ class RuntimeControlActivity : ComponentActivity() {
                 refresh()
                 io.execute {
                     val result = runCatching { UpdateClient.check(channel) }.getOrElse { UpdateCheck.Unreachable }
+                    // A release that was found is Android's download from here on: the shade shows
+                    // its progress and its finished notification is what installs it. The only
+                    // question left for this screen is whether the file is already here.
+                    val offered = (result as? UpdateCheck.Decided)?.decision as? UpdateDecision.Available
+                    val downloading =
+                        offered?.let { decision ->
+                            val state = UpdateClient.apkState(this@RuntimeControlActivity, decision.manifest)
+                            val started =
+                                state is ApkState.Missing &&
+                                    UpdateClient.startDownload(this@RuntimeControlActivity, decision.manifest) != null
+                            state is ApkState.Downloading || started
+                        }
                     main.post {
                         when (result) {
                             UpdateCheck.Unreachable -> {
@@ -1082,7 +1094,11 @@ class RuntimeControlActivity : ComponentActivity() {
                                     is UpdateDecision.Available -> {
                                         pendingUpdate = decision.manifest
                                         updateState =
-                                            UpdateSummary(availableVersion = decision.manifest.versionName, checked = true)
+                                            UpdateSummary(
+                                                availableVersion = decision.manifest.versionName,
+                                                checked = true,
+                                                downloading = downloading == true,
+                                            )
                                     }
 
                                     UpdateDecision.NoUpdate -> {
@@ -1105,15 +1121,34 @@ class RuntimeControlActivity : ComponentActivity() {
                 // The same read model as the check: nothing reaches the screen until it is rebuilt.
                 refresh()
                 io.execute {
-                    val outcome =
-                        runCatching { UpdateClient.install(this@RuntimeControlActivity, manifest) }
-                            .getOrElse { InstallOutcome.Refused(InstallFault.NO_INSTALLER) }
+                    // The two steps the shade takes, in the same order: read the downloaded file
+                    // back and check it against the signed document, then let the installer see it.
+                    // Android enforces the signature when it installs the APK; the digest is what
+                    // says these are the bytes this channel promised.
+                    val id = (UpdateClient.apkState(this@RuntimeControlActivity, manifest) as? ApkState.Ready)?.downloadId
+                    val fault =
+                        when (id) {
+                            null -> InstallFault.UNREACHABLE
+                            else -> UpdateClient.verify(this@RuntimeControlActivity, manifest, id)
+                        }
+                    val intent =
+                        if (fault == null && id != null) {
+                            UpdateClient.installIntent(this@RuntimeControlActivity, id)
+                        } else {
+                            null
+                        }
                     main.post {
-                        updateState =
-                            when (outcome) {
-                                InstallOutcome.Started -> UpdateSummary(availableVersion = manifest.versionName, installing = true)
-                                is InstallOutcome.Refused -> UpdateSummary(installFault = outcome.fault)
-                            }
+                        if (intent == null) {
+                            updateState =
+                                UpdateSummary(
+                                    availableVersion = manifest.versionName,
+                                    installFault = fault ?: InstallFault.NO_INSTALLER,
+                                )
+                        } else {
+                            updateState = UpdateSummary(availableVersion = manifest.versionName, installing = true)
+                            runCatching { startActivity(intent) }
+                                .onFailure { HydraLog.warn("update", "the installer could not be opened", it) }
+                        }
                         refresh()
                     }
                 }

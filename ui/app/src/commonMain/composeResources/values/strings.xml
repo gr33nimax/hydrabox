@@ -275,6 +275,7 @@ Logs are stored locally until the user exports or sends them. Review exported fi
     <string name="update_checking">Checking…</string>
     <string name="update_none">No updates</string>
     <string name="update_install">Install %1$s</string>
+    <string name="update_downloading">Downloading %1$s</string>
     <!--
       Each reason is named for what a person can do about it: an unreachable list is the network,
       while an unconfirmed signature is a decision rather than a failed download.

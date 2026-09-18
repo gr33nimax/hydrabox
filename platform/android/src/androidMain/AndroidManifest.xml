@@ -101,13 +101,6 @@
             android:name=".SubscriptionRefreshJob"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
-        <!--
-          The installer answers a committed session here. Not exported: the broadcast is sent by
-          the system as this application, and nobody else has any business speaking for it.
-        -->
-        <receiver
-            android:name=".UpdateInstallReceiver"
-            android:exported="false" />
         <service
             android:name=".HydraTileService"
             android:exported="true"
