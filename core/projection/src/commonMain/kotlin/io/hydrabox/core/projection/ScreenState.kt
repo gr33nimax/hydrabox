@@ -107,6 +107,11 @@ enum class UpdateChannel { STABLE, CANARY }
  */
 data class UpdateSummary(
     val checking: Boolean = false,
+    /**
+     * Whether the system download of the offered release is running right now. The progress itself
+     * lives in the shade, where Android draws it; this is only what the row has to say about it.
+     */
+    val downloading: Boolean = false,
     val installing: Boolean = false,
     /**
      * Whether a check has finished for this channel. Without it, pressing the button and finding

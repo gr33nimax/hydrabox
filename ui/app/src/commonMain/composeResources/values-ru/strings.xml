@@ -271,6 +271,7 @@ HydraBox предоставляется **как есть**. Мы исправл
     <string name="update_checking">Проверяем…</string>
     <string name="update_none">Обновлений нет</string>
     <string name="update_install">Установить %1$s</string>
+    <string name="update_downloading">Скачивается %1$s</string>
     <!--
       Причины названы по тому, что человек может сделать: недоступность — это сеть, а
       неподтверждённая подпись — это решение, а не сбой загрузки.

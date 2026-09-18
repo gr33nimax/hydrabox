@@ -219,9 +219,10 @@ fun SettingsScreen(
                     )
                 },
             )
-            // Only a verified, newer release for this channel earns a row, and pressing it is what
-            // hands the file to Android; nothing installs by itself.
-            state.update.availableVersion?.let { version ->
+            // Only a verified, newer release for this channel earns a row. While the system is
+            // downloading it the shade carries the progress, so the row waits its turn; once the
+            // file has arrived, pressing the row opens the installer on it.
+            state.update.availableVersion?.takeIf { !state.update.downloading }?.let { version ->
                 ValueRow(
                     title = stringResource(Res.string.update_install, version),
                     value = null,
@@ -615,6 +616,8 @@ private fun updateStatus(update: UpdateSummary): String? {
         !update.reachable -> stringResource(Res.string.update_unreachable)
 
         installFault != null -> installFaultLabel(installFault)
+
+        update.downloading -> stringResource(Res.string.update_downloading, update.availableVersion.orEmpty())
 
         update.availableVersion != null -> update.availableVersion
 
