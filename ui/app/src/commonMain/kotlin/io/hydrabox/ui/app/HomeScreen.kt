@@ -259,9 +259,6 @@ private fun Readings(
             label = stringResource(Res.string.home_row_route),
             value = server?.let { serverName(it) } ?: stringResource(Res.string.home_server_none),
             detail = serverSupportingLine(server),
-            // The rule the automatic choice follows is a sentence, and half a sentence is worse
-            // than none: this row takes the second line rather than an ellipsis.
-            detailMaxLines = 2,
             onClick = onOpenServers,
         )
         FactRow(

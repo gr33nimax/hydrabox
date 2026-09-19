@@ -217,13 +217,6 @@ fun FactRow(
     value: String,
     onClick: () -> Unit,
     detail: String? = null,
-    /**
-     * How many lines the supporting text may take. One is the default because these rows are a
-     * column of readings and a wrapped line moves every row under it; a row whose whole point is
-     * the sentence — the route the tunnel is taking — asks for the second line instead of losing
-     * the end of the sentence to an ellipsis.
-     */
-    detailMaxLines: Int = 1,
     accent: Color? = null,
     trailingIcon: ImageVector = HydraIcons.Chevron,
     modifier: Modifier = Modifier,
@@ -271,7 +264,7 @@ fun FactRow(
                         it,
                         style = UiTokens.figures(MaterialTheme.typography.labelMedium),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = detailMaxLines,
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         textAlign = TextAlign.End,
                     )

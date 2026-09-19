@@ -105,7 +105,7 @@ fun serverDetail(server: ServerRef): String? {
         // route is chosen automatically, and "now using" only repeated that in a smaller font.
         server.auto && label != null -> label
 
-        server.auto -> stringResource(Res.string.server_auto_detail)
+        server.auto -> stringResource(Res.string.server_auto_none)
 
         else -> null
     }

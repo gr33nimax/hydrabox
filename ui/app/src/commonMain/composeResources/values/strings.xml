@@ -49,7 +49,7 @@
     <string name="control_disconnect">Disconnect</string>
     <string name="control_working">Working</string>
     <string name="server_auto">Auto select</string>
-    <string name="server_auto_detail">Chooses the server with the lowest latency</string>
+    <string name="server_auto_none">Nothing selected</string>
     <string name="latency_ms">%1$d ms</string>
     <string name="latency_edge">TURN edge RTT: %1$d ms</string>
     <string name="servers_search">Search servers</string>
