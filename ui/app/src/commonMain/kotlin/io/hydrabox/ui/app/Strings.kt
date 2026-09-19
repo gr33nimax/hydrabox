@@ -101,7 +101,9 @@ fun serverDetail(server: ServerRef): String? {
     // something the compiler will smart-cast.
     val label = server.resolvedLabel
     return when {
-        server.auto && label != null -> stringResource(Res.string.server_auto_now, label)
+        // The name is the answer, with no preamble in front of it: the row already says the
+        // route is chosen automatically, and "now using" only repeated that in a smaller font.
+        server.auto && label != null -> label
         server.auto -> stringResource(Res.string.server_auto_detail)
         else -> null
     }
