@@ -27,14 +27,18 @@ import androidx.compose.ui.unit.dp
 
 /** A group of rows under a name. The name is a label, not a headline. */
 @Composable
-fun SectionHeader(title: String, modifier: Modifier = Modifier) {
+fun SectionHeader(
+    title: String,
+    modifier: Modifier = Modifier,
+) {
     Text(
         text = title,
         style = MaterialTheme.typography.labelLarge,
         color = MaterialTheme.colorScheme.primary,
-        modifier = modifier
-            .semantics { heading() }
-            .padding(start = UiTokens.spacing * 1.5f, top = UiTokens.spacing * 2, bottom = UiTokens.spacing / 2),
+        modifier =
+            modifier
+                .semantics { heading() }
+                .padding(start = UiTokens.spacing * 1.5f, top = UiTokens.spacing * 2, bottom = UiTokens.spacing / 2),
     )
 }
 
@@ -88,20 +92,29 @@ fun HydraRow(
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(UiTokens.spacing * 1.5f),
-            modifier = Modifier.heightIn(min = 48.dp)
-                .padding(horizontal = UiTokens.spacing * 2, vertical = UiTokens.spacing * 1.25f),
+            modifier =
+                Modifier
+                    .heightIn(min = 48.dp)
+                    .padding(horizontal = UiTokens.spacing * 2, vertical = UiTokens.spacing * 1.25f),
         ) {
             when {
-                leadingFlag != null ->
+                leadingFlag != null -> {
                     Text(
                         leadingFlag,
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.width(24.dp),
                         textAlign = TextAlign.Center,
                     )
+                }
 
-                leading != null ->
-                    Icon(leading, contentDescription = null, modifier = Modifier.size(24.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                leading != null -> {
+                    Icon(
+                        leading,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
@@ -166,7 +179,12 @@ fun ValueRow(
 
 /** One number with its name. Used for traffic, never for runtime internals. */
 @Composable
-fun MetricTile(label: String, value: String, icon: ImageVector, modifier: Modifier = Modifier) {
+fun MetricTile(
+    label: String,
+    value: String,
+    icon: ImageVector,
+    modifier: Modifier = Modifier,
+) {
     Surface(
         shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -219,13 +237,15 @@ fun FactRow(
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(UiTokens.spacing * 1.5f),
-            modifier = Modifier.heightIn(min = 48.dp)
-                .padding(
-                    start = UiTokens.spacing * 2,
-                    end = UiTokens.spacing * 1.5f,
-                    top = UiTokens.spacing * 1.25f,
-                    bottom = UiTokens.spacing * 1.25f,
-                ),
+            modifier =
+                Modifier
+                    .heightIn(min = 48.dp)
+                    .padding(
+                        start = UiTokens.spacing * 2,
+                        end = UiTokens.spacing * 1.5f,
+                        top = UiTokens.spacing * 1.25f,
+                        bottom = UiTokens.spacing * 1.25f,
+                    ),
         ) {
             Text(
                 label,

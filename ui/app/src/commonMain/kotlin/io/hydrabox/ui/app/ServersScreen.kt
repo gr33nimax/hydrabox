@@ -222,5 +222,4 @@ internal fun serverFlag(name: String): Pair<String, String>? {
     return if (rest.isEmpty()) null else name.substring(0, 4) to rest
 }
 
-private fun String.isFlagAt(index: Int): Boolean =
-    this[index] == '\uD83C' && this[index + 1] in '\uDDE6'..'\uDDFF'
+private fun String.isFlagAt(index: Int): Boolean = this[index] == '\uD83C' && this[index + 1] in '\uDDE6'..'\uDDFF'
