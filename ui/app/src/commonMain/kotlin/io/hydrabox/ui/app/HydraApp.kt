@@ -227,6 +227,7 @@ fun HydraApp(
                         coreVersion = coreVersion,
                         onOpenTerms = { navigation.open(Route.Document(privacy = false)) },
                         onOpenPrivacy = { navigation.open(Route.Document(privacy = true)) },
+                        onOpenLink = actions.onOpenLink,
                     )
                 }
             }

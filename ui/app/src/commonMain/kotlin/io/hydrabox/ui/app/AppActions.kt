@@ -65,6 +65,8 @@ data class AppActions(
     val onToggleApp: (String) -> Unit = {},
     val onLoadApps: () -> Unit = {},
     val onExportDiagnostics: () -> Unit = {},
+    /** Opens an address outside the app — the projects this build comes from. */
+    val onOpenLink: (String) -> Unit = {},
     val onClearJournal: () -> Unit = {},
     val onExportBackup: (String) -> Unit = {},
     val onImportBackup: (String) -> Unit = {},

@@ -108,6 +108,11 @@
     <string name="about_core">Core %1$s</string>
     <string name="about_terms">Terms of use</string>
     <string name="about_privacy">Privacy policy</string>
+    <string name="about_projects">Projects</string>
+    <string name="about_project_client">HydraBox</string>
+    <string name="about_project_server">Hydra Ultimate</string>
+    <string name="about_project_core">HydraCore</string>
+    <string name="about_signature">by gr33nimax with l&lt;3ve</string>
     <string name="diagnostics_title">Diagnostics</string>
     <string name="diagnostics_level">Log level</string>
     <string name="diagnostics_pprof">Core profiler</string>

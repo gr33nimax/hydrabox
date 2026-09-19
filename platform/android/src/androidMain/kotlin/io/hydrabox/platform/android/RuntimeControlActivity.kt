@@ -3,6 +3,7 @@ package io.hydrabox.platform.android
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.content.ServiceConnection
 import android.net.VpnService
 import android.os.Bundle
@@ -823,6 +824,7 @@ class RuntimeControlActivity : ComponentActivity() {
         AppActions(
             onConnect = ::prepareAndStart,
             onDisconnect = { send(RuntimeCommand.Stop) },
+            onOpenLink = ::openLink,
             onRetry = ::prepareAndStart,
             onGrantPermission = ::prepareAndStart,
             onAddSource = { name, source ->
@@ -1516,6 +1518,17 @@ class RuntimeControlActivity : ComponentActivity() {
     private fun failBackup(silent: Boolean = false) {
         pendingPassphrase = null
         if (!silent) notice = Notice.BACKUP_FAILED
+    }
+
+    /**
+     * An address that leaves the app — the projects this build comes from. A phone with nothing
+     * to open it says so, rather than looking like the press did nothing at all.
+     */
+    private fun openLink(url: String) {
+        val intent =
+            Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { startActivity(intent) }.onFailure { notice = Notice.OPERATION_FAILED }
     }
 
     private fun send(command: RuntimeCommand) {

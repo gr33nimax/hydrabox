@@ -16,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import io.hydrabox.core.projection.Appearance
 import io.hydrabox.core.projection.AppsMode
 import io.hydrabox.core.projection.Connection
@@ -255,13 +256,21 @@ fun DiagnosticsScreen(
     }
 }
 
-/** Version, the legal documents, and nothing that pretends to be a feature. */
+/** The projects this build comes from, as addresses a person can open. */
+private object Project {
+    const val CLIENT = "https://github.com/gr33nimax/hydrabox"
+    const val SERVER = "https://github.com/gr33nimax/HYDRA-ULTIMATE"
+    const val CORE = "https://github.com/gr33nimax/hydracore"
+}
+
+/** Version, the projects behind it, the legal documents, and nothing that pretends to be a feature. */
 @Composable
 fun AboutScreen(
     version: String,
     coreVersion: String,
     onOpenTerms: () -> Unit,
     onOpenPrivacy: () -> Unit,
+    onOpenLink: (String) -> Unit,
 ) {
     Column(
         verticalArrangement = Arrangement.spacedBy(UiTokens.spacing),
@@ -273,8 +282,33 @@ fun AboutScreen(
             ValueRow(stringResource(Res.string.about_terms), null, HydraIcons.Document, onOpenTerms)
             ValueRow(stringResource(Res.string.about_privacy), null, HydraIcons.Lock, onOpenPrivacy)
         }
+        // The address is shown the way it will be opened, without the scheme: a name alone would
+        // not tell anyone where the row leads, and a bare `https://` is noise on every row.
+        SectionGroup(title = stringResource(Res.string.about_projects)) {
+            AboutLink(stringResource(Res.string.about_project_client), Project.CLIENT, onOpenLink)
+            AboutLink(stringResource(Res.string.about_project_server), Project.SERVER, onOpenLink)
+            AboutLink(stringResource(Res.string.about_project_core), Project.CORE, onOpenLink)
+        }
+        Text(
+            stringResource(Res.string.about_signature),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(top = UiTokens.spacing),
+        )
     }
 }
+
+@Composable
+private fun AboutLink(
+    title: String,
+    url: String,
+    onOpenLink: (String) -> Unit,
+) = ValueRow(
+    title = title,
+    value = url.removePrefix("https://"),
+    onClick = { onOpenLink(url) },
+)
 
 /** Theme and language: two choices, each with a visible effect and nothing to explain. */
 @Composable
