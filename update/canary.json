@@ -1,11 +1,11 @@
 {
   "schema": 1,
   "channel": "canary",
-  "versionCode": 217,
-  "versionName": "2.0.0-canary.9",
-  "releaseTag": "2.0.0-canary.9",
-  "apkUrl": "https://github.com/gr33nimax/hydrabox/releases/download/2.0.0-canary.9/hydrabox-2.0.0-canary.9-arm64-v8a.apk",
-  "sha256": "a3713ebbd7b4d96e1ab2c3e9f8969e244ec10f8bda3d7b9295b67dc5925a7fee",
+  "versionCode": 218,
+  "versionName": "2.0.0-canary.10",
+  "releaseTag": "2.0.0-canary.10",
+  "apkUrl": "https://github.com/gr33nimax/hydrabox/releases/download/2.0.0-canary.10/hydrabox-2.0.0-canary.10-arm64-v8a.apk",
+  "sha256": "8b49acec327fff37837b3d114eda4610361c345befe8906e01f66382e1a7cb4c",
   "certificateSha256": "492A8A0FCBF0AA7CE26BEC615394E0C1EB263ED4313F4BF86ED4418D75159601",
   "keyId": "hydrabox-update-1"
 }
