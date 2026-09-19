@@ -126,7 +126,11 @@ fun serverSupportingLine(server: ServerRef?): String? {
     server ?: return null
     val protocol = server.type?.takeIf { !it.equals(server.displayName, ignoreCase = true) }?.uppercase()
     val kind = serverDetail(server) ?: protocol
-    return listOfNotNull(kind, latencyLabel(server)).joinToString(" · ").ifEmpty { null }
+    // Nothing is chosen yet, so the automatic choice has no figure of its own to show: the one
+    // that would be attached here belongs to a group nobody has been routed through, and
+    // "Не выбрано · 139 мс" reads as a contradiction.
+    val latency = if (server.auto && server.resolvedLabel == null) null else latencyLabel(server)
+    return listOfNotNull(kind, latency).joinToString(" · ").ifEmpty { null }
 }
 
 /**
