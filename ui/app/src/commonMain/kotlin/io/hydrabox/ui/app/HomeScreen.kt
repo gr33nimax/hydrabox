@@ -194,7 +194,7 @@ private fun Instrument(
         ConnectionControl(
             tone = connection.tone(),
             visualState = connection.visualState(),
-            enabled = connection.primaryAction != PrimaryAction.NONE,
+            enabled = apertureEnabled(connection),
             contentDescription = stringResource(connection.actionLabel()),
             stateDescription = connectionTitle(connection),
             onClick = { dispatchHomeAction(connection, source?.id, actions, onOpenServers) },
@@ -259,6 +259,9 @@ private fun Readings(
             label = stringResource(Res.string.home_row_route),
             value = server?.let { serverName(it) } ?: stringResource(Res.string.home_server_none),
             detail = serverSupportingLine(server),
+            // The rule the automatic choice follows is a sentence, and half a sentence is worse
+            // than none: this row takes the second line rather than an ellipsis.
+            detailMaxLines = 2,
             onClick = onOpenServers,
         )
         FactRow(
@@ -386,6 +389,20 @@ private fun SecondaryActionRow(
         }
     }
 }
+
+/**
+ * Whether the central control takes a press at all.
+ *
+ * While a start or a recovery is in flight the same control's own action is Cancel, so the press
+ * that asked for the tunnel would take it back if it arrived again a moment later — which is what
+ * a person tapping twice does. The aperture is closed for that window, and the cancel below it
+ * stays the only way out.
+ */
+internal fun apertureEnabled(connection: Connection): Boolean =
+    when (connection) {
+        is Connection.Connecting, is Connection.Reconnecting -> false
+        else -> connection.primaryAction != PrimaryAction.NONE
+    }
 
 internal fun dispatchHomeAction(
     connection: Connection,

@@ -34,14 +34,21 @@ enum class ProbeState {
 
 /**
  * One server as a person picks it. [auto] is the automatic choice by latency; its
- * [resolvedName] says which server the automatic choice is actually using, because
- * "auto" alone answers none of the three questions the home screen has to answer.
+ * [resolvedTag] says which outbound the automatic choice is actually using, and [resolvedLabel]
+ * is the catalogue's own name for that server — because "auto" alone answers none of the three
+ * questions the home screen has to answer, and a core's tag answers none of them either.
  */
 data class ServerRef(
     val id: String,
     val displayName: String,
     val auto: Boolean = false,
-    val resolvedName: String? = null,
+    /**
+     * The core's own name for the outbound carrying traffic. It is a key — measurements are
+     * recorded under it — never text to put in front of a person.
+     */
+    val resolvedTag: String? = null,
+    /** What the catalogue calls the server behind [resolvedTag], when it knows it. */
+    val resolvedLabel: String? = null,
     val latencyMillis: Int? = null,
     val sourceId: String = "",
     /** The protocol this server speaks, as the subscription described it. */

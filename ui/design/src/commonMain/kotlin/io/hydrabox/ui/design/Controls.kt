@@ -227,10 +227,13 @@ fun ServerRow(
     icon: ImageVector,
     onClick: () -> Unit,
     measuring: Boolean = false,
+    /** The flag the subscription put in front of the name, when it put one there. */
+    flag: String? = null,
 ) = HydraRow(
     title = name,
     supporting = detail,
     leading = icon,
+    leadingFlag = flag,
     tone = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
     onClick = onClick,
     titleMaxLines = 1,

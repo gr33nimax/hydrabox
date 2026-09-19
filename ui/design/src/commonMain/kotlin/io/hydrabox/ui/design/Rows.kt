@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -65,6 +66,12 @@ fun HydraRow(
     title: String,
     supporting: String? = null,
     leading: ImageVector? = null,
+    /**
+     * A subscription's own mark for the row — a country flag it put in front of the name. It takes
+     * the leading slot the generic glyph would have had, because the glyph says which kind of
+     * thing this is and the flag says which one.
+     */
+    leadingFlag: String? = null,
     tone: Color = MaterialTheme.colorScheme.surfaceContainerLow,
     onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -84,8 +91,17 @@ fun HydraRow(
             modifier = Modifier.heightIn(min = 48.dp)
                 .padding(horizontal = UiTokens.spacing * 2, vertical = UiTokens.spacing * 1.25f),
         ) {
-            leading?.let {
-                Icon(it, contentDescription = null, modifier = Modifier.size(24.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            when {
+                leadingFlag != null ->
+                    Text(
+                        leadingFlag,
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.width(24.dp),
+                        textAlign = TextAlign.Center,
+                    )
+
+                leading != null ->
+                    Icon(leading, contentDescription = null, modifier = Modifier.size(24.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
@@ -183,6 +199,13 @@ fun FactRow(
     value: String,
     onClick: () -> Unit,
     detail: String? = null,
+    /**
+     * How many lines the supporting text may take. One is the default because these rows are a
+     * column of readings and a wrapped line moves every row under it; a row whose whole point is
+     * the sentence — the route the tunnel is taking — asks for the second line instead of losing
+     * the end of the sentence to an ellipsis.
+     */
+    detailMaxLines: Int = 1,
     accent: Color? = null,
     trailingIcon: ImageVector = HydraIcons.Chevron,
     modifier: Modifier = Modifier,
@@ -228,7 +251,7 @@ fun FactRow(
                         it,
                         style = UiTokens.figures(MaterialTheme.typography.labelMedium),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
+                        maxLines = detailMaxLines,
                         overflow = TextOverflow.Ellipsis,
                         textAlign = TextAlign.End,
                     )

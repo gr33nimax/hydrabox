@@ -182,19 +182,45 @@ class ScreenProjectionTest {
 
     @Test
     fun `automatic selection names the server it landed on`() {
+        // The core names its own route with a tag of its own making, and that tag is a key: the
+        // row a person reads has to be the catalogue's label for it, not the tag.
+        val catalogue =
+            ServerGroup(
+                "s1",
+                "Source",
+                listOf(ServerRef("anytls-gr33nimax-1", "🇫🇮 AnyTLS", sourceId = "s1", type = "anytls")),
+            )
         val state =
             ScreenProjection.project(
                 model(
                     RuntimeState.RUNNING,
-                    selections = listOf(OutboundSelection("auto", "tokyo")),
-                    latencies = listOf(OutboundLatency("tokyo", 42, "ok")),
+                    servers = listOf(catalogue),
+                    selections = listOf(OutboundSelection("auto", "anytls-gr33nimax-1")),
+                    latencies = listOf(OutboundLatency("anytls-gr33nimax-1", 42, "ok")),
                     selected = "auto",
                 ),
             )
         val connected = state.connection as Connection.Connected
-        assertEquals("tokyo", connected.server?.resolvedName)
+        assertEquals("anytls-gr33nimax-1", connected.server?.resolvedTag)
+        assertEquals("🇫🇮 AnyTLS", connected.server?.resolvedLabel)
+        // The figure is still found by the core's own tag: the label is for reading, not for lookup.
         assertEquals(42, connected.server?.latencyMillis)
         assertEquals(ProbeState.ANSWERING, connected.server?.probe)
+    }
+
+    @Test
+    fun `an automatic choice the catalogue cannot name is not shown as its tag`() {
+        val state =
+            ScreenProjection.project(
+                model(
+                    RuntimeState.RUNNING,
+                    selections = listOf(OutboundSelection("auto", "hysteria2-gr33nimax-1")),
+                    selected = "auto",
+                ),
+            )
+        val connected = state.connection as Connection.Connected
+        assertEquals("hysteria2-gr33nimax-1", connected.server?.resolvedTag)
+        assertNull(connected.server?.resolvedLabel, "a tag nobody can read is not a name to put in front of a person")
     }
 
     @Test

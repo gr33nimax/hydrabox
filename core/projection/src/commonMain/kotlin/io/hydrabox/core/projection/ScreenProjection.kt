@@ -74,7 +74,7 @@ object ScreenProjection {
                 },
             autoServer =
                 model.autoServer
-                    ?.copy(resolvedName = resolvedAuto(model))
+                    ?.resolveAuto(model)
                     ?.withLatency(latencies, edgeLatencies, nowMillis)
                     ?.copy(measuring = model.autoServer.id in measuringTags),
             selectedServerId = model.selectedServerId,
@@ -234,7 +234,7 @@ private fun selectedServer(
     edgeLatencies: Map<String, io.hydrabox.core.contract.OutboundLatency>,
     nowMillis: Long?,
 ): ServerRef? {
-    val auto = model.autoServer?.copy(resolvedName = resolvedAuto(model))
+    val auto = model.autoServer?.resolveAuto(model)
     val chosen = model.selectedServerId ?: return auto?.withLatency(latencies, edgeLatencies, nowMillis)
     if (auto != null && chosen == auto.id) return auto.withLatency(latencies, edgeLatencies, nowMillis)
     return model.servers
@@ -262,6 +262,22 @@ private fun resolvedAuto(model: AppReadModel): String? {
 }
 
 /**
+ * The automatic choice, told which server it landed on. The tag is kept as the key the figure is
+ * recorded under, and the label is what a person reads: an outbound named `hysteria2-gr33nimax-1`
+ * is the core's own bookkeeping, not a server anybody chose.
+ */
+private fun ServerRef.resolveAuto(model: AppReadModel): ServerRef {
+    val tag = resolvedAuto(model) ?: return this
+    val label =
+        model.servers
+            .asSequence()
+            .flatMap { it.servers.asSequence() }
+            .firstOrNull { it.id == tag }
+            ?.displayName
+    return copy(resolvedTag = tag, resolvedLabel = label)
+}
+
+/**
  * The delay the core measured, and whether it got an answer at all.
  *
  * The core reports both a figure and a verdict; only the figure was read. A probe that timed
@@ -277,7 +293,7 @@ private fun ServerRef.withLatency(
     edgeLatencies: Map<String, io.hydrabox.core.contract.OutboundLatency>,
     nowMillis: Long?,
 ): ServerRef {
-    val tag = resolvedName ?: id
+    val tag = resolvedTag ?: id
     if (type.equals("call", ignoreCase = true)) {
         edgeLatencies[tag]?.let { return withEdgeLatency(it, nowMillis) }
     }

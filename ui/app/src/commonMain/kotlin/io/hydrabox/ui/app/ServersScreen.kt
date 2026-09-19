@@ -195,13 +195,32 @@ private fun ServerEntry(
     server: ServerRef,
     selectedId: String?,
     actions: AppActions,
-) = ServerRow(
-    name = server.displayName,
-    // What it is and what the last measurement said, under the name: a figure long enough to
-    // need its own line used to sit beside the name and could hide it entirely.
-    detail = serverSupportingLine(server),
-    selected = server.id == selectedId,
-    icon = HydraIcons.Server,
-    onClick = { actions.onSelectServer(server.id) },
-    measuring = server.measuring,
-)
+) {
+    val mark = serverFlag(server.displayName)
+    ServerRow(
+        name = mark?.second ?: server.displayName,
+        // What it is and what the last measurement said, under the name: a figure long enough to
+        // need its own line used to sit beside the name and could hide it entirely.
+        detail = serverSupportingLine(server),
+        selected = server.id == selectedId,
+        icon = HydraIcons.Server,
+        flag = mark?.first,
+        onClick = { actions.onSelectServer(server.id) },
+        measuring = server.measuring,
+    )
+}
+
+/**
+ * The subscription's own mark for a server, split off its name: a leading country flag belongs in
+ * the row's leading slot, where a generic glyph was saying nothing about which server this is.
+ * Only a real pair of regional indicators counts — and only when a name follows it, because a flag
+ * alone is not a row.
+ */
+internal fun serverFlag(name: String): Pair<String, String>? {
+    if (name.length < 5 || !name.isFlagAt(0)) return null
+    val rest = name.substring(4).trimStart()
+    return if (rest.isEmpty()) null else name.substring(0, 4) to rest
+}
+
+private fun String.isFlagAt(index: Int): Boolean =
+    this[index] == '\uD83C' && this[index + 1] in '\uDDE6'..'\uDDFF'

@@ -97,9 +97,11 @@ fun serverName(server: ServerRef): String = if (server.auto) stringResource(Res.
 
 @Composable
 fun serverDetail(server: ServerRef): String? {
-    val resolved = server.resolvedName
+    // Held in a local: the projection lives in another module, and a property there is not
+    // something the compiler will smart-cast.
+    val label = server.resolvedLabel
     return when {
-        server.auto && resolved != null -> stringResource(Res.string.server_auto_now, resolved)
+        server.auto && label != null -> stringResource(Res.string.server_auto_now, label)
         server.auto -> stringResource(Res.string.server_auto_detail)
         else -> null
     }
