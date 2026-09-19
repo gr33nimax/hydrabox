@@ -13,7 +13,6 @@
     <string name="action_add">Add</string>
     <string name="action_refresh">Refresh</string>
     <string name="action_remove">Remove</string>
-    <string name="action_rename">Rename</string>
     <string name="action_continue">Continue</string>
     <string name="action_accept">Accept and continue</string>
     <string name="action_choose_server">Choose another server</string>
@@ -62,10 +61,9 @@
     <string name="sources_title">Subscriptions</string>
     <string name="sources_add_title">New subscription</string>
     <string name="sources_add_field">Subscription link</string>
-    <string name="sources_add_hint">The link your VPN provider gave you. A configuration file also works.</string>
+    <string name="sources_add_hint">The link your VPN provider gave you.</string>
     <string name="sources_add_name">Name (optional)</string>
     <string name="sources_servers_count">%1$d servers</string>
-    <string name="sources_encrypted">Encrypted</string>
     <string name="source_problem_expired">Expired</string>
     <string name="source_problem_unreachable">Not answering</string>
     <string name="source_problem_empty">No servers</string>
@@ -74,7 +72,8 @@
     <string name="sources_remove_body">Its servers disappear from the list. If the tunnel is running through one of them, it stops.</string>
     <string name="sources_empty_title">No subscriptions</string>
     <string name="sources_empty_body">A subscription is a link from your VPN provider. Add one to get servers.</string>
-    <string name="sources_rename_title">Subscription name</string>
+    <string name="sources_edit_title">Edit subscription</string>
+    <string name="sources_edit_link_hint">Leave it as it is to keep the same address.</string>
 
     <string name="settings_connection">Connection</string>
     <string name="settings_notification">Ongoing notification</string>
@@ -227,7 +226,6 @@ Logs are stored locally until the user exports or sends them. Review exported fi
     <string name="settings_reset_body">Every setting returns to its default. Subscriptions and the accepted terms stay.</string>
     <string name="notice_backup_failed">Could not read that backup. Check the passphrase and the file</string>
     <string name="settings_saved_hint">Saved</string>
-    <string name="sources_add_file">Open a file</string>
     <string name="notice_source_unreachable">The subscription server did not answer</string>
     <string name="notice_source_rejected">The subscription server refused the request</string>
     <string name="notice_source_not_a_subscription">That address returned a web page, not a subscription</string>
@@ -275,6 +273,7 @@ Logs are stored locally until the user exports or sends them. Review exported fi
     <string name="update_checking">Checking…</string>
     <string name="update_none">No updates</string>
     <string name="update_install">Install %1$s</string>
+    <string name="update_download">Download %1$s</string>
     <string name="update_downloading">Downloading %1$s</string>
     <!--
       Each reason is named for what a person can do about it: an unreachable list is the network,
@@ -328,11 +327,6 @@ Logs are stored locally until the user exports or sends them. Review exported fi
     <string name="sources_refresh_all">Update all</string>
     <string name="sources_updated">Updated %1$s</string>
     <string name="servers_stale_list">The list from %1$s has not been updated</string>
-    <string name="appearance_colour">Colour</string>
-    <string name="colour_brand">HydraBox</string>
-    <string name="colour_brand_hint">The app’s own palette</string>
-    <string name="colour_system">System</string>
-    <string name="colour_system_hint">Follows the wallpaper on Android 12 and later</string>
     <string name="home_exit_checking">Checking address…</string>
     <string name="sources_copy_link">Copy the link</string>
     <string name="servers_order_source">As listed</string>
@@ -362,6 +356,7 @@ Logs are stored locally until the user exports or sends them. Review exported fi
     <string name="trouble_short_permission">Permission needed</string>
     <string name="trouble_short_unknown">Connection dropped</string>
     <string name="latency_silent">no answer</string>
+    <string name="latency_checking">checking…</string>
     <string name="latency_s">%1$s s</string>
     <string name="latency_stale">%1$s · stale</string>
     <string name="latency_rtt">RTT %1$d ms</string>

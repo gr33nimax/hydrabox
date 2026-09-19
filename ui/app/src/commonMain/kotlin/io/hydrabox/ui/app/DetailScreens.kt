@@ -301,20 +301,6 @@ fun AppearanceScreen(
                 )
             }
         }
-        SectionGroup(stringResource(Res.string.appearance_colour)) {
-            OptionRow(
-                title = stringResource(Res.string.colour_brand),
-                supporting = stringResource(Res.string.colour_brand_hint),
-                selected = settings?.dynamicColour != true,
-                onClick = { actions.onSetDynamicColour(false) },
-            )
-            OptionRow(
-                title = stringResource(Res.string.colour_system),
-                supporting = stringResource(Res.string.colour_system_hint),
-                selected = settings?.dynamicColour == true,
-                onClick = { actions.onSetDynamicColour(true) },
-            )
-        }
         if (settings?.languageChoice != true) return@Column
         SectionGroup(stringResource(Res.string.appearance_language)) {
             listOf(

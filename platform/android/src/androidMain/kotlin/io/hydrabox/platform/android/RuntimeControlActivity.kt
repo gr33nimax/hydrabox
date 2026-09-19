@@ -181,14 +181,6 @@ class RuntimeControlActivity : ComponentActivity() {
             readBackup(uri)
         }
 
-    private val sourceFile =
-        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            uri ?: return@registerForActivityResult
-            background(Notice.SOURCE_ADDED) {
-                store.addSubscription("", readLimited(uri, MAX_SOURCE_BYTES).decodeToString())
-            }
-        }
-
     /** Whether the screens are on screen. The snapshot stream is worth paying for only then. */
     private var started by mutableStateOf(false)
 
@@ -836,11 +828,13 @@ class RuntimeControlActivity : ComponentActivity() {
             onAddSource = { name, source ->
                 background(Notice.SOURCE_ADDED) { store.addSubscription(name, source) }
             },
-            onAddSourceFromFile = {
-                runCatching { sourceFile.launch(arrayOf("*/*")) }.onFailure { notice = Notice.OPERATION_FAILED }
-            },
             onRefreshSource = { id -> background(Notice.SOURCE_UPDATED) { store.refreshSubscription(id) } },
-            onRenameSource = { id, name -> background(null) { store.renameSubscription(id, name) } },
+            onEditSource = { id, name, link ->
+                // The move fetches the new address before it writes anything, so the busy state
+                // and the notice are the only feedback a person needs: a link that fails leaves
+                // the stored subscription exactly as it was.
+                background(Notice.SOURCE_UPDATED) { store.editSubscription(id, name, link) }
+            },
             onRemoveSource = { id -> background(Notice.SOURCE_REMOVED) { store.removeSubscription(id) } },
             onRefreshUsage = { id ->
                 background(Notice.SOURCE_UPDATED) { store.refreshUsage(id) }
@@ -1071,17 +1065,14 @@ class RuntimeControlActivity : ComponentActivity() {
                 refresh()
                 io.execute {
                     val result = runCatching { UpdateClient.check(channel) }.getOrElse { UpdateCheck.Unreachable }
-                    // A release that was found is Android's download from here on: the shade shows
-                    // its progress and its finished notification is what installs it. The only
-                    // question left for this screen is whether the file is already here.
+                    // A check is not a fetch. The verified release is reported, and what is asked
+                    // here is only what is already on the device: a file fetched in an earlier
+                    // visit can be installed at once, and one that is not here waits for its own
+                    // press. Downloading on the check's own initiative took the choice away.
                     val offered = (result as? UpdateCheck.Decided)?.decision as? UpdateDecision.Available
-                    val downloading =
+                    val state =
                         offered?.let { decision ->
-                            val state = UpdateClient.apkState(this@RuntimeControlActivity, decision.manifest)
-                            val started =
-                                state is ApkState.Missing &&
-                                    UpdateClient.startDownload(this@RuntimeControlActivity, decision.manifest) != null
-                            state is ApkState.Downloading || started
+                            UpdateClient.apkState(this@RuntimeControlActivity, decision.manifest)
                         }
                     main.post {
                         when (result) {
@@ -1097,7 +1088,8 @@ class RuntimeControlActivity : ComponentActivity() {
                                             UpdateSummary(
                                                 availableVersion = decision.manifest.versionName,
                                                 checked = true,
-                                                downloading = downloading == true,
+                                                downloading = state is ApkState.Downloading,
+                                                ready = state is ApkState.Ready,
                                             )
                                     }
 
@@ -1111,6 +1103,26 @@ class RuntimeControlActivity : ComponentActivity() {
                                 }
                             }
                         }
+                        refresh()
+                    }
+                }
+            },
+            onDownloadUpdate = {
+                val manifest = pendingUpdate ?: return@AppActions
+                updateState = updateState.copy(downloading = true, installFault = null)
+                // The same read model as the check: nothing reaches the screen until it is rebuilt.
+                refresh()
+                io.execute {
+                    val started = UpdateClient.startDownload(this@RuntimeControlActivity, manifest) != null
+                    main.post {
+                        // The shade carries the progress from here; the row says so and waits.
+                        // A download that could not start leaves the offer standing, so it can
+                        // be asked for again instead of disappearing.
+                        updateState =
+                            updateState.copy(
+                                downloading = started,
+                                availableVersion = manifest.versionName,
+                            )
                         refresh()
                     }
                 }
@@ -1166,9 +1178,6 @@ class RuntimeControlActivity : ComponentActivity() {
                         ),
                     )
                 }
-            },
-            onSetDynamicColour = { dynamic ->
-                background(null) { store.saveSettings(store.settings().copy(dynamicColour = dynamic)) }
             },
             onSetLanguage = ::applyLanguage,
             onSetProxyDns = { value -> reconnectAware { store.saveSettings(store.settings().copy(dnsProxyResolver = value)) } },
@@ -1566,11 +1575,10 @@ class RuntimeControlActivity : ComponentActivity() {
         private const val BLANK = '\u0000'
 
         /**
-         * How large a chosen file may be. A subscription document is a list of servers and a
-         * backup carries those documents plus the settings; neither is measured in gigabytes,
-         * and the picker's stream belongs to whichever application answered it.
+         * How large a chosen file may be: a backup carries the documents and the settings,
+         * which is not measured in gigabytes, and the picker's stream belongs to whichever
+         * application answered it.
          */
-        private const val MAX_SOURCE_BYTES = 8 * 1024 * 1024
         private const val MAX_BACKUP_BYTES = 32 * 1024 * 1024
     }
 }

@@ -104,8 +104,7 @@ fun ServersScreen(
                     SectionGroup {
                         ServerRow(
                             name = serverName(auto),
-                            detail = serverDetail(auto),
-                            latency = latencyLabel(auto),
+                            detail = serverSupportingLine(auto),
                             selected = state.selectedServerId == auto.id || state.selectedServerId == null,
                             icon = HydraIcons.Bolt,
                             onClick = { actions.onSelectServer(auto.id) },
@@ -198,8 +197,9 @@ private fun ServerEntry(
     actions: AppActions,
 ) = ServerRow(
     name = server.displayName,
-    detail = null,
-    latency = latencyLabel(server),
+    // What it is and what the last measurement said, under the name: a figure long enough to
+    // need its own line used to sit beside the name and could hide it entirely.
+    detail = serverSupportingLine(server),
     selected = server.id == selectedId,
     icon = HydraIcons.Server,
     onClick = { actions.onSelectServer(server.id) },

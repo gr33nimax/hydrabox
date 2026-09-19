@@ -15,8 +15,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -31,8 +31,8 @@ import io.hydrabox.core.projection.SubscriptionSummary
 import io.hydrabox.core.projection.Trouble
 import io.hydrabox.core.projection.primaryAction
 import io.hydrabox.core.projection.server
-import io.hydrabox.ui.app.resources.Res
 import io.hydrabox.ui.app.resources.*
+import io.hydrabox.ui.app.resources.Res
 import io.hydrabox.ui.design.ConnectionControl
 import io.hydrabox.ui.design.ConnectionVisualState
 import io.hydrabox.ui.design.ControlSignal
@@ -41,8 +41,8 @@ import io.hydrabox.ui.design.EmptyState
 import io.hydrabox.ui.design.FactRow
 import io.hydrabox.ui.design.HydraIcons
 import io.hydrabox.ui.design.RefreshButton
-import io.hydrabox.ui.design.SectionGroup
 import io.hydrabox.ui.design.SecondaryAction
+import io.hydrabox.ui.design.SectionGroup
 import io.hydrabox.ui.design.TonalAction
 import io.hydrabox.ui.design.UiTokens
 import org.jetbrains.compose.resources.stringResource
@@ -73,8 +73,11 @@ fun HomeScreen(
 ) {
     if (state.connection == Connection.NeedsSubscription || state.connection == Connection.NeedsServers) {
         Column(
-            modifier = Modifier.fillMaxWidth().heightIn(min = height)
-                .padding(horizontal = UiTokens.spacing * 2, vertical = UiTokens.spacing * 2),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = height)
+                    .padding(horizontal = UiTokens.spacing * 2, vertical = UiTokens.spacing * 2),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(UiTokens.spacing * 2, Alignment.CenterVertically),
         ) {
@@ -100,8 +103,11 @@ fun HomeScreen(
     }
     val source = state.sources.firstOrNull()
     Column(
-        modifier = Modifier.fillMaxWidth().heightIn(min = height)
-            .padding(horizontal = UiTokens.spacing * 2, vertical = UiTokens.spacing * 1.5f),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = height)
+                .padding(horizontal = UiTokens.spacing * 2, vertical = UiTokens.spacing * 1.5f),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
@@ -121,8 +127,10 @@ fun HomeScreen(
  * height, so the proportion survives a short screen and a tablet alike. It carries the state
  * words inside it now, which is why it is allowed more of the width than a bare disc was.
  */
-private fun controlSize(width: Dp, height: Dp): Dp =
-    minOf(width * 0.68f, height * 0.36f).coerceIn(168.dp, 268.dp)
+private fun controlSize(
+    width: Dp,
+    height: Dp,
+): Dp = minOf(width * 0.68f, height * 0.36f).coerceIn(168.dp, 268.dp)
 
 /**
  * The plan, on the top line, because it is the only thing on this screen that runs out. The
@@ -193,11 +201,12 @@ private fun Instrument(
             size = size,
             // The ring is fed the measurements rather than a decorative phase: rates for the
             // speed it turns at, the quota for the arc on its outer track.
-            signal = ControlSignal(
-                downRate = traffic?.downlinkRate ?: 0L,
-                upRate = traffic?.uplinkRate ?: 0L,
-                quota = source?.quota,
-            ),
+            signal =
+                ControlSignal(
+                    downRate = traffic?.downlinkRate ?: 0L,
+                    upRate = traffic?.uplinkRate ?: 0L,
+                    quota = source?.quota,
+                ),
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
         ) {
             Text(
@@ -249,15 +258,16 @@ private fun Readings(
         FactRow(
             label = stringResource(Res.string.home_row_route),
             value = server?.let { serverName(it) } ?: stringResource(Res.string.home_server_none),
-            detail = routeDetail(server),
+            detail = serverSupportingLine(server),
             onClick = onOpenServers,
         )
         FactRow(
             label = stringResource(Res.string.home_row_exit),
             value = exitValue(state),
-            detail = state.exit.countryCode?.let { code ->
-                listOfNotNull(state.exit.flag, code).joinToString(" ")
-            },
+            detail =
+                state.exit.countryCode?.let { code ->
+                    listOfNotNull(state.exit.flag, code).joinToString(" ")
+                },
             trailingIcon = HydraIcons.Refresh,
             // Asking again is the only thing this row can do that the screen cannot: an address
             // that was true a network ago is worth re-checking.
@@ -284,18 +294,26 @@ private fun Readings(
 private fun exitValue(state: ScreenState): String {
     val connected = state.connection is Connection.Connected
     return when {
-        connected && state.exit.checking && state.exit.address == null ->
+        connected && state.exit.checking && state.exit.address == null -> {
             stringResource(Res.string.home_exit_checking)
-        state.exit.address != null && connected -> state.exit.address!!
-        else -> stringResource(Res.string.home_exit_unknown)
+        }
+
+        state.exit.address != null && connected -> {
+            state.exit.address!!
+        }
+
+        else -> {
+            stringResource(Res.string.home_exit_unknown)
+        }
     }
 }
 
 /** Which of the two ways of carrying the traffic is in force: a system tunnel, or a port. */
 @Composable
-private fun modeValue(settings: SettingsSummary?): String = stringResource(
-    if (settings?.proxyOnly == true) Res.string.home_mode_proxy else Res.string.home_mode_vpn,
-)
+private fun modeValue(settings: SettingsSummary?): String =
+    stringResource(
+        if (settings?.proxyOnly == true) Res.string.home_mode_proxy else Res.string.home_mode_vpn,
+    )
 
 /**
  * What the mode implies, and only when it is not the default. A local proxy is useless without
@@ -313,47 +331,59 @@ private fun modeDetail(settings: SettingsSummary?): String? {
     return outside.takeIf { it > 0 }?.let { stringResource(Res.string.home_mode_outside, it) }
 }
 
-/**
- * The protocol and the delay, unless the protocol is already what the server is called: a
- * subscription that names an outbound "VLESS" made the row read "VLESS" and then "vless".
- */
-@Composable
-private fun routeDetail(server: ServerRef?): String? {
-    server ?: return null
-    serverDetail(server)?.let { return it }
-    val protocol = server.type?.takeIf { !it.equals(server.displayName, ignoreCase = true) }?.uppercase()
-    return listOfNotNull(protocol, latencyLabel(server)).joinToString(" · ").ifEmpty { null }
-}
-
 /** The state in as few words as fit inside the aperture. The hint under it says what to do. */
 @Composable
-private fun shortState(connection: Connection): String = when (connection) {
-    is Connection.Connected -> stringResource(Res.string.state_connected)
-    is Connection.Reconnecting -> stringResource(Res.string.state_short_reconnecting)
-    is Connection.Stopped -> stringResource(
-        when (connection.cause) {
-            Trouble.NO_INTERNET -> Res.string.trouble_short_no_internet
-            Trouble.SERVER_UNREACHABLE -> Res.string.trouble_short_server_unreachable
-            Trouble.SUBSCRIPTION_UNAVAILABLE -> Res.string.trouble_short_subscription
-            Trouble.CONFIG_REJECTED -> Res.string.trouble_short_config
-            Trouble.PERMISSION_REQUIRED -> Res.string.trouble_short_permission
-            Trouble.UNKNOWN -> Res.string.trouble_short_unknown
-        },
-    )
-    else -> connectionTitle(connection)
-}
+private fun shortState(connection: Connection): String =
+    when (connection) {
+        is Connection.Connected -> {
+            stringResource(Res.string.state_connected)
+        }
+
+        is Connection.Reconnecting -> {
+            stringResource(Res.string.state_short_reconnecting)
+        }
+
+        is Connection.Stopped -> {
+            stringResource(
+                when (connection.cause) {
+                    Trouble.NO_INTERNET -> Res.string.trouble_short_no_internet
+                    Trouble.SERVER_UNREACHABLE -> Res.string.trouble_short_server_unreachable
+                    Trouble.SUBSCRIPTION_UNAVAILABLE -> Res.string.trouble_short_subscription
+                    Trouble.CONFIG_REJECTED -> Res.string.trouble_short_config
+                    Trouble.PERMISSION_REQUIRED -> Res.string.trouble_short_permission
+                    Trouble.UNKNOWN -> Res.string.trouble_short_unknown
+                },
+            )
+        }
+
+        else -> {
+            connectionTitle(connection)
+        }
+    }
 
 /** The second action, when a state has one. Never two primary buttons on one screen. */
 @Composable
-private fun SecondaryActionRow(connection: Connection, actions: AppActions, onOpenServers: () -> Unit) {
+private fun SecondaryActionRow(
+    connection: Connection,
+    actions: AppActions,
+    onOpenServers: () -> Unit,
+) {
     when {
-        connection is Connection.Stopped && connection.cause == Trouble.PERMISSION_REQUIRED ->
+        connection is Connection.Stopped && connection.cause == Trouble.PERMISSION_REQUIRED -> {
             TonalAction(stringResource(Res.string.action_grant_permission), onClick = actions.onGrantPermission)
-        connection is Connection.Stopped && connection.primaryAction == PrimaryAction.CHOOSE_SERVER ->
+        }
+
+        connection is Connection.Stopped && connection.primaryAction == PrimaryAction.CHOOSE_SERVER -> {
             TonalAction(stringResource(Res.string.action_choose_server), onClick = onOpenServers)
-        connection is Connection.Connecting || connection is Connection.Reconnecting ->
+        }
+
+        connection is Connection.Connecting || connection is Connection.Reconnecting -> {
             SecondaryAction(stringResource(Res.string.action_cancel), onClick = actions.onDisconnect)
-        else -> Unit
+        }
+
+        else -> {
+            Unit
+        }
     }
 }
 
@@ -372,26 +402,29 @@ internal fun dispatchHomeAction(
     }
 }
 
-private fun Connection.actionLabel() = when (primaryAction) {
-    PrimaryAction.CONNECT, PrimaryAction.RETRY -> Res.string.control_connect
-    PrimaryAction.DISCONNECT -> Res.string.control_disconnect
-    PrimaryAction.CANCEL -> Res.string.action_cancel
-    PrimaryAction.CHOOSE_SERVER -> Res.string.action_choose_server
-    PrimaryAction.REFRESH_SOURCE -> Res.string.action_refresh_subscription
-    PrimaryAction.ADD_SUBSCRIPTION, PrimaryAction.NONE -> Res.string.control_working
-}
+private fun Connection.actionLabel() =
+    when (primaryAction) {
+        PrimaryAction.CONNECT, PrimaryAction.RETRY -> Res.string.control_connect
+        PrimaryAction.DISCONNECT -> Res.string.control_disconnect
+        PrimaryAction.CANCEL -> Res.string.action_cancel
+        PrimaryAction.CHOOSE_SERVER -> Res.string.action_choose_server
+        PrimaryAction.REFRESH_SOURCE -> Res.string.action_refresh_subscription
+        PrimaryAction.ADD_SUBSCRIPTION, PrimaryAction.NONE -> Res.string.control_working
+    }
 
-private fun Connection.tone(): ControlTone = when (this) {
-    is Connection.Connected -> ControlTone.ACTIVE
-    is Connection.Connecting, is Connection.Reconnecting, Connection.Disconnecting -> ControlTone.BUSY
-    is Connection.Stopped -> ControlTone.TROUBLE
-    else -> ControlTone.IDLE
-}
+private fun Connection.tone(): ControlTone =
+    when (this) {
+        is Connection.Connected -> ControlTone.ACTIVE
+        is Connection.Connecting, is Connection.Reconnecting, Connection.Disconnecting -> ControlTone.BUSY
+        is Connection.Stopped -> ControlTone.TROUBLE
+        else -> ControlTone.IDLE
+    }
 
-private fun Connection.visualState(): ConnectionVisualState = when (this) {
-    is Connection.Connected -> ConnectionVisualState.CONNECTED
-    is Connection.Connecting -> ConnectionVisualState.CONNECTING
-    is Connection.Reconnecting -> ConnectionVisualState.RECONNECTING
-    Connection.Disconnecting -> ConnectionVisualState.DISCONNECTING
-    else -> ConnectionVisualState.DISCONNECTED
-}
+private fun Connection.visualState(): ConnectionVisualState =
+    when (this) {
+        is Connection.Connected -> ConnectionVisualState.CONNECTED
+        is Connection.Connecting -> ConnectionVisualState.CONNECTING
+        is Connection.Reconnecting -> ConnectionVisualState.RECONNECTING
+        Connection.Disconnecting -> ConnectionVisualState.DISCONNECTING
+        else -> ConnectionVisualState.DISCONNECTED
+    }

@@ -756,10 +756,6 @@ class HydraVpnService : VpnService() {
         val targets = store.serverGroups().flatMap { it.servers }
         if (targets.isEmpty()) return
         ensureLibboxSetup()
-        // One budget for the whole pass, not one per session: the sessions run back to back on
-        // the runtime lifecycle thread, so an unbounded pass kept start and stop queued behind
-        // it for as long as the server list was long.
-        val deadline = SystemClock.elapsedRealtime() + settings.urlTestTimeoutSeconds * 3_000L
         // The edge questions of this sweep belong to a runtime that is not there: their
         // answers travel with generation zero, like every other result of this pass.
         val sweep =
@@ -775,7 +771,9 @@ class HydraVpnService : VpnService() {
             networkStillCurrent = { sweep.stillCurrent(monitor) },
             measureEdge = { tag -> measureTurnEdge(tag, settings, sweep) },
             measureHttp = { tag -> measureHttpSession(tag, settings, epoch) },
-            onProgress = { tag -> runtime.dispatch(RuntimeInput.SweepProgress(setOf(tag))) },
+            // The rows being asked, as a set: every server the press named says so at once, and
+            // leaves the set the moment its own question closes. Nothing here is shared state.
+            onProgress = { tags -> runtime.dispatch(RuntimeInput.SweepProgress(tags)) },
             publishEdge = { runtime.dispatch(RuntimeInput.Latencies(it, generation = 0)) },
             publishHttp = { results ->
                 // Generation zero: measured with no core behind it, so it belongs to no
@@ -785,10 +783,6 @@ class HydraVpnService : VpnService() {
             },
             reportStopped = { count ->
                 HydraLog.info(AREA, "the offline measurement stopped after $count servers")
-            },
-            withinDeadline = { SystemClock.elapsedRealtime() < deadline },
-            reportSkipped = { count ->
-                HydraLog.warn(AREA, "the offline measurement ran out of time with $count servers left")
             },
         ).run(targets.map { OfflineSweep.Target(it.id, it.type) })
         // The sweep is over, whatever it measured: a spinner must not outlive the question.

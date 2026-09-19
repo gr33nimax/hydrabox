@@ -7,11 +7,13 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * The offline pass's rules, without a core, the platform or a device: what it measures in
- * what order, when a handover or a stop ends it, and what may still be published after.
- * A handover used to end only the edge questions — the HTTP sessions kept building core
- * instances on the old network and their results were published as though one network had
- * measured them all.
+ * The offline pass's rules, without a core, the platform or a device: what it measures, what a
+ * failure is allowed to touch, and what may still be published after a handover or a stop.
+ *
+ * Isolation is the contract. A timeout, a refusal or a thrown exception belongs to the server it
+ * happened to: the servers around it keep their own figures, and no row is left spinning by
+ * another row's outcome. The pass used to share one budget and one verdict, so a single dead
+ * server ended the pass and the whole list read as unanswered.
  */
 class OfflineSweepTest {
     /** A pass wired to record everything it did, so a test can read the run back. */
@@ -19,11 +21,10 @@ class OfflineSweepTest {
         moved: () -> Boolean,
         measured: MutableList<String>,
         published: MutableList<String>,
+        progress: MutableList<Set<String>> = mutableListOf(),
+        stopped: MutableList<Int> = mutableListOf(),
         onEdge: (String) -> OutboundLatency? = { null },
         onHttp: (String) -> OutboundLatency = { OutboundLatency(it, 40, "available") },
-        progress: MutableList<String> = mutableListOf(),
-        withinDeadline: () -> Boolean = { true },
-        skipped: MutableList<Int> = mutableListOf(),
     ) = OfflineSweep(
         isCancelled = moved,
         networkStillCurrent = { !moved() },
@@ -37,64 +38,104 @@ class OfflineSweepTest {
         },
         publishEdge = { answers -> published += "edge:" + answers.joinToString(",") { it.tag } },
         publishHttp = { answers -> published += "http:" + answers.joinToString(",") { it.tag } },
-        onProgress = { tag -> progress += tag },
-        withinDeadline = withinDeadline,
-        reportSkipped = { count -> skipped += count },
+        onProgress = { tags -> progress += tags },
+        reportStopped = { count -> stopped += count },
     )
 
-    @Test fun `a pass that runs out of budget stops and says how many it left`() {
+    @Test fun `every server the press asked about is named before the first question`() {
+        val progress = mutableListOf<Set<String>>()
+        pass(
+            moved = { false },
+            measured = mutableListOf(),
+            published = mutableListOf(),
+            progress = progress,
+        ).run(
+            listOf(
+                OfflineSweep.Target("amsterdam", "vless"),
+                OfflineSweep.Target("vk", "call"),
+                OfflineSweep.Target("tokyo", "vless"),
+            ),
+        )
+        // A press names the whole list at once: a row spins while its own question is open
+        // instead of holding a figure nobody has confirmed for it yet.
+        assertEquals(setOf("amsterdam", "vk", "tokyo"), progress.first())
+        assertTrue(progress.last().isEmpty(), "a finished pass left a row named as measuring")
+    }
+
+    @Test fun `an answer closes only its own row whatever the server next to it did`() {
         val measured = mutableListOf<String>()
         val published = mutableListOf<String>()
-        val skipped = mutableListOf<Int>()
-        var budgets = 0
+        val progress = mutableListOf<Set<String>>()
         pass(
             moved = { false },
             measured = measured,
             published = published,
-            withinDeadline = { budgets++ < 1 },
-            skipped = skipped,
-        ).run(
-            listOf(
-                OfflineSweep.Target("amsterdam", "vless"),
-                OfflineSweep.Target("tokyo", "vless"),
-                OfflineSweep.Target("osaka", "vless"),
-            ),
-        )
-        // One session runs inside the budget; the two it does not reach are reported, not dropped
-        // in silence: a pass that stops early while a spinner ends is how a truncated measurement
-        // looked like a finished one.
-        assertEquals(listOf("http:amsterdam"), measured)
-        assertEquals(listOf("http:amsterdam"), published)
-        assertEquals(listOf(2), skipped)
-    }
-
-    @Test fun `every server the pass asks is named before it is asked`() {
-        val progress = mutableListOf<String>()
-        pass(
-            moved = { false },
-            measured = mutableListOf(),
-            published = mutableListOf(),
-            progress = progress,
-        ).run(
-            listOf(
-                OfflineSweep.Target("vk", "call"),
-                OfflineSweep.Target("amsterdam", "vless"),
-                OfflineSweep.Target("tokyo", "vless"),
-            ),
-        )
-        assertEquals(listOf("vk", "amsterdam", "tokyo"), progress)
-    }
-
-    @Test fun `a server the pass never reaches is never named`() {
-        val progress = mutableListOf<String>()
-        var moved = false
-        pass(
-            moved = { moved },
-            measured = mutableListOf(),
-            published = mutableListOf(),
             progress = progress,
             onHttp = { tag ->
-                if (tag == "amsterdam") moved = true
+                when (tag) {
+                    // The refused server is one row's verdict; the other two answer around it.
+                    "b" -> OutboundLatency(tag, 0, "unavailable")
+
+                    "a" -> OutboundLatency(tag, 35, "available")
+
+                    else -> OutboundLatency(tag, 58, "available")
+                }
+            },
+        ).run(
+            listOf(
+                OfflineSweep.Target("a", "vless"),
+                OfflineSweep.Target("b", "vless"),
+                OfflineSweep.Target("c", "vless"),
+            ),
+        )
+        assertEquals(
+            listOf(setOf("a", "b", "c"), setOf("b", "c"), setOf("c"), emptySet<String>()),
+            progress,
+            "the open questions were not closed one server at a time",
+        )
+        assertEquals(listOf("http:a", "http:b", "http:c"), measured)
+        assertEquals(listOf("http:a", "http:b", "http:c"), published)
+    }
+
+    @Test fun `a server whose measurement throws is that server's outcome alone`() {
+        val measured = mutableListOf<String>()
+        val published = mutableListOf<String>()
+        val progress = mutableListOf<Set<String>>()
+        val stopped = mutableListOf<Int>()
+        pass(
+            moved = { false },
+            measured = measured,
+            published = published,
+            progress = progress,
+            stopped = stopped,
+            onHttp = { tag ->
+                if (tag == "b") error("the transport refused the profile")
+                OutboundLatency(tag, 40, "available")
+            },
+        ).run(
+            listOf(
+                OfflineSweep.Target("a", "vless"),
+                OfflineSweep.Target("b", "vless"),
+                OfflineSweep.Target("c", "vless"),
+            ),
+        )
+        assertEquals(listOf("http:a", "http:b", "http:c"), measured, "a thrown measurement ended the pass")
+        assertEquals(listOf("http:a", "http:c"), published, "a thrown measurement published a verdict for its server")
+        assertEquals(setOf("c"), progress[2], "the server that threw stayed named as measuring")
+        assertTrue(progress.last().isEmpty(), "the pass left a row spinning")
+        assertTrue(stopped.isEmpty(), "a thrown measurement was reported as a stopped pass")
+    }
+
+    @Test fun `a stop mid-question asks nobody else and publishes nothing`() {
+        val measured = mutableListOf<String>()
+        val published = mutableListOf<String>()
+        var stopped = false
+        pass(
+            moved = { stopped },
+            measured = measured,
+            published = published,
+            onHttp = { tag ->
+                stopped = true
                 OutboundLatency(tag, 40, "available")
             },
         ).run(
@@ -103,7 +144,8 @@ class OfflineSweepTest {
                 OfflineSweep.Target("tokyo", "vless"),
             ),
         )
-        assertEquals(listOf("amsterdam"), progress, "a server the pass never reached was marked as measuring")
+        assertEquals(listOf("http:amsterdam"), measured, "a server after the stop was measured anyway")
+        assertTrue(published.isEmpty(), "an answer measured across the stop was published")
     }
 
     @Test fun `a handover between two servers ends the pass and publishes nothing`() {
