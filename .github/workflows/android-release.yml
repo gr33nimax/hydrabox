@@ -222,9 +222,14 @@ jobs:
             gh release upload "$NAME" release/hydrabox-*.apk release/SHA256SUMS --clobber
             gh release edit "$NAME" --title "HydraBox $NAME" --notes-file "$notes" --prerelease
           else
+            # The tag has to mark the commit this APK was built from. Without --target GitHub
+            # puts it on the default branch's head — and the default branch here is `stable`,
+            # so every canary release was tagged on a stable commit instead of its own, which
+            # made the tag useless for anything that reads provenance.
             gh release create "$NAME" release/hydrabox-*.apk release/SHA256SUMS \
               --title "HydraBox $NAME" \
               --notes-file "$notes" \
+              --target "$GITHUB_SHA" \
               --prerelease
           fi
 
