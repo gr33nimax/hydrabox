@@ -73,7 +73,7 @@ extensions.configure<ApplicationExtension> {
         // the APK itself cannot disagree; without them the checked-in values are used.
         versionCode = (findProperty("hydraboxVersionCode") as String?)?.toIntOrNull() ?: 200
         versionName =
-            (findProperty("hydraboxVersionName") as String?)?.takeIf(String::isNotBlank) ?: "2.0.0-alpha1"
+            (findProperty("hydraboxVersionName") as String?)?.takeIf(String::isNotBlank) ?: "2.1.0"
         buildConfigField("String", "HYDRACORE_VERSION", "\"$hydraCoreVersion\"")
         // The pinned update keys travel with the build rather than with the update: an updater that
         // could be told which key to trust would only prove that somebody signed the document. No
