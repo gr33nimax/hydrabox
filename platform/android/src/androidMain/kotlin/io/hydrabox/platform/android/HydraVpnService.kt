@@ -119,10 +119,20 @@ class HydraVpnService : VpnService() {
         java.util.concurrent.atomic
             .AtomicBoolean(false)
 
-    /** True only while a newly requested offline sweep still needs its first uplink callback. */
-    private val awaitingMeasurementBaseline =
+    /**
+     * The network generation a just-requested offline sweep is still waiting to see as its
+     * baseline, or [NO_MEASUREMENT_BASELINE] when no sweep needs one.
+     *
+     * A boolean could not say which callback was the baseline and which was a handover: it was
+     * consumed by whichever callback arrived first after the sweep was asked for, so a handover
+     * that landed before the uplink was mistaken for the baseline and the sweep ran on across
+     * two networks. The generation makes the two distinguishable — the baseline is the first
+     * callback newer than the generation the sweep began from, and anything after it is a
+     * handover (see [isOfflineMeasurementBaseline]).
+     */
+    private val awaitingMeasurementBaselineGeneration =
         java.util.concurrent.atomic
-            .AtomicBoolean(false)
+            .AtomicLong(NO_MEASUREMENT_BASELINE)
     private val measurementStartId =
         java.util.concurrent.atomic
             .AtomicInteger()
@@ -404,7 +414,17 @@ class HydraVpnService : VpnService() {
         // first callback after creating an otherwise idle measurement service is its baseline,
         // not a handover: only a callback after that baseline may cancel the sweep.
         monitor.onChanged = { generation ->
-            if (!awaitingMeasurementBaseline.compareAndSet(true, false)) cancelSweep("network changed")
+            // The baseline, if one is pending, is the callback the sweep is waiting for; it is
+            // taken once, and any later callback is a handover that ends the sweep. Either way
+            // the change still reaches the runtime: a running tunnel has to rebind whether or
+            // not a measurement is in flight.
+            val baseline = awaitingMeasurementBaselineGeneration.getAndSet(NO_MEASUREMENT_BASELINE)
+            if (isOfflineMeasurementBaseline(generation, baseline)) {
+                HydraLog.info(AREA, "network generation $generation is the offline measurement's baseline")
+            } else {
+                HydraLog.info(AREA, "network generation $generation ends any measurement in flight")
+                cancelSweep("network changed")
+            }
             runtime.submit(RuntimeCommand.NetworkChanged(NetworkGeneration(generation)))
         }
         registerIdleWatch()
@@ -442,7 +462,17 @@ class HydraVpnService : VpnService() {
         if (state == RuntimeState.STOPPED || state == RuntimeState.FAILED) {
             measurementStartId.set(startId)
             if (!measuring.compareAndSet(false, true)) return
-            awaitingMeasurementBaseline.set(monitor.currentNetwork == null)
+            // Offline, the sweep needs the first uplink callback as its baseline; online, it
+            // needs none and every later callback is a handover that ends it.
+            val awaitingUplink = monitor.currentNetwork == null
+            awaitingMeasurementBaselineGeneration.set(
+                if (awaitingUplink) monitor.networkGeneration else NO_MEASUREMENT_BASELINE,
+            )
+            HydraLog.info(
+                AREA,
+                "offline measurement starts at network generation ${monitor.networkGeneration}, " +
+                    if (awaitingUplink) "awaiting its first uplink" else "already on a network",
+            )
             // On the runtime lifecycle thread: one owner for everything that builds a core, so a
             // sweep and a real start can never be inside the core at the same time. Capture the
             // epoch there too: a service created for this action receives its first network
@@ -451,7 +481,7 @@ class HydraVpnService : VpnService() {
             runtime.onLifecycleThread {
                 runCatching { measureStandalone() }
                     .onFailure { HydraLog.warn(AREA, "standalone measurement failed", it) }
-                awaitingMeasurementBaseline.set(false)
+                awaitingMeasurementBaselineGeneration.set(NO_MEASUREMENT_BASELINE)
                 measuring.set(false)
                 stopSelfResult(measurementStartId.get())
             }
@@ -1198,12 +1228,26 @@ class HydraVpnService : VpnService() {
      * handover instead of staying bound to an interface that has gone.
      */
     private fun rebind(generation: NetworkGeneration) {
-        HydraLog.info(AREA, "rebinding the core to network generation ${generation.value}")
+        val network = monitor.currentNetwork
+        HydraLog.info(
+            AREA,
+            "rebinding the core to network generation ${generation.value}, " +
+                (network?.let { "network $it" } ?: "no usable network"),
+        )
         // The order is 1.x's, step for step: the tunnel is told which network it sits on, the
         // core is told which generation it is now in, and only then is the interface published.
-        val network = monitor.currentNetwork
-        runCatching { setUnderlyingNetworks(network?.let { arrayOf(it) }) }
-            .onFailure { HydraLog.warn(AREA, "the tunnel would not take the underlying network", it) }
+        //
+        // With no usable uplink the binding is left alone. `setUnderlyingNetworks(null)` means
+        // "the system default network", and with the uplink gone that default is the tunnel
+        // itself or nothing — the core would be pointed at a network that is not there, which
+        // is exactly the "tunnel is up, traffic is dead" state this guards against. The
+        // callback that brings a real network back rebinds properly.
+        if (network == null) {
+            HydraLog.info(AREA, "no usable network; keeping the tunnel's underlying networks as they are")
+        } else {
+            runCatching { setUnderlyingNetworks(arrayOf(network)) }
+                .onFailure { HydraLog.warn(AREA, "the tunnel would not take the underlying network", it) }
+        }
         runCatching { Libbox.hydraCoreSetNetworkGeneration(generation.value) }
             .onFailure { HydraLog.warn(AREA, "the core would not take the network generation", it) }
         // Deliberately not `resetNetwork()`. That closes every live connection and forces an
@@ -1311,8 +1355,14 @@ class HydraVpnService : VpnService() {
         store.clearStartFailure()
         // The first generation matters as much as the later ones: a lane that starts life on
         // generation zero cannot be superseded in order afterwards.
+        val startNetwork = monitor.currentNetwork
+        HydraLog.info(
+            AREA,
+            "the core starts on network generation ${monitor.networkGeneration}, " +
+                (startNetwork?.let { "network $it" } ?: "no usable network"),
+        )
         runCatching { Libbox.hydraCoreSetNetworkGeneration(monitor.networkGeneration) }
-        runCatching { setUnderlyingNetworks(monitor.currentNetwork?.let { arrayOf(it) }) }
+        runCatching { setUnderlyingNetworks(startNetwork?.let { arrayOf(it) }) }
         HydraLog.info(AREA, "the core accepted the configuration")
         runtime.dispatch(RuntimeInput.Launched(commandGeneration, commandGeneration))
         // Readiness is not announced here. The core answering on its command socket is what
