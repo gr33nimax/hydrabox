@@ -45,6 +45,8 @@ data class AppActions(
     val onSetAppsMode: (AppsMode) -> Unit = {},
     val onSetAdBlock: (Boolean) -> Unit = {},
     val onUpdateRuleSets: () -> Unit = {},
+    val onSetRouteRussiaDirect: (Boolean) -> Unit = {},
+    val onUpdateRussiaRuleSets: () -> Unit = {},
     val onSetTcpFastOpen: (Boolean) -> Unit = {},
     val onSetTcpMultiPath: (Boolean) -> Unit = {},
     val onSetProxyOnly: (Boolean) -> Unit = {},

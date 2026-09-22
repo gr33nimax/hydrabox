@@ -220,6 +220,8 @@ data class SettingsSummary(
     val proxyPort: Int = 2080,
     val proxyAllowLan: Boolean = false,
     val adBlock: Boolean = false,
+    /** Whether Russian destinations are routed straight out instead of through the tunnel. */
+    val routeRussiaDirect: Boolean = false,
     val tcpFastOpen: Boolean = false,
     val tcpMultiPath: Boolean = false,
     val strictRoute: Boolean = false,
@@ -252,6 +254,11 @@ data class RuleSetsSummary(
     val blockedDomains: Int = 0,
     val updatedAt: String? = null,
     val downloading: Boolean = false,
+    /** The Russian geoip set: whether it is on disk, whether it is being fetched, and its size. */
+    val russiaAvailable: Boolean = false,
+    val russiaNetworks: Int = 0,
+    val russiaUpdatedAt: String? = null,
+    val russiaDownloading: Boolean = false,
 )
 
 /**

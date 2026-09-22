@@ -120,6 +120,12 @@ data class Settings(
     val proxyAllowLan: Boolean = false,
     /** Blocks advertising and tracking domains, if the rule set has been downloaded. */
     val adBlockEnabled: Boolean = false,
+    /**
+     * Routes Russian destinations straight out instead of through the tunnel: any IP in a
+     * Russian range (the downloaded geoip set) and any `.ru`/`.рф`/`.su` name go direct. Off
+     * by default; needs the geoip set on disk to take effect for the IP half.
+     */
+    val routeRussiaDirectEnabled: Boolean = false,
     val dnsStrategy: DnsStrategy = DnsStrategy.IPV4_ONLY,
     /** Answers address queries from a reserved range and keeps the domain for routing. */
     val fakeIpEnabled: Boolean = false,
@@ -319,6 +325,7 @@ class SettingsCodec {
             proxyMixedPort = number(PROXY_MIXED_PORT)?.takeIf { it in 1024..65535 } ?: DEFAULT_PROXY_PORT,
             proxyAllowLan = bool(PROXY_ALLOW_LAN, false),
             adBlockEnabled = bool(AD_BLOCK_ENABLED, false),
+            routeRussiaDirectEnabled = bool(ROUTE_RUSSIA_DIRECT, false),
             fakeIpEnabled = bool(DNS_FAKEIP, false),
             // An unknown stored value is not guessed at: a channel this build does not know is
             // the stable line, which is the one that installs the least surprising build.
@@ -380,6 +387,7 @@ class SettingsCodec {
             PROXY_MIXED_PORT to settings.proxyMixedPort.toString(),
             PROXY_ALLOW_LAN to flag(settings.proxyAllowLan),
             AD_BLOCK_ENABLED to flag(settings.adBlockEnabled),
+            ROUTE_RUSSIA_DIRECT to flag(settings.routeRussiaDirectEnabled),
             DNS_STRATEGY to settings.dnsStrategy.name.lowercase(),
             DNS_FAKEIP to flag(settings.fakeIpEnabled),
             UPDATE_CHANNEL to settings.updateChannel.name.lowercase(),
@@ -534,6 +542,7 @@ private const val PROXY_INBOUND_ENABLED = "proxy_inbound_enabled"
 private const val PROXY_MIXED_PORT = "proxy_mixed_port"
 private const val PROXY_ALLOW_LAN = "proxy_allow_lan"
 private const val AD_BLOCK_ENABLED = "ad_block_enabled"
+private const val ROUTE_RUSSIA_DIRECT = "route_russia_direct"
 private const val DNS_STRATEGY = "dns_strategy"
 private const val DNS_FAKEIP = "dns_fakeip"
 

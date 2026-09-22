@@ -80,6 +80,11 @@ data class TunnelInput(
     /** Blocks advertising and tracking domains, when the set has been downloaded. */
     val adBlock: Boolean = false,
     /**
+     * Routes Russian destinations directly instead of through the tunnel: any `.ru`/`.рф`/`.su`
+     * name, and any IP in the downloaded Russian geoip set. Off by default.
+     */
+    val routeRussiaDirect: Boolean = false,
+    /**
      * Which address family the resolver may answer with: `ipv4_only`, `ipv6_only`, or `auto`
      * to leave the field out and let the core answer with both.
      */
@@ -104,6 +109,7 @@ data class TunnelInput(
 
 const val ADBLOCK_BLOCK = "adblock-block"
 const val ADBLOCK_ALLOW = "adblock-allow"
+const val RUSSIA_GEOIP = "ru-geoip-ru"
 
 const val SELECTOR_TAG = "select"
 const val DIRECT_TAG = "direct"
@@ -574,6 +580,11 @@ object TunnelConfigGenerator {
     /** True only when the person asked for blocking and the compiled set is on disk. */
     private fun adBlockActive(input: TunnelInput) = input.adBlock && input.routeData.adBlockAvailable
 
+    // The domain half of Russia-direct needs nothing on disk; the IP half needs the geoip set.
+    private fun russiaDirectActive(input: TunnelInput) = input.routeRussiaDirect
+
+    private fun russiaGeoipActive(input: TunnelInput) = input.routeRussiaDirect && input.routeData.russiaGeoipAvailable
+
     private fun route(
         input: TunnelInput,
         hasProxies: Boolean,
@@ -590,23 +601,36 @@ object TunnelConfigGenerator {
         put("default_domain_resolver", BOOTSTRAP_DNS_TAG)
         put("auto_detect_interface", true)
         put("final", if (hasProxies) SELECTOR_TAG else DIRECT_TAG)
-        if (adBlockActive(input)) {
+        // The rule_set array appears at most once, so ad-block and the Russia geoip set share it.
+        if (adBlockActive(input) || russiaGeoipActive(input)) {
             putJsonArray("rule_set") {
-                add(
-                    buildJsonObject {
-                        put("type", "local")
-                        put("tag", ADBLOCK_BLOCK)
-                        put("format", "binary")
-                        put("path", input.routeData.adBlockPath!!)
-                    },
-                )
-                input.routeData.adBlockAllowPath?.let { path ->
+                if (adBlockActive(input)) {
                     add(
                         buildJsonObject {
                             put("type", "local")
-                            put("tag", ADBLOCK_ALLOW)
+                            put("tag", ADBLOCK_BLOCK)
                             put("format", "binary")
-                            put("path", path)
+                            put("path", input.routeData.adBlockPath!!)
+                        },
+                    )
+                    input.routeData.adBlockAllowPath?.let { path ->
+                        add(
+                            buildJsonObject {
+                                put("type", "local")
+                                put("tag", ADBLOCK_ALLOW)
+                                put("format", "binary")
+                                put("path", path)
+                            },
+                        )
+                    }
+                }
+                if (russiaGeoipActive(input)) {
+                    add(
+                        buildJsonObject {
+                            put("type", "local")
+                            put("tag", RUSSIA_GEOIP)
+                            put("format", "binary")
+                            put("path", input.routeData.russiaGeoipPath!!)
                         },
                     )
                 }
@@ -652,6 +676,27 @@ object TunnelConfigGenerator {
                         put("outbound", DIRECT_TAG)
                     },
                 )
+            }
+            // Russian destinations go straight out, before the ad-block block and the final
+            // proxy route. Domains by suffix (no download needed) and IPs by the geoip set when
+            // it is present. adblock still wins over this, so an ad on a .ru host is still blocked.
+            if (russiaDirectActive(input)) {
+                add(
+                    buildJsonObject {
+                        putJsonArray("domain_suffix") {
+                            RouteData.RUSSIA_DOMAIN_SUFFIXES.forEach { add(JsonPrimitive(it)) }
+                        }
+                        put("outbound", DIRECT_TAG)
+                    },
+                )
+                if (russiaGeoipActive(input)) {
+                    add(
+                        buildJsonObject {
+                            put("rule_set", RUSSIA_GEOIP)
+                            put("outbound", DIRECT_TAG)
+                        },
+                    )
+                }
             }
             // The allow list comes first, as in 1.x: an exception has to win over the block.
             if (adBlockActive(input)) {

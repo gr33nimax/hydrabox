@@ -248,6 +248,15 @@ Logs are stored locally until the user exports or sends them. Review exported fi
     <string name="rules_ad_block_download">Download the blocking list</string>
     <string name="rules_ad_block_download_hint">About 5 MB from AdGuard, compiled on the device</string>
     <string name="rules_ad_block_update">Update the blocking list</string>
+    <string name="rules_downloading">Downloading the list…</string>
+    <string name="rules_updating">Updating the list…</string>
+    <string name="rules_working_hint">Fetching and compiling on the device</string>
+    <string name="rules_russia_direct">Russian sites bypass the tunnel</string>
+    <string name="rules_russia_direct_hint">.ru/.рф/.su go direct. Add the IP list below to also match Russian addresses.</string>
+    <string name="rules_russia_geoip_download">Download the Russian IP list</string>
+    <string name="rules_russia_geoip_download_hint">Russian networks, compiled on the device</string>
+    <string name="rules_russia_geoip_update">Update the Russian IP list</string>
+    <string name="rules_russia_geoip_hint">Networks: %1$d · updated %2$s</string>
     <string name="notice_rules_updated">Blocking list updated</string>
     <string name="notice_rules_failed">Could not update the blocking list</string>
     <string name="notification_off">Off</string>

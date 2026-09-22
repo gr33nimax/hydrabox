@@ -221,6 +221,7 @@ class SettingsTest {
                 proxyMixedPort = 3080,
                 proxyAllowLan = true,
                 adBlockEnabled = true,
+                routeRussiaDirectEnabled = true,
                 dnsStrategy = DnsStrategy.IPV6_ONLY,
                 fakeIpEnabled = true,
             )

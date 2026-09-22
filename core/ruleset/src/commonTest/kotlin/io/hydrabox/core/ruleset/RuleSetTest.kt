@@ -8,16 +8,17 @@ import kotlin.test.assertTrue
 class AdBlockFilterTest {
     @Test
     fun `hosts lines, filter lines and plain domains all yield a domain`() {
-        val lists = AdBlockFilter.parse(
-            """
-            ! title: test list
-            # a comment
-            0.0.0.0 ads.example.com
-            ||tracker.example.net^
-            https://beacon.example.org/pixel
-            plain.example.io
-            """.trimIndent(),
-        )
+        val lists =
+            AdBlockFilter.parse(
+                """
+                ! title: test list
+                # a comment
+                0.0.0.0 ads.example.com
+                ||tracker.example.net^
+                https://beacon.example.org/pixel
+                plain.example.io
+                """.trimIndent(),
+            )
         assertEquals(
             listOf("ads.example.com", "beacon.example.org", "plain.example.io", "tracker.example.net"),
             lists.blocked,
@@ -33,15 +34,16 @@ class AdBlockFilterTest {
 
     @Test
     fun `rules that are not about a whole domain are skipped, not guessed`() {
-        val lists = AdBlockFilter.parse(
-            """
-            example.com##.ad-banner
-            /ads/.*\.js/
-            ||example.net^${'$'}badfilter
-            0.0.0.0 127.0.0.1
-            ::1 localhost
-            """.trimIndent(),
-        )
+        val lists =
+            AdBlockFilter.parse(
+                """
+                example.com##.ad-banner
+                /ads/.*\.js/
+                ||example.net^${'$'}badfilter
+                0.0.0.0 127.0.0.1
+                ::1 localhost
+                """.trimIndent(),
+            )
         assertTrue(lists.blocked.isEmpty(), "unexpected: ${lists.blocked}")
     }
 
@@ -98,5 +100,59 @@ class RuleSetWriterTest {
         val ten = RuleSetWriter.write((1..10).map { "node$it.example.com" }, ::identity).size
         val twenty = RuleSetWriter.write((1..20).map { "node$it.example.com" }, ::identity).size
         assertTrue(twenty < ten * 2, "expected sharing: $ten then $twenty")
+    }
+}
+
+class RuleSetWriterIpTest {
+    private fun identity(bytes: ByteArray) = bytes
+
+    // The exact body sing-box's own srs.Write produced for these two CIDRs (magic + version
+    // stripped, identity compression). If our encoder drifts from the core's, this fails.
+    private val referenceBody =
+        "010006010000000000000002044d580000044d583fff04d5b4c00004d5b4dfffff00"
+
+    private fun hex(bytes: ByteArray) = bytes.joinToString("") { "%02x".format(it.toInt() and 0xFF) }
+
+    @Test
+    fun `an IP rule set matches the bytes sing-box itself writes`() {
+        val bytes = RuleSetWriter.writeIp(listOf("77.88.0.0/18", "213.180.192.0/19"), ::identity)
+        assertContentEquals(byteArrayOf(0x53, 0x52, 0x53, 0x02), bytes.copyOfRange(0, 4))
+        assertEquals(referenceBody, hex(bytes.copyOfRange(4, bytes.size)))
+    }
+
+    @Test
+    fun `input order does not change the IP rule set`() {
+        val one = RuleSetWriter.writeIp(listOf("213.180.192.0/19", "77.88.0.0/18"), ::identity)
+        val other = RuleSetWriter.writeIp(listOf("77.88.0.0/18", "213.180.192.0/19"), ::identity)
+        assertContentEquals(one, other)
+    }
+
+    @Test
+    fun `an empty IP set is a valid rule set with no rules`() {
+        val bytes = RuleSetWriter.writeIp(emptyList(), ::identity)
+        assertEquals(5, bytes.size)
+        assertEquals(0, bytes[4].toInt())
+    }
+
+    @Test
+    fun `a slash-24 covers its whole last octet, inclusive`() {
+        val range = RuleSetWriter.cidrToRange("10.0.0.0/24")!!
+        assertContentEquals(byteArrayOf(10, 0, 0, 0), range.from)
+        assertContentEquals(byteArrayOf(10, 0, 0, 255.toByte()), range.to)
+    }
+
+    @Test
+    fun `a slash-32 is a single address`() {
+        val range = RuleSetWriter.cidrToRange("1.2.3.4/32")!!
+        assertContentEquals(byteArrayOf(1, 2, 3, 4), range.from)
+        assertContentEquals(byteArrayOf(1, 2, 3, 4), range.to)
+    }
+
+    @Test
+    fun `malformed CIDRs are dropped, not guessed`() {
+        assertEquals(null, RuleSetWriter.cidrToRange("not-an-ip/24"))
+        assertEquals(null, RuleSetWriter.cidrToRange("10.0.0.0"))
+        assertEquals(null, RuleSetWriter.cidrToRange("10.0.0.0/33"))
+        assertEquals(null, RuleSetWriter.cidrToRange("999.0.0.0/8"))
     }
 }

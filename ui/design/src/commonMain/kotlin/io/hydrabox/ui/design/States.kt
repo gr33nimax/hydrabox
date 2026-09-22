@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -98,6 +99,42 @@ fun LoadingRows(count: Int = 3) {
                 modifier = Modifier.fillMaxWidth().height(64.dp).alpha(alpha),
                 content = {},
             )
+        }
+    }
+}
+
+/**
+ * A working row with a word for what it is doing and a spinner, instead of a blank pulsing
+ * block. A download that shows only a flashing rectangle reads as a glitch, not as progress.
+ */
+@Composable
+fun ProgressRow(
+    title: String,
+    supporting: String? = null,
+) {
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().padding(UiTokens.spacing * 2),
+        ) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(20.dp),
+                strokeWidth = 2.dp,
+            )
+            Column(modifier = Modifier.padding(start = UiTokens.spacing * 2)) {
+                Text(title, style = MaterialTheme.typography.bodyLarge)
+                supporting?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
         }
     }
 }

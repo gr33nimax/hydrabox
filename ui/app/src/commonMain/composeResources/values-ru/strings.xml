@@ -244,6 +244,15 @@ HydraBox предоставляется **как есть**. Мы исправл
     <string name="rules_ad_block_download">Скачать список блокировки</string>
     <string name="rules_ad_block_download_hint">Около 5 МБ от AdGuard, компилируется на устройстве</string>
     <string name="rules_ad_block_update">Обновить список блокировки</string>
+    <string name="rules_downloading">Скачивание списка…</string>
+    <string name="rules_updating">Обновление списка…</string>
+    <string name="rules_working_hint">Загрузка и компиляция на устройстве</string>
+    <string name="rules_russia_direct">Российские сайты мимо туннеля</string>
+    <string name="rules_russia_direct_hint">.ru/.рф/.su идут напрямую. Добавьте список IP ниже, чтобы ловить и российские адреса.</string>
+    <string name="rules_russia_geoip_download">Скачать список российских IP</string>
+    <string name="rules_russia_geoip_download_hint">Российские сети, компилируются на устройстве</string>
+    <string name="rules_russia_geoip_update">Обновить список российских IP</string>
+    <string name="rules_russia_geoip_hint">Сетей: %1$d · обновлено %2$s</string>
     <string name="notice_rules_updated">Список блокировки обновлён</string>
     <string name="notice_rules_failed">Не удалось обновить список блокировки</string>
     <string name="notification_off">Выключено</string>
