@@ -356,9 +356,9 @@ object TunnelConfigGenerator {
                     // application that cached it, so the table outlives the process.
                     if (input.fakeIp) put("store_fakeip", true)
                 }
-                // The core's own profiler, when a build asked for it. It is the only way to say
-                // where the transport spends its cycles instead of guessing, and it is a loopback
-                // address in a debug build or nothing at all.
+                // The core's own profiler, when the setting asks for it. It is the only way to
+                // say where the transport spends its cycles instead of guessing; it is a loopback
+                // address when enabled or nothing at all.
                 if (input.debugListen.isNotEmpty()) {
                     putJsonObject("debug") { put("listen", input.debugListen) }
                 }

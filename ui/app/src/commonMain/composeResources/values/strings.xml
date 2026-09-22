@@ -116,7 +116,7 @@
     <string name="diagnostics_title">Diagnostics</string>
     <string name="diagnostics_level">Log level</string>
     <string name="diagnostics_pprof">Core profiler</string>
-    <string name="diagnostics_pprof_hint">Serves pprof on 127.0.0.1:9091 after a reconnect. Debug builds only.</string>
+    <string name="diagnostics_pprof_hint">Serves pprof on 127.0.0.1:9091 after a reconnect. Off by default.</string>
     <string name="diagnostics_export">Export the log</string>
     <string name="diagnostics_error">Last error</string>
     <string name="onboarding_welcome_title">HydraBox</string>
