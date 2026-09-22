@@ -216,9 +216,10 @@ class AppStore(
                     AppLanguage.RUSSIAN -> Language.RUSSIAN
                     AppLanguage.ENGLISH -> Language.ENGLISH
                 },
-            // The profiler exists only where the build carries it, so the switch is offered only
-            // there rather than shown and ignored on a shipped build.
-            pprofAvailable = BuildConfig.DEBUG,
+            // The AAR always carries the profiler (with_profiler is in the core build tags), so
+            // the switch is offered in every build, not only debug. It stays off by default and
+            // binds loopback only; flipping it is a deliberate opt-in.
+            pprofAvailable = true,
             pprofEnabled = settings.pprofEnabled,
             updateChannel =
                 when (settings.updateChannel) {
@@ -909,12 +910,11 @@ class AppStore(
                 dnsStrategy = settings.dnsStrategy.name.lowercase(),
                 fakeIp = settings.fakeIpEnabled,
                 routeData = rules,
-                // Only a debug build, only loopback, and now only when someone asked for it:
-                // pprof hands out stacks and heap contents, and this is the process that holds
-                // the tunnel. A shipped build keeps the field out of the configuration whatever
-                // the stored setting says.
+                // Loopback only, and only when someone turned it on: pprof hands out stacks and
+                // heap contents, and this is the process that holds the tunnel. Off by default;
+                // the field stays out of the configuration unless the setting asks for it.
                 debugListen =
-                    if (BuildConfig.DEBUG && settings.pprofEnabled) {
+                    if (settings.pprofEnabled) {
                         "127.0.0.1:$DEBUG_PPROF_PORT"
                     } else {
                         ""
