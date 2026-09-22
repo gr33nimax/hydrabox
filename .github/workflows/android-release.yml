@@ -8,6 +8,11 @@ name: HydraBox 2 · Android release
 # mistaken for the older line's channel.
 
 on:
+  # The core publishes a release and dispatches this event to build the matching client channel:
+  # a debug/rc core release asks for `canary`, a stable core release for `stable`. The manual
+  # trigger below is untouched and is still how a human cuts a release by hand.
+  repository_dispatch:
+    types: [core-released]
   workflow_dispatch:
     inputs:
       version_name:
@@ -28,12 +33,18 @@ on:
         required: false
         default: canary
         type: string
+      counter:
+        description: "Номер релиза в канале (по умолчанию — продолжение последнего релиза канала)"
+        required: false
+        type: string
 
 permissions:
   contents: write
 
 concurrency:
-  group: hydrabox2-release-${{ github.ref }}
+  # Keyed by the channel a dispatch asked for, so a canary build and a stable build queue behind
+  # each other instead of sharing one slot (a dispatch's github.ref is always the default branch).
+  group: hydrabox2-release-${{ github.event.client_payload.channel || github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -42,8 +53,44 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
+      # The channel decides which branch is built. A `core-released` dispatch names it in the
+      # payload; a manual run names it in its inputs or falls back to the branch it started from.
+      # It is resolved before checkout because a dispatch's event ref is the default branch
+      # (stable), and the checkout must be told the channel's own branch explicitly.
+      - name: Resolve the target channel
+        id: target
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_CHANNEL: ${{ github.event.client_payload.channel }}
+          INPUT_CHANNEL: ${{ inputs.channel }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "repository_dispatch" ]; then
+            channel="${DISPATCH_CHANNEL:-}"
+            if [ "$channel" != "canary" ] && [ "$channel" != "stable" ]; then
+              echo "::error title=Invalid dispatch channel::client_payload.channel='$channel', ожидалось canary или stable"
+              exit 1
+            fi
+            checkout_ref="$channel"
+            publish=true
+          else
+            channel="${INPUT_CHANNEL:-$(basename "${GITHUB_REF#refs/heads/}")}"
+            checkout_ref=""
+            if [ "${DRY_RUN:-}" = "true" ]; then publish=false; else publish=true; fi
+          fi
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          echo "checkout_ref=$checkout_ref" >> "$GITHUB_OUTPUT"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          echo "Целевой канал: $channel; публикация: $publish"
+
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Empty on a manual run: the action then uses the event ref, exactly as before. A dispatch
+          # pins the channel's own branch, whose head the tag and the manifest commit must land on.
+          ref: ${{ steps.target.outputs.checkout_ref }}
 
       # The core is fetched on its own, without the action's recursive submodule walk: the pinned
       # core commit carries a gitlink (clients/desktop) whose .gitmodules entry is missing, so a
@@ -56,6 +103,28 @@ jobs:
           git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
           git -c submodule.recurse=false submodule update --init --depth=1 hydracore
 
+      # A dispatch names the core release the client is to be cut against. Moving the submodule to
+      # that commit and writing a provenance whose AAR digest is the release's own is what makes
+      # verifyLibboxProvenance pass for a pin nobody hand-edited: the gitlink, the provenance commit
+      # and the AAR then name one core. A manual run pins nothing here — its branch already records
+      # the core its last release was cut from.
+      - name: Repin the HydraCore release (dispatch)
+        if: ${{ github.event_name == 'repository_dispatch' }}
+        env:
+          CORE_TAG: ${{ github.event.client_payload.core_tag }}
+          CORE_COMMIT: ${{ github.event.client_payload.core_commit }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CORE_TAG:-}" ] || [ -z "${CORE_COMMIT:-}" ]; then
+            echo "::error title=Dispatch payload incomplete::client_payload.core_tag и core_commit обязательны"
+            exit 1
+          fi
+          # The submodule sits at the branch's recorded gitlink; move it to the released commit so
+          # the gitlink, the provenance and the AAR all name the same core.
+          git -C hydracore fetch --depth=1 origin "$CORE_COMMIT"
+          git -C hydracore checkout --detach "$CORE_COMMIT"
+          python3 .github/scripts/update_core_pin.py
+
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
@@ -67,9 +136,12 @@ jobs:
 
       - name: Resolve the release version
         id: version
+        shell: bash
         env:
           INPUT_NAME: ${{ inputs.version_name }}
           INPUT_CODE: ${{ inputs.version_code }}
+          INPUT_COUNTER: ${{ inputs.counter }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           # The version lives in gradle.properties, which Gradle reads itself and this step reads as
@@ -84,9 +156,50 @@ jobs:
             echo "::error title=Version not resolved::ни hydraboxVersionName, ни hydraboxVersionCode не найдены в $properties"
             exit 1
           fi
+          # The version name is the product's semver and carries no channel; the channel was decided
+          # before checkout. What is verified here is the branch actually on disk: a dispatch's event
+          # ref is the default branch, so comparing against GITHUB_REF would refuse every dispatch.
+          channel="${{ steps.target.outputs.channel }}"
+          # The branch on disk is what is verified, not the event ref: a dispatch's ref is the
+          # default branch. A detached checkout is resolved back to the branch that points at it, so
+          # a run that left HEAD detached still fails closed rather than skipping the check.
+          actual_branch="$(git rev-parse --abbrev-ref HEAD)"
+          if [ "$actual_branch" = "HEAD" ]; then
+            actual_branch="$(git for-each-ref --format='%(refname:short)' --points-at HEAD refs/heads/ | head -1)"
+          fi
+          if [ "$actual_branch" != "$channel" ]; then
+            echo "::error title=Channel and branch disagree::собранная ветка '$actual_branch' не совпадает с каналом '$channel'"
+            exit 1
+          fi
+          # The counter is the release number inside the channel. It is one explicit input with a
+          # computed default that continues from the last release of this channel, so a re-cut can
+          # name it while an ordinary release never repeats it.
+          counter="${INPUT_COUNTER:-}"
+          if [ -z "$counter" ]; then
+            highest=0
+            while read -r tag; do
+              case "$tag" in
+                *-"$channel".*)
+                  n=${tag##*-"$channel".}
+                  case "$n" in
+                    ''|*[!0-9]*) ;;
+                    *) if [ "$n" -gt "$highest" ]; then highest=$n; fi ;;
+                  esac
+                  ;;
+              esac
+            done < <(gh release list --limit 100 --json tagName --jq '.[].tagName')
+            counter=$((highest + 1))
+          fi
+          if ! [[ "$counter" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error title=Invalid counter::номер релиза в канале должен быть положительным целым, получено '$counter'"
+            exit 1
+          fi
+          tag="v${name}-${channel}.${counter}"
           echo "name=$name" >> "$GITHUB_OUTPUT"
           echo "code=$code" >> "$GITHUB_OUTPUT"
-          echo "Версия: $name ($code)"
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Версия: $name ($code), канал $channel, тег $tag"
 
       # A release without a signature is not a release: the build would happily produce an
       # unsigned APK, and only this step stops it.
@@ -179,38 +292,39 @@ jobs:
       - name: Collect the artifacts
         id: collect
         env:
-          NAME: ${{ steps.version.outputs.name }}
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
           set -euo pipefail
           apk=$(find platform/android/build/outputs/apk/release -name '*.apk' | head -1)
           mkdir -p release
-          cp "$apk" "release/hydrabox-$NAME-arm64-v8a.apk"
+          cp "$apk" "release/hydrabox-$TAG-arm64-v8a.apk"
           # The mapping file is what makes a crash report readable; it stays in the run's
           # artifacts rather than in the release, where it would help nobody but a reader.
           mapping=platform/android/build/outputs/mapping/release/mapping.txt
           if [ -f "$mapping" ]; then cp "$mapping" release/mapping.txt; fi
-          sha256sum "release/hydrabox-$NAME-arm64-v8a.apk" > release/SHA256SUMS
+          sha256sum "release/hydrabox-$TAG-arm64-v8a.apk" > release/SHA256SUMS
           echo "sha256=$(cut -d' ' -f1 release/SHA256SUMS)" >> "$GITHUB_OUTPUT"
           cat release/SHA256SUMS
 
       - name: Upload the artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: hydrabox-${{ steps.version.outputs.name }}
+          name: hydrabox-${{ steps.version.outputs.tag }}
           path: release/**
           if-no-files-found: error
 
       - name: Publish the release
-        if: ${{ !inputs.dry_run }}
+        if: ${{ steps.target.outputs.publish == 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
           NAME: ${{ steps.version.outputs.name }}
           SHA: ${{ steps.collect.outputs.sha256 }}
         run: |
           set -euo pipefail
           notes=$(mktemp)
           {
-            echo "HydraBox $NAME"
+            echo "HydraBox $NAME ($TAG)"
             echo
             echo "- коммит приложения: $(git rev-parse HEAD)"
             echo "- коммит ядра: $(git -C hydracore rev-parse HEAD)"
@@ -218,13 +332,19 @@ jobs:
           } > "$notes"
           # A re-run has to be able to finish what a later step failed at, rather than tripping over
           # the tag its own first attempt created.
-          if gh release view "$NAME" >/dev/null 2>&1; then
-            gh release upload "$NAME" release/hydrabox-*.apk release/SHA256SUMS --clobber
-            gh release edit "$NAME" --title "HydraBox $NAME" --notes-file "$notes" --prerelease
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release/hydrabox-*.apk release/SHA256SUMS --clobber
+            gh release edit "$TAG" --title "HydraBox $NAME ($TAG)" --notes-file "$notes" --prerelease
           else
-            gh release create "$NAME" release/hydrabox-*.apk release/SHA256SUMS \
-              --title "HydraBox $NAME" \
+            # The tag has to mark the commit this APK was built from. GITHUB_SHA is the wrong
+            # figure: on a dispatch it is the default branch's head, and the default branch here
+            # is `stable`, so every canary release would be tagged on a stable commit instead of
+            # its own — useless to anything that reads provenance. HEAD is the checked-out channel
+            # branch, which is what was built.
+            gh release create "$TAG" release/hydrabox-*.apk release/SHA256SUMS \
+              --title "HydraBox $NAME ($TAG)" \
               --notes-file "$notes" \
+              --target "$(git rev-parse HEAD)" \
               --prerelease
           fi
 
@@ -232,10 +352,11 @@ jobs:
       # than trusted, and published at a fixed path on the channel's own branch (ADR 0009), so a
       # client reads one constant address and every decision lives inside the signed bytes.
       - name: Publish the channel manifest
-        if: ${{ !inputs.dry_run }}
+        if: ${{ steps.target.outputs.publish == 'true' }}
         env:
-          CHANNEL: ${{ inputs.channel }}
+          CHANNEL: ${{ steps.version.outputs.channel }}
           NAME: ${{ steps.version.outputs.name }}
+          TAG: ${{ steps.version.outputs.tag }}
           CODE: ${{ steps.version.outputs.code }}
           SHA: ${{ steps.collect.outputs.sha256 }}
           CERT: ${{ steps.verify.outputs.cert }}
@@ -244,10 +365,15 @@ jobs:
         run: |
           set -euo pipefail
           # A channel publishes from its own branch and nowhere else: the address a client reads is
-          # fixed, and a manifest that appeared out of some other ref would be unreviewable.
-          expected="refs/heads/$CHANNEL"
-          if [ "$GITHUB_REF" != "$expected" ]; then
-            echo "::error title=Channel and branch disagree::канал $CHANNEL публикуется только из $expected, а запуск из $GITHUB_REF"
+          # fixed, and a manifest that appeared out of some other ref would be unreviewable. The
+          # branch on disk is what is checked: a dispatch's event ref is the default branch, and a
+          # detached HEAD is resolved back to its branch so the check still fails closed.
+          actual_branch="$(git rev-parse --abbrev-ref HEAD)"
+          if [ "$actual_branch" = "HEAD" ]; then
+            actual_branch="$(git for-each-ref --format='%(refname:short)' --points-at HEAD refs/heads/ | head -1)"
+          fi
+          if [ "$actual_branch" != "$CHANNEL" ]; then
+            echo "::error title=Channel and branch disagree::канал $CHANNEL публикуется только из ветки $CHANNEL, а собран '$actual_branch'"
             exit 1
           fi
           for value in KEY_ID PRIVATE_KEY SHA CERT; do
@@ -265,8 +391,8 @@ jobs:
             printf '  "channel": "%s",\n' "$CHANNEL"
             printf '  "versionCode": %s,\n' "$CODE"
             printf '  "versionName": "%s",\n' "$NAME"
-            printf '  "releaseTag": "%s",\n' "$NAME"
-            printf '  "apkUrl": "https://github.com/%s/releases/download/%s/hydrabox-%s-arm64-v8a.apk",\n' "$GITHUB_REPOSITORY" "$NAME" "$NAME"
+            printf '  "releaseTag": "%s",\n' "$TAG"
+            printf '  "apkUrl": "https://github.com/%s/releases/download/%s/hydrabox-%s-arm64-v8a.apk",\n' "$GITHUB_REPOSITORY" "$TAG" "$TAG"
             printf '  "sha256": "%s",\n' "$SHA"
             printf '  "certificateSha256": "%s",\n' "$CERT"
             printf '  "keyId": "%s"\n' "$KEY_ID"
@@ -288,9 +414,15 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add "update/$CHANNEL.json" "update/$CHANNEL.sig"
+          # A dispatch also records the pin it built against, on the same branch, so the core in the
+          # tree is the core in the APK rather than the one the branch happened to start from. A
+          # manual run pins nothing: only its manifest changes.
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            git add platform/android/libs/libbox.provenance.json hydracore
+          fi
           if git diff --cached --quiet; then
-            echo "канал $CHANNEL уже указывает на $NAME"
+            echo "канал $CHANNEL уже указывает на $TAG"
           else
-            git commit -m "update($CHANNEL): point the channel at $NAME"
+            git commit -m "update($CHANNEL): point the channel at $TAG"
             git push origin "HEAD:refs/heads/$CHANNEL"
           fi
