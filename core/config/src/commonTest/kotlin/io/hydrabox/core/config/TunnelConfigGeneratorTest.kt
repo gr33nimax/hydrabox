@@ -379,6 +379,44 @@ class TunnelConfigGeneratorTest {
     }
 
     @Test
+    fun `Russia-direct routes ru suffixes out with no download needed`() {
+        val route = TunnelConfigGenerator.build(input().copy(routeRussiaDirect = true)).jsonObject["route"]!!.jsonObject
+        val suffixRule = route["rules"]!!.jsonArray.map { it.jsonObject }.first { it["domain_suffix"] != null }
+        val suffixes = suffixRule["domain_suffix"]!!.jsonArray.map { it.jsonPrimitive.content }
+        assertTrue(suffixes.containsAll(listOf(".ru", ".su", ".рф", ".xn--p1ai")))
+        assertEquals(DIRECT_TAG, suffixRule.field("outbound"))
+        // No geoip set on disk: the domain half still works, the IP half is simply absent.
+        assertTrue(route["rule_set"] == null)
+    }
+
+    @Test
+    fun `Russia-direct adds the geoip set to direct once it is on disk`() {
+        val withGeoip =
+            input().copy(
+                routeRussiaDirect = true,
+                routeData = RouteData(russiaGeoipPath = "/data/ru.srs"),
+            )
+        val route = TunnelConfigGenerator.build(withGeoip).jsonObject["route"]!!.jsonObject
+        val sets = route["rule_set"]!!.jsonArray.map { it.jsonObject }
+        assertEquals(listOf(RUSSIA_GEOIP), sets.map { it.field("tag") })
+        assertEquals("/data/ru.srs", sets.first().field("path"))
+        val geoRule = route["rules"]!!.jsonArray.map { it.jsonObject }.first { it.field("rule_set") == RUSSIA_GEOIP }
+        assertEquals(DIRECT_TAG, geoRule.field("outbound"))
+    }
+
+    @Test
+    fun `Russia-direct off leaves no ru rule in the configuration`() {
+        val route =
+            TunnelConfigGenerator
+                .build(
+                    input().copy(routeRussiaDirect = false, routeData = RouteData(russiaGeoipPath = "/data/ru.srs")),
+                ).jsonObject["route"]!!
+                .jsonObject
+        assertTrue(route["rules"]!!.jsonArray.map { it.jsonObject }.none { it["domain_suffix"] != null })
+        assertTrue(route["rule_set"] == null)
+    }
+
+    @Test
     fun `proxy-only replaces the tunnel with one local port`() {
         val inbounds =
             TunnelConfigGenerator

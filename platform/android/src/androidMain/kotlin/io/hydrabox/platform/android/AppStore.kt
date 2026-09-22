@@ -129,12 +129,21 @@ class AppStore(
     }
 
     /** The compiled rule sets on this device, named for the configuration. */
-    fun routeData(): RouteData = AdBlockRuleSets.paths(appContext).toRouteData()
+    fun routeData(): RouteData =
+        AdBlockRuleSets
+            .paths(appContext)
+            .toRouteData()
+            .copy(russiaGeoipPath = RussiaRuleSets.geoipPath(appContext))
 
     fun ruleSetStatus(): RuleSetStatus = AdBlockRuleSets.status(appContext)
 
     /** Downloads and compiles the blocking rule set. Blocking; call it off the main thread. */
     fun updateRuleSets(): RuleSetStatus = AdBlockRuleSets.update(appContext)
+
+    fun russiaRuleSetStatus(): RussiaRuleSets.Status = RussiaRuleSets.status(appContext)
+
+    /** Downloads and compiles the Russian geoip set. Blocking; call it off the main thread. */
+    fun updateRussiaRuleSets(): RussiaRuleSets.Status = RussiaRuleSets.update(appContext)
 
     /** True when the person asked for a local proxy and no system tunnel. */
     fun proxyOnly(settings: Settings = settings()) = settings.proxyInboundEnabled && !settings.vpnInboundEnabled
@@ -169,6 +178,7 @@ class AppStore(
             blockLeaks = settings.blockLeaks,
             bypassLocalNetwork = settings.bypassLocalNetwork,
             adBlock = settings.adBlockEnabled,
+            routeRussiaDirect = settings.routeRussiaDirectEnabled,
             proxyOnly = proxyOnly(settings),
             proxyPort = settings.proxyMixedPort,
             proxyAllowLan = settings.proxyAllowLan,
@@ -907,6 +917,7 @@ class AppStore(
                 proxyUsername = settings.proxyUsername,
                 proxyPassword = settings.proxyPassword?.use { it },
                 adBlock = settings.adBlockEnabled,
+                routeRussiaDirect = settings.routeRussiaDirectEnabled,
                 dnsStrategy = settings.dnsStrategy.name.lowercase(),
                 fakeIp = settings.fakeIpEnabled,
                 routeData = rules,

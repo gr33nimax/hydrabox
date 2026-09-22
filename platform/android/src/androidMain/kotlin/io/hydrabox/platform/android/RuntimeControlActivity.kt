@@ -120,6 +120,7 @@ class RuntimeControlActivity : ComponentActivity() {
     private var busy by mutableStateOf<OperationState<Unit>>(OperationState.Idle)
     private var showApps by mutableStateOf(false)
     private var updatingRules by mutableStateOf(false)
+    private var updatingRussiaRules by mutableStateOf(false)
     private var permissionMissing by mutableStateOf(false)
 
     /**
@@ -555,7 +556,7 @@ class RuntimeControlActivity : ComponentActivity() {
             // the moment it changes, exactly as the live snapshot does.
             exit = exit,
             apps = if (showApps) stored.apps else emptyList(),
-            ruleSets = stored.ruleSets.copy(downloading = updatingRules),
+            ruleSets = stored.ruleSets.copy(downloading = updatingRules, russiaDownloading = updatingRussiaRules),
             sourceOperation = busy,
             vpnPermissionMissing = permissionMissing,
             notice = notice,
@@ -724,10 +725,14 @@ class RuntimeControlActivity : ComponentActivity() {
             apps = if (withApps) store.installedApps() else emptyList(),
             ruleSets =
                 store.ruleSetStatus().let { status ->
+                    val russia = store.russiaRuleSetStatus()
                     RuleSetsSummary(
                         available = status.available,
                         blockedDomains = status.blockedDomains,
                         updatedAt = status.updatedAtMillis?.let(::readableDate),
+                        russiaAvailable = russia.available,
+                        russiaNetworks = russia.networks,
+                        russiaUpdatedAt = russia.updatedAtMillis?.let(::readableDate),
                     )
                 },
             exit = exit,
@@ -952,6 +957,22 @@ class RuntimeControlActivity : ComponentActivity() {
                     val failure = runCatching { store.updateRuleSets() }.exceptionOrNull()
                     main.post {
                         updatingRules = false
+                        notice = if (failure == null) Notice.RULES_UPDATED else Notice.RULES_FAILED
+                        refresh()
+                    }
+                }
+            },
+            onSetRouteRussiaDirect = { enabled ->
+                reconnectAware { store.saveSettings(store.settings().copy(routeRussiaDirectEnabled = enabled)) }
+            },
+            onUpdateRussiaRuleSets = {
+                // Same contract as the ad-block list: a few MB fetched and compiled on the io
+                // thread, with its own busy row rather than the shared one.
+                updatingRussiaRules = true
+                io.execute {
+                    val failure = runCatching { store.updateRussiaRuleSets() }.exceptionOrNull()
+                    main.post {
+                        updatingRussiaRules = false
                         notice = if (failure == null) Notice.RULES_UPDATED else Notice.RULES_FAILED
                         refresh()
                     }

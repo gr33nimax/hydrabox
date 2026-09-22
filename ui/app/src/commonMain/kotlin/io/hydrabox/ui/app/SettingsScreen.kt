@@ -28,8 +28,8 @@ import io.hydrabox.ui.design.ChoiceDialog
 import io.hydrabox.ui.design.ConfirmDialog
 import io.hydrabox.ui.design.HydraRow
 import io.hydrabox.ui.design.InputDialog
-import io.hydrabox.ui.design.LoadingRows
 import io.hydrabox.ui.design.OptionRow
+import io.hydrabox.ui.design.ProgressRow
 import io.hydrabox.ui.design.RefreshButton
 import io.hydrabox.ui.design.SectionGroup
 import io.hydrabox.ui.design.ToggleRow
@@ -149,6 +149,7 @@ fun SettingsScreen(
                 checked = settings?.strictRoute == true,
                 onCheckedChange = actions.onSetStrictRoute,
             )
+            RussiaDirectRow(state, actions)
         }
         SectionGroup(stringResource(Res.string.settings_apps)) {
             ValueRow(
@@ -735,12 +736,18 @@ private fun AdBlockRow(
 ) {
     val rules = state.ruleSets
     if (!rules.available) {
-        HydraRow(
-            title = stringResource(Res.string.rules_ad_block_download),
-            supporting = stringResource(Res.string.rules_ad_block_download_hint),
-            onClick = actions.onUpdateRuleSets,
-        )
-        if (rules.downloading) LoadingRows(1)
+        if (rules.downloading) {
+            ProgressRow(
+                title = stringResource(Res.string.rules_downloading),
+                supporting = stringResource(Res.string.rules_working_hint),
+            )
+        } else {
+            HydraRow(
+                title = stringResource(Res.string.rules_ad_block_download),
+                supporting = stringResource(Res.string.rules_ad_block_download_hint),
+                onClick = actions.onUpdateRuleSets,
+            )
+        }
         return
     }
     ToggleRow(
@@ -754,11 +761,67 @@ private fun AdBlockRow(
         checked = state.settings?.adBlock == true,
         onCheckedChange = actions.onSetAdBlock,
     )
-    HydraRow(
-        title = stringResource(Res.string.rules_ad_block_update),
-        onClick = actions.onUpdateRuleSets,
+    if (rules.downloading) {
+        ProgressRow(
+            title = stringResource(Res.string.rules_updating),
+            supporting = stringResource(Res.string.rules_working_hint),
+        )
+    } else {
+        HydraRow(
+            title = stringResource(Res.string.rules_ad_block_update),
+            onClick = actions.onUpdateRuleSets,
+        )
+    }
+}
+
+/**
+ * Route Russian destinations straight out. The toggle works with no download — `.ru`/`.рф`/`.su`
+ * names go direct by suffix — and offers the geoip set below it, which widens the match to
+ * Russian IP ranges (services on foreign hosting still miss, that is geoip's limit).
+ */
+@Composable
+private fun RussiaDirectRow(
+    state: ScreenState,
+    actions: AppActions,
+) {
+    val rules = state.ruleSets
+    ToggleRow(
+        title = stringResource(Res.string.rules_russia_direct),
+        supporting = stringResource(Res.string.rules_russia_direct_hint),
+        checked = state.settings?.routeRussiaDirect == true,
+        onCheckedChange = actions.onSetRouteRussiaDirect,
     )
-    if (rules.downloading) LoadingRows(1)
+    if (state.settings?.routeRussiaDirect == true) {
+        when {
+            rules.russiaDownloading -> {
+                ProgressRow(
+                    title = stringResource(Res.string.rules_updating),
+                    supporting = stringResource(Res.string.rules_working_hint),
+                )
+            }
+
+            rules.russiaAvailable -> {
+                HydraRow(
+                    title = stringResource(Res.string.rules_russia_geoip_update),
+                    supporting =
+                        stringResource(
+                            Res.string.rules_russia_geoip_hint,
+                            rules.russiaNetworks,
+                            rules.russiaUpdatedAt.orEmpty(),
+                        ),
+                    onClick = actions.onUpdateRussiaRuleSets,
+                )
+            }
+
+            else -> {
+                HydraRow(
+                    title = stringResource(Res.string.rules_russia_geoip_download),
+                    supporting = stringResource(Res.string.rules_russia_geoip_download_hint),
+                    onClick = actions.onUpdateRussiaRuleSets,
+                )
+            }
+        }
+    }
 }
 
 /** Which passphrase question is open. Nothing about a backup happens without one. */
