@@ -68,4 +68,19 @@ class NetworkChangeTest {
             reduce(moved, RuntimeInput.NetworkChanged(NetworkGeneration(4))).effects.single(),
         )
     }
+
+    @Test fun `a change seen while a measurement is stopped is not remembered, so the running change still rebinds`() {
+        // An offline measurement leaves the runtime STOPPED, and the baseline callback that
+        // brings the uplink back arrives while it is stopped: the change is dropped and, more
+        // to the point, not remembered — the runtime's generation stays where it was. If it
+        // were remembered here, the change that lands once the tunnel is running would look
+        // like a replay and be swallowed, and the tunnel would keep dialling through the
+        // interface it started on.
+        val stopped = reduce(RuntimeModel(), RuntimeInput.NetworkChanged(NetworkGeneration(5)))
+        assertTrue(stopped.effects.isEmpty())
+        assertEquals(0, stopped.state.networkGeneration.value)
+        val decision = reduce(running(), RuntimeInput.NetworkChanged(NetworkGeneration(5)))
+        assertIs<Effect.RebindNetwork>(decision.effects.single())
+        assertEquals(5, decision.state.networkGeneration.value)
+    }
 }

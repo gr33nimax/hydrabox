@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -18,6 +19,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -41,8 +43,6 @@ import io.hydrabox.ui.design.ConfirmDialog
 import io.hydrabox.ui.design.EmptyState
 import io.hydrabox.ui.design.HydraField
 import io.hydrabox.ui.design.HydraIcons
-import io.hydrabox.ui.design.InputDialog
-import io.hydrabox.ui.design.LoadingRows
 import io.hydrabox.ui.design.PrimaryAction
 import io.hydrabox.ui.design.QrDialog
 import io.hydrabox.ui.design.QuotaMeter
@@ -69,7 +69,7 @@ fun SourcesScreen(
 ) {
     var adding by remember { mutableStateOf(false) }
     var pendingRemoval by remember { mutableStateOf<SubscriptionSummary?>(null) }
-    var renaming by remember { mutableStateOf<SubscriptionSummary?>(null) }
+    var editing by remember { mutableStateOf<SubscriptionSummary?>(null) }
     var sharing by remember { mutableStateOf<SubscriptionSummary?>(null) }
     Column(
         verticalArrangement = Arrangement.spacedBy(UiTokens.spacing),
@@ -92,7 +92,9 @@ fun SourcesScreen(
                 )
             }
         }
-        if (state.busy.source) LoadingRows(1)
+        // Refreshing a subscription says so on the card's own button. A placeholder list here
+        // claimed the whole screen was loading and put an empty container under the title for
+        // as long as the fetch lasted, while the cards the person was looking at were fine.
         if (state.sources.isEmpty()) {
             EmptyState(
                 icon = HydraIcons.Subscription,
@@ -108,7 +110,7 @@ fun SourcesScreen(
                     busy = state.busy.source,
                     onOpenServers = onOpenServers,
                     onRefresh = { actions.onRefreshSource(source.id) },
-                    onRename = { renaming = source },
+                    onEdit = { editing = source },
                     onRemove = { pendingRemoval = source },
                     onToggle = { enabled -> actions.onSetSourceEnabled(source.id, enabled) },
                     onRefreshUsage = { actions.onRefreshUsage(source.id) },
@@ -132,7 +134,7 @@ fun SourcesScreen(
             onDismiss = { pendingRemoval = null },
         )
     }
-    renaming?.let { source -> RenameDialog(source, actions) { renaming = null } }
+    editing?.let { source -> EditSourceDialog(source, state, actions) { editing = null } }
     sharing?.let { source ->
         source.link?.let { link ->
             QrDialog(
@@ -156,7 +158,7 @@ private fun SourceCard(
     busy: Boolean,
     onOpenServers: () -> Unit,
     onRefresh: () -> Unit,
-    onRename: () -> Unit,
+    onEdit: () -> Unit,
     onRemove: () -> Unit,
     onToggle: (Boolean) -> Unit,
     onRefreshUsage: () -> Unit,
@@ -183,19 +185,29 @@ private fun SourceCard(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
-                if (source.encrypted) {
-                    Icon(
-                        HydraIcons.Shield,
-                        contentDescription = stringResource(Res.string.sources_encrypted),
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
                 // A subscription kept for later is not a subscription deleted: the switch takes
                 // its servers out of the list and out of the configuration, and nothing else.
+                // A badge next to it said "encrypted" about every source that is, which is not
+                // a choice anybody makes here — the fact lives in storage, not on the switch.
                 Switch(checked = source.enabled, onCheckedChange = onToggle)
             }
             ProtocolBadges(source)
+            // What the source is told about this device, when it is told anything. Nothing here
+            // is a credential: a value that could not be derived is simply absent.
+            source.identifiers.forEach { identifier ->
+                Column(verticalArrangement = Arrangement.spacedBy(UiTokens.spacing / 2)) {
+                    Text(
+                        identifier.label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        identifier.value,
+                        style = UiTokens.figures(MaterialTheme.typography.bodySmall),
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+            }
             // Asking only for the figures is a different request from asking for the servers,
             // so it is a different tap: on the meter itself.
             // Both figures are stated even when the provider declares neither: no cap and no
@@ -243,8 +255,8 @@ private fun SourceCard(
                     contentDescription = stringResource(Res.string.action_refresh),
                     onClick = onRefresh,
                 )
-                IconButton(onClick = onRename) {
-                    Icon(HydraIcons.Edit, contentDescription = stringResource(Res.string.action_rename))
+                IconButton(onClick = onEdit) {
+                    Icon(HydraIcons.Edit, contentDescription = stringResource(Res.string.sources_edit_title))
                 }
                 IconButton(onClick = onRemove) {
                     Icon(HydraIcons.Delete, contentDescription = stringResource(Res.string.action_remove))
@@ -283,7 +295,9 @@ private fun ProtocolBadges(source: SubscriptionSummary) {
         source.protocols.entries.sortedByDescending { it.value }.forEach { entry ->
             Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.secondaryContainer) {
                 Text(
-                    if (entry.value > 1) entry.key + " " + entry.value else entry.key,
+                    // "VLESS 2" read as a second protocol beside the others; the count belongs
+                    // to the name it counts.
+                    if (entry.value > 1) entry.key + " ×" + entry.value else entry.key,
                     style = UiTokens.figures(MaterialTheme.typography.labelMedium),
                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                     modifier = Modifier.padding(horizontal = UiTokens.spacing, vertical = UiTokens.spacing / 2),
@@ -355,36 +369,60 @@ private fun AddSourceSheet(
                     label = stringResource(Res.string.action_paste),
                     onClick = { clipboard.getText()?.text?.let { link = it.trim() } },
                 )
-                SecondaryAction(
-                    label = stringResource(Res.string.sources_add_file),
-                    onClick = {
-                        submitted = true
-                        actions.onAddSourceFromFile()
-                    },
-                )
             }
         }
     }
 }
 
 @Composable
-private fun RenameDialog(
+private fun EditSourceDialog(
     source: SubscriptionSummary,
+    state: ScreenState,
     actions: AppActions,
     onClose: () -> Unit,
 ) {
-    var draft by remember(source.id) { mutableStateOf(source.name) }
-    InputDialog(
-        title = stringResource(Res.string.sources_rename_title),
-        value = draft,
-        onValueChange = { draft = it },
-        label = stringResource(Res.string.sources_add_name),
-        confirmLabel = stringResource(Res.string.action_save),
-        dismissLabel = stringResource(Res.string.action_cancel),
-        onConfirm = {
-            actions.onRenameSource(source.id, draft.trim())
-            onClose()
+    var name by remember(source.id) { mutableStateOf(source.name) }
+    var link by remember(source.id) { mutableStateOf(source.link.orEmpty()) }
+    var submitted by remember(source.id) { mutableStateOf(false) }
+    // The same rule the add sheet follows: the sheet waits for the change it asked for. Closing
+    // on the press moved a failure — and the address that caused it — somewhere the person was
+    // no longer looking, and took the typed link with it.
+    LaunchedEffect(submitted, state.notice) {
+        if (submitted && state.notice == Notice.SOURCE_UPDATED) onClose()
+    }
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text(stringResource(Res.string.sources_edit_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(UiTokens.spacing)) {
+                HydraField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = stringResource(Res.string.sources_add_name),
+                )
+                HydraField(
+                    value = link,
+                    onValueChange = { link = it },
+                    label = stringResource(Res.string.sources_add_field),
+                    supporting = stringResource(Res.string.sources_edit_link_hint),
+                    singleLine = false,
+                    minLines = 2,
+                )
+                state.notice?.takeIf { it.failure }?.let { failure ->
+                    WarningStrip(text = noticeText(failure), actionLabel = null, onAction = null)
+                }
+            }
         },
-        onDismiss = onClose,
+        confirmButton = {
+            TextButton(
+                enabled = !state.busy.source && (name.isNotBlank() || link.isNotBlank()),
+                onClick = {
+                    submitted = true
+                    actions.onEditSource(source.id, name.trim(), link.trim())
+                },
+            ) { Text(stringResource(Res.string.action_save)) }
+        },
+        dismissButton = { TextButton(onClick = onClose) { Text(stringResource(Res.string.action_cancel)) } },
+        shape = MaterialTheme.shapes.extraLarge,
     )
 }

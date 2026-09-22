@@ -33,19 +33,27 @@ internal object HydraDeviceIdentity {
     private const val SEED_BYTES = 32
     private const val NONCE_BYTES = 12
     private const val DOMAIN_SEPARATOR = "hydrabox-hwid-v1"
+
     /** 1.x joined the fields with NUL, and the identifier has to hash to the same value. */
     private const val FIELD_SEPARATOR = '\u0000'
 
     @Synchronized
-    fun forOrigin(context: Context, origin: String): String {
-        val androidId = Settings.Secure
-            .getString(context.contentResolver, Settings.Secure.ANDROID_ID)?.trim().orEmpty()
-        val component = androidId.ifEmpty {
-            Base64.encodeToString(
-                fallbackSeed(context),
-                Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING,
-            )
-        }
+    fun forOrigin(
+        context: Context,
+        origin: String,
+    ): String {
+        val androidId =
+            Settings.Secure
+                .getString(context.contentResolver, Settings.Secure.ANDROID_ID)
+                ?.trim()
+                .orEmpty()
+        val component =
+            androidId.ifEmpty {
+                Base64.encodeToString(
+                    fallbackSeed(context),
+                    Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING,
+                )
+            }
         return derive(context.packageName, component, origin)
     }
 
@@ -58,30 +66,36 @@ internal object HydraDeviceIdentity {
         }
         require(uri.path.isNullOrEmpty() || uri.path == "/") { "hydra device origin must not contain a path" }
         val rawHost = requireNotNull(uri.host) { "hydra device origin host is missing" }
-        val asciiHost = if (rawHost.contains(':')) {
-            rawHost.lowercase()
-        } else {
-            IDN.toASCII(rawHost, IDN.USE_STD3_ASCII_RULES).lowercase()
-        }
+        val asciiHost =
+            if (rawHost.contains(':')) {
+                rawHost.lowercase()
+            } else {
+                IDN.toASCII(rawHost, IDN.USE_STD3_ASCII_RULES).lowercase()
+            }
         val host = if (asciiHost.contains(':') && !asciiHost.startsWith("[")) "[$asciiHost]" else asciiHost
         val port = uri.port
         require(port == -1 || port in 1..65535) { "hydra device origin port is invalid" }
         return if (port == -1 || port == 443) "https://$host" else "https://$host:$port"
     }
 
-    fun derive(packageName: String, deviceComponent: String, origin: String): String {
+    fun derive(
+        packageName: String,
+        deviceComponent: String,
+        origin: String,
+    ): String {
         require(packageName.isNotBlank()) { "package name is missing" }
         require(deviceComponent.isNotBlank()) { "device identity is missing" }
         val canonical = canonicalHttpsOrigin(origin)
-        val input = buildString {
-            append(DOMAIN_SEPARATOR)
-            append(FIELD_SEPARATOR)
-            append(packageName)
-            append(FIELD_SEPARATOR)
-            append(deviceComponent)
-            append(FIELD_SEPARATOR)
-            append(canonical)
-        }
+        val input =
+            buildString {
+                append(DOMAIN_SEPARATOR)
+                append(FIELD_SEPARATOR)
+                append(packageName)
+                append(FIELD_SEPARATOR)
+                append(deviceComponent)
+                append(FIELD_SEPARATOR)
+                append(canonical)
+            }
         val digest = MessageDigest.getInstance("SHA-256").digest(input.toByteArray(Charsets.UTF_8))
         return "hbx1_" + Base64.encodeToString(digest, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
     }
@@ -104,11 +118,11 @@ internal object HydraDeviceIdentity {
         (keyStore.getKey(WRAPPING_KEY_ALIAS, null) as? SecretKey)?.let { return it }
         return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEY_STORE).run {
             init(
-                KeyGenParameterSpec.Builder(
-                    WRAPPING_KEY_ALIAS,
-                    KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
-                )
-                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                KeyGenParameterSpec
+                    .Builder(
+                        WRAPPING_KEY_ALIAS,
+                        KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
+                    ).setBlockModes(KeyProperties.BLOCK_MODE_GCM)
                     .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
                     .setKeySize(256)
                     .setRandomizedEncryptionRequired(true)
@@ -118,17 +132,45 @@ internal object HydraDeviceIdentity {
         }
     }
 
-    private fun wrap(seed: ByteArray, key: SecretKey): String {
+    private fun wrap(
+        seed: ByteArray,
+        key: SecretKey,
+    ): String {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key) }
         return Base64.encodeToString(cipher.iv + cipher.doFinal(seed), Base64.NO_WRAP)
     }
 
-    private fun unwrap(envelope: String, key: SecretKey): ByteArray {
+    private fun unwrap(
+        envelope: String,
+        key: SecretKey,
+    ): ByteArray {
         val decoded = Base64.decode(envelope, Base64.NO_WRAP)
         require(decoded.size > NONCE_BYTES) { "invalid wrapped identity seed" }
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
-            init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, decoded.copyOfRange(0, NONCE_BYTES)))
-        }
+        val cipher =
+            Cipher.getInstance("AES/GCM/NoPadding").apply {
+                init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, decoded.copyOfRange(0, NONCE_BYTES)))
+            }
         return cipher.doFinal(decoded.copyOfRange(NONCE_BYTES, decoded.size))
     }
 }
+
+/**
+ * The origin of a stored source address: the scheme, the host, and the port when it is not the
+ * default one.
+ *
+ * The identity is derived per origin, so this is deliberately narrower than the address itself:
+ * the path of a subscription link names one subscription, while two links from one provider are
+ * one origin. An address that is not HTTP(S) has no origin — and a source with no origin receives
+ * no identifier.
+ */
+internal fun originOfSource(url: String): String? =
+    runCatching {
+        val uri = URI(url.trim())
+        val scheme = uri.scheme?.lowercase()
+        val host = uri.host
+        when {
+            (scheme != "http" && scheme != "https") || host == null -> null
+            uri.port >= 0 -> "$scheme://$host:${uri.port}"
+            else -> "$scheme://$host"
+        }
+    }.getOrNull()

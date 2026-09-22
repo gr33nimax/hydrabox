@@ -93,13 +93,16 @@ fun HydraApp(
     versionName: String = "",
     coreVersion: String = "",
 ) {
+    val appearance = state.settings?.appearance ?: Appearance.SYSTEM
     val dark =
-        when (state.settings?.appearance ?: Appearance.SYSTEM) {
+        when (appearance) {
             Appearance.SYSTEM -> isSystemInDarkTheme()
             Appearance.LIGHT -> false
             Appearance.DARK -> true
         }
-    HydraTheme(dark = dark, dynamicColour = state.settings?.dynamicColour == true) {
+    // Three choices, three schemes, and nothing brand-specific among them: the phone's own
+    // colours, or one of the two fixed Material ones.
+    HydraTheme(dark = dark, platformColours = appearance == Appearance.SYSTEM) {
         val snackbar = remember { SnackbarHostState() }
         // "I will do this later" has to lead somewhere: the flow steps aside for this run,
         // and the home screen then asks for a subscription in its own words.
@@ -224,6 +227,7 @@ fun HydraApp(
                         coreVersion = coreVersion,
                         onOpenTerms = { navigation.open(Route.Document(privacy = false)) },
                         onOpenPrivacy = { navigation.open(Route.Document(privacy = true)) },
+                        onOpenLink = actions.onOpenLink,
                     )
                 }
             }

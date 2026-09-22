@@ -34,14 +34,21 @@ enum class ProbeState {
 
 /**
  * One server as a person picks it. [auto] is the automatic choice by latency; its
- * [resolvedName] says which server the automatic choice is actually using, because
- * "auto" alone answers none of the three questions the home screen has to answer.
+ * [resolvedTag] says which outbound the automatic choice is actually using, and [resolvedLabel]
+ * is the catalogue's own name for that server — because "auto" alone answers none of the three
+ * questions the home screen has to answer, and a core's tag answers none of them either.
  */
 data class ServerRef(
     val id: String,
     val displayName: String,
     val auto: Boolean = false,
-    val resolvedName: String? = null,
+    /**
+     * The core's own name for the outbound carrying traffic. It is a key — measurements are
+     * recorded under it — never text to put in front of a person.
+     */
+    val resolvedTag: String? = null,
+    /** What the catalogue calls the server behind [resolvedTag], when it knows it. */
+    val resolvedLabel: String? = null,
     val latencyMillis: Int? = null,
     val sourceId: String = "",
     /** The protocol this server speaks, as the subscription described it. */
@@ -86,48 +93,50 @@ enum class Trouble {
     ;
 
     companion object {
-        fun of(failure: RuntimeFailure?): Trouble = when (failure?.code) {
-            null -> UNKNOWN
-            HydraCoreErrorCode.NETWORK_NO_INTERFACE,
-            HydraCoreErrorCode.NETWORK_LOST,
-            HydraCoreErrorCode.NETWORK_GENERATION_STALE,
-            HydraCoreErrorCode.DNS_BOOTSTRAP_TIMEOUT,
-            -> NO_INTERNET
+        fun of(failure: RuntimeFailure?): Trouble =
+            when (failure?.code) {
+                null -> UNKNOWN
 
-            HydraCoreErrorCode.QUIC_DIAL_FAILED,
-            HydraCoreErrorCode.QUIC_NO_PATHS,
-            HydraCoreErrorCode.TURN_ALLOCATE_FAILED,
-            HydraCoreErrorCode.TURN_NO_CANDIDATE,
-            HydraCoreErrorCode.DTLS_HANDSHAKE_FAILED,
-            HydraCoreErrorCode.TRANSPORT_LANES_LOST,
-            HydraCoreErrorCode.TRANSPORT_RECOVERY_TIMEOUT,
-            HydraCoreErrorCode.RUNTIME_START_DEADLINE,
-            HydraCoreErrorCode.DNS_UPSTREAM_TIMEOUT,
-            HydraCoreErrorCode.DNS_UPSTREAM_REFUSED,
-            HydraCoreErrorCode.DNS_NO_ANSWER,
-            HydraCoreErrorCode.PROBE_TIMEOUT,
-            // VK turned this route away — a captcha, a flood limit, its own refusal. The
-            // subscription is not dead and re-downloading it fixes nothing; the actionable
-            // move is another server, which is what this situation offers. It used to read
-            // as "subscription unavailable", whose only action is to refresh the source, and
-            // the screen then had no way to connect at all until the app was restarted.
-            HydraCoreErrorCode.VK_CREDENTIALS_REJECTED,
-            HydraCoreErrorCode.VK_CREDENTIALS_FLOOD,
-            HydraCoreErrorCode.VK_AUTH_TERMINAL,
-            HydraCoreErrorCode.VK_CAPTCHA_REQUIRED,
-            HydraCoreErrorCode.VK_CAPTCHA_TIMEOUT,
-            HydraCoreErrorCode.VK_CAPTCHA_CANCELLED,
-            -> SERVER_UNREACHABLE
+                HydraCoreErrorCode.NETWORK_NO_INTERFACE,
+                HydraCoreErrorCode.NETWORK_LOST,
+                HydraCoreErrorCode.NETWORK_GENERATION_STALE,
+                HydraCoreErrorCode.DNS_BOOTSTRAP_TIMEOUT,
+                -> NO_INTERNET
 
-            HydraCoreErrorCode.CONFIG_INVALID_PLAN,
-            HydraCoreErrorCode.CONFIG_DIGEST_MISMATCH,
-            HydraCoreErrorCode.CONFIG_QUARANTINED,
-            HydraCoreErrorCode.CONFIG_STALE,
-            HydraCoreErrorCode.PROBE_INVALID_PLAN,
-            -> CONFIG_REJECTED
+                HydraCoreErrorCode.QUIC_DIAL_FAILED,
+                HydraCoreErrorCode.QUIC_NO_PATHS,
+                HydraCoreErrorCode.TURN_ALLOCATE_FAILED,
+                HydraCoreErrorCode.TURN_NO_CANDIDATE,
+                HydraCoreErrorCode.DTLS_HANDSHAKE_FAILED,
+                HydraCoreErrorCode.TRANSPORT_LANES_LOST,
+                HydraCoreErrorCode.TRANSPORT_RECOVERY_TIMEOUT,
+                HydraCoreErrorCode.RUNTIME_START_DEADLINE,
+                HydraCoreErrorCode.DNS_UPSTREAM_TIMEOUT,
+                HydraCoreErrorCode.DNS_UPSTREAM_REFUSED,
+                HydraCoreErrorCode.DNS_NO_ANSWER,
+                HydraCoreErrorCode.PROBE_TIMEOUT,
+                // VK turned this route away — a captcha, a flood limit, its own refusal. The
+                // subscription is not dead and re-downloading it fixes nothing; the actionable
+                // move is another server, which is what this situation offers. It used to read
+                // as "subscription unavailable", whose only action is to refresh the source, and
+                // the screen then had no way to connect at all until the app was restarted.
+                HydraCoreErrorCode.VK_CREDENTIALS_REJECTED,
+                HydraCoreErrorCode.VK_CREDENTIALS_FLOOD,
+                HydraCoreErrorCode.VK_AUTH_TERMINAL,
+                HydraCoreErrorCode.VK_CAPTCHA_REQUIRED,
+                HydraCoreErrorCode.VK_CAPTCHA_TIMEOUT,
+                HydraCoreErrorCode.VK_CAPTCHA_CANCELLED,
+                -> SERVER_UNREACHABLE
 
-            else -> UNKNOWN
-        }
+                HydraCoreErrorCode.CONFIG_INVALID_PLAN,
+                HydraCoreErrorCode.CONFIG_DIGEST_MISMATCH,
+                HydraCoreErrorCode.CONFIG_QUARANTINED,
+                HydraCoreErrorCode.CONFIG_STALE,
+                HydraCoreErrorCode.PROBE_INVALID_PLAN,
+                -> CONFIG_REJECTED
+
+                else -> UNKNOWN
+            }
     }
 }
 
@@ -144,10 +153,14 @@ sealed interface Connection {
     /** A source exists but holds no server. Its own problem, its own single action. */
     data object NeedsServers : Connection
 
-    data class Idle(val server: ServerRef?) : Connection
+    data class Idle(
+        val server: ServerRef?,
+    ) : Connection
 
     /** Asked for by the person: they pressed connect. */
-    data class Connecting(val server: ServerRef?) : Connection
+    data class Connecting(
+        val server: ServerRef?,
+    ) : Connection
 
     data class Connected(
         val server: ServerRef?,
@@ -155,42 +168,73 @@ sealed interface Connection {
     ) : Connection
 
     /** Not asked for: the network moved under us and the runtime is recovering. */
-    data class Reconnecting(val server: ServerRef?) : Connection
+    data class Reconnecting(
+        val server: ServerRef?,
+    ) : Connection
 
     data object Disconnecting : Connection
 
-    data class Stopped(val cause: Trouble, val server: ServerRef?, val retryable: Boolean) : Connection
+    data class Stopped(
+        val cause: Trouble,
+        val server: ServerRef?,
+        val retryable: Boolean,
+    ) : Connection
 }
 
 /** The single action the connection state offers. One state, one primary action. */
 enum class PrimaryAction { CONNECT, CANCEL, DISCONNECT, RETRY, ADD_SUBSCRIPTION, REFRESH_SOURCE, CHOOSE_SERVER, NONE }
 
 val Connection.primaryAction: PrimaryAction
-    get() = when (this) {
-        Connection.NeedsSubscription -> PrimaryAction.ADD_SUBSCRIPTION
-        Connection.NeedsServers -> PrimaryAction.REFRESH_SOURCE
-        is Connection.Idle -> PrimaryAction.CONNECT
-        is Connection.Connecting -> PrimaryAction.CANCEL
-        is Connection.Connected -> PrimaryAction.DISCONNECT
-        is Connection.Reconnecting -> PrimaryAction.CANCEL
-        Connection.Disconnecting -> PrimaryAction.NONE
-        is Connection.Stopped -> when (cause) {
-            Trouble.SERVER_UNREACHABLE -> PrimaryAction.CHOOSE_SERVER
-            Trouble.SUBSCRIPTION_UNAVAILABLE -> PrimaryAction.REFRESH_SOURCE
-            else -> PrimaryAction.RETRY
+    get() =
+        when (this) {
+            Connection.NeedsSubscription -> {
+                PrimaryAction.ADD_SUBSCRIPTION
+            }
+
+            Connection.NeedsServers -> {
+                PrimaryAction.REFRESH_SOURCE
+            }
+
+            is Connection.Idle -> {
+                PrimaryAction.CONNECT
+            }
+
+            is Connection.Connecting -> {
+                PrimaryAction.CANCEL
+            }
+
+            is Connection.Connected -> {
+                PrimaryAction.DISCONNECT
+            }
+
+            is Connection.Reconnecting -> {
+                PrimaryAction.CANCEL
+            }
+
+            Connection.Disconnecting -> {
+                PrimaryAction.NONE
+            }
+
+            is Connection.Stopped -> {
+                when (cause) {
+                    Trouble.SERVER_UNREACHABLE -> PrimaryAction.CHOOSE_SERVER
+                    Trouble.SUBSCRIPTION_UNAVAILABLE -> PrimaryAction.REFRESH_SOURCE
+                    else -> PrimaryAction.RETRY
+                }
+            }
         }
-    }
 
 /** The server the state is about, so the screen does not unpack the state to find it. */
 val Connection.server: ServerRef?
-    get() = when (this) {
-        is Connection.Idle -> server
-        is Connection.Connecting -> server
-        is Connection.Connected -> server
-        is Connection.Reconnecting -> server
-        is Connection.Stopped -> server
-        else -> null
-    }
+    get() =
+        when (this) {
+            is Connection.Idle -> server
+            is Connection.Connecting -> server
+            is Connection.Connected -> server
+            is Connection.Reconnecting -> server
+            is Connection.Stopped -> server
+            else -> null
+        }
 
 /** True while traffic is actually flowing through the tunnel. */
 val Connection.protecting: Boolean get() = this is Connection.Connected

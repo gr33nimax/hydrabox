@@ -68,4 +68,31 @@ class UpdateDecisionTest {
         val onStable = decideUpdate(manifest(channel = "stable", versionCode = 201), true, "stable", 200)
         assertEquals(201, assertIs<UpdateDecision.Available>(onStable).manifest.versionCode)
     }
+
+    @Test fun `a release of the split shape is decided by its version code alone`() {
+        // The new shape carries a plain semver version and a channel-qualified tag; neither is
+        // what decides an update. The decision must still come from `versionCode`, so a newer
+        // release of the new shape installs and an equal one does not.
+        fun body(versionCode: Int) =
+            """
+            {
+              "schema": 1,
+              "channel": "canary",
+              "versionCode": $versionCode,
+              "versionName": "2.1.0",
+              "releaseTag": "v2.1.0-canary.11",
+              "apkUrl": "https://example.invalid/hydrabox.apk",
+              "sha256": "$digest",
+              "certificateSha256": "$digest",
+              "keyId": "update-2026-01"
+            }
+            """.trimIndent()
+        assertEquals(
+            219,
+            assertIs<UpdateDecision.Available>(
+                decideUpdate(body(219), signatureVerified = true, selectedChannel = "canary", installedVersionCode = 218),
+            ).manifest.versionCode,
+        )
+        assertIs<UpdateDecision.NoUpdate>(decideUpdate(body(218), true, "canary", 218))
+    }
 }

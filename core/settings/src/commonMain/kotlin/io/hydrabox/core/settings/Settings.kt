@@ -95,6 +95,11 @@ data class Settings(
     /** Printers, routers and NAS keep working while the tunnel is up. */
     val bypassLocalNetwork: Boolean = true,
     val splitRoutingMode: SplitRoutingMode = SplitRoutingMode.BYPASS_SELECTED,
+    /**
+     * Which of the three appearances the interface uses. `SYSTEM` is the phone's own colours;
+     * the other two are the fixed Material schemes. There is no palette of our own to choose
+     * between any more — see [DYNAMIC_COLOUR] for what that costs an old setting.
+     */
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val language: AppLanguage = AppLanguage.SYSTEM,
     /** Rejects packets that would leave the tunnel behind its back. Stricter, and noisier. */
@@ -124,8 +129,6 @@ data class Settings(
     val dnsStrategy: DnsStrategy = DnsStrategy.IPV4_ONLY,
     /** Answers address queries from a reserved range and keeps the domain for routing. */
     val fakeIpEnabled: Boolean = false,
-    /** Whether the interface follows the system's wallpaper colours instead of the brand's. */
-    val dynamicColour: Boolean = false,
     /** Which release line the in-app updater follows. */
     val updateChannel: UpdateChannel = UpdateChannel.STABLE,
     /**
@@ -278,11 +281,18 @@ class SettingsCodec {
                     "only_selected" -> SplitRoutingMode.ONLY_SELECTED
                     else -> SplitRoutingMode.BYPASS_SELECTED
                 },
+            // A person who had the phone's own colours — whatever brightness they were in — keeps
+            // them: the flag that said so is gone, and `SYSTEM` is what it means now. Everyone
+            // else keeps the brightness they chose, which is now a fixed Material scheme.
             themeMode =
-                when (values[THEME_MODE]) {
-                    "light" -> ThemeMode.LIGHT
-                    "dark" -> ThemeMode.DARK
-                    else -> ThemeMode.SYSTEM
+                if (bool(DYNAMIC_COLOUR, false)) {
+                    ThemeMode.SYSTEM
+                } else {
+                    when (values[THEME_MODE]) {
+                        "light" -> ThemeMode.LIGHT
+                        "dark" -> ThemeMode.DARK
+                        else -> ThemeMode.SYSTEM
+                    }
                 },
             language =
                 when (values[LANGUAGE]) {
@@ -317,7 +327,6 @@ class SettingsCodec {
             adBlockEnabled = bool(AD_BLOCK_ENABLED, false),
             routeRussiaDirectEnabled = bool(ROUTE_RUSSIA_DIRECT, false),
             fakeIpEnabled = bool(DNS_FAKEIP, false),
-            dynamicColour = bool(DYNAMIC_COLOUR, false),
             // An unknown stored value is not guessed at: a channel this build does not know is
             // the stable line, which is the one that installs the least surprising build.
             updateChannel =
@@ -381,7 +390,6 @@ class SettingsCodec {
             ROUTE_RUSSIA_DIRECT to flag(settings.routeRussiaDirectEnabled),
             DNS_STRATEGY to settings.dnsStrategy.name.lowercase(),
             DNS_FAKEIP to flag(settings.fakeIpEnabled),
-            DYNAMIC_COLOUR to flag(settings.dynamicColour),
             UPDATE_CHANNEL to settings.updateChannel.name.lowercase(),
             PPROF_ENABLED to flag(settings.pprofEnabled),
         )
@@ -537,6 +545,12 @@ private const val AD_BLOCK_ENABLED = "ad_block_enabled"
 private const val ROUTE_RUSSIA_DIRECT = "route_russia_direct"
 private const val DNS_STRATEGY = "dns_strategy"
 private const val DNS_FAKEIP = "dns_fakeip"
+
+/**
+ * Written by releases that had a palette of their own, and read only to migrate them: a person
+ * who had the phone's colours keeps them, and the key disappears on the next save.
+ */
 private const val DYNAMIC_COLOUR = "dynamic_colour"
+
 private const val UPDATE_CHANNEL = "update_channel"
 private const val PPROF_ENABLED = "pprof_enabled"

@@ -82,4 +82,51 @@ class UpdateManifestTest {
         assertTrue(parsed.matchesChannel("canary"))
         assertFalse(parsed.matchesChannel("stable"))
     }
+
+    @Test fun `a release names the product as a plain semver and its channel only in the tag`() {
+        // The split: `versionName` is the product's semver and carries no channel, while the
+        // channel lives in `releaseTag` and in the `channel` field alone. The parser reads each
+        // on its own, so a version that no longer embeds its channel is not a shape it refuses.
+        val body =
+            """
+            {
+              "schema": 1,
+              "channel": "canary",
+              "versionCode": 219,
+              "versionName": "2.1.0",
+              "releaseTag": "v2.1.0-canary.11",
+              "apkUrl": "https://example.invalid/hydrabox.apk",
+              "sha256": "$digest",
+              "certificateSha256": "$digest",
+              "keyId": "update-2026-01"
+            }
+            """.trimIndent()
+        val parsed = accepted(body)
+        assertEquals("2.1.0", parsed.versionName)
+        assertEquals("v2.1.0-canary.11", parsed.releaseTag)
+        assertEquals("canary", parsed.channel)
+    }
+
+    @Test fun `a manifest from before the split still parses`() {
+        // The manifests the old scheme published named the version and the tag with the same
+        // string, channel and all. An installed client still fetches them, so the parser has to
+        // keep reading that shape rather than only the new one.
+        val body =
+            """
+            {
+              "schema": 1,
+              "channel": "canary",
+              "versionCode": 217,
+              "versionName": "2.0.0-canary.9",
+              "releaseTag": "2.0.0-canary.9",
+              "apkUrl": "https://example.invalid/hydrabox.apk",
+              "sha256": "$digest",
+              "certificateSha256": "$digest",
+              "keyId": "update-2026-01"
+            }
+            """.trimIndent()
+        val parsed = accepted(body)
+        assertEquals("2.0.0-canary.9", parsed.versionName)
+        assertEquals("2.0.0-canary.9", parsed.releaseTag)
+    }
 }

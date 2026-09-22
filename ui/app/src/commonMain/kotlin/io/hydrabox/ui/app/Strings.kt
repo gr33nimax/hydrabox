@@ -7,10 +7,10 @@ import io.hydrabox.core.projection.ProbeState
 import io.hydrabox.core.projection.ServerRef
 import io.hydrabox.core.projection.SourceProblem
 import io.hydrabox.core.projection.SubscriptionSummary
-import io.hydrabox.core.projection.readableBytes
 import io.hydrabox.core.projection.Trouble
-import io.hydrabox.ui.app.resources.Res
+import io.hydrabox.core.projection.readableBytes
 import io.hydrabox.ui.app.resources.*
+import io.hydrabox.ui.app.resources.Res
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -21,61 +21,116 @@ import org.jetbrains.compose.resources.stringResource
  * of the app single: one concept, one word, in every language.
  */
 @Composable
-fun connectionTitle(connection: Connection): String = stringResource(
-    when (connection) {
-        Connection.NeedsSubscription -> Res.string.state_needs_subscription
-        Connection.NeedsServers -> Res.string.state_needs_servers
-        is Connection.Idle -> Res.string.state_idle
-        is Connection.Connecting -> Res.string.state_connecting
-        is Connection.Connected -> Res.string.state_connected
-        is Connection.Reconnecting -> Res.string.state_reconnecting
-        Connection.Disconnecting -> Res.string.state_disconnecting
-        is Connection.Stopped -> return troubleTitle(connection.cause, connection.server)
-    },
-)
+fun connectionTitle(connection: Connection): String =
+    stringResource(
+        when (connection) {
+            Connection.NeedsSubscription -> Res.string.state_needs_subscription
+            Connection.NeedsServers -> Res.string.state_needs_servers
+            is Connection.Idle -> Res.string.state_idle
+            is Connection.Connecting -> Res.string.state_connecting
+            is Connection.Connected -> Res.string.state_connected
+            is Connection.Reconnecting -> Res.string.state_reconnecting
+            Connection.Disconnecting -> Res.string.state_disconnecting
+            is Connection.Stopped -> return troubleTitle(connection.cause, connection.server)
+        },
+    )
 
 @Composable
-private fun troubleTitle(cause: Trouble, server: ServerRef?): String = when (cause) {
-    Trouble.NO_INTERNET -> stringResource(Res.string.trouble_no_internet)
-    Trouble.SERVER_UNREACHABLE -> stringResource(
-        Res.string.trouble_server_unreachable,
-        server?.let { serverName(it) } ?: stringResource(Res.string.home_server_none),
-    )
-    Trouble.SUBSCRIPTION_UNAVAILABLE -> stringResource(Res.string.trouble_subscription)
-    Trouble.CONFIG_REJECTED -> stringResource(Res.string.trouble_config)
-    Trouble.PERMISSION_REQUIRED -> stringResource(Res.string.trouble_permission)
-    Trouble.UNKNOWN -> stringResource(Res.string.trouble_unknown)
-}
+private fun troubleTitle(
+    cause: Trouble,
+    server: ServerRef?,
+): String =
+    when (cause) {
+        Trouble.NO_INTERNET -> {
+            stringResource(Res.string.trouble_no_internet)
+        }
+
+        Trouble.SERVER_UNREACHABLE -> {
+            stringResource(
+                Res.string.trouble_server_unreachable,
+                server?.let { serverName(it) } ?: stringResource(Res.string.home_server_none),
+            )
+        }
+
+        Trouble.SUBSCRIPTION_UNAVAILABLE -> {
+            stringResource(Res.string.trouble_subscription)
+        }
+
+        Trouble.CONFIG_REJECTED -> {
+            stringResource(Res.string.trouble_config)
+        }
+
+        Trouble.PERMISSION_REQUIRED -> {
+            stringResource(Res.string.trouble_permission)
+        }
+
+        Trouble.UNKNOWN -> {
+            stringResource(Res.string.trouble_unknown)
+        }
+    }
 
 /** What to do about it, in one sentence, for the states that need one. */
 @Composable
-fun connectionHint(connection: Connection): String? = when (connection) {
-    is Connection.Stopped -> stringResource(
-        when (connection.cause) {
-            Trouble.NO_INTERNET -> Res.string.trouble_no_internet_hint
-            Trouble.SERVER_UNREACHABLE -> Res.string.trouble_server_unreachable_hint
-            Trouble.SUBSCRIPTION_UNAVAILABLE -> Res.string.trouble_subscription_hint
-            Trouble.CONFIG_REJECTED -> Res.string.trouble_config_hint
-            Trouble.PERMISSION_REQUIRED -> Res.string.trouble_permission_hint
-            Trouble.UNKNOWN -> Res.string.trouble_unknown_hint
-        },
-    )
-    else -> null
-}
+fun connectionHint(connection: Connection): String? =
+    when (connection) {
+        is Connection.Stopped -> {
+            stringResource(
+                when (connection.cause) {
+                    Trouble.NO_INTERNET -> Res.string.trouble_no_internet_hint
+                    Trouble.SERVER_UNREACHABLE -> Res.string.trouble_server_unreachable_hint
+                    Trouble.SUBSCRIPTION_UNAVAILABLE -> Res.string.trouble_subscription_hint
+                    Trouble.CONFIG_REJECTED -> Res.string.trouble_config_hint
+                    Trouble.PERMISSION_REQUIRED -> Res.string.trouble_permission_hint
+                    Trouble.UNKNOWN -> Res.string.trouble_unknown_hint
+                },
+            )
+        }
+
+        else -> {
+            null
+        }
+    }
 
 /** A server as a person calls it: its name, or "fastest" for the automatic choice. */
 @Composable
-fun serverName(server: ServerRef): String =
-    if (server.auto) stringResource(Res.string.server_auto) else server.displayName
+fun serverName(server: ServerRef): String = if (server.auto) stringResource(Res.string.server_auto) else server.displayName
 
 @Composable
 fun serverDetail(server: ServerRef): String? {
-    val resolved = server.resolvedName
+    // Held in a local: the projection lives in another module, and a property there is not
+    // something the compiler will smart-cast.
+    val label = server.resolvedLabel
     return when {
-        server.auto && resolved != null -> stringResource(Res.string.server_auto_now, resolved)
-        server.auto -> stringResource(Res.string.server_auto_detail)
+        // The name is the answer, with no preamble in front of it: the row already says the
+        // route is chosen automatically, and "now using" only repeated that in a smaller font.
+        server.auto && label != null -> label
+
+        server.auto -> stringResource(Res.string.server_auto_none)
+
         else -> null
     }
+}
+
+/**
+ * The second line of a server's row: what the server is (its protocol, or what the automatic
+ * choice resolved to) and what the last measurement said, unless the protocol is already what
+ * the server is called — a subscription that names an outbound "VLESS" made the row read
+ * "VLESS" and then "vless".
+ *
+ * This belongs under the name, never beside it. A figure as long as "RTT до TURN edge:
+ * 32 мс · устарело" in a trailing slot took the width a server's own name needs, so the one
+ * thing a person picks by could be reduced to an ellipsis by a diagnostic nobody asked to read.
+ */
+@Composable
+fun serverSupportingLine(server: ServerRef?): String? {
+    server ?: return null
+    val protocol = server.type?.takeIf { !it.equals(server.displayName, ignoreCase = true) }?.uppercase()
+    val kind = serverDetail(server) ?: protocol
+    // Nothing is chosen yet, so the automatic choice has no figure of its own to show: the one
+    // that would be attached here belongs to a group nobody has been routed through, and
+    // "Не выбрано · 139 мс" reads as a contradiction.
+    val latency = if (server.auto && server.resolvedLabel == null) null else latencyLabel(server)
+    return listOfNotNull(kind, latency).joinToString(" · ").ifEmpty { null }
 }
 
 /**
@@ -87,34 +142,53 @@ fun serverDetail(server: ServerRef): String? {
  */
 @Composable
 fun latencyLabel(server: ServerRef): String? {
+    // The question is open for this server right now: the row says so instead of repeating a
+    // figure that this press has not confirmed. Only rows this press asked are in this state.
+    if (server.measuring) return stringResource(Res.string.latency_checking)
     server.quicRttMillis?.let { return stringResource(Res.string.latency_rtt, it) }
     // The non-answers are named for what they are: a silence, an edge with no address on
     // file, one a datagram cannot reach, and a budget that ran out first are different
     // things for a person to know, and each has its own words.
     when (server.probe) {
-        ProbeState.SILENT -> return stringResource(Res.string.latency_silent)
-        ProbeState.NO_EDGE -> return stringResource(Res.string.latency_no_edge)
-        ProbeState.EDGE_UNSUPPORTED -> return stringResource(Res.string.latency_edge_unsupported)
-        ProbeState.NOT_MEASURED -> return stringResource(Res.string.latency_not_measured)
+        ProbeState.SILENT -> {
+            return stringResource(Res.string.latency_silent)
+        }
+
+        ProbeState.NO_EDGE -> {
+            return stringResource(Res.string.latency_no_edge)
+        }
+
+        ProbeState.EDGE_UNSUPPORTED -> {
+            return stringResource(Res.string.latency_edge_unsupported)
+        }
+
+        ProbeState.NOT_MEASURED -> {
+            return stringResource(Res.string.latency_not_measured)
+        }
+
         else -> {}
     }
     val millis = server.latencyMillis ?: return null
     // The edge figure is named for what it is: the round trip to the TURN edge proves the
     // edge, and nothing behind it — never a ping of the tunnel.
     if (server.latencyIsEdgeRtt) {
-        val edge = if (millis > 0) {
-            stringResource(Res.string.latency_edge, millis)
-        } else {
-            stringResource(Res.string.latency_edge_under)
-        }
+        val edge =
+            if (millis > 0) {
+                stringResource(Res.string.latency_edge, millis)
+            } else {
+                stringResource(Res.string.latency_edge_under)
+            }
         return if (server.latencyStale) stringResource(Res.string.latency_stale, edge) else edge
     }
-    val value = when {
-        millis >= 1000 -> stringResource(Res.string.latency_s, tenths(millis))
-        // A zero is a round trip faster than the clock's resolution, not an absence of one.
-        millis > 0 -> stringResource(Res.string.latency_ms, millis)
-        else -> stringResource(Res.string.latency_under_ms)
-    }
+    val value =
+        when {
+            millis >= 1000 -> stringResource(Res.string.latency_s, tenths(millis))
+
+            // A zero is a round trip faster than the clock's resolution, not an absence of one.
+            millis > 0 -> stringResource(Res.string.latency_ms, millis)
+
+            else -> stringResource(Res.string.latency_under_ms)
+        }
     // The age of the figure is not worn next to it: it ticked every second for a number
     // nobody asked to watch. Staleness is still a verdict, and still shown.
     return if (server.latencyStale) stringResource(Res.string.latency_stale, value) else value
@@ -127,52 +201,55 @@ private fun tenths(millis: Int): String {
 }
 
 @Composable
-fun noticeText(notice: Notice): String = stringResource(
-    when (notice) {
-        Notice.VPN_PERMISSION_DENIED -> Res.string.notice_permission_denied
-        Notice.SOURCE_ADDED -> Res.string.notice_source_added
-        Notice.SOURCE_UPDATED -> Res.string.notice_source_updated
-        Notice.SOURCE_REMOVED -> Res.string.notice_source_removed
-        Notice.SOURCE_FAILED -> Res.string.notice_source_failed
-        Notice.SOURCE_EMPTY -> Res.string.notice_source_empty
-        Notice.SOURCE_UNREACHABLE -> Res.string.notice_source_unreachable
-        Notice.SOURCE_REJECTED -> Res.string.notice_source_rejected
-        Notice.SOURCE_NOT_A_SUBSCRIPTION -> Res.string.notice_source_not_a_subscription
-        Notice.SOURCE_INSECURE_LINK -> Res.string.notice_source_insecure_link
-        Notice.SOURCE_UNSAFE_REDIRECT -> Res.string.notice_source_unsafe_redirect
-        Notice.SOURCE_NEEDS_KEY -> Res.string.notice_source_needs_key
-        Notice.SOURCE_NEEDS_NEWER_APP -> Res.string.notice_source_needs_newer_app
-        Notice.SOURCE_TOO_LARGE -> Res.string.notice_source_too_large
-        Notice.SERVER_SWITCHED -> Res.string.notice_server_switched
-        Notice.SERVER_SWITCH_RESTARTED -> Res.string.notice_server_switch_restarted
-        Notice.SETTINGS_NEED_RECONNECT -> Res.string.notice_settings_need_reconnect
-        Notice.SETTINGS_APPLIED -> Res.string.notice_settings_applied
-        Notice.PROXY_PORT_TAKEN -> Res.string.notice_proxy_port_taken
-        Notice.BACKUP_EXPORTED -> Res.string.notice_backup_exported
-        Notice.BACKUP_IMPORTED -> Res.string.notice_backup_imported
-        Notice.BACKUP_FAILED -> Res.string.notice_backup_failed
-        Notice.SETTINGS_RESET -> Res.string.settings_saved_hint
-        Notice.RULES_UPDATED -> Res.string.notice_rules_updated
-        Notice.RULES_FAILED -> Res.string.notice_rules_failed
-        Notice.OPERATION_FAILED -> Res.string.notice_operation_failed
-    },
-)
+fun noticeText(notice: Notice): String =
+    stringResource(
+        when (notice) {
+            Notice.VPN_PERMISSION_DENIED -> Res.string.notice_permission_denied
+            Notice.SOURCE_ADDED -> Res.string.notice_source_added
+            Notice.SOURCE_UPDATED -> Res.string.notice_source_updated
+            Notice.SOURCE_REMOVED -> Res.string.notice_source_removed
+            Notice.SOURCE_FAILED -> Res.string.notice_source_failed
+            Notice.SOURCE_EMPTY -> Res.string.notice_source_empty
+            Notice.SOURCE_UNREACHABLE -> Res.string.notice_source_unreachable
+            Notice.SOURCE_REJECTED -> Res.string.notice_source_rejected
+            Notice.SOURCE_NOT_A_SUBSCRIPTION -> Res.string.notice_source_not_a_subscription
+            Notice.SOURCE_INSECURE_LINK -> Res.string.notice_source_insecure_link
+            Notice.SOURCE_UNSAFE_REDIRECT -> Res.string.notice_source_unsafe_redirect
+            Notice.SOURCE_NEEDS_KEY -> Res.string.notice_source_needs_key
+            Notice.SOURCE_NEEDS_NEWER_APP -> Res.string.notice_source_needs_newer_app
+            Notice.SOURCE_TOO_LARGE -> Res.string.notice_source_too_large
+            Notice.SERVER_SWITCHED -> Res.string.notice_server_switched
+            Notice.SERVER_SWITCH_RESTARTED -> Res.string.notice_server_switch_restarted
+            Notice.SETTINGS_NEED_RECONNECT -> Res.string.notice_settings_need_reconnect
+            Notice.SETTINGS_APPLIED -> Res.string.notice_settings_applied
+            Notice.PROXY_PORT_TAKEN -> Res.string.notice_proxy_port_taken
+            Notice.BACKUP_EXPORTED -> Res.string.notice_backup_exported
+            Notice.BACKUP_IMPORTED -> Res.string.notice_backup_imported
+            Notice.BACKUP_FAILED -> Res.string.notice_backup_failed
+            Notice.SETTINGS_RESET -> Res.string.settings_saved_hint
+            Notice.RULES_UPDATED -> Res.string.notice_rules_updated
+            Notice.RULES_FAILED -> Res.string.notice_rules_failed
+            Notice.OPERATION_FAILED -> Res.string.notice_operation_failed
+        },
+    )
 
 @Composable
-fun sourceProblemText(problem: SourceProblem): String = stringResource(
-    when (problem) {
-        SourceProblem.EXPIRED -> Res.string.source_problem_expired
-        SourceProblem.UNREACHABLE -> Res.string.source_problem_unreachable
-        SourceProblem.EMPTY -> Res.string.source_problem_empty
-        SourceProblem.REJECTED -> Res.string.source_problem_rejected
-    },
-)
+fun sourceProblemText(problem: SourceProblem): String =
+    stringResource(
+        when (problem) {
+            SourceProblem.EXPIRED -> Res.string.source_problem_expired
+            SourceProblem.UNREACHABLE -> Res.string.source_problem_unreachable
+            SourceProblem.EMPTY -> Res.string.source_problem_empty
+            SourceProblem.REJECTED -> Res.string.source_problem_rejected
+        },
+    )
 
 /** Time as a clock, not as words: it has to survive both languages unchanged. */
 fun formatDuration(seconds: Int): String {
     val hours = seconds / 3600
     val minutes = (seconds % 3600) / 60
     val secs = seconds % 60
+
     fun pad(value: Int) = if (value < 10) "0$value" else value.toString()
     return if (hours > 0) "$hours:${pad(minutes)}:${pad(secs)}" else "${pad(minutes)}:${pad(secs)}"
 }
@@ -197,16 +274,18 @@ fun planAllowance(source: SubscriptionSummary?): String {
  * provider declared no end, and "expired" once it has passed.
  */
 @Composable
-fun planTerm(source: SubscriptionSummary?): String = when (val days = source?.expiresInDays) {
-    null -> stringResource(Res.string.home_days_left_unlimited)
-    0 -> stringResource(Res.string.home_plan_expired)
-    else -> stringResource(Res.string.home_days_left, days)
-}
+fun planTerm(source: SubscriptionSummary?): String =
+    when (val days = source?.expiresInDays) {
+        null -> stringResource(Res.string.home_days_left_unlimited)
+        0 -> stringResource(Res.string.home_plan_expired)
+        else -> stringResource(Res.string.home_days_left, days)
+    }
 
 /** The same window on the subscription card, where the date itself has room to be shown. */
 @Composable
 fun planValidity(source: SubscriptionSummary): String {
-    val until = source.expiresAt?.let { stringResource(Res.string.home_plan_until, it) }
-        ?: return planTerm(source)
+    val until =
+        source.expiresAt?.let { stringResource(Res.string.home_plan_until, it) }
+            ?: return planTerm(source)
     return until + " · " + planTerm(source)
 }

@@ -46,6 +46,11 @@ data class SubscriptionSummary(
      * kept for later is not the same thing as a subscription deleted.
      */
     val enabled: Boolean = true,
+    /**
+     * What the source is told about this device, when it is told anything. Empty is the honest
+     * answer for every source that receives no identifier at all — most of them do not.
+     */
+    val identifiers: List<SubscriptionIdentifier> = emptyList(),
 ) {
     /** Whether the provider declared a data cap at all, as opposed to an unmetered plan. */
     val metered: Boolean get() = totalBytes != null
@@ -63,6 +68,32 @@ data class SubscriptionSummary(
 
 /** What is wrong with a source, in the terms the person can act on. */
 enum class SourceProblem { EXPIRED, UNREACHABLE, EMPTY, REJECTED }
+
+data class SubscriptionIdentifier(
+    /** What the provider calls it, in the provider's own vocabulary. */
+    val label: String,
+    /** The value itself: the device's own pseudonym, never a credential. */
+    val value: String,
+)
+
+/**
+ * The identifiers a source may be shown, decided in one place.
+ *
+ * A Hydra subscription is fetched with `X-Hydra-HWID`, a per-origin pseudonym of the device, and
+ * that is the whole list: it is the only identifier anything here transmits. Two rules are worth
+ * stating because they are the ones a screen could get wrong — a source that receives no
+ * identifier shows none rather than an empty row, and a value that could not be derived is left
+ * out rather than guessed at.
+ */
+fun subscriptionIdentifiers(
+    hydraKey: Boolean,
+    hardwareId: String?,
+): List<SubscriptionIdentifier> =
+    if (!hydraKey || hardwareId.isNullOrBlank()) {
+        emptyList()
+    } else {
+        listOf(SubscriptionIdentifier(label = "HWID", value = hardwareId))
+    }
 
 /** Servers of one source, kept together because that is how a person recognises them. */
 data class ServerGroup(
@@ -126,11 +157,45 @@ data class UpdateSummary(
     val reachable: Boolean = true,
     /** The version a verified manifest offers, or null when there is nothing to install. */
     val availableVersion: String? = null,
+    /**
+     * Whether the verified file is already on the device. Checking never fetches anything, so a
+     * release found now and one fetched in an earlier visit are the same offer until this says
+     * which of them can be installed at once.
+     */
+    val ready: Boolean = false,
     /** Why the last check produced no offer. */
     val fault: UpdateFault? = null,
     /** Why staging the install did not reach Android's confirmation. */
     val installFault: InstallFault? = null,
-)
+) {
+    /**
+     * What a person can do about the offer right now — the one place this is decided, so the row
+     * and its test cannot drift from each other.
+     */
+    val action: UpdateAction
+        get() =
+            when {
+                availableVersion == null || checking || installing || downloading -> UpdateAction.NONE
+
+                // The file is here: opening the installer on it is the whole action.
+                ready -> UpdateAction.INSTALL
+
+                // Found and not fetched: fetching is the person's own choice, on its own press.
+                else -> UpdateAction.DOWNLOAD
+            }
+}
+
+/** What the offered release is waiting for: nothing, a download, or the installer. */
+enum class UpdateAction {
+    /** No offer, a check still running, or Android already carrying the download itself. */
+    NONE,
+
+    /** A verified release was found and nothing has been fetched yet. */
+    DOWNLOAD,
+
+    /** The file is on the device and the installer can be opened on it. */
+    INSTALL,
+}
 
 data class SettingsSummary(
     val economyMode: Boolean,
@@ -149,8 +214,6 @@ data class SettingsSummary(
     val bypassLocalNetwork: Boolean = true,
     val appsMode: AppsMode = AppsMode.BYPASS_SELECTED,
     val appearance: Appearance = Appearance.SYSTEM,
-    /** Whether the interface takes the system's wallpaper colours instead of the brand's. */
-    val dynamicColour: Boolean = false,
     val language: Language = Language.SYSTEM,
     /** The local proxy replaces the system tunnel: 1.x called it proxy-only. */
     val proxyOnly: Boolean = false,

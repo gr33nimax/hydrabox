@@ -17,10 +17,12 @@ import io.hydrabox.core.projection.ServerGroup
 import io.hydrabox.core.projection.ServerRef
 import io.hydrabox.core.projection.SettingsSummary
 import io.hydrabox.core.projection.SourceProblem
+import io.hydrabox.core.projection.SubscriptionIdentifier
 import io.hydrabox.core.projection.SubscriptionSummary
 import io.hydrabox.core.projection.TlsFragmentation
 import io.hydrabox.core.projection.TunnelStack
 import io.hydrabox.core.projection.UpdateChannel
+import io.hydrabox.core.projection.subscriptionIdentifiers
 import io.hydrabox.core.ruleset.RuleSetPaths
 import io.hydrabox.core.ruleset.RuleSetStatus
 import io.hydrabox.core.settings.AppLanguage
@@ -190,7 +192,6 @@ class AppStore(
                     SplitRoutingMode.BYPASS_SELECTED -> AppsMode.BYPASS_SELECTED
                     SplitRoutingMode.ONLY_SELECTED -> AppsMode.ONLY_SELECTED
                 },
-            dynamicColour = settings.dynamicColour,
             appearance =
                 when (settings.themeMode) {
                     ThemeMode.SYSTEM -> Appearance.SYSTEM
@@ -505,14 +506,90 @@ class AppStore(
             }
         }
 
-    fun renameSubscription(
+    /**
+     * Renames a stored source, or moves it to another address.
+     *
+     * An address is a source's identity — [SubscriptionId.of] hashes it — so a move builds the
+     * new source first, under its own id, and drops the old one in the same transaction. Every
+     * way this can fail happens before that transaction: a link that does not answer, a document
+     * that holds nothing connectable, an address another stored source already uses. The stored
+     * subscription is then exactly as it was, because a link that stopped working is not a
+     * reason to lose the one that still does.
+     */
+    fun editSubscription(
         id: String,
         name: String,
+        link: String,
+    ) = mutate {
+        val current = records().firstOrNull { it.id == id } ?: return@mutate
+        val typed = link.trim()
+        val label = name.trim().ifEmpty { current.name }
+        when (subscriptionEdit(urlOf(id), typed, idOfUrl(typed), id)) {
+            SubscriptionEdit.RENAME -> {
+                database.transaction {
+                    subscriptions.save(SubscriptionRecord(id, label, current.source, current.updatedAtMillis))
+                    bumpCatalogRevision()
+                }
+            }
+
+            SubscriptionEdit.TAKEN -> {
+                throw SubscriptionException(
+                    SourceFailure.UNKNOWN,
+                    detail = "another stored subscription already uses this address",
+                )
+            }
+
+            SubscriptionEdit.MOVE -> {
+                moveSubscription(id, current, typed, label)
+            }
+        }
+    }
+
+    /**
+     * The move itself: fetch, parse, then replace in one transaction.
+     *
+     * The order matters and is the whole point of the split. Nothing is written before the new
+     * address has answered, and the new source is complete — document, metadata, key, validity —
+     * before the old one is dropped, so a failure at any step leaves the old source untouched
+     * rather than a subscription with neither address.
+     */
+    private fun moveSubscription(
+        id: String,
+        current: SubscriptionRecord,
+        address: String,
+        label: String,
     ) {
-        val current = records().firstOrNull { it.id == id } ?: return
+        val opened = retrieve(address)
+        val catalog = parseCatalog(opened.document)
+        val inspection = if (HydraCoreGate.looksHydra(opened.document)) HydraCoreGate.inspect(opened.document) else null
+        val next = SubscriptionId.of(address, records().mapTo(mutableSetOf()) { it.id } - id)
+        val enabled = sourceEnabled(id)
         database.transaction {
-            subscriptions.save(SubscriptionRecord(id, name.trim().ifEmpty { current.name }, current.source, current.updatedAtMillis))
+            subscriptions.save(SubscriptionRecord(next, label, Secret.of(opened.document), System.currentTimeMillis()))
+            queries.upsertValue(urlKey(next), HydraSubscriptionUri.withoutSecretFragment(address).encodeToByteArray())
+            rememberMetadata(next, opened.metadata)
+            rememberFailure(next, null)
+            opened.key?.let { key -> queries.upsertSetting(keyKey(next), "", codec.seal(key)) }
+            inspection?.notAfter?.let { queries.upsertValue(validityKey(next), it.encodeToByteArray()) }
+            // The switch is the person's, not the address's: a source kept for later stays kept.
+            if (!enabled) queries.upsertValue(metadataKey(next, "enabled"), "0".encodeToByteArray())
+            catalogs().firstOrNull { it.first.id == id }?.second?.forEach { outbound ->
+                queries.deleteMetadataWithPrefix(turnEdgeKey(outbound.tag))
+            }
+            queries.deleteSubscription(id)
+            queries.deleteMetadataWithPrefix(metadataPrefix(id))
+            queries.deleteSetting(keyKey(id))
+            // The choice of server follows the source the way it survives a provider renaming
+            // one of its servers: it is stored as (source, the provider's own name) and resolved
+            // through the catalogue, so re-pointing the source is what keeps the tunnel on the
+            // server the person picked.
+            if (queries.selectValue(SELECTED_SOURCE_KEY).executeAsOneOrNull()?.decodeToString() == id) {
+                queries.upsertValue(SELECTED_SOURCE_KEY, next.encodeToByteArray())
+            }
             bumpCatalogRevision()
+        }
+        if (selectedTag() == null) {
+            catalog.defaultTag?.let(::select) ?: catalog.selectable.firstOrNull()?.let { select(it.tag) }
         }
     }
 
@@ -626,6 +703,8 @@ class AppStore(
 
     fun summaries(): List<SubscriptionSummary> =
         catalogs().map { (record, outbounds) ->
+            val link = urlOf(record.id)
+            val encrypted = queries.selectSecretValue(keyKey(record.id)).executeAsOneOrNull()?.secret_value != null
             SubscriptionSummary(
                 id = record.id,
                 name = record.name,
@@ -634,7 +713,7 @@ class AppStore(
                 // Both validity fields end up as a plain day: a person reads 2026-10-12, not
                 // 2026-10-12T00:00:00Z, and the row has one line for it.
                 expiresAt = (validityOf(record.id) ?: expiryOf(record.id))?.substringBefore("T"),
-                encrypted = queries.selectSecretValue(keyKey(record.id)).executeAsOneOrNull()?.secret_value != null,
+                encrypted = encrypted,
                 problem = problemOf(record.id, outbounds),
                 // A provider that reports usage without a cap — `total=0` — still knows how much
                 // has gone through, and that is worth showing on its own.
@@ -650,8 +729,9 @@ class AppStore(
                         .filter(CatalogOutbound::selectable)
                         .groupingBy { it.type.uppercase() }
                         .eachCount(),
-                link = urlOf(record.id),
+                link = link,
                 enabled = sourceEnabled(record.id),
+                identifiers = identifiersOf(link, encrypted),
             )
         } +
             stored().failures.map { failure ->
@@ -666,6 +746,26 @@ class AppStore(
                     enabled = sourceEnabled(failure.id),
                 )
             }
+
+    /**
+     * What this device is called to the source, when it is called anything at all.
+     *
+     * The identifier travels as `X-Hydra-HWID` and only to a subscription whose link carries a
+     * Hydra key — the same condition the fetcher uses, and the reason the value is derived here
+     * rather than remembered: it is a per-origin pseudonym, so it is computable and never stored.
+     * A value that cannot be derived is left out; an invented one would be worse than a blank.
+     */
+    private fun identifiersOf(
+        link: String?,
+        hydraKey: Boolean,
+    ): List<SubscriptionIdentifier> =
+        subscriptionIdentifiers(
+            hydraKey = hydraKey,
+            hardwareId =
+                link
+                    ?.let(::originOfSource)
+                    ?.let { origin -> runCatching { HydraDeviceIdentity.forOrigin(appContext, origin) }.getOrNull() },
+        )
 
     /**
      * How many days the plan still has, from whichever of the two validity fields the document

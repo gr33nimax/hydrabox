@@ -29,8 +29,8 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import io.hydrabox.core.projection.ScreenState
-import io.hydrabox.ui.app.resources.Res
 import io.hydrabox.ui.app.resources.*
+import io.hydrabox.ui.app.resources.Res
 import io.hydrabox.ui.design.ActionRow
 import io.hydrabox.ui.design.HydraField
 import io.hydrabox.ui.design.HydraIcons
@@ -70,12 +70,14 @@ fun OnboardingFlow(
 ) {
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
         Column(
-            modifier = Modifier.fillMaxSize()
-                // The flow is the whole window — there is no scaffold above it to keep the
-                // status bar and the gesture area clear of its content.
-                .windowInsetsPadding(WindowInsets.safeDrawing)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = UiTokens.spacing * 3, vertical = UiTokens.spacing * 4),
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    // The flow is the whole window — there is no scaffold above it to keep the
+                    // status bar and the gesture area clear of its content.
+                    .windowInsetsPadding(WindowInsets.safeDrawing)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = UiTokens.spacing * 3, vertical = UiTokens.spacing * 4),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(UiTokens.spacing * 2),
         ) {
@@ -90,16 +92,24 @@ fun OnboardingFlow(
                 modifier = Modifier.size(if (step == OnboardingStep.WELCOME) 148.dp else 84.dp),
             )
             when (step) {
-                OnboardingStep.WELCOME -> Welcome { onStep(OnboardingStep.LEGAL) }
-                OnboardingStep.LEGAL -> Legal(
-                    onOpenTerms = onOpenTerms,
-                    onOpenPrivacy = onOpenPrivacy,
-                    onAccept = {
-                        actions.onAcceptLegal()
-                        onStep(OnboardingStep.SUBSCRIPTION)
-                    },
-                )
-                OnboardingStep.SUBSCRIPTION -> FirstSubscription(state, actions, onFinish)
+                OnboardingStep.WELCOME -> {
+                    Welcome { onStep(OnboardingStep.LEGAL) }
+                }
+
+                OnboardingStep.LEGAL -> {
+                    Legal(
+                        onOpenTerms = onOpenTerms,
+                        onOpenPrivacy = onOpenPrivacy,
+                        onAccept = {
+                            actions.onAcceptLegal()
+                            onStep(OnboardingStep.SUBSCRIPTION)
+                        },
+                    )
+                }
+
+                OnboardingStep.SUBSCRIPTION -> {
+                    FirstSubscription(state, actions, onFinish)
+                }
             }
         }
     }
@@ -125,7 +135,11 @@ private fun Welcome(onContinue: () -> Unit) {
 }
 
 @Composable
-private fun Legal(onOpenTerms: () -> Unit, onOpenPrivacy: () -> Unit, onAccept: () -> Unit) {
+private fun Legal(
+    onOpenTerms: () -> Unit,
+    onOpenPrivacy: () -> Unit,
+    onAccept: () -> Unit,
+) {
     Text(stringResource(Res.string.onboarding_legal_title), style = MaterialTheme.typography.headlineSmall)
     Text(
         stringResource(Res.string.onboarding_legal_body),
@@ -141,7 +155,11 @@ private fun Legal(onOpenTerms: () -> Unit, onOpenPrivacy: () -> Unit, onAccept: 
 }
 
 @Composable
-private fun FirstSubscription(state: ScreenState, actions: AppActions, onFinish: () -> Unit) {
+private fun FirstSubscription(
+    state: ScreenState,
+    actions: AppActions,
+    onFinish: () -> Unit,
+) {
     var link by remember { mutableStateOf("") }
     val clipboard = LocalClipboardManager.current
     Text(stringResource(Res.string.onboarding_source_title), style = MaterialTheme.typography.headlineSmall)
@@ -172,10 +190,6 @@ private fun FirstSubscription(state: ScreenState, actions: AppActions, onFinish:
         SecondaryAction(
             label = stringResource(Res.string.action_paste),
             onClick = { clipboard.getText()?.text?.let { link = it.trim() } },
-        )
-        SecondaryAction(
-            label = stringResource(Res.string.sources_add_file),
-            onClick = actions.onAddSourceFromFile,
         )
     }
     Spacer(Modifier.size(UiTokens.spacing))

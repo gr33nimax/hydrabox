@@ -7,8 +7,6 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -17,6 +15,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -39,19 +39,34 @@ import androidx.compose.ui.unit.dp
 
 /** The action a screen wants pressed. One per screen region, never two side by side. */
 @Composable
-fun PrimaryAction(label: String, enabled: Boolean = true, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun PrimaryAction(
+    label: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Button(onClick = onClick, enabled = enabled, modifier = modifier) {
         Text(label, style = MaterialTheme.typography.labelLarge)
     }
 }
 
 @Composable
-fun SecondaryAction(label: String, enabled: Boolean = true, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun SecondaryAction(
+    label: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     TextButton(onClick = onClick, enabled = enabled, modifier = modifier) { Text(label) }
 }
 
 @Composable
-fun TonalAction(label: String, enabled: Boolean = true, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun TonalAction(
+    label: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     FilledTonalButton(onClick = onClick, enabled = enabled, modifier = modifier) { Text(label) }
 }
 
@@ -65,7 +80,10 @@ fun TonalAction(label: String, enabled: Boolean = true, onClick: () -> Unit, mod
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ActionRow(modifier: Modifier = Modifier, content: @Composable () -> Unit) = FlowRow(
+fun ActionRow(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) = FlowRow(
     horizontalArrangement = Arrangement.spacedBy(UiTokens.spacing),
     verticalArrangement = Arrangement.spacedBy(UiTokens.spacing / 2),
     modifier = modifier.fillMaxWidth(),
@@ -112,11 +130,12 @@ fun ConfirmDialog(
     confirmButton = {
         TextButton(
             onClick = onConfirm,
-            colors = if (destructive) {
-                ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-            } else {
-                ButtonDefaults.textButtonColors()
-            },
+            colors =
+                if (destructive) {
+                    ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                } else {
+                    ButtonDefaults.textButtonColors()
+                },
         ) { Text(confirmLabel) }
     },
     dismissButton = { TextButton(onClick = onDismiss) { Text(dismissLabel) } },
@@ -125,7 +144,12 @@ fun ConfirmDialog(
 
 /** One choice out of a few, where a switch would not say what the alternatives are. */
 @Composable
-fun OptionRow(title: String, supporting: String?, selected: Boolean, onClick: () -> Unit) = HydraRow(
+fun OptionRow(
+    title: String,
+    supporting: String?,
+    selected: Boolean,
+    onClick: () -> Unit,
+) = HydraRow(
     title = title,
     supporting = supporting,
     tone = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
@@ -186,25 +210,30 @@ fun InputDialog(
 )
 
 /**
- * One server in a list: what it is called, how fast it answered, whether it is the one.
+ * One server in a list: what it is called, what it is and how fast it answered, whether it is
+ * the one.
  *
- * The name stays on one line. Provider names are long, share a suffix and do not break at
- * anything: two lines of `amneziawg-desktop-gr33nima` + `x` reads worse than one line that
- * ends in an ellipsis, and the part that tells two servers apart is at the front.
+ * Both lines belong to the name's own column: the name stays on one line, the figure sits
+ * under it. Provider names are long, share a suffix and do not break at anything: two lines of
+ * `amneziawg-desktop-gr33nima` + `x` reads worse than one line that ends in an ellipsis, and
+ * the part that tells two servers apart is at the front — which is exactly what a trailing
+ * "RTT до TURN edge: 32 мс · устарело" used to cover up.
  */
 @Composable
 fun ServerRow(
     name: String,
     detail: String?,
-    latency: String?,
     selected: Boolean,
     icon: ImageVector,
     onClick: () -> Unit,
     measuring: Boolean = false,
+    /** The flag the subscription put in front of the name, when it put one there. */
+    flag: String? = null,
 ) = HydraRow(
     title = name,
     supporting = detail,
     leading = icon,
+    leadingFlag = flag,
     tone = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
     onClick = onClick,
     titleMaxLines = 1,
@@ -216,9 +245,6 @@ fun ServerRow(
                     strokeWidth = 2.dp,
                     color = MaterialTheme.colorScheme.primary,
                 )
-            }
-            latency?.let {
-                Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (selected) {
                 Icon(
@@ -247,24 +273,27 @@ fun RefreshButton(
     modifier: Modifier = Modifier,
 ) {
     val reduced = LocalUiCapabilities.current.reducedMotion
-    val angle = if (busy && !reduced) {
-        rememberInfiniteTransition(label = "refresh").animateFloat(
-            initialValue = 0f,
-            targetValue = 360f,
-            animationSpec = infiniteRepeatable(tween(durationMillis = 900, easing = LinearEasing), RepeatMode.Restart),
-            label = "refresh-angle",
-        ).value
-    } else {
-        0f
-    }
+    val angle =
+        if (busy && !reduced) {
+            rememberInfiniteTransition(label = "refresh")
+                .animateFloat(
+                    initialValue = 0f,
+                    targetValue = 360f,
+                    animationSpec = infiniteRepeatable(tween(durationMillis = 900, easing = LinearEasing), RepeatMode.Restart),
+                    label = "refresh-angle",
+                ).value
+        } else {
+            0f
+        }
     IconButton(
         onClick = onClick,
         enabled = !busy,
         // A turning icon that is also greyed out reads as broken rather than busy: the button
         // refuses a second tap, and the colour stays the one that says it is working.
-        colors = IconButtonDefaults.iconButtonColors(
-            disabledContentColor = MaterialTheme.colorScheme.primary,
-        ),
+        colors =
+            IconButtonDefaults.iconButtonColors(
+                disabledContentColor = MaterialTheme.colorScheme.primary,
+            ),
         modifier = modifier,
     ) {
         Icon(

@@ -18,6 +18,7 @@ import io.hydrabox.core.projection.NotificationDetail
 import io.hydrabox.core.projection.ScreenState
 import io.hydrabox.core.projection.TlsFragmentation
 import io.hydrabox.core.projection.TunnelStack
+import io.hydrabox.core.projection.UpdateAction
 import io.hydrabox.core.projection.UpdateChannel
 import io.hydrabox.core.projection.UpdateSummary
 import io.hydrabox.core.update.InstallFault
@@ -220,15 +221,31 @@ fun SettingsScreen(
                     )
                 },
             )
-            // Only a verified, newer release for this channel earns a row. While the system is
-            // downloading it the shade carries the progress, so the row waits its turn; once the
-            // file has arrived, pressing the row opens the installer on it.
-            state.update.availableVersion?.takeIf { !state.update.downloading }?.let { version ->
-                ValueRow(
-                    title = stringResource(Res.string.update_install, version),
-                    value = null,
-                    onClick = actions.onInstallUpdate,
-                )
+            // Only a verified, newer release for this channel earns a row, and the row offers
+            // what the release is still waiting for: fetching is its own press and never the
+            // check's doing, and once the file is here, the installer is what opens.
+            state.update.availableVersion?.let { version ->
+                when (state.update.action) {
+                    UpdateAction.DOWNLOAD -> {
+                        ValueRow(
+                            title = stringResource(Res.string.update_download, version),
+                            value = null,
+                            onClick = actions.onDownloadUpdate,
+                        )
+                    }
+
+                    UpdateAction.INSTALL -> {
+                        ValueRow(
+                            title = stringResource(Res.string.update_install, version),
+                            value = null,
+                            onClick = actions.onInstallUpdate,
+                        )
+                    }
+
+                    // Android's own shade carries a running download, and a check in flight has
+                    // nothing to offer yet.
+                    UpdateAction.NONE -> {}
+                }
             }
         }
         SectionGroup(stringResource(Res.string.settings_interface)) {
