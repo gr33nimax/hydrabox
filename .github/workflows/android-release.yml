@@ -80,9 +80,11 @@ jobs:
             checkout_ref=""
             if [ "${DRY_RUN:-}" = "true" ]; then publish=false; else publish=true; fi
           fi
-          echo "channel=$channel" >> "$GITHUB_OUTPUT"
-          echo "checkout_ref=$checkout_ref" >> "$GITHUB_OUTPUT"
-          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          {
+            echo "channel=$channel"
+            echo "checkout_ref=$checkout_ref"
+            echo "publish=$publish"
+          } >> "$GITHUB_OUTPUT"
           echo "Целевой канал: $channel; публикация: $publish"
 
       - name: Checkout
@@ -195,10 +197,12 @@ jobs:
             exit 1
           fi
           tag="v${name}-${channel}.${counter}"
-          echo "name=$name" >> "$GITHUB_OUTPUT"
-          echo "code=$code" >> "$GITHUB_OUTPUT"
-          echo "channel=$channel" >> "$GITHUB_OUTPUT"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          {
+            echo "name=$name"
+            echo "code=$code"
+            echo "channel=$channel"
+            echo "tag=$tag"
+          } >> "$GITHUB_OUTPUT"
           echo "Версия: $name ($code), канал $channel, тег $tag"
 
       # A release without a signature is not a release: the build would happily produce an
@@ -317,6 +321,7 @@ jobs:
         if: ${{ steps.target.outputs.publish == 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CHANNEL: ${{ steps.version.outputs.channel }}
           TAG: ${{ steps.version.outputs.tag }}
           NAME: ${{ steps.version.outputs.name }}
           SHA: ${{ steps.collect.outputs.sha256 }}
@@ -330,11 +335,15 @@ jobs:
             echo "- коммит ядра: $(git -C hydracore rev-parse HEAD)"
             echo "- APK SHA-256: $SHA"
           } > "$notes"
+          # The 1.x Flutter line is retired (owner decision), so a stable 2.x release is a real
+          # release, marked latest. canary stays a prerelease: it is a prerelease by nature, and
+          # keeping it off `releases/latest` keeps a stable operator's `releases/latest` read clean.
+          if [ "$CHANNEL" = "stable" ]; then prerelease_flag="--latest"; else prerelease_flag="--prerelease"; fi
           # A re-run has to be able to finish what a later step failed at, rather than tripping over
           # the tag its own first attempt created.
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" release/hydrabox-*.apk release/SHA256SUMS --clobber
-            gh release edit "$TAG" --title "HydraBox $NAME ($TAG)" --notes-file "$notes" --prerelease
+            gh release edit "$TAG" --title "HydraBox $NAME ($TAG)" --notes-file "$notes" "$prerelease_flag"
           else
             # The tag has to mark the commit this APK was built from. GITHUB_SHA is the wrong
             # figure: on a dispatch it is the default branch's head, and the default branch here
@@ -345,7 +354,7 @@ jobs:
               --title "HydraBox $NAME ($TAG)" \
               --notes-file "$notes" \
               --target "$(git rev-parse HEAD)" \
-              --prerelease
+              "$prerelease_flag"
           fi
 
       # The release exists; this is what a client can actually find. The manifest is signed rather
