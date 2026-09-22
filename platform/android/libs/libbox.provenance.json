@@ -8,16 +8,16 @@
   },
   "source": {
     "repository": "https://github.com/gr33nimax/hydracore",
-    "commit": "3edbc7e10a6b3e6233258f05fa7fb024ea26598b",
+    "commit": "5f4f2b74d04b1bec05ee193c3672d327fba7ce97",
     "version": "hydracore-sbe-1.14.1"
   },
   "upstream": {
     "project": "sing-box-extended",
-    "commit": "217f77643f19e915ea38ba2a9ac7e28e22a0cec5"
+    "commit": "55faa763f986f4ca8a492d9b2719bc6330d2bef5"
   },
   "artifacts": {
     "hydracore-client-libbox.aar": {
-      "sha256": "8bbfad4cbdebe989d52b793c48c23ac49c7a8733983e373843cf989b77508fcf"
+      "sha256": "48b58ad4fbb019e69202956ad757881f6b10c1f6671b40e81958d4f282cc8e88"
     }
   }
 }
