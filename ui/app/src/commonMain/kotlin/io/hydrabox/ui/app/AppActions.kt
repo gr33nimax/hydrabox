@@ -20,7 +20,9 @@ data class AppActions(
     val onDisconnect: () -> Unit = {},
     val onRetry: () -> Unit = {},
     val onGrantPermission: () -> Unit = {},
-    val onAddSource: (String, String) -> Unit = { _, _ -> },
+    val onAddImport: (String, String) -> Unit = { _, _ -> },
+    val onUpdateConfig: (String, String) -> Unit = { _, _ -> },
+    val onRemoveConfig: (String) -> Unit = {},
     val onRefreshSource: (String) -> Unit = {},
     val onRefreshUsage: (String) -> Unit = {},
     /** Renames a source or points it at another address; the same call does both. */
@@ -67,6 +69,7 @@ data class AppActions(
     val onToggleApp: (String) -> Unit = {},
     val onLoadApps: () -> Unit = {},
     val onExportDiagnostics: () -> Unit = {},
+    val onCopyDiagnostics: () -> Unit = {},
     /** Opens an address outside the app — the projects this build comes from. */
     val onOpenLink: (String) -> Unit = {},
     val onClearJournal: () -> Unit = {},

@@ -7,7 +7,7 @@ import io.hydrabox.core.projection.ProbeState
 import io.hydrabox.core.projection.ServerRef
 import io.hydrabox.core.projection.SourceProblem
 import io.hydrabox.core.projection.SubscriptionSummary
-import io.hydrabox.core.projection.Trouble
+import io.hydrabox.core.projection.ErrorMessage
 import io.hydrabox.core.projection.readableBytes
 import io.hydrabox.ui.app.resources.*
 import io.hydrabox.ui.app.resources.Res
@@ -31,40 +31,42 @@ fun connectionTitle(connection: Connection): String =
             is Connection.Connected -> Res.string.state_connected
             is Connection.Reconnecting -> Res.string.state_reconnecting
             Connection.Disconnecting -> Res.string.state_disconnecting
-            is Connection.Stopped -> return troubleTitle(connection.cause, connection.server)
+            is Connection.Stopped -> return errorMessageTitle(connection.presentation.message, connection.server)
+            is Connection.Unreachable -> return errorMessageTitle(connection.presentation.message, connection.server)
         },
     )
 
 @Composable
-private fun troubleTitle(
-    cause: Trouble,
-    server: ServerRef?,
+fun errorMessageTitle(
+    message: ErrorMessage,
+    server: ServerRef? = null,
 ): String =
-    when (cause) {
-        Trouble.NO_INTERNET -> {
+    when (message) {
+        ErrorMessage.NO_INTERNET -> {
             stringResource(Res.string.trouble_no_internet)
         }
 
-        Trouble.SERVER_UNREACHABLE -> {
-            stringResource(
-                Res.string.trouble_server_unreachable,
-                server?.let { serverName(it) } ?: stringResource(Res.string.home_server_none),
-            )
-        }
+        ErrorMessage.SERVER_UNREACHABLE ->
+            if (server == null) {
+                stringResource(Res.string.trouble_server_unreachable_generic)
+            } else {
+                stringResource(Res.string.trouble_server_unreachable, serverName(server))
+            }
 
-        Trouble.SUBSCRIPTION_UNAVAILABLE -> {
+        ErrorMessage.SUBSCRIPTION_UNAVAILABLE -> {
             stringResource(Res.string.trouble_subscription)
         }
 
-        Trouble.CONFIG_REJECTED -> {
+        ErrorMessage.CONFIG_REJECTED -> {
             stringResource(Res.string.trouble_config)
         }
 
-        Trouble.PERMISSION_REQUIRED -> {
+        ErrorMessage.PERMISSION_REQUIRED -> {
             stringResource(Res.string.trouble_permission)
         }
 
-        Trouble.UNKNOWN -> {
+        ErrorMessage.CONNECTION_LOST -> stringResource(Res.string.trouble_connection_lost)
+        ErrorMessage.UNKNOWN -> {
             stringResource(Res.string.trouble_unknown)
         }
     }
@@ -73,23 +75,27 @@ private fun troubleTitle(
 @Composable
 fun connectionHint(connection: Connection): String? =
     when (connection) {
-        is Connection.Stopped -> {
-            stringResource(
-                when (connection.cause) {
-                    Trouble.NO_INTERNET -> Res.string.trouble_no_internet_hint
-                    Trouble.SERVER_UNREACHABLE -> Res.string.trouble_server_unreachable_hint
-                    Trouble.SUBSCRIPTION_UNAVAILABLE -> Res.string.trouble_subscription_hint
-                    Trouble.CONFIG_REJECTED -> Res.string.trouble_config_hint
-                    Trouble.PERMISSION_REQUIRED -> Res.string.trouble_permission_hint
-                    Trouble.UNKNOWN -> Res.string.trouble_unknown_hint
-                },
-            )
-        }
+        is Connection.Stopped -> errorHint(connection.presentation.message)
+        is Connection.Unreachable -> errorHint(connection.presentation.message)
 
         else -> {
             null
         }
     }
+
+@Composable
+private fun errorHint(message: ErrorMessage): String =
+    stringResource(
+        when (message) {
+            ErrorMessage.NO_INTERNET -> Res.string.trouble_no_internet_hint
+            ErrorMessage.SERVER_UNREACHABLE -> Res.string.trouble_server_unreachable_hint
+            ErrorMessage.SUBSCRIPTION_UNAVAILABLE -> Res.string.trouble_subscription_hint
+            ErrorMessage.CONFIG_REJECTED -> Res.string.trouble_config_hint
+            ErrorMessage.PERMISSION_REQUIRED -> Res.string.trouble_permission_hint
+            ErrorMessage.CONNECTION_LOST -> Res.string.trouble_connection_lost_hint
+            ErrorMessage.UNKNOWN -> Res.string.trouble_unknown_hint
+        },
+    )
 
 /** A server as a person calls it: its name, or "fastest" for the automatic choice. */
 @Composable
@@ -201,13 +207,30 @@ private fun tenths(millis: Int): String {
 }
 
 @Composable
-fun noticeText(notice: Notice): String =
-    stringResource(
+fun noticeText(
+    notice: Notice,
+    detail: String? = null,
+): String {
+    if (!detail.isNullOrBlank()) {
+        when (notice) {
+            Notice.CONFIG_IMPORT_FAILED -> return stringResource(Res.string.notice_config_import_failed_detail, detail)
+            Notice.CONFIG_UPDATE_FAILED -> return stringResource(Res.string.notice_config_update_failed_detail, detail)
+            Notice.CONFIG_REMOVE_FAILED -> return stringResource(Res.string.notice_config_remove_failed_detail, detail)
+            else -> Unit
+        }
+    }
+    return stringResource(
         when (notice) {
             Notice.VPN_PERMISSION_DENIED -> Res.string.notice_permission_denied
             Notice.SOURCE_ADDED -> Res.string.notice_source_added
             Notice.SOURCE_UPDATED -> Res.string.notice_source_updated
             Notice.SOURCE_REMOVED -> Res.string.notice_source_removed
+            Notice.CONFIG_IMPORT_ADDED -> Res.string.notice_config_import_added
+            Notice.CONFIG_IMPORT_FAILED -> Res.string.notice_config_import_failed
+            Notice.CONFIG_UPDATED -> Res.string.notice_config_updated
+            Notice.CONFIG_UPDATE_FAILED -> Res.string.notice_config_update_failed
+            Notice.CONFIG_REMOVED -> Res.string.notice_config_removed
+            Notice.CONFIG_REMOVE_FAILED -> Res.string.notice_config_remove_failed
             Notice.SOURCE_FAILED -> Res.string.notice_source_failed
             Notice.SOURCE_EMPTY -> Res.string.notice_source_empty
             Notice.SOURCE_UNREACHABLE -> Res.string.notice_source_unreachable
@@ -232,6 +255,7 @@ fun noticeText(notice: Notice): String =
             Notice.OPERATION_FAILED -> Res.string.notice_operation_failed
         },
     )
+}
 
 @Composable
 fun sourceProblemText(problem: SourceProblem): String =

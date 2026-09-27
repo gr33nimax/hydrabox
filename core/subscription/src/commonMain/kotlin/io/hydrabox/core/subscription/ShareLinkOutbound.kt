@@ -1,8 +1,11 @@
 package io.hydrabox.core.subscription
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
@@ -77,6 +80,7 @@ object ShareLinkOutbound {
                     link.uuid.use { put("uuid", it) }
                     link.query["flow"]?.takeIf(String::isNotEmpty)?.let { put("flow", it) }
                     link.query["encryption"]?.takeIf { it != "none" }?.let { put("encryption", it) }
+                    if (link.query.isEnabled("tfo", "tcp-fast-open", "tcp_fast_open")) put("tcp_fast_open", true)
                     transport(link.query)?.let { put("transport", it) }
                     tls(link.query, link.server, secured(link.query))?.let { put("tls", it) }
                 }
@@ -89,6 +93,7 @@ object ShareLinkOutbound {
                     put("server", link.server)
                     put("server_port", link.port)
                     link.password.use { put("password", it) }
+                    if (link.query.isEnabled("tfo", "tcp-fast-open", "tcp_fast_open")) put("tcp_fast_open", true)
                     transport(link.query)?.let { put("transport", it) }
                     tls(link.query, link.server, secured = true)?.let { put("tls", it) }
                 }
@@ -101,22 +106,27 @@ object ShareLinkOutbound {
                     put("server", link.server)
                     put("server_port", link.port)
                     when (link.type) {
-                        "shadowsocks", "shadowsocksr" -> {
+                        "shadowsocks" -> {
                             link.username?.use { put("method", it) }
                             link.password?.use { put("password", it) }
                             link.query["plugin"]?.let { plugin ->
                                 put("plugin", plugin.substringBefore(';'))
-                                plugin
-                                    .substringAfter(';', "")
-                                    .takeIf(String::isNotEmpty)
-                                    ?.let { put("plugin_opts", it) }
+                                plugin.substringAfter(';', "").takeIf(String::isNotEmpty)?.let { put("plugin_opts", it) }
                             }
+                        }
+
+                        "shadowsocksr" -> {
+                            link.username?.use { put("method", it) }
+                            link.password?.use { put("password", it) }
+                            link.query["protocol"]?.let { put("protocol", it) }
+                            link.query["obfs"]?.let { put("obfs", it) }
+                            link.query["obfs_param"]?.let { put("obfs_param", it) }
+                            link.query["protocol_param"]?.let { put("protocol_param", it) }
                         }
 
                         "vmess" -> {
                             link.username?.use { put("uuid", it) }
-                            // The cipher and the alternative id are part of the identity of a vmess
-                            // server: a provider that says `scy=zero` is not offering `auto`.
+                            // `scy=zero` is part of the server identity; dropping it selects `auto`.
                             link.query["scy"]?.let { put("security", it) }
                             link.query["aid"]
                                 ?.toIntOrNull()
@@ -124,8 +134,45 @@ object ShareLinkOutbound {
                                 ?.let { put("alter_id", it) }
                         }
 
-                        "hysteria2", "tuic", "anytls" -> {
-                            (link.password ?: link.username)?.use { put("password", it) }
+                        "hysteria" -> {
+                            link.query["auth"]?.takeIf(String::isNotEmpty)?.let { put("auth_str", it) }
+                                ?: link.username?.use { put("auth_str", it) }
+                            link.query["up"]?.takeIf(String::isNotEmpty)?.let { put("up", it) }
+                            link.query["down"]?.takeIf(String::isNotEmpty)?.let { put("down", it) }
+                            link.query["up_mbps"]?.toIntOrNull()?.let { put("up_mbps", it) }
+                            link.query["down_mbps"]?.toIntOrNull()?.let { put("down_mbps", it) }
+                            (link.query["obfs"] ?: link.query["obfsParam"])
+                                ?.takeIf(String::isNotEmpty)
+                                ?.let { put("obfs", it) }
+                        }
+
+                        "hysteria2" -> {
+                            link.username?.use { put("password", it) }
+                            link.query["up"]?.toIntOrNull()?.let { put("up_mbps", it) }
+                            link.query["down"]?.toIntOrNull()?.let { put("down_mbps", it) }
+                            val obfsType = link.query["obfs"]?.takeIf { it == "salamander" || it == "gecko" }
+                            if (obfsType != null) {
+                                putJsonObject("obfs") {
+                                    put("type", obfsType)
+                                    link.query["obfs-password"]?.takeIf(String::isNotEmpty)?.let { put("password", it) }
+                                }
+                            }
+                        }
+
+                        "tuic" -> {
+                            link.username?.use { put("uuid", it) }
+                            link.password?.use { put("password", it) }
+                            link.query["congestion_control"]?.let { put("congestion_control", it) }
+                            if (!link.query.isEnabled("udp_over_stream")) {
+                                link.query["udp_relay_mode"]?.let { put("udp_relay_mode", it) }
+                            }
+                            if (link.query.isEnabled("udp_over_stream")) put("udp_over_stream", true)
+                            if (link.query.isEnabled("zero_rtt_handshake", "reduce_rtt")) put("zero_rtt_handshake", true)
+                            link.query["heartbeat_interval"]?.takeIf(String::isNotEmpty)?.let { put("heartbeat", it) }
+                        }
+
+                        "anytls" -> {
+                            link.username?.use { put("password", it) }
                         }
 
                         "snell" -> {
@@ -134,15 +181,14 @@ object ShareLinkOutbound {
                             // answered by a fourth-generation client: the core has no client 5.
                             link.username?.use { put("psk", it) }
                             put("version", link.query["version"]?.toIntOrNull()?.takeIf { it == 4 || it == 6 } ?: 4)
-                            // `obfs` is the name clients write and read; `obfs-mode` is what this
-                            // server wrote before, and a link from either side must keep its mode.
+                            // Both spellings occur in Snell links; the core option is `obfs_mode`.
                             (link.query["obfs"] ?: link.query["obfs-mode"])
                                 ?.takeIf(String::isNotEmpty)
                                 ?.let { put("obfs_mode", it) }
                             link.query["obfs-host"]?.takeIf(String::isNotEmpty)?.let { put("obfs_host", it) }
                             link.query["mode"]?.takeIf(String::isNotEmpty)?.let { put("mode", it) }
                             link.query["userkey"]?.takeIf(String::isNotEmpty)?.let { put("userkey", it) }
-                            if (link.query["udp-relay"] == "true") {
+                            if (link.query.isEnabled("udp-relay")) {
                                 putJsonArray("network") {
                                     add(JsonPrimitive("tcp"))
                                     add(JsonPrimitive("udp"))
@@ -150,13 +196,32 @@ object ShareLinkOutbound {
                             }
                         }
 
+                        "socks" -> {
+                            link.username?.use { put("username", it) }
+                            link.password?.use { put("password", it) }
+                            link.query["version"]?.let { put("version", it) }
+                        }
+
                         else -> {
                             link.username?.use { put("username", it) }
                             link.password?.use { put("password", it) }
+                            if (link.type == "naive" && link.query.isEnabled("quic")) put("quic", true)
                         }
                     }
-                    transport(link.query)?.let { put("transport", it) }
-                    tls(link.query, link.server, link.tls)?.let { put("tls", it) }
+                    if (link.type != "naive" && link.type != "anytls" &&
+                        link.query.isEnabled("tfo", "tcp-fast-open", "tcp_fast_open")
+                    ) {
+                        put("tcp_fast_open", true)
+                    }
+                    if (link.type == "vmess") transport(link.query)?.let { put("transport", it) }
+                    val tlsOptions =
+                        when (link.type) {
+                            "naive" -> naiveTls(link.query, link.server, link.tls)
+                            "anytls" -> anyTls(link.query, link.server, link.tls)
+                            "socks", "shadowsocks", "shadowsocksr", "snell" -> null
+                            else -> tls(link.query, link.server, link.tls)
+                        }
+                    tlsOptions?.let { put("tls", it) }
                 }
             }
 
@@ -237,6 +302,9 @@ object ShareLinkOutbound {
         return document.takeIf(JsonObject::isNotEmpty)
     }
 
+    private fun Map<String, String>.isEnabled(vararg keys: String): Boolean =
+        keys.any { this[it] == "1" || this[it].equals("true", ignoreCase = true) }
+
     private fun parseAmneziaBoolean(raw: String): Boolean? =
         when (raw.trim().lowercase()) {
             "1", "true", "on", "yes" -> true
@@ -254,7 +322,8 @@ object ShareLinkOutbound {
         if (!secured) return null
         return buildJsonObject {
             put("enabled", true)
-            put("server_name", query["sni"] ?: query["host"] ?: server)
+            put("server_name", query["sni"] ?: query["peer"] ?: query["serviceName"] ?: query["host"] ?: server)
+            if (query.isEnabled("disable_sni")) put("disable_sni", true)
             query["fp"]?.let {
                 putJsonObject("utls") {
                     put("enabled", true)
@@ -267,14 +336,47 @@ object ShareLinkOutbound {
                 ?.filter(String::isNotEmpty)
                 ?.takeIf { it.isNotEmpty() }
                 ?.let { values -> putJsonArray("alpn") { values.forEach { add(JsonPrimitive(it)) } } }
-            if (query["allowInsecure"] == "1" || query["insecure"] == "1") put("insecure", true)
+            if (query.isEnabled("allowInsecure", "insecure", "skip-cert-verify", "allow_insecure")) put("insecure", true)
+            query["ca"]?.takeIf(String::isNotEmpty)?.let { put("certificate_path", it) }
+            query["ca_str"]?.takeIf(String::isNotEmpty)?.let { certificates ->
+                putJsonArray("certificate") { certificates.split('\n').forEach { add(JsonPrimitive(it)) } }
+            }
             query["pbk"]?.let { key ->
                 putJsonObject("reality") {
                     put("enabled", true)
                     put("public_key", key)
                     query["sid"]?.let { put("short_id", it) }
+                    (query["spx"] ?: query["spider_x"])?.let { put("spider_x", it) }
                 }
             }
+        }
+    }
+
+    private fun anyTls(
+        query: Map<String, String>,
+        server: String,
+        secured: Boolean,
+    ): JsonObject? {
+        if (!secured) return null
+        return buildJsonObject {
+            put("enabled", true)
+            put("server_name", query["sni"] ?: server)
+            query["ca"]?.takeIf(String::isNotEmpty)?.let { put("certificate_path", it) }
+            query["ca_str"]?.takeIf(String::isNotEmpty)?.let { values ->
+                putJsonArray("certificate") { values.split('\n').forEach { add(JsonPrimitive(it)) } }
+            }
+        }
+    }
+
+    private fun naiveTls(
+        query: Map<String, String>,
+        server: String,
+        secured: Boolean,
+    ): JsonObject? {
+        if (!secured) return null
+        return buildJsonObject {
+            put("enabled", true)
+            put("server_name", query["sni"] ?: query["host"] ?: server)
         }
     }
 
@@ -311,7 +413,8 @@ object ShareLinkOutbound {
             "grpc" -> {
                 buildJsonObject {
                     put("type", "grpc")
-                    (query["serviceName"] ?: query["path"]?.trimStart('/'))?.let { put("service_name", it) }
+                    (query["grpc-service-name"] ?: query["serviceName"] ?: query["path"]?.trimStart('/'))
+                        ?.let { put("service_name", it) }
                 }
             }
 
@@ -344,7 +447,7 @@ object ShareLinkOutbound {
                 buildJsonObject {
                     put("type", "xhttp")
                     put("mode", query["mode"]?.takeIf(String::isNotEmpty) ?: "auto")
-                    query["path"]?.let { put("path", it) }
+                    query["path"]?.let { put("path", normalizeXHTTPPath(it)) }
                     query["host"]?.let { put("host", it) }
                     // The core refuses a document whose xhttp transport names no padding range
                     // (`x_padding_bytes cannot be disabled`), and a provider that is not Hydra hands
@@ -361,13 +464,15 @@ object ShareLinkOutbound {
                     // difference: the core then sees no padding range at all and refuses the whole
                     // configuration with `x_padding_bytes cannot be disabled`.
                     query["extra"]?.let { extra ->
-                        runCatching { json.parseToJsonElement(extra) as? JsonObject }
-                            .getOrNull()
-                            ?.forEach { (key, value) ->
-                                if (key == "type" || key == "mode") return@forEach
-                                val name = xhttpExtras[key] ?: snakeCase(key)
-                                if (name == "xmux") put(name, xmux(value)) else put(name, value)
-                            }
+                        val fields =
+                            runCatching { json.parseToJsonElement(extra) as? JsonObject }.getOrNull()
+                                ?: decodeBase64(extra)?.let { decoded ->
+                                    runCatching { json.parseToJsonElement(decoded) as? JsonObject }.getOrNull()
+                                }
+                        fields?.forEach { (key, value) ->
+                            val name = xhttpExtras[key] ?: return@forEach
+                            xhttpValue(value, name)?.let { put(name, it) }
+                        }
                     }
                 }
             }
@@ -389,52 +494,271 @@ object ShareLinkOutbound {
             }
         }
 
-    /**
-     * Xray's names for the xhttp extras against the core's. Only the ones the core actually
-     * reads are listed; anything else falls back to a plain snake_case rewrite.
-     */
-    private val xhttpExtras =
+    /** Xray extra names mapped to fields tagged by V2RayXHTTPBaseOptions. */
+    private val xhttpBaseExtras =
         mapOf(
-            "xPaddingBytes" to "x_padding_bytes",
-            "scMaxEachPostBytes" to "sc_max_each_post_bytes",
-            "scMinPostsIntervalMs" to "sc_min_posts_interval_ms",
-            "scMaxBufferedPosts" to "sc_max_buffered_posts",
-            "scStreamUpServerSecs" to "sc_stream_up_server_secs",
-            "noGRPCHeader" to "no_grpc_header",
-            "noSSEHeader" to "no_sse_header",
-            "xmux" to "xmux",
-            "headers" to "headers",
             "host" to "host",
             "path" to "path",
+            "headers" to "headers",
+            "domainStrategy" to "domain_strategy",
+            "domain_strategy" to "domain_strategy",
+            "xPaddingBytes" to "x_padding_bytes",
+            "x_padding_bytes" to "x_padding_bytes",
+            "noGRPCHeader" to "no_grpc_header",
+            "no_grpc_header" to "no_grpc_header",
+            "noSSEHeader" to "no_sse_header",
+            "no_sse_header" to "no_sse_header",
+            "scMaxEachPostBytes" to "sc_max_each_post_bytes",
+            "sc_max_each_post_bytes" to "sc_max_each_post_bytes",
+            "scMinPostsIntervalMs" to "sc_min_posts_interval_ms",
+            "sc_min_posts_interval_ms" to "sc_min_posts_interval_ms",
+            "scMaxBufferedPosts" to "sc_max_buffered_posts",
+            "sc_max_buffered_posts" to "sc_max_buffered_posts",
+            "scStreamUpServerSecs" to "sc_stream_up_server_secs",
+            "sc_stream_up_server_secs" to "sc_stream_up_server_secs",
+            "serverMaxHeaderBytes" to "server_max_header_bytes",
+            "server_max_header_bytes" to "server_max_header_bytes",
+            "trustedXForwardedFor" to "trusted_x_forwarded_for",
+            "trusted_x_forwarded_for" to "trusted_x_forwarded_for",
+            "xmux" to "xmux",
+            "xPaddingObfsMode" to "x_padding_obfs_mode",
+            "x_padding_obfs_mode" to "x_padding_obfs_mode",
+            "xPaddingKey" to "x_padding_key",
+            "x_padding_key" to "x_padding_key",
+            "xPaddingHeader" to "x_padding_header",
+            "x_padding_header" to "x_padding_header",
+            "xPaddingPlacement" to "x_padding_placement",
+            "x_padding_placement" to "x_padding_placement",
+            "xPaddingMethod" to "x_padding_method",
+            "x_padding_method" to "x_padding_method",
+            "uplinkHTTPMethod" to "uplink_http_method",
+            "uplink_http_method" to "uplink_http_method",
+            "sessionIDPlacement" to "session_placement",
+            "sessionPlacement" to "session_placement",
+            "session_placement" to "session_placement",
+            "sessionIDKey" to "session_key",
+            "sessionKey" to "session_key",
+            "session_key" to "session_key",
+            "seqPlacement" to "seq_placement",
+            "seq_placement" to "seq_placement",
+            "seqKey" to "seq_key",
+            "seq_key" to "seq_key",
+            "uplinkDataPlacement" to "uplink_data_placement",
+            "uplink_data_placement" to "uplink_data_placement",
+            "uplinkDataKey" to "uplink_data_key",
+            "uplink_data_key" to "uplink_data_key",
+            "uplinkChunkSize" to "uplink_chunk_size",
+            "uplink_chunk_size" to "uplink_chunk_size",
+            "sessionIDTable" to "session_id_table",
+            "session_id_table" to "session_id_table",
+            "sessionIDLength" to "session_id_length",
+            "session_id_length" to "session_id_length",
+            "congestionController" to "congestion_controller",
+            "congestion_controller" to "congestion_controller",
+            "cwnd" to "cwnd",
         )
+
+    private val xhttpExtras = xhttpBaseExtras + ("download" to "download")
+
+    /** V2RayXHTTPDownloadOptions embeds the base options, server, TLS, and detour. */
+    private val xhttpDownloadExtras =
+        xhttpBaseExtras +
+            mapOf(
+                "server" to "server",
+                "serverPort" to "server_port",
+                "server_port" to "server_port",
+                "tls" to "tls",
+                "detour" to "detour",
+            )
 
     private val xmuxFields =
         mapOf(
             "maxConcurrency" to "max_concurrency",
+            "max_concurrency" to "max_concurrency",
             "maxConnections" to "max_connections",
+            "max_connections" to "max_connections",
             "cMaxReuseTimes" to "c_max_reuse_times",
+            "c_max_reuse_times" to "c_max_reuse_times",
             "hMaxRequestTimes" to "h_max_request_times",
+            "h_max_request_times" to "h_max_request_times",
             "hMaxReusableSecs" to "h_max_reusable_secs",
+            "h_max_reusable_secs" to "h_max_reusable_secs",
             "hKeepAlivePeriod" to "h_keep_alive_period",
+            "h_keep_alive_period" to "h_keep_alive_period",
         )
 
-    private fun xmux(value: kotlinx.serialization.json.JsonElement): kotlinx.serialization.json.JsonElement {
-        val fields = value as? JsonObject ?: return value
-        return buildJsonObject {
-            fields.forEach { (key, inner) -> put(xmuxFields[key] ?: snakeCase(key), inner) }
-        }
-    }
+    private val xhttpTlsFields =
+        mapOf(
+            "enabled" to "enabled",
+            "engine" to "engine",
+            "disableSNI" to "disable_sni",
+            "disable_sni" to "disable_sni",
+            "serverName" to "server_name",
+            "server_name" to "server_name",
+            "insecure" to "insecure",
+            "alpn" to "alpn",
+            "minVersion" to "min_version",
+            "min_version" to "min_version",
+            "maxVersion" to "max_version",
+            "max_version" to "max_version",
+            "cipherSuites" to "cipher_suites",
+            "cipher_suites" to "cipher_suites",
+            "curvePreferences" to "curve_preferences",
+            "curve_preferences" to "curve_preferences",
+            "certificate" to "certificate",
+            "certificatePath" to "certificate_path",
+            "certificate_path" to "certificate_path",
+            "certificatePublicKeySHA256" to "certificate_public_key_sha256",
+            "certificate_public_key_sha256" to "certificate_public_key_sha256",
+            "clientCertificate" to "client_certificate",
+            "client_certificate" to "client_certificate",
+            "clientCertificatePath" to "client_certificate_path",
+            "client_certificate_path" to "client_certificate_path",
+            "clientKey" to "client_key",
+            "client_key" to "client_key",
+            "clientKeyPath" to "client_key_path",
+            "client_key_path" to "client_key_path",
+            "fragment" to "fragment",
+            "fragmentFallbackDelay" to "fragment_fallback_delay",
+            "fragment_fallback_delay" to "fragment_fallback_delay",
+            "recordFragment" to "record_fragment",
+            "record_fragment" to "record_fragment",
+            "spoof" to "spoof",
+            "spoofMethod" to "spoof_method",
+            "spoof_method" to "spoof_method",
+            "kernelTx" to "kernel_tx",
+            "kernel_tx" to "kernel_tx",
+            "kernelRx" to "kernel_rx",
+            "kernel_rx" to "kernel_rx",
+            "handshakeTimeout" to "handshake_timeout",
+            "handshake_timeout" to "handshake_timeout",
+            "ech" to "ech",
+            "utls" to "utls",
+            "reality" to "reality",
+        )
 
-    /** `scStreamUpServerSecs` to `sc_stream_up_server_secs`, for keys not worth listing. */
-    private fun snakeCase(name: String): String =
-        buildString {
-            name.forEachIndexed { index, symbol ->
-                if (symbol.isUpperCase()) {
-                    if (index > 0 && !name[index - 1].isUpperCase()) append('_')
-                    append(symbol.lowercaseChar())
+    private val xhttpEchFields =
+        mapOf(
+            "enabled" to "enabled",
+            "config" to "config",
+            "configPath" to "config_path",
+            "config_path" to "config_path",
+            "queryServerName" to "query_server_name",
+            "query_server_name" to "query_server_name",
+            "pqSignatureSchemesEnabled" to "pq_signature_schemes_enabled",
+            "pq_signature_schemes_enabled" to "pq_signature_schemes_enabled",
+            "dynamicRecordSizingDisabled" to "dynamic_record_sizing_disabled",
+            "dynamic_record_sizing_disabled" to "dynamic_record_sizing_disabled",
+        )
+
+    private val xhttpUTlsFields =
+        mapOf(
+            "enabled" to "enabled",
+            "fingerprint" to "fingerprint",
+        )
+
+    private val xhttpRealityFields =
+        mapOf(
+            "enabled" to "enabled",
+            "publicKey" to "public_key",
+            "public_key" to "public_key",
+            "shortId" to "short_id",
+            "short_id" to "short_id",
+            "spiderX" to "spider_x",
+            "spider_x" to "spider_x",
+            "supportX25519MLKEM768" to "support_x25519mlkem768",
+            "support_x25519mlkem768" to "support_x25519mlkem768",
+        )
+
+    private val xhttpRangeFields =
+        setOf(
+            "x_padding_bytes",
+            "sc_max_each_post_bytes",
+            "sc_min_posts_interval_ms",
+            "sc_stream_up_server_secs",
+            "uplink_chunk_size",
+            "session_id_length",
+            "max_concurrency",
+            "max_connections",
+            "c_max_reuse_times",
+            "h_max_request_times",
+            "h_max_reusable_secs",
+        )
+
+    private val xhttpIntegerFields =
+        setOf(
+            "sc_max_buffered_posts",
+            "server_max_header_bytes",
+            "cwnd",
+            "h_keep_alive_period",
+            "server_port",
+        )
+
+    private fun xhttpValue(
+        value: JsonElement,
+        name: String,
+    ): JsonElement? =
+        when (name) {
+            "headers" -> {
+                value
+            }
+
+            "xmux" -> {
+                xhttpObject(value, xmuxFields)
+            }
+
+            "download" -> {
+                xhttpObject(value, xhttpDownloadExtras)
+            }
+
+            "tls" -> {
+                xhttpObject(value, xhttpTlsFields)
+            }
+
+            "ech" -> {
+                xhttpObject(value, xhttpEchFields)
+            }
+
+            "utls" -> {
+                xhttpObject(value, xhttpUTlsFields)
+            }
+
+            "reality" -> {
+                xhttpObject(value, xhttpRealityFields)
+            }
+
+            "path" -> {
+                (value as? JsonPrimitive)?.takeIf(JsonPrimitive::isString)?.let { JsonPrimitive(normalizeXHTTPPath(it.content)) }
+            }
+
+            else -> {
+                if (value is JsonObject) return null
+                if (value is JsonPrimitive && value.isString && (name in xhttpRangeFields || name in xhttpIntegerFields)) {
+                    value.content.toLongOrNull()?.let(::JsonPrimitive) ?: value
                 } else {
-                    append(symbol)
+                    value
                 }
             }
         }
+
+    private fun xhttpObject(
+        value: JsonElement,
+        fields: Map<String, String>,
+    ): JsonObject? {
+        val objectValue = value as? JsonObject ?: return null
+        return buildJsonObject {
+            objectValue.forEach { (key, child) ->
+                val name = fields[key] ?: return@forEach
+                xhttpValue(child, name)?.let { put(name, it) }
+            }
+        }
+    }
+
+    private fun normalizeXHTTPPath(path: String): String {
+        val queryStart = path.indexOf('?')
+        val pathPart = if (queryStart < 0) path else path.substring(0, queryStart)
+        val queryPart = if (queryStart < 0) "" else path.substring(queryStart)
+        val normalizedPath = pathPart.trimEnd('/').ifEmpty { if (pathPart.isEmpty()) "" else "/" }
+        return normalizedPath + queryPart
+    }
 }

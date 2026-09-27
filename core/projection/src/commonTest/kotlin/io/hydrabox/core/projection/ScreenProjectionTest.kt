@@ -15,6 +15,8 @@ import io.hydrabox.core.contract.RuntimeSnapshot
 import io.hydrabox.core.contract.RuntimeState
 import io.hydrabox.core.contract.TransportHealth
 import io.hydrabox.core.contract.TransportHealthState
+import io.hydrabox.core.model.OperationError
+import io.hydrabox.core.model.OperationState
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -68,6 +70,46 @@ class ScreenProjectionTest {
         selectedServerId = selected,
         vpnPermissionMissing = permissionMissing,
     )
+
+    @Test
+    fun `source operation error reaches the screen state`() {
+        val message = "expected a sing-box outbound object with a type"
+        val state =
+            ScreenProjection.project(
+                model(RuntimeState.STOPPED).copy(
+                    sourceOperation = OperationState.Failed(OperationError(message)),
+                ),
+            )
+        assertEquals(message, state.sourceOperationError)
+    }
+
+    @Test
+    fun `raw config reaches the screen state with its kind flags`() {
+        val raw = """{"type":"wireguard","server":"vpn.example","port":443}"""
+        val server =
+            ServerRef(
+                id = "wg",
+                displayName = "WireGuard",
+                sourceId = "s1",
+                type = "wireguard",
+                endpoint = true,
+                selectable = true,
+                configJson = raw,
+            )
+        val state =
+            ScreenProjection.project(
+                model(RuntimeState.STOPPED, servers = listOf(ServerGroup("s1", "Source", listOf(server)))),
+            )
+
+        val projected =
+            state.servers
+                .single()
+                .servers
+                .single()
+        assertEquals(raw, projected.configJson)
+        assertTrue(projected.endpoint)
+        assertTrue(projected.selectable)
+    }
 
     @Test
     fun `an empty install asks for a subscription and nothing else`() {
@@ -144,25 +186,80 @@ class ScreenProjectionTest {
     }
 
     @Test
-    fun `every runtime failure becomes one of six situations with one action`() {
+    fun `nonterminal status changes debounce without delaying connection actions`() {
+        val throttle = ConnectionStatusThrottle()
+        val idle = ScreenProjection.project(model(RuntimeState.STOPPED), nowMillis = 1_000, connectionThrottle = throttle)
+        assertTrue(idle.displayedConnection is Connection.Idle)
+
+        val starting = ScreenProjection.project(model(RuntimeState.STARTING), nowMillis = 1_100, connectionThrottle = throttle)
+        assertTrue(starting.connection is Connection.Connecting)
+        assertEquals(PrimaryAction.CANCEL, starting.connection.primaryAction)
+        assertEquals(PrimaryAction.CONNECT, starting.displayedConnection.primaryAction)
+        assertEquals(1_800, throttle.nextTransitionAtMillis)
+
+        val flapped = ScreenProjection.project(model(RuntimeState.RECOVERING), nowMillis = 1_500, connectionThrottle = throttle)
+        assertTrue(flapped.displayedConnection is Connection.Idle)
+        assertEquals(2_200, throttle.nextTransitionAtMillis)
+        assertTrue(ScreenProjection.project(model(RuntimeState.RECOVERING), nowMillis = 2_199, connectionThrottle = throttle).displayedConnection is Connection.Idle)
+        assertTrue(ScreenProjection.project(model(RuntimeState.RECOVERING), nowMillis = 2_200, connectionThrottle = throttle).displayedConnection is Connection.Reconnecting)
+
+        val connected = ScreenProjection.project(model(RuntimeState.RUNNING), nowMillis = 2_210, connectionThrottle = throttle)
+        assertTrue(connected.displayedConnection is Connection.Connected)
+        val failed = ScreenProjection.project(model(RuntimeState.FAILED), nowMillis = 2_220, connectionThrottle = throttle)
+        assertTrue(failed.displayedConnection is Connection.Stopped)
+    }
+
+    @Test
+    fun `a failed running transport is unreachable but active recovery stays reconnecting`() {
+        val networkFailure = RuntimeFailure(FailureDomain.NETWORK, HydraCoreErrorCode.NETWORK_LOST, retryable = true)
+        val offline =
+            ScreenProjection.project(
+                model(
+                    RuntimeState.RUNNING,
+                    failure = networkFailure,
+                    health = TransportHealth(TransportHealthState.FAILED, activeLanes = 0, failure = networkFailure),
+                ),
+            ).connection as Connection.Unreachable
+        assertEquals(ErrorMessage.NO_INTERNET, offline.presentation.message)
+        assertEquals(PrimaryAction.RETRY, offline.primaryAction)
+        assertEquals("network / network.lost", offline.presentation.detail)
+
+        val ipcFailure = RuntimeFailure(FailureDomain.INTERNAL, HydraCoreErrorCode.RUNTIME_IPC_LOST, retryable = true)
+        val ipcLost =
+            ScreenProjection.project(
+                model(
+                    RuntimeState.RUNNING,
+                    failure = ipcFailure,
+                    health = TransportHealth(TransportHealthState.FAILED, activeLanes = 0, failure = ipcFailure),
+                ),
+            ).connection as Connection.Unreachable
+        assertEquals(ErrorMessage.CONNECTION_LOST, ipcLost.presentation.message)
+
+        assertTrue(
+            ScreenProjection.project(
+                model(RuntimeState.RUNNING, health = TransportHealth(TransportHealthState.RECOVERING, activeLanes = 0)),
+            ).connection is Connection.Reconnecting,
+        )
+    }
+
+    @Test
+    fun `runtime failures map to one localized message action and detail`() {
         val cases =
             mapOf(
-                HydraCoreErrorCode.NETWORK_LOST to Trouble.NO_INTERNET,
-                HydraCoreErrorCode.QUIC_NO_PATHS to Trouble.SERVER_UNREACHABLE,
-                // A VK refusal is a server-level situation with a server-level action, not a dead
-                // subscription: its only action must not be "refresh the source".
-                HydraCoreErrorCode.VK_CREDENTIALS_REJECTED to Trouble.SERVER_UNREACHABLE,
-                HydraCoreErrorCode.VK_CAPTCHA_TIMEOUT to Trouble.SERVER_UNREACHABLE,
-                HydraCoreErrorCode.CONFIG_QUARANTINED to Trouble.CONFIG_REJECTED,
-                HydraCoreErrorCode.RUNTIME_SUPERSEDED to Trouble.UNKNOWN,
+                HydraCoreErrorCode.NETWORK_LOST to ErrorMessage.NO_INTERNET,
+                HydraCoreErrorCode.QUIC_NO_PATHS to ErrorMessage.SERVER_UNREACHABLE,
+                HydraCoreErrorCode.VK_CREDENTIALS_REJECTED to ErrorMessage.SERVER_UNREACHABLE,
+                HydraCoreErrorCode.VK_CAPTCHA_TIMEOUT to ErrorMessage.SERVER_UNREACHABLE,
+                HydraCoreErrorCode.CONFIG_QUARANTINED to ErrorMessage.CONFIG_REJECTED,
+                HydraCoreErrorCode.RUNTIME_SUPERSEDED to ErrorMessage.UNKNOWN,
             )
         cases.forEach { (code, expected) ->
-            val state =
+            val stopped =
                 ScreenProjection.project(
                     model(RuntimeState.FAILED, RuntimeFailure(FailureDomain.NETWORK, code, retryable = true)),
-                )
-            val stopped = state.connection as Connection.Stopped
-            assertEquals(expected, stopped.cause, "code $code")
+                ).connection as Connection.Stopped
+            assertEquals(expected, stopped.presentation.message, "code $code")
+            assertEquals("network / ${code.code}", stopped.presentation.detail, "code $code is detail only")
         }
         val unreachable =
             ScreenProjection.project(
@@ -175,9 +272,11 @@ class ScreenProjectionTest {
     }
 
     @Test
-    fun `a refused VPN consent is a product state, not a banner`() {
+    fun `a refused VPN consent is a product state with one presentation`() {
         val state = ScreenProjection.project(model(RuntimeState.STOPPED, permissionMissing = true))
-        assertEquals(Trouble.PERMISSION_REQUIRED, (state.connection as Connection.Stopped).cause)
+        val stopped = state.connection as Connection.Stopped
+        assertEquals(ErrorMessage.PERMISSION_REQUIRED, stopped.presentation.message)
+        assertEquals(PrimaryAction.RETRY, stopped.presentation.primaryAction)
     }
 
     @Test
@@ -569,6 +668,7 @@ class ScreenProjectionTest {
                 model(RuntimeState.FAILED, RuntimeFailure(FailureDomain.DNS, HydraCoreErrorCode.DNS_NO_ANSWER, true))
                     .copy(diagnostics = DiagnosticsSummary(level = "warn")),
             )
-        assertEquals("dns / dns.no_answer", withDiagnostics.diagnostics?.lastError)
+        assertEquals(ErrorMessage.SERVER_UNREACHABLE, withDiagnostics.diagnostics?.lastError?.message)
+        assertEquals("dns / dns.no_answer", withDiagnostics.diagnostics?.lastError?.detail)
     }
 }

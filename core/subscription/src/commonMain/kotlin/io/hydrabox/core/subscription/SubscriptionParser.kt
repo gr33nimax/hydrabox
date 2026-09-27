@@ -379,18 +379,28 @@ object SubscriptionParser {
     /** An `ssr://` link. Kept for the subscriptions that still carry them. */
     private fun parseSsr(value: String): ShareLink.Proxy {
         val document = decodeBase64(value.substringAfter("://").substringBefore('#')) ?: error("invalid ssr link")
-        val fields = document.substringBefore("/?").split(':')
-        if (fields.size < 6) error("invalid ssr link")
-        val port = fields[1].toIntOrNull()?.takeIf { it in 1..65535 } ?: error("invalid ssr port")
-        val password = decodeBase64(fields.last()) ?: error("invalid ssr credential")
+        val serverFields = document.substringBefore("/?").split(':')
+        if (serverFields.size < 6) error("invalid ssr link")
+        val port = serverFields[1].toIntOrNull()?.takeIf { it in 1..65535 } ?: error("invalid ssr port")
+        val password = decodeBase64(serverFields[5]) ?: error("invalid ssr credential")
+        val encodedQuery = parseQuery(document.substringAfter("/?", ""))
+
+        fun decoded(name: String): String? = encodedQuery[name]?.let { decodeBase64(it) ?: it }
         return ShareLink.Proxy(
-            server = fields[0],
+            server = serverFields[0],
             port = port,
-            name = "",
+            name = decoded("remarks").orEmpty(),
             type = "shadowsocksr",
             tls = false,
-            username = Secret.of(fields[3]),
+            username = Secret.of(serverFields[3]),
             password = Secret.of(password),
+            query =
+                buildMap {
+                    put("protocol", serverFields[2])
+                    put("obfs", serverFields[4])
+                    decoded("obfsparam")?.let { put("obfs_param", it) }
+                    decoded("protoparam")?.let { put("protocol_param", it) }
+                },
         )
     }
 
@@ -405,6 +415,16 @@ object SubscriptionParser {
         val parts = credential.split(':', limit = 2)
         val username = parts.firstOrNull()?.takeIf(String::isNotEmpty)?.let(Secret::of)
         val password = parts.getOrNull(1)?.takeIf(String::isNotEmpty)?.let(Secret::of)
+        val protocolQuery = query.toMutableMap()
+        if (scheme.startsWith("socks")) {
+            protocolQuery["version"] =
+                when (scheme) {
+                    "socks4" -> "4"
+                    "socks4a" -> "4a"
+                    else -> "5"
+                }
+        }
+        if (scheme == "naive+quic") protocolQuery["quic"] = "true"
         val type =
             when {
                 scheme.startsWith("socks") -> "socks"
@@ -426,10 +446,10 @@ object SubscriptionParser {
                 else -> "http"
             }
         val secured =
-            scheme == "https" || scheme == "naive+https" ||
+            scheme == "https" || scheme == "naive+https" || scheme == "naive+quic" ||
                 query["security"] == "tls" || query["tls"] == "1" ||
                 type == "hysteria2" || type == "hysteria" || type == "tuic" || type == "anytls"
-        return ShareLink.Proxy(server, port, name, type, secured, username, password, query)
+        return ShareLink.Proxy(server, port, name, type, secured, username, password, protocolQuery)
     }
 
     private fun parseQuery(raw: String): Map<String, String> =
@@ -445,7 +465,7 @@ object SubscriptionParser {
 }
 
 @OptIn(ExperimentalEncodingApi::class)
-private fun decodeBase64(value: String): String? =
+internal fun decodeBase64(value: String): String? =
     runCatching {
         Base64.Default
             .decode(

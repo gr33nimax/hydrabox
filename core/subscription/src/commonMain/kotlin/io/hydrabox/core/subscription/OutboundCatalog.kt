@@ -62,6 +62,7 @@ data class OutboundCatalog(
  * transport details get silently dropped. Share links are built into outbounds instead,
  * since there is nothing to preserve.
  */
+
 /**
  * A parsed subscription and what did not survive the parse.
  *
@@ -70,10 +71,17 @@ data class OutboundCatalog(
  * fourth one has to be nameable afterwards. Skipping silently is how an import that dropped
  * half a list came to look like a working import.
  */
-data class CatalogParse(val catalog: OutboundCatalog, val skipped: List<String> = emptyList())
+data class CatalogParse(
+    val catalog: OutboundCatalog,
+    val skipped: List<String> = emptyList(),
+)
 
 object OutboundCatalogParser {
-    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+    private val json =
+        Json {
+            ignoreUnknownKeys = true
+            isLenient = true
+        }
 
     /** Types that describe routing rather than a server. */
     private val metaTypes = setOf("direct", "block", "dns", "selector", "urltest")
@@ -107,12 +115,16 @@ object OutboundCatalogParser {
         return CatalogParse(links(body, skipped), skipped)
     }
 
-    fun isEncryptedHydra(content: String): Boolean = decodeJson(content.trim())
-        ?.let { it is JsonObject && it.containsKey("protected") && !it.containsKey("resources") } == true
+    fun isEncryptedHydra(content: String): Boolean =
+        decodeJson(content.trim())
+            ?.let { it is JsonObject && it.containsKey("protected") && !it.containsKey("resources") } == true
 
     // --- Hydra v2 -----------------------------------------------------------------
 
-    private fun hydra(root: JsonElement, skipped: MutableList<String>): OutboundCatalog? {
+    private fun hydra(
+        root: JsonElement,
+        skipped: MutableList<String>,
+    ): OutboundCatalog? {
         val document = root as? JsonObject ?: return null
         val api = document["api_version"]?.jsonPrimitive?.contentOrNull
         if (api != HYDRA_API_VERSION && document["kind"]?.jsonPrimitive?.contentOrNull != "Subscription") return null
@@ -153,9 +165,10 @@ object OutboundCatalogParser {
             val resource = entry as? JsonObject ?: return@forEach
             val scope = resource["id"]?.jsonPrimitive?.contentOrNull.orEmpty()
             val body = resource["document"] as? JsonObject ?: return@forEach
-            val sections = listOf("outbounds", "endpoints").map { section ->
-                section to (body[section] as? JsonArray).orEmptyArray().mapNotNull { it as? JsonObject }
-            }
+            val sections =
+                listOf("outbounds", "endpoints").map { section ->
+                    section to (body[section] as? JsonArray).orEmptyArray().mapNotNull { it as? JsonObject }
+                }
             // One configuration cannot hold two outbounds with the same tag — the core refuses
             // the whole document. Dropping the second one silently lost a server, so a
             // colliding tag is renamed within its resource instead, and every reference to it
@@ -164,9 +177,10 @@ object OutboundCatalogParser {
             sections.forEach { (_, outbounds) ->
                 outbounds.forEach { outbound ->
                     val tag = outbound["tag"]?.jsonPrimitive?.contentOrNull ?: return@forEach
-                    val unique = generateSequence(0) { it + 1 }
-                        .map { attempt -> if (attempt == 0) tag else "$tag@$scope" + if (attempt > 1) "-$attempt" else "" }
-                        .first { taken.add(it) }
+                    val unique =
+                        generateSequence(0) { it + 1 }
+                            .map { attempt -> if (attempt == 0) tag else "$tag@$scope" + if (attempt > 1) "-$attempt" else "" }
+                            .first { taken.add(it) }
                     if (unique != tag) renames[tag] = unique
                 }
             }
@@ -174,18 +188,19 @@ object OutboundCatalogParser {
                 outbounds.forEach { outbound ->
                     val tag = outbound["tag"]?.jsonPrimitive?.contentOrNull ?: return@forEach
                     val type = outbound["type"]?.jsonPrimitive?.contentOrNull.orEmpty()
-                    collected += CatalogOutbound(
-                        tag = renames[tag] ?: tag,
-                        type = type.ifEmpty { if (section == "endpoints") "endpoint" else "unknown" },
-                        json = if (renames.isEmpty()) outbound else rename(outbound, renames),
-                        scope = scope,
-                        endpoint = section == "endpoints",
-                        // Everything is embedded so detour chains keep resolving, but only
-                        // an entrypoint — or any real server, when the document names no
-                        // profiles — is offered as a choice.
-                        selectable = if (!named) type !in metaTypes else tag in entrypoints[scope].orEmpty(),
-                        label = labels[scope]?.get(tag),
-                    )
+                    collected +=
+                        CatalogOutbound(
+                            tag = renames[tag] ?: tag,
+                            type = type.ifEmpty { if (section == "endpoints") "endpoint" else "unknown" },
+                            json = if (renames.isEmpty()) outbound else rename(outbound, renames),
+                            scope = scope,
+                            endpoint = section == "endpoints",
+                            // Everything is embedded so detour chains keep resolving, but only
+                            // an entrypoint — or any real server, when the document names no
+                            // profiles — is offered as a choice.
+                            selectable = if (!named) type !in metaTypes else tag in entrypoints[scope].orEmpty(),
+                            label = labels[scope]?.get(tag),
+                        )
                     if (defaultKey == (scope to tag)) defaultTag = renames[tag] ?: tag
                 }
             }
@@ -197,7 +212,10 @@ object OutboundCatalogParser {
 
     // --- plain sing-box -----------------------------------------------------------
 
-    private fun singbox(root: JsonElement, skipped: MutableList<String>): OutboundCatalog? {
+    private fun singbox(
+        root: JsonElement,
+        skipped: MutableList<String>,
+    ): OutboundCatalog? {
         val document = root as? JsonObject ?: return null
         if (!document.containsKey("outbounds") && !document.containsKey("endpoints")) return null
         val collected = mutableListOf<CatalogOutbound>()
@@ -210,16 +228,18 @@ object OutboundCatalogParser {
                 // `protocol` instead, and claiming it here would hide it from that branch.
                 val type = outbound["type"]?.jsonPrimitive?.contentOrNull ?: return@forEach
                 if (!seen.add(tag)) return@forEach
-                collected += CatalogOutbound(
-                    tag = tag,
-                    type = type.ifEmpty { "unknown" },
-                    json = outbound,
-                    selectable = type.isNotEmpty() && type !in metaTypes,
-                    endpoint = section == "endpoints",
-                )
+                collected +=
+                    CatalogOutbound(
+                        tag = tag,
+                        type = type.ifEmpty { "unknown" },
+                        json = outbound,
+                        selectable = type.isNotEmpty() && type !in metaTypes,
+                        endpoint = section == "endpoints",
+                    )
             }
         }
-        return resolveReferences(collected, skipped).takeIf { list -> list.any(CatalogOutbound::selectable) }
+        return resolveReferences(collected, skipped)
+            .takeIf { list -> list.any(CatalogOutbound::selectable) }
             ?.let { OutboundCatalog(SubscriptionDocumentFormat.SINGBOX, it) }
     }
 
@@ -230,73 +250,89 @@ object OutboundCatalogParser {
      * sing-box document they are translated rather than projected. A provider's Clash or
      * Xray subscription worked in 1.x and has to keep working.
      */
-    private fun xray(root: JsonElement): OutboundCatalog? = XrayDocument.outbounds(root)
-        ?.let { OutboundCatalog(SubscriptionDocumentFormat.XRAY, it) }
+    private fun xray(root: JsonElement): OutboundCatalog? =
+        XrayDocument
+            .outbounds(root)
+            ?.let { OutboundCatalog(SubscriptionDocumentFormat.XRAY, it) }
 
-    private fun clash(body: String): OutboundCatalog? = ClashDocument.outbounds(body)
-        ?.let { OutboundCatalog(SubscriptionDocumentFormat.CLASH, it) }
+    private fun clash(body: String): OutboundCatalog? =
+        ClashDocument
+            .outbounds(body)
+            ?.let { OutboundCatalog(SubscriptionDocumentFormat.CLASH, it) }
 
     // --- SIP008 -------------------------------------------------------------------
 
     private fun sip008(root: JsonElement): OutboundCatalog? {
-        val servers = when (root) {
-            is JsonObject -> root["servers"] as? JsonArray
-            is JsonArray -> root.firstNotNullOfOrNull { (it as? JsonObject)?.get("servers") as? JsonArray }
-            else -> null
-        } ?: return null
-        val collected = servers.mapIndexedNotNull { index, value ->
-            val server = value as? JsonObject ?: return@mapIndexedNotNull null
-            val host = server["server"]?.jsonPrimitive?.contentOrNull ?: return@mapIndexedNotNull null
-            val port = server["server_port"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: return@mapIndexedNotNull null
-            val tag = server["remarks"]?.jsonPrimitive?.contentOrNull?.takeIf(String::isNotEmpty) ?: "$host-$port-$index"
-            CatalogOutbound(
-                tag = tag,
-                type = "shadowsocks",
-                json = buildJsonObject {
-                    put("type", JsonPrimitive("shadowsocks"))
-                    put("tag", JsonPrimitive(tag))
-                    put("server", JsonPrimitive(host))
-                    put("server_port", JsonPrimitive(port))
-                    server["method"]?.let { put("method", it) }
-                    server["password"]?.let { put("password", it) }
-                },
-            )
-        }
-        return collected.takeIf(List<CatalogOutbound>::isNotEmpty)
+        val servers =
+            when (root) {
+                is JsonObject -> root["servers"] as? JsonArray
+                is JsonArray -> root.firstNotNullOfOrNull { (it as? JsonObject)?.get("servers") as? JsonArray }
+                else -> null
+            } ?: return null
+        val collected =
+            servers.mapIndexedNotNull { index, value ->
+                val server = value as? JsonObject ?: return@mapIndexedNotNull null
+                val host = server["server"]?.jsonPrimitive?.contentOrNull ?: return@mapIndexedNotNull null
+                val port = server["server_port"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: return@mapIndexedNotNull null
+                val tag = server["remarks"]?.jsonPrimitive?.contentOrNull?.takeIf(String::isNotEmpty) ?: "$host-$port-$index"
+                CatalogOutbound(
+                    tag = tag,
+                    type = "shadowsocks",
+                    json =
+                        buildJsonObject {
+                            put("type", JsonPrimitive("shadowsocks"))
+                            put("tag", JsonPrimitive(tag))
+                            put("server", JsonPrimitive(host))
+                            put("server_port", JsonPrimitive(port))
+                            server["method"]?.let { put("method", it) }
+                            server["password"]?.let { put("password", it) }
+                        },
+                )
+            }
+        return collected
+            .takeIf(List<CatalogOutbound>::isNotEmpty)
             ?.let { OutboundCatalog(SubscriptionDocumentFormat.SIP008, it) }
     }
 
     // --- share links --------------------------------------------------------------
 
-    private fun links(body: String, skipped: MutableList<String>): OutboundCatalog {
-        val parsed = body.replace(" -> ", "\n").lineSequence()
-            .map(String::trim)
-            .filter { it.isNotEmpty() && !it.startsWith("#") }
-            .toList()
+    private fun links(
+        body: String,
+        skipped: MutableList<String>,
+    ): OutboundCatalog {
+        val parsed =
+            body
+                .replace(" -> ", "\n")
+                .lineSequence()
+                .map(String::trim)
+                .filter { it.isNotEmpty() && !it.startsWith("#") }
+                .toList()
         val wireGuard = body.trimStart().startsWith("[Interface]")
         val sources = if (wireGuard) listOf(body) else parsed
         val taken = mutableSetOf<String>()
-        val collected = sources.mapIndexedNotNull { index, value ->
-            val link = runCatching { SubscriptionParser.parse(value) }
-                .onFailure { failure ->
-                    // The scheme, never the line: a share link carries a credential.
-                    val scheme = value.substringBefore("://", "").lowercase().take(24)
-                    skipped += "${scheme.ifEmpty { "line ${index + 1}" }}: ${failure.message ?: "unrecognised"}"
-                }
-                .getOrNull() ?: return@mapIndexedNotNull null
-            val preferred = link.name.trim().takeIf(String::isNotEmpty) ?: "${link.server}-${link.port}"
-            // Providers repeat a name across servers, and two outbounds sharing one tag is a
-            // configuration the core refuses outright.
-            val tag = generateSequence(0) { it + 1 }
-                .map { suffix -> if (suffix == 0) preferred else "$preferred ($suffix)" }
-                .first(taken::add)
-            CatalogOutbound(
-                tag = tag,
-                type = ShareLinkOutbound.typeOf(link),
-                json = ShareLinkOutbound.toJson(link, tag),
-                endpoint = ShareLinkOutbound.isEndpoint(link),
-            )
-        }
+        val collected =
+            sources.mapIndexedNotNull { index, value ->
+                val link =
+                    runCatching { SubscriptionParser.parse(value) }
+                        .onFailure { failure ->
+                            // The scheme, never the line: a share link carries a credential.
+                            val scheme = value.substringBefore("://", "").lowercase().take(24)
+                            skipped += "${scheme.ifEmpty { "line ${index + 1}" }}: ${failure.message ?: "unrecognised"}"
+                        }.getOrNull() ?: return@mapIndexedNotNull null
+                val preferred = link.name.trim().takeIf(String::isNotEmpty) ?: "${link.server}-${link.port}"
+                // Providers repeat a name across servers, and two outbounds sharing one tag is a
+                // configuration the core refuses outright.
+                val tag =
+                    generateSequence(0) { it + 1 }
+                        .map { suffix -> if (suffix == 0) preferred else "$preferred ($suffix)" }
+                        .first(taken::add)
+                CatalogOutbound(
+                    tag = tag,
+                    type = ShareLinkOutbound.typeOf(link),
+                    json = ShareLinkOutbound.toJson(link, tag),
+                    endpoint = ShareLinkOutbound.isEndpoint(link),
+                )
+            }
         require(collected.isNotEmpty()) { "no usable outbound in subscription" }
         return OutboundCatalog(SubscriptionDocumentFormat.UNKNOWN, collected)
     }
@@ -304,13 +340,14 @@ object OutboundCatalogParser {
     // --- references ---------------------------------------------------------------
 
     /** Every tag one outbound points at: what it dials through, and what its group holds. */
-    private fun referencesOf(outbound: CatalogOutbound): Set<String> = buildSet {
-        (outbound.json["detour"] as? JsonPrimitive)?.contentOrNull?.let(::add)
-        (outbound.json["outbounds"] as? JsonArray)?.forEach { member ->
-            (member as? JsonPrimitive)?.contentOrNull?.let(::add)
+    private fun referencesOf(outbound: CatalogOutbound): Set<String> =
+        buildSet {
+            (outbound.json["detour"] as? JsonPrimitive)?.contentOrNull?.let(::add)
+            (outbound.json["outbounds"] as? JsonArray)?.forEach { member ->
+                (member as? JsonPrimitive)?.contentOrNull?.let(::add)
+            }
+            remove(outbound.tag)
         }
-        remove(outbound.tag)
-    }
 
     /**
      * Keeps what the document can actually stand behind.
@@ -350,9 +387,10 @@ object OutboundCatalogParser {
         if (groups.isEmpty()) return kept
         val byTag = kept.associateBy(CatalogOutbound::tag)
         val reachable = mutableSetOf<String>()
-        val pending = ArrayDeque(
-            kept.filter { it.tag !in groups || it.selectable }.map(CatalogOutbound::tag),
-        )
+        val pending =
+            ArrayDeque(
+                kept.filter { it.tag !in groups || it.selectable }.map(CatalogOutbound::tag),
+            )
         while (true) {
             val tag = pending.removeFirstOrNull() ?: break
             if (!reachable.add(tag)) continue
@@ -370,15 +408,18 @@ object OutboundCatalogParser {
         if (body.startsWith("{") || body.startsWith("[")) runCatching { json.parseToJsonElement(body) }.getOrNull() else null
 
     @OptIn(ExperimentalEncodingApi::class)
-    private fun expandBase64(body: String): String? {
+    internal fun expandBase64(body: String): String? {
         if (body.contains("://") || body.startsWith("{") || body.startsWith("[")) return null
         val compact = body.filterNot(Char::isWhitespace)
         if (compact.length < 8 || !compact.all { it.isLetterOrDigit() || it in "+/-_=" }) return null
         return runCatching {
-            Base64.Default.decode(
-                compact.replace('-', '+').replace('_', '/')
-                    .let { it + "=".repeat((4 - it.length % 4) % 4) },
-            ).decodeToString()
+            Base64.Default
+                .decode(
+                    compact
+                        .replace('-', '+')
+                        .replace('_', '/')
+                        .let { it + "=".repeat((4 - it.length % 4) % 4) },
+                ).decodeToString()
         }.getOrNull()?.takeIf { it.isNotBlank() }
     }
 
@@ -405,28 +446,36 @@ object OutboundCatalogParser {
      * refuses the whole document for that — every server in the subscription with it. Only the
      * three keys that hold tags are touched; `alpn` or `address` are left alone.
      */
-    private fun rename(outbound: JsonObject, renames: Map<String, String>): JsonObject = buildJsonObject {
-        outbound.forEach { (key, value) ->
-            when (key) {
-                "tag", "detour" -> {
-                    val current = (value as? JsonPrimitive)?.contentOrNull
-                    if (current == null) put(key, value) else put(key, JsonPrimitive(renames[current] ?: current))
-                }
-                "outbounds" -> {
-                    val members = value as? JsonArray
-                    if (members == null) {
-                        put(key, value)
-                    } else {
-                        putJsonArray(key) {
-                            members.forEach { member ->
-                                val text = (member as? JsonPrimitive)?.contentOrNull
-                                if (text == null) add(member) else add(JsonPrimitive(renames[text] ?: text))
+    private fun rename(
+        outbound: JsonObject,
+        renames: Map<String, String>,
+    ): JsonObject =
+        buildJsonObject {
+            outbound.forEach { (key, value) ->
+                when (key) {
+                    "tag", "detour" -> {
+                        val current = (value as? JsonPrimitive)?.contentOrNull
+                        if (current == null) put(key, value) else put(key, JsonPrimitive(renames[current] ?: current))
+                    }
+
+                    "outbounds" -> {
+                        val members = value as? JsonArray
+                        if (members == null) {
+                            put(key, value)
+                        } else {
+                            putJsonArray(key) {
+                                members.forEach { member ->
+                                    val text = (member as? JsonPrimitive)?.contentOrNull
+                                    if (text == null) add(member) else add(JsonPrimitive(renames[text] ?: text))
+                                }
                             }
                         }
                     }
+
+                    else -> {
+                        put(key, value)
+                    }
                 }
-                else -> put(key, value)
             }
         }
-    }
 }

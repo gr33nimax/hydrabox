@@ -46,19 +46,29 @@ object ScreenProjection {
     fun project(
         snapshot: RuntimeSnapshot,
         nowMillis: Long? = null,
-    ): ScreenState = project(AppReadModel(runtime = snapshot), nowMillis)
+        connectionThrottle: ConnectionStatusThrottle? = null,
+    ): ScreenState = project(AppReadModel(runtime = snapshot), nowMillis, connectionThrottle)
 
     fun project(
         model: AppReadModel,
         nowMillis: Long? = null,
+        connectionThrottle: ConnectionStatusThrottle? = null,
     ): ScreenState {
         val snapshot = model.runtime
         val latencies = snapshot.latencies.associateBy { it.tag }
         val edgeLatencies = snapshot.edgeLatencies.associateBy { it.tag }
         val measuringTags = snapshot.measuringTags
         val server = selectedServer(model, latencies, edgeLatencies, nowMillis)
+        val projectedConnection = connection(model, server)
+        val displayedConnection =
+            if (nowMillis != null) {
+                connectionThrottle?.update(projectedConnection, nowMillis) ?: projectedConnection
+            } else {
+                projectedConnection
+            }
         return ScreenState(
-            connection = connection(model, server),
+            connection = projectedConnection,
+            displayedConnection = displayedConnection,
             legalAccepted = model.legalAccepted,
             servers =
                 model.servers.map { group ->
@@ -88,7 +98,7 @@ object ScreenProjection {
             // phase, the transport and the lane count are not shown anywhere any more.
             diagnostics =
                 model.diagnostics?.copy(
-                    lastError = snapshot.lastFailure?.let { "${it.domain.name.lowercase()} / ${it.code.code}" },
+                    lastError = (snapshot.transportHealth.failure ?: snapshot.lastFailure)?.let { ErrorPresentation.of(it) },
                 ),
             ruleSets = model.ruleSets,
             exit = model.exit,
@@ -106,6 +116,7 @@ object ScreenProjection {
                     backup = model.backupOperation == OperationState.Running,
                 ),
             notice = model.notice ?: operationNotice(model),
+            sourceOperationError = (model.sourceOperation as? OperationState.Failed)?.error?.code,
         )
     }
 }
@@ -172,7 +183,7 @@ private fun connection(
             } ?: it
         }
     if (model.vpnPermissionMissing && snapshot.state == RuntimeState.STOPPED) {
-        return Connection.Stopped(Trouble.PERMISSION_REQUIRED, displayedServer, retryable = true)
+        return Connection.Stopped(ErrorPresentation(ErrorMessage.PERMISSION_REQUIRED), displayedServer, retryable = true)
     }
     return when (snapshot.state) {
         RuntimeState.STOPPED -> {
@@ -197,7 +208,7 @@ private fun connection(
 
         RuntimeState.FAILED -> {
             Connection.Stopped(
-                cause = Trouble.of(snapshot.lastFailure),
+                presentation = ErrorPresentation.of(snapshot.lastFailure),
                 server = displayedServer,
                 retryable = snapshot.lastFailure?.retryable == true,
             )
@@ -205,9 +216,22 @@ private fun connection(
 
         RuntimeState.RUNNING -> {
             when {
-                !health.isReady && health.state == TransportHealthState.RECOVERING -> Connection.Reconnecting(displayedServer)
-                !health.isReady -> Connection.Connecting(displayedServer)
-                else -> Connection.Connected(displayedServer, traffic(snapshot))
+                !health.isReady && health.state == TransportHealthState.FAILED -> {
+                    val failure = health.failure ?: snapshot.lastFailure
+                    Connection.Unreachable(ErrorPresentation.of(failure), displayedServer, failure?.retryable == true)
+                }
+
+                !health.isReady && health.state == TransportHealthState.RECOVERING -> {
+                    Connection.Reconnecting(displayedServer)
+                }
+
+                !health.isReady -> {
+                    Connection.Connecting(displayedServer)
+                }
+
+                else -> {
+                    Connection.Connected(displayedServer, traffic(snapshot))
+                }
             }
         }
     }

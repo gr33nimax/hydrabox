@@ -79,6 +79,8 @@ import io.hydrabox.ui.app.AppNavigation
 import io.hydrabox.ui.app.HydraApp
 import io.hydrabox.ui.app.Route
 import kotlinx.coroutines.delay
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import java.util.concurrent.Executors
 
 /**
@@ -410,13 +412,12 @@ class RuntimeControlActivity : ComponentActivity() {
                     latencyExpiryRenderedAt.value = staleAt
                 }
             }
+            val nowMillis =
+                System.currentTimeMillis().also { latencyExpiryRenderedAt.value }
+            val screenState = ScreenProjection.project(readModel(), nowMillis)
             Box(modifier = Modifier.fillMaxSize()) {
                 HydraApp(
-                    state =
-                        ScreenProjection.project(
-                            readModel(),
-                            nowMillis = System.currentTimeMillis().also { latencyExpiryRenderedAt.value },
-                        ),
+                    state = screenState,
                     actions = actions(),
                     navigation = navigation,
                     versionName = BuildConfig.VERSION_NAME,
@@ -487,7 +488,7 @@ class RuntimeControlActivity : ComponentActivity() {
     /**
      * What the app was opened with. A subscription is shared as a link far more often than it
      * is typed, so `hydrabox://import`, sing-box's own import scheme and a plain shared text
-     * all end in the same place: the import that the sources screen runs.
+     * all end in the same automatic import path as the sources screen.
      */
     private fun handle(intent: Intent?) {
         intent ?: return
@@ -500,13 +501,12 @@ class RuntimeControlActivity : ComponentActivity() {
             }?.takeIf(String::isNotEmpty) ?: return
         HydraLog.info(AREA, "opened with a link to import")
         navigation.open(Route.Sources)
-        background(Notice.SOURCE_ADDED) { store.addSubscription("", candidate) }
+        performImport(candidate)
     }
 
     /**
      * The link inside the link. Both import schemes wrap the real address in a `url`
-     * parameter; anything else is passed through as it stands, because a share link is a
-     * subscription too.
+     * parameter; anything else is passed through as it stands for automatic import routing.
      */
     private fun sourceOf(uri: android.net.Uri): String? {
         val wrapped = runCatching { uri.getQueryParameter("url") }.getOrNull()?.trim()
@@ -825,6 +825,33 @@ class RuntimeControlActivity : ComponentActivity() {
                 .firstOrNull(),
         )
 
+    private fun performImport(
+        input: String,
+        name: String = "",
+    ) {
+        background(
+            onFailure = { failure ->
+                when (val imported = failure as? AppStore.ImportFailure) {
+                    null -> {
+                        Notice.OPERATION_FAILED
+                    }
+
+                    else -> {
+                        when (imported.kind) {
+                            AppStore.ImportKind.SUBSCRIPTION -> noticeOf(imported.cause ?: failure)
+                            AppStore.ImportKind.CONFIG -> Notice.CONFIG_IMPORT_FAILED
+                        }
+                    }
+                }
+            },
+        ) {
+            when (store.addImport(input, name)) {
+                AppStore.ImportKind.SUBSCRIPTION -> Notice.SOURCE_ADDED
+                AppStore.ImportKind.CONFIG -> Notice.CONFIG_IMPORT_ADDED
+            }
+        }
+    }
+
     private fun actions() =
         AppActions(
             onConnect = ::prepareAndStart,
@@ -832,8 +859,18 @@ class RuntimeControlActivity : ComponentActivity() {
             onOpenLink = ::openLink,
             onRetry = ::prepareAndStart,
             onGrantPermission = ::prepareAndStart,
-            onAddSource = { name, source ->
-                background(Notice.SOURCE_ADDED) { store.addSubscription(name, source) }
+            onAddImport = { name, input -> performImport(input, name) },
+            onUpdateConfig = { tag, jsonString ->
+                background(onFailure = { Notice.CONFIG_UPDATE_FAILED }, rememberImportFailure = false) {
+                    store.updateConfig(tag, Json.parseToJsonElement(jsonString).jsonObject)
+                    Notice.CONFIG_UPDATED
+                }
+            },
+            onRemoveConfig = { tag ->
+                background(onFailure = { Notice.CONFIG_REMOVE_FAILED }, rememberImportFailure = false) {
+                    store.removeConfig(tag)
+                    Notice.CONFIG_REMOVED
+                }
             },
             onRefreshSource = { id -> background(Notice.SOURCE_UPDATED) { store.refreshSubscription(id) } },
             onEditSource = { id, name, link ->
@@ -1240,6 +1277,7 @@ class RuntimeControlActivity : ComponentActivity() {
             },
             onRefreshExit = ::probeExit,
             onExportDiagnostics = ::shareDiagnostics,
+            onCopyDiagnostics = ::copyDiagnostics,
             onExportBackup = { passphrase ->
                 pendingPassphrase = passphrase.toCharArray()
                 runCatching { exportFile.launch(BACKUP_FILE_NAME) }.onFailure { failBackup() }
@@ -1376,17 +1414,21 @@ class RuntimeControlActivity : ComponentActivity() {
      * The block decides its own notice, because what to say can depend on what it found — the
      * switch that restarts the core has to say so, and only the store knows which one that is.
      */
-    private fun background(block: () -> Notice?) {
+    private fun background(
+        onFailure: (Throwable) -> Notice = ::noticeOf,
+        rememberImportFailure: Boolean = true,
+        block: () -> Notice?,
+    ) {
         busy = OperationState.Running
         notice = null
         io.execute {
             val result = runCatching(block)
             val failure = result.exceptionOrNull()
-            runCatching { store.rememberImportFailure(failure) }
+            if (rememberImportFailure) runCatching { store.rememberImportFailure(failure) }
             main.post {
                 busy = failure?.let { OperationState.Failed(OperationError(it.message ?: "failed")) }
                     ?: OperationState.Idle
-                notice = if (failure != null) noticeOf(failure) else result.getOrNull()
+                notice = if (failure != null) onFailure(failure) else result.getOrNull()
                 refresh()
             }
         }
@@ -1450,12 +1492,12 @@ class RuntimeControlActivity : ComponentActivity() {
      * The log leaves the app as text through the system share sheet: no file provider, no
      * storage permission, and the person sees exactly what is being sent before sending it.
      */
+    private fun diagnosticsText() =
+        (facts() + journal().map { entry -> "${entry.time} ${entry.level.name.lowercase()} ${entry.source}: ${entry.message}" })
+            .joinToString(separator = System.lineSeparator())
+
     private fun shareDiagnostics() {
-        // The same lines the journal shows, in the same order, so a report and a screenshot
-        // never disagree about what happened.
-        val body =
-            (facts() + journal().map { entry -> "${entry.time} ${entry.level.name.lowercase()} ${entry.source}: ${entry.message}" })
-                .joinToString(separator = System.lineSeparator())
+        val body = diagnosticsText()
         val send =
             Intent(Intent.ACTION_SEND)
                 .setType("text/plain")
@@ -1463,6 +1505,14 @@ class RuntimeControlActivity : ComponentActivity() {
                 .putExtra(Intent.EXTRA_TEXT, body)
         runCatching { startActivity(Intent.createChooser(send, null)) }
             .onFailure { notice = Notice.OPERATION_FAILED }
+    }
+
+    private fun copyDiagnostics() {
+        val clipboard = getSystemService(android.content.ClipboardManager::class.java) ?: return
+        clipboard.setPrimaryClip(android.content.ClipData.newPlainText(getString(R.string.app_name), diagnosticsText()))
+        android.widget.Toast
+            .makeText(this, R.string.diagnostics_copied, android.widget.Toast.LENGTH_SHORT)
+            .show()
     }
 
     /**

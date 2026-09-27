@@ -185,7 +185,7 @@ private fun FirstSubscription(
         PrimaryAction(
             label = stringResource(Res.string.action_add),
             enabled = link.isNotBlank() && !state.busy.source,
-            onClick = { actions.onAddSource("", link.trim()) },
+            onClick = { actions.onAddImport("", link.trim()) },
         )
         SecondaryAction(
             label = stringResource(Res.string.action_paste),

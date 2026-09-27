@@ -22,6 +22,11 @@ import io.hydrabox.core.contract.RuntimeMode
 import io.hydrabox.core.contract.RuntimeState
 import io.hydrabox.core.contract.TransportChallenge
 import io.hydrabox.core.contract.TransportHealth
+import io.hydrabox.core.projection.Connection
+import io.hydrabox.core.projection.ErrorMessage
+import io.hydrabox.core.projection.PrimaryAction
+import io.hydrabox.core.projection.ScreenProjection
+import io.hydrabox.core.projection.primaryAction
 import io.hydrabox.core.runtime.Effect
 import io.hydrabox.core.runtime.RuntimeInput
 import io.hydrabox.core.settings.LogLevel
@@ -1509,30 +1514,59 @@ class HydraVpnService : VpnService() {
                 channelReady = true
             }
             val snapshot = runtime.snapshot()
-            // A runtime phase is not a sentence for a person. `starting` and `running` are what
-            // the reducer calls its states; the notification says what is true of the tunnel.
+            val connection = ScreenProjection.project(snapshot).connection
             val headline =
-                when {
-                    state == RuntimeState.RUNNING && snapshot.transportHealth.isReady -> R.string.notification_connected
-                    state == RuntimeState.STOPPING -> R.string.notification_disconnecting
-                    state == RuntimeState.FAILED -> R.string.notification_failed
-                    else -> R.string.notification_connecting
+                when (connection) {
+                    is Connection.Connected -> R.string.notification_connected
+                    is Connection.Connecting -> R.string.notification_connecting
+                    is Connection.Reconnecting -> R.string.notification_reconnecting
+                    Connection.Disconnecting -> R.string.notification_disconnecting
+                    is Connection.Unreachable -> notificationError(connection.presentation.message)
+                    is Connection.Stopped -> notificationError(connection.presentation.message)
+                    else -> R.string.tile_disconnected
                 }
             val detail =
-                if (snapshot.traffic.available && liveTraffic) {
+                if (connection is Connection.Connected && snapshot.traffic.available && liveTraffic) {
                     val speed = "↓ ${rate(snapshot.traffic.downlink)} ↑ ${rate(snapshot.traffic.uplink)}"
                     val total = "Σ ↓ ${size(snapshot.traffic.downlinkTotal)} ↑ ${size(snapshot.traffic.uplinkTotal)}"
                     when (trafficDisplay) {
-                        NotificationTrafficDisplayMode.SPEED -> "${getString(headline)} · $speed"
-                        NotificationTrafficDisplayMode.TOTAL -> "${getString(headline)} · $total"
-                        NotificationTrafficDisplayMode.BOTH -> "${getString(headline)} · $speed · $total"
+                        NotificationTrafficDisplayMode.SPEED -> speed
+                        NotificationTrafficDisplayMode.TOTAL -> total
+                        NotificationTrafficDisplayMode.BOTH -> "$speed · $total"
                     }
                 } else {
-                    getString(headline)
+                    null
+                }
+            val action = connection.primaryAction
+            val actionLabel =
+                when (action) {
+                    PrimaryAction.DISCONNECT, PrimaryAction.CANCEL -> R.string.notification_disconnect
+                    PrimaryAction.RETRY, PrimaryAction.CONNECT -> R.string.notification_retry
+                    else -> R.string.notification_open
+                }
+            val actionIntent =
+                if (action == PrimaryAction.DISCONNECT || action == PrimaryAction.CANCEL) {
+                    android.app.PendingIntent.getService(
+                        this,
+                        1,
+                        Intent(this, HydraVpnService::class.java).setAction(ACTION_STOP),
+                        android.app.PendingIntent.FLAG_IMMUTABLE,
+                    )
+                } else {
+                    val target = Intent(this, RuntimeControlActivity::class.java)
+                    if (action == PrimaryAction.RETRY || action == PrimaryAction.CONNECT) {
+                        target.setAction(RuntimeControlActivity.ACTION_REQUEST_START)
+                    }
+                    android.app.PendingIntent.getActivity(
+                        this,
+                        3,
+                        target,
+                        android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
+                    )
                 }
             android.app.Notification
                 .Builder(this, CHANNEL_ID)
-                .setContentTitle(snapshot.selectedOutbounds.firstOrNull()?.outboundId ?: "HydraBox")
+                .setContentTitle(getString(headline))
                 .setContentText(detail)
                 .setSmallIcon(R.drawable.ic_hydrabox_notification)
                 .setOngoing(state != RuntimeState.STOPPED)
@@ -1556,15 +1590,21 @@ class HydraVpnService : VpnService() {
                         .Builder(
                             android.graphics.drawable.Icon
                                 .createWithResource(this, R.drawable.ic_hydrabox_notification),
-                            getString(R.string.notification_disconnect),
-                            android.app.PendingIntent.getService(
-                                this,
-                                1,
-                                Intent(this, HydraVpnService::class.java).setAction(ACTION_STOP),
-                                android.app.PendingIntent.FLAG_IMMUTABLE,
-                            ),
+                            getString(actionLabel),
+                            actionIntent,
                         ).build(),
                 ).build()
+        }
+
+    private fun notificationError(message: ErrorMessage): Int =
+        when (message) {
+            ErrorMessage.NO_INTERNET -> R.string.notification_no_internet
+            ErrorMessage.SERVER_UNREACHABLE -> R.string.notification_unreachable
+            ErrorMessage.SUBSCRIPTION_UNAVAILABLE -> R.string.notification_subscription
+            ErrorMessage.CONFIG_REJECTED -> R.string.notification_config
+            ErrorMessage.PERMISSION_REQUIRED -> R.string.notification_permission
+            ErrorMessage.CONNECTION_LOST -> R.string.notification_connection_lost
+            ErrorMessage.UNKNOWN -> R.string.notification_failed
         }
 
     private fun rate(value: Long): String = "${size(value)}/s"

@@ -102,6 +102,13 @@ object HydraCoreGate {
             text.contains("key") || text.contains("decrypt") || text.contains("authentication")
         }
 
+    fun checkConfig(document: String) {
+        runCatching { Libbox.checkConfig(document) }.getOrElse { failure ->
+            HydraLog.error(AREA, "the core rejected an imported config", failure)
+            throw IllegalArgumentException("the core rejected this config: ${HydraLog.describe(failure)}", failure)
+        }
+    }
+
     fun inspect(document: String): Inspection {
         val raw =
             runCatching { Libbox.hydraCoreInspectSubscription(document) }

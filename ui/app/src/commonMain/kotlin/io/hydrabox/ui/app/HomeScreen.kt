@@ -23,12 +23,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.hydrabox.core.projection.Connection
+import io.hydrabox.core.projection.ErrorMessage
+import io.hydrabox.core.projection.MANUAL_SOURCE_ID
 import io.hydrabox.core.projection.PrimaryAction
 import io.hydrabox.core.projection.ScreenState
 import io.hydrabox.core.projection.ServerRef
 import io.hydrabox.core.projection.SettingsSummary
 import io.hydrabox.core.projection.SubscriptionSummary
-import io.hydrabox.core.projection.Trouble
 import io.hydrabox.core.projection.primaryAction
 import io.hydrabox.core.projection.server
 import io.hydrabox.ui.app.resources.*
@@ -101,7 +102,7 @@ fun HomeScreen(
         }
         return
     }
-    val source = state.sources.firstOrNull()
+    val source = planSourceForHome(state)
     Column(
         modifier =
             Modifier
@@ -111,12 +112,14 @@ fun HomeScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
-        PlanHeader(
-            source = source,
-            busy = state.busy.source,
-            onOpen = onOpenSources,
-            onRefresh = { source?.let { actions.onRefreshSource(it.id) } },
-        )
+        source?.let { plan ->
+            PlanHeader(
+                source = plan,
+                busy = state.busy.source,
+                onOpen = onOpenSources,
+                onRefresh = { actions.onRefreshSource(plan.id) },
+            )
+        }
         Instrument(state, actions, onOpenServers, onOpenTraffic, source, controlSize(width, height))
         Readings(state, actions, source, onOpenServers, onOpenSources, onOpenMode)
     }
@@ -127,6 +130,12 @@ fun HomeScreen(
  * height, so the proportion survives a short screen and a tablet alike. It carries the state
  * words inside it now, which is why it is allowed more of the width than a bare disc was.
  */
+internal fun planSourceForHome(state: ScreenState): SubscriptionSummary? {
+    val server = state.connection.server ?: return state.sources.firstOrNull()
+    if (server.sourceId == MANUAL_SOURCE_ID) return null
+    return state.sources.firstOrNull { it.id == server.sourceId } ?: state.sources.firstOrNull()
+}
+
 private fun controlSize(
     width: Dp,
     height: Dp,
@@ -185,18 +194,19 @@ private fun Instrument(
     size: Dp,
 ) {
     val connection = state.connection
-    val traffic = (connection as? Connection.Connected)?.traffic?.takeIf { it.available }
+    val displayedConnection = state.displayedConnection
+    val traffic = (displayedConnection as? Connection.Connected)?.traffic?.takeIf { it.available }
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(UiTokens.spacing),
         modifier = Modifier.padding(vertical = UiTokens.spacing * 2),
     ) {
         ConnectionControl(
-            tone = connection.tone(),
-            visualState = connection.visualState(),
+            tone = displayedConnection.tone(),
+            visualState = displayedConnection.visualState(),
             enabled = apertureEnabled(connection),
             contentDescription = stringResource(connection.actionLabel()),
-            stateDescription = connectionTitle(connection),
+            stateDescription = connectionTitle(displayedConnection),
             onClick = { dispatchHomeAction(connection, source?.id, actions, onOpenServers) },
             size = size,
             // The ring is fed the measurements rather than a decorative phase: rates for the
@@ -210,7 +220,7 @@ private fun Instrument(
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
         ) {
             Text(
-                shortState(connection),
+                shortState(displayedConnection),
                 style = MaterialTheme.typography.titleMedium,
                 textAlign = TextAlign.Center,
                 maxLines = 2,
@@ -225,7 +235,7 @@ private fun Instrument(
                 modifier = Modifier.clickable(onClick = onOpenTraffic),
             )
         }
-        connectionHint(connection)?.let {
+        connectionHint(displayedConnection)?.let {
             Text(
                 it,
                 style = MaterialTheme.typography.bodyMedium,
@@ -273,13 +283,15 @@ private fun Readings(
             // that was true a network ago is worth re-checking.
             onClick = actions.onRefreshExit,
         )
-        FactRow(
-            label = stringResource(Res.string.home_row_plan),
-            value = planAllowance(source),
-            detail = planTerm(source),
-            accent = source?.problem?.let { MaterialTheme.colorScheme.error },
-            onClick = onOpenSources,
-        )
+        source?.let { plan ->
+            FactRow(
+                label = stringResource(Res.string.home_row_plan),
+                value = planAllowance(plan),
+                detail = planTerm(plan),
+                accent = plan.problem?.let { MaterialTheme.colorScheme.error },
+                onClick = onOpenSources,
+            )
+        }
         FactRow(
             label = stringResource(Res.string.home_row_mode),
             value = modeValue(state.settings),
@@ -344,22 +356,31 @@ private fun shortState(connection: Connection): String =
         }
 
         is Connection.Stopped -> {
-            stringResource(
-                when (connection.cause) {
-                    Trouble.NO_INTERNET -> Res.string.trouble_short_no_internet
-                    Trouble.SERVER_UNREACHABLE -> Res.string.trouble_short_server_unreachable
-                    Trouble.SUBSCRIPTION_UNAVAILABLE -> Res.string.trouble_short_subscription
-                    Trouble.CONFIG_REJECTED -> Res.string.trouble_short_config
-                    Trouble.PERMISSION_REQUIRED -> Res.string.trouble_short_permission
-                    Trouble.UNKNOWN -> Res.string.trouble_short_unknown
-                },
-            )
+            shortError(connection.presentation.message)
+        }
+
+        is Connection.Unreachable -> {
+            shortError(connection.presentation.message)
         }
 
         else -> {
             connectionTitle(connection)
         }
     }
+
+@Composable
+private fun shortError(message: ErrorMessage): String =
+    stringResource(
+        when (message) {
+            ErrorMessage.NO_INTERNET -> Res.string.trouble_short_no_internet
+            ErrorMessage.SERVER_UNREACHABLE -> Res.string.trouble_short_server_unreachable
+            ErrorMessage.SUBSCRIPTION_UNAVAILABLE -> Res.string.trouble_short_subscription
+            ErrorMessage.CONFIG_REJECTED -> Res.string.trouble_short_config
+            ErrorMessage.PERMISSION_REQUIRED -> Res.string.trouble_short_permission
+            ErrorMessage.CONNECTION_LOST -> Res.string.trouble_short_connection_lost
+            ErrorMessage.UNKNOWN -> Res.string.trouble_short_unknown
+        },
+    )
 
 /** The second action, when a state has one. Never two primary buttons on one screen. */
 @Composable
@@ -369,11 +390,11 @@ private fun SecondaryActionRow(
     onOpenServers: () -> Unit,
 ) {
     when {
-        connection is Connection.Stopped && connection.cause == Trouble.PERMISSION_REQUIRED -> {
+        connection is Connection.Stopped && connection.presentation.message == ErrorMessage.PERMISSION_REQUIRED -> {
             TonalAction(stringResource(Res.string.action_grant_permission), onClick = actions.onGrantPermission)
         }
 
-        connection is Connection.Stopped && connection.primaryAction == PrimaryAction.CHOOSE_SERVER -> {
+        connection.primaryAction == PrimaryAction.CHOOSE_SERVER -> {
             TonalAction(stringResource(Res.string.action_choose_server), onClick = onOpenServers)
         }
 

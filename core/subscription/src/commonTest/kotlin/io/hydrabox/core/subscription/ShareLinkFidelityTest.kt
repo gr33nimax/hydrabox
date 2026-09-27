@@ -1,5 +1,6 @@
 package io.hydrabox.core.subscription
 
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
@@ -22,6 +23,20 @@ import kotlin.test.assertTrue
  */
 class ShareLinkFidelityTest {
     private fun JsonObject.text(key: String) = this[key]?.jsonPrimitive?.contentOrNull
+
+    private fun urlEncode(value: String): String {
+        val hex = "0123456789ABCDEF"
+        return value.encodeToByteArray().joinToString("") { byte ->
+            val code = byte.toInt() and 0xff
+            if (code in 'a'.code..'z'.code || code in 'A'.code..'Z'.code || code in '0'.code..'9'.code ||
+                code == '-'.code || code == '_'.code || code == '.'.code || code == '~'.code
+            ) {
+                code.toChar().toString()
+            } else {
+                "%${hex[code shr 4]}${hex[code and 15]}"
+            }
+        }
+    }
 
     @OptIn(ExperimentalEncodingApi::class)
     private fun vmessLink(document: String) = "vmess://" + Base64.Default.encode(document.encodeToByteArray())
@@ -116,20 +131,252 @@ class ShareLinkFidelityTest {
         assertEquals("100-1000", transport.text("x_padding_bytes"))
     }
 
-    @Test fun `the xhttp extras arrive under the names the core reads`() {
-        val extra = """{"scStreamUpServerSecs":"30-120","xPaddingBytes":"500-2000","xmux":{"maxConcurrency":"16-32"}}"""
+    @Test fun `a real xhttp link matches the working transport contract`() {
+        val extra =
+            """{"sessionIDPlacement":"header","sessionIDKey":"X-Upload-Token","sessionIDTable":"Base62","sessionIDLength":"16-32","noGRPCHeader":false,"xmux":{"maxConnections":"0","cMaxReuseTimes":"1000","hMaxReusableSecs":"100","maxConcurrency":"16-32","hMaxRequestTimes":"600-900"},"futureField":true}"""
         val parsed =
             SubscriptionParser.parse(
-                "vless://id@x.example:443?security=tls&type=xhttp&mode=stream-up&path=%2Fxhttp" +
-                    "&extra=" + extra.replace("{", "%7B").replace("}", "%7D").replace("\"", "%22"),
+                "vless://id@x.example:443?type=xhttp&mode=stream-up" +
+                    "&path=%2Fapi%2Fmedia%2Fsession%2F&extra=${urlEncode(extra)}",
             )
         val transport = assertIs<JsonObject>(ShareLinkOutbound.toJson(parsed, "tag")["transport"])
-        // Copied verbatim, the core sees no padding range and refuses the whole document with
-        // "x_padding_bytes cannot be disabled" — which takes every other server down with it.
+        val expected =
+            Json
+                .parseToJsonElement(
+                    """{"type":"xhttp","mode":"stream-up","path":"/api/media/session","x_padding_bytes":"100-1000","no_grpc_header":false,"session_placement":"header","session_key":"X-Upload-Token","session_id_table":"Base62","session_id_length":"16-32","xmux":{"max_connections":0,"c_max_reuse_times":1000,"h_max_reusable_secs":100,"max_concurrency":"16-32","h_max_request_times":"600-900"}}""",
+                ).jsonObject
+        assertEquals(expected, transport)
+        val xmux = assertIs<JsonObject>(transport["xmux"])
+        listOf("max_connections", "c_max_reuse_times", "h_max_reusable_secs").forEach { key ->
+            assertEquals(false, xmux.getValue(key).jsonPrimitive.isString)
+        }
+        assertNull(transport["session_id_placement"])
+        assertNull(transport["session_id_key"])
+        assertNull(transport["sc_max_buffered_posts"])
+        assertNull(transport["future_field"])
+    }
+
+    @Test fun `a real vless xhttp link uses every exact hydracore extra key`() {
+        val extra =
+            """{"xPaddingBytes":"500-2000","headers":{"X-Trace":"enabled"},"domainStrategy":"prefer_ipv4","noGRPCHeader":true,"noSSEHeader":true,"scMaxEachPostBytes":"1000000-2000000","scMinPostsIntervalMs":"30-60","scMaxBufferedPosts":12,"scStreamUpServerSecs":"30-120","serverMaxHeaderBytes":8192,"trustedXForwardedFor":["127.0.0.1"],"xPaddingObfsMode":true,"xPaddingKey":"x_padding","xPaddingHeader":"X-Padding","xPaddingPlacement":"queryInHeader","xPaddingMethod":"repeat-x","uplinkHTTPMethod":"POST","sessionPlacement":"cookie","sessionKey":"x_session","seqPlacement":"header","seqKey":"X-Seq","uplinkDataPlacement":"auto","uplinkDataKey":"X-Data","uplinkChunkSize":"64-128","sessionIDTable":"ABCDEFGHIJKLMNOPQRSTUVWXYZ","sessionIDLength":"16-32","congestionController":"bbr","cwnd":16,"xmux":{"maxConcurrency":"0-0","maxConnections":"2-4","cMaxReuseTimes":"2-4","hMaxRequestTimes":"600-900","hMaxReusableSecs":"1800-3000","hKeepAlivePeriod":30},"download":{"server":"dl.example","server_port":443,"detour":"direct","tls":{"enabled":true,"server_name":"dl.example"}}}"""
+        val parsed =
+            SubscriptionParser.parse(
+                "vless://6f1a2b3c-4d5e-6f70-8192-a3b4c5d6e7f8@x.example:443" +
+                    "?security=tls&type=xhttp&mode=stream-up&host=x.example&path=%2Fxhttp&tfo=true" +
+                    "&encryption=mlkem768x25519plus.native.1rtt.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&flow=" +
+                    "&extra=${urlEncode(extra)}#XHTTP",
+            )
+        val outbound = ShareLinkOutbound.toJson(parsed, "tag")
+        assertEquals("mlkem768x25519plus.native.1rtt.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", outbound.text("encryption"))
+        assertEquals(true, outbound["tcp_fast_open"]?.jsonPrimitive?.booleanOrNull)
+        assertNull(outbound["flow"])
+        val transport = assertIs<JsonObject>(outbound["transport"])
+        assertEquals("xhttp", transport.text("type"))
+        assertEquals("stream-up", transport.text("mode"))
         assertEquals("500-2000", transport.text("x_padding_bytes"))
-        assertEquals("30-120", transport.text("sc_stream_up_server_secs"))
-        assertEquals("16-32", transport["xmux"]?.jsonObject?.text("max_concurrency"))
+        assertEquals("POST", transport.text("uplink_http_method"))
+        assertEquals("16-32", transport.text("session_id_length"))
+        assertEquals("ABCDEFGHIJKLMNOPQRSTUVWXYZ", transport.text("session_id_table"))
+        assertEquals("cookie", transport.text("session_placement"))
+        assertEquals("header", transport.text("seq_placement"))
+        assertEquals("2-4", transport["xmux"]?.jsonObject?.text("c_max_reuse_times"))
+        assertEquals("0-0", transport["xmux"]?.jsonObject?.text("max_concurrency"))
+        assertEquals("2-4", transport["xmux"]?.jsonObject?.text("max_connections"))
+        assertEquals("600-900", transport["xmux"]?.jsonObject?.text("h_max_request_times"))
+        assertEquals("1800-3000", transport["xmux"]?.jsonObject?.text("h_max_reusable_secs"))
+        assertEquals("30", transport["xmux"]?.jsonObject?.text("h_keep_alive_period"))
+        assertTrue("headers" in transport)
+        assertTrue("domain_strategy" in transport)
+        assertTrue("no_grpc_header" in transport)
+        assertTrue("no_sse_header" in transport)
+        assertTrue("sc_max_each_post_bytes" in transport)
+        assertTrue("sc_min_posts_interval_ms" in transport)
+        assertTrue("sc_max_buffered_posts" in transport)
+        assertTrue("sc_stream_up_server_secs" in transport)
+        assertTrue("server_max_header_bytes" in transport)
+        assertTrue("trusted_x_forwarded_for" in transport)
+        assertTrue("x_padding_obfs_mode" in transport)
+        assertTrue("x_padding_key" in transport)
+        assertTrue("x_padding_header" in transport)
+        assertTrue("x_padding_placement" in transport)
+        assertTrue("x_padding_method" in transport)
+        assertTrue("session_key" in transport)
+        assertTrue("seq_key" in transport)
+        assertTrue("uplink_data_placement" in transport)
+        assertTrue("uplink_data_key" in transport)
+        assertTrue("uplink_chunk_size" in transport)
+        assertTrue("congestion_controller" in transport)
+        assertTrue("cwnd" in transport)
+        assertTrue("download" in transport)
+        assertNull(transport["uplink_httpmethod"])
+        assertNull(transport["session_idlength"])
         assertNull(transport["xPaddingBytes"])
+    }
+
+    @OptIn(ExperimentalEncodingApi::class)
+    @Test
+    fun `base64url xhttp extra is decoded and nested keys are mapped`() {
+        val extra =
+            """{"xPaddingBytes":"500-2000","uplinkHTTPMethod":"POST","xmux":{"maxConcurrency":"0-0"},"download":{"server":"dl.example","serverPort":443,"detour":"direct","xPaddingBytes":"100-1000","tls":{"enabled":true,"serverName":"dl.example"}}}"""
+        val encodedExtra = Base64.UrlSafe.encode(extra.encodeToByteArray()).trimEnd('=')
+        val outbound =
+            ShareLinkOutbound.toJson(
+                SubscriptionParser.parse(
+                    "vless://id@x.example:443?type=xhttp&security=tls&extra=$encodedExtra",
+                ),
+                "tag",
+            )
+        val transport = assertIs<JsonObject>(outbound["transport"])
+        assertEquals("500-2000", transport.text("x_padding_bytes"))
+        assertEquals("POST", transport.text("uplink_http_method"))
+        assertEquals("0-0", transport["xmux"]?.jsonObject?.text("max_concurrency"))
+        val download = assertIs<JsonObject>(transport["download"])
+        assertEquals("443", download.text("server_port"))
+        assertEquals("100-1000", download.text("x_padding_bytes"))
+        assertEquals("dl.example", download["tls"]?.jsonObject?.text("server_name"))
+    }
+
+    @Test fun `a trojan grpc link keeps the core transport and TLS keys`() {
+        val outbound =
+            ShareLinkOutbound.toJson(
+                SubscriptionParser.parse(
+                    "trojan://secret@t.example:443?type=grpc&grpc-service-name=trojan-rpc&sni=front.example&alpn=h2#Trojan",
+                ),
+                "tag",
+            )
+        assertEquals("secret", outbound.text("password"))
+        assertEquals("front.example", assertIs<JsonObject>(outbound["tls"]).text("server_name"))
+        val transport = assertIs<JsonObject>(outbound["transport"])
+        assertEquals("grpc", transport.text("type"))
+        assertEquals("trojan-rpc", transport.text("service_name"))
+    }
+
+    @Test fun `an ssr link keeps method protocol and both obfuscation parameters`() {
+        val password = Base64.Default.encode("ssr-pass".encodeToByteArray())
+        val document =
+            "ssr.example:8443:auth_sha1_v4:aes-128-ctr:tls1.2_ticket_auth:$password" +
+                "/?obfsparam=${Base64.Default.encode("cdn.example".encodeToByteArray())}" +
+                "&protoparam=${Base64.Default.encode("account".encodeToByteArray())}"
+        val link = "ssr://${Base64.Default.encode(document.encodeToByteArray())}"
+        val outbound = ShareLinkOutbound.toJson(SubscriptionParser.parse(link), "tag")
+        assertEquals("shadowsocksr", outbound.text("type"))
+        assertEquals("aes-128-ctr", outbound.text("method"))
+        assertEquals("ssr-pass", outbound.text("password"))
+        assertEquals("auth_sha1_v4", outbound.text("protocol"))
+        assertEquals("tls1.2_ticket_auth", outbound.text("obfs"))
+        assertEquals("cdn.example", outbound.text("obfs_param"))
+        assertEquals("account", outbound.text("protocol_param"))
+    }
+
+    @Test fun `hysteria links use their exact auth speed and obfs keys`() {
+        val outbound =
+            ShareLinkOutbound.toJson(
+                SubscriptionParser.parse(
+                    "hysteria://h.example:443?auth=secret&peer=front.example&up=100%20Mbps&down_mbps=200" +
+                        "&obfsParam=obfs-secret&insecure=true#Hysteria",
+                ),
+                "tag",
+            )
+        assertEquals("secret", outbound.text("auth_str"))
+        assertEquals("100 Mbps", outbound.text("up"))
+        assertEquals("200", outbound.text("down_mbps"))
+        assertEquals("obfs-secret", outbound.text("obfs"))
+        val tls = assertIs<JsonObject>(outbound["tls"])
+        assertEquals("front.example", tls.text("server_name"))
+        assertEquals(true, tls["insecure"]?.jsonPrimitive?.booleanOrNull)
+    }
+
+    @Test fun `hysteria2 links keep password bandwidth obfs and SNI`() {
+        val outbound =
+            ShareLinkOutbound.toJson(
+                SubscriptionParser.parse(
+                    "hy2://secret@hy2.example:443?up=30&down=80&obfs=salamander&obfs-password=cloak" +
+                        "&sni=front.example&insecure=1#Hy2",
+                ),
+                "tag",
+            )
+        assertEquals("secret", outbound.text("password"))
+        assertEquals("30", outbound.text("up_mbps"))
+        assertEquals("80", outbound.text("down_mbps"))
+        val obfs = assertIs<JsonObject>(outbound["obfs"])
+        assertEquals("salamander", obfs.text("type"))
+        assertEquals("cloak", obfs.text("password"))
+        val tls = assertIs<JsonObject>(outbound["tls"])
+        assertEquals("front.example", tls.text("server_name"))
+        assertEquals(true, tls["insecure"]?.jsonPrimitive?.booleanOrNull)
+    }
+
+    @Test fun `tuic links keep UUID password and protocol settings`() {
+        val outbound =
+            ShareLinkOutbound.toJson(
+                SubscriptionParser.parse(
+                    "tuic://uuid-123:secret@tuic.example:443?congestion_control=bbr&udp_relay_mode=native" +
+                        "&zero_rtt_handshake=true&heartbeat_interval=10s&sni=front.example&disable_sni=true#TUIC",
+                ),
+                "tag",
+            )
+        assertEquals("uuid-123", outbound.text("uuid"))
+        assertEquals("secret", outbound.text("password"))
+        assertEquals("bbr", outbound.text("congestion_control"))
+        assertEquals("native", outbound.text("udp_relay_mode"))
+        assertEquals(true, outbound["zero_rtt_handshake"]?.jsonPrimitive?.booleanOrNull)
+        assertEquals("10s", outbound.text("heartbeat"))
+        val tls = assertIs<JsonObject>(outbound["tls"])
+        assertEquals("front.example", tls.text("server_name"))
+        assertEquals(true, tls["disable_sni"]?.jsonPrimitive?.booleanOrNull)
+    }
+
+    @Test fun `anytls omits TLS and TFO options rejected by the core`() {
+        val outbound =
+            ShareLinkOutbound.toJson(
+                SubscriptionParser.parse(
+                    "anytls://secret@any.example:443?sni=front.example&tfo=true&insecure=1&alpn=h2&fp=chrome#AnyTLS",
+                ),
+                "tag",
+            )
+        assertEquals("secret", outbound.text("password"))
+        assertNull(outbound["tcp_fast_open"])
+        val tls = assertIs<JsonObject>(outbound["tls"])
+        assertEquals("front.example", tls.text("server_name"))
+        assertNull(tls["insecure"])
+        assertNull(tls["alpn"])
+        assertNull(tls["utls"])
+    }
+
+    @Test fun `socks4a links preserve the requested core protocol version`() {
+        val outbound = ShareLinkOutbound.toJson(SubscriptionParser.parse("socks4a://user:pass@s.example:1080#SOCKS"), "tag")
+        assertEquals("socks", outbound.text("type"))
+        assertEquals("4a", outbound.text("version"))
+        assertEquals("user", outbound.text("username"))
+        assertEquals("pass", outbound.text("password"))
+    }
+
+    @Test fun `naive quic scheme enables both QUIC and TLS`() {
+        val outbound =
+            ShareLinkOutbound.toJson(
+                SubscriptionParser.parse("naive+quic://user:pass@n.example:443?insecure=1&alpn=h3&fp=chrome#Naive"),
+                "tag",
+            )
+        assertEquals("user", outbound.text("username"))
+        assertEquals("pass", outbound.text("password"))
+        assertEquals(true, outbound["quic"]?.jsonPrimitive?.booleanOrNull)
+        val tls = assertIs<JsonObject>(outbound["tls"])
+        assertEquals(true, tls["enabled"]?.jsonPrimitive?.booleanOrNull)
+        assertNull(tls["insecure"])
+        assertNull(tls["alpn"])
+        assertNull(tls["utls"])
+    }
+
+    @Test fun `https proxy links become HTTP outbounds with TLS`() {
+        val outbound =
+            ShareLinkOutbound.toJson(
+                SubscriptionParser.parse("https://user:pass@proxy.example:443?sni=front.example#HTTPS"),
+                "tag",
+            )
+        assertEquals("http", outbound.text("type"))
+        assertEquals("user", outbound.text("username"))
+        assertEquals("pass", outbound.text("password"))
+        assertEquals("front.example", assertIs<JsonObject>(outbound["tls"]).text("server_name"))
     }
 
     @Test fun `httpupgrade and mkcp transports are mapped`() {

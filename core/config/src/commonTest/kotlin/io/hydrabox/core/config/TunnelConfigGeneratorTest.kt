@@ -68,6 +68,20 @@ class TunnelConfigGeneratorTest {
     private fun JsonObject.field(name: String) = this[name]?.jsonPrimitive?.content
 
     @Test
+    fun `automatic selection includes outbounds from each source scope`() {
+        val subscription = outbound("subscription-node").copy(scope = "subscription")
+        val manual = outbound("manual-node").copy(scope = "manual")
+        val config = TunnelConfigGenerator.build(TunnelInput(listOf(subscription, manual), AUTO_TAG)).jsonObject
+        val automatic =
+            config["outbounds"]!!
+                .jsonArray
+                .map { it.jsonObject }
+                .first { it.field("tag") == AUTO_TAG }
+
+        assertEquals(listOf("subscription-node", "manual-node"), automatic["outbounds"]!!.jsonArray.map { it.jsonPrimitive.content })
+    }
+
+    @Test
     fun `the VK transport stays out of the configuration until it is the chosen route`() {
         val outbounds = listOf(outbound("tokyo"), callOutbound("bypass"))
         val idle = tags(TunnelInput(outbounds = outbounds, selectedTag = "tokyo"))

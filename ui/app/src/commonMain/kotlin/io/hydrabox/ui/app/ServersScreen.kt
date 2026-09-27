@@ -1,13 +1,20 @@
 package io.hydrabox.ui.app
 
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -15,16 +22,22 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.semantics.semantics
 import io.hydrabox.core.projection.Connection
+import io.hydrabox.core.projection.MANUAL_SOURCE_ID
 import io.hydrabox.core.projection.ScreenState
 import io.hydrabox.core.projection.ServerRef
 import io.hydrabox.ui.app.resources.*
 import io.hydrabox.ui.app.resources.Res
 import io.hydrabox.ui.design.ActionRow
+import io.hydrabox.ui.design.ConfirmDialog
 import io.hydrabox.ui.design.EmptyState
 import io.hydrabox.ui.design.HydraField
 import io.hydrabox.ui.design.HydraIcons
 import io.hydrabox.ui.design.LoadingRows
+import io.hydrabox.ui.design.PrimaryAction
 import io.hydrabox.ui.design.SecondaryAction
 import io.hydrabox.ui.design.SectionGroup
 import io.hydrabox.ui.design.ServerRow
@@ -43,15 +56,18 @@ fun ServersScreen(
     state: ScreenState,
     actions: AppActions,
     onOpenSources: () -> Unit,
+    onOpenConfig: (String) -> Unit,
 ) {
+    var adding by remember { mutableStateOf(false) }
     if (state.sources.isEmpty() && state.autoServer == null) {
         EmptyState(
             icon = HydraIcons.Server,
             title = stringResource(Res.string.servers_empty_title),
             body = stringResource(Res.string.servers_empty_body),
-            primaryLabel = stringResource(Res.string.action_add_subscription),
-            onPrimary = onOpenSources,
+            primaryLabel = stringResource(Res.string.action_add),
+            onPrimary = { adding = true },
         )
+        if (adding) AddSourceSheet(state, actions) { adding = false }
         return
     }
     var filter by remember { mutableStateOf("") }
@@ -119,6 +135,11 @@ fun ServersScreen(
                 // Sorting and measuring belong next to the list, the way every proxy client puts them:
                 // a person who opens this screen either knows the name or wants the fastest one.
                 ActionRow {
+                    PrimaryAction(
+                        label = stringResource(Res.string.action_add),
+                        enabled = !state.busy.source,
+                        onClick = { adding = true },
+                    )
                     ServerOrder.entries.forEach { value ->
                         FilterChip(
                             selected = order == value,
@@ -139,13 +160,17 @@ fun ServersScreen(
         }
         groups.forEach { (group, visible) ->
             item(key = "header:${group.sourceId}") {
-                Text(group.sourceName, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    if (group.sourceId == MANUAL_SOURCE_ID) stringResource(Res.string.servers_manual_group) else group.sourceName,
+                    style = MaterialTheme.typography.titleSmall,
+                )
             }
             items(visible, key = { "server:${group.sourceId}:${it.id}" }, contentType = { "server" }) { server ->
-                SectionGroup { ServerEntry(server, state.selectedServerId, actions) }
+                SectionGroup { ServerEntry(server, state.selectedServerId, actions, onOpenConfig, canRemove = !state.busy.source) }
             }
         }
     }
+    if (adding) AddSourceSheet(state, actions) { adding = false }
 }
 
 internal fun canMeasure(connection: Connection): Boolean =
@@ -195,20 +220,86 @@ private fun ServerEntry(
     server: ServerRef,
     selectedId: String?,
     actions: AppActions,
+    onOpenConfig: (String) -> Unit,
+    canRemove: Boolean,
 ) {
     val mark = serverFlag(server.displayName)
-    ServerRow(
-        name = mark?.second ?: server.displayName,
-        // What it is and what the last measurement said, under the name: a figure long enough to
-        // need its own line used to sit beside the name and could hide it entirely.
-        detail = serverSupportingLine(server),
-        selected = server.id == selectedId,
-        icon = HydraIcons.Server,
-        flag = mark?.first,
-        onClick = { actions.onSelectServer(server.id) },
-        measuring = server.measuring,
-    )
+    val quickActions = serverSupportsQuickActions(server)
+    var quickActionsExpanded by remember(server.id) { mutableStateOf(false) }
+    var confirmRemoval by remember(server.id) { mutableStateOf(false) }
+    val quickActionModifier =
+        if (quickActions) {
+            val label = stringResource(Res.string.servers_config_actions)
+            Modifier
+                .semantics {
+                    onLongClick(label = label) {
+                        quickActionsExpanded = true
+                        true
+                    }
+                }.pointerInput(server.id) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        if (awaitLongPressOrCancellation(down.id) != null) quickActionsExpanded = true
+                    }
+                }
+        } else {
+            Modifier
+        }
+    Box(modifier = quickActionModifier) {
+        ServerRow(
+            name = mark?.second ?: server.displayName,
+            // What it is and what the last measurement said, under the name: a figure long enough to
+            // need its own line used to sit beside the name and could hide it entirely.
+            detail = serverSupportingLine(server),
+            selected = server.id == selectedId,
+            icon = HydraIcons.Server,
+            flag = mark?.first,
+            onClick = { actions.onSelectServer(server.id) },
+            measuring = server.measuring,
+            detailsLabel = stringResource(Res.string.config_inspector_title),
+            onDetails = { onOpenConfig(server.id) },
+        )
+        if (quickActions) {
+            DropdownMenu(
+                expanded = quickActionsExpanded,
+                onDismissRequest = { quickActionsExpanded = false },
+            ) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(Res.string.servers_config_open)) },
+                    onClick = {
+                        quickActionsExpanded = false
+                        onOpenConfig(server.id)
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(Res.string.action_remove)) },
+                    enabled = canRemove,
+                    colors = MenuDefaults.itemColors(textColor = MaterialTheme.colorScheme.error),
+                    onClick = {
+                        quickActionsExpanded = false
+                        confirmRemoval = true
+                    },
+                )
+            }
+        }
+    }
+    if (confirmRemoval) {
+        ConfirmDialog(
+            title = stringResource(Res.string.config_remove_title),
+            body = stringResource(Res.string.config_remove_body),
+            confirmLabel = stringResource(Res.string.action_remove),
+            dismissLabel = stringResource(Res.string.action_cancel),
+            destructive = true,
+            onConfirm = {
+                confirmRemoval = false
+                actions.onRemoveConfig(server.id)
+            },
+            onDismiss = { confirmRemoval = false },
+        )
+    }
 }
+
+internal fun serverSupportsQuickActions(server: ServerRef): Boolean = server.sourceId == MANUAL_SOURCE_ID
 
 /**
  * The subscription's own mark for a server, split off its name: a leading country flag belongs in

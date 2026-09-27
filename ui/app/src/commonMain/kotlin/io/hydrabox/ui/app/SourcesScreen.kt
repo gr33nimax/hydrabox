@@ -75,12 +75,14 @@ fun SourcesScreen(
         verticalArrangement = Arrangement.spacedBy(UiTokens.spacing),
         modifier = Modifier.fillMaxWidth().padding(horizontal = UiTokens.spacing * 2),
     ) {
-        state.notice?.takeIf { it.failure }?.let { notice ->
-            WarningStrip(text = noticeText(notice), actionLabel = null, onAction = null)
+        if (!adding) {
+            state.notice?.takeIf { it.failure }?.let { notice ->
+                WarningStrip(text = noticeText(notice, state.sourceOperationError), actionLabel = null, onAction = null)
+            }
         }
         ActionRow {
             PrimaryAction(
-                label = stringResource(Res.string.action_add_subscription),
+                label = stringResource(Res.string.action_add),
                 enabled = !state.busy.source,
                 onClick = { adding = true },
             )
@@ -100,7 +102,7 @@ fun SourcesScreen(
                 icon = HydraIcons.Subscription,
                 title = stringResource(Res.string.sources_empty_title),
                 body = stringResource(Res.string.sources_empty_body),
-                primaryLabel = stringResource(Res.string.action_add_subscription),
+                primaryLabel = stringResource(Res.string.action_add),
                 onPrimary = { adding = true },
             )
         } else {
@@ -314,12 +316,12 @@ private fun ProtocolBadges(source: SubscriptionSummary) {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AddSourceSheet(
+internal fun AddSourceSheet(
     state: ScreenState,
     actions: AppActions,
     onClose: () -> Unit,
 ) {
-    var link by remember { mutableStateOf("") }
+    var input by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
     var submitted by remember { mutableStateOf(false) }
     val clipboard = LocalClipboardManager.current
@@ -327,7 +329,7 @@ private fun AddSourceSheet(
     // somewhere the person was no longer looking and took the typed link with it, so success is
     // the only thing that closes this.
     LaunchedEffect(submitted, state.notice) {
-        if (submitted && state.notice == Notice.SOURCE_ADDED) onClose()
+        if (submitted && (state.notice == Notice.SOURCE_ADDED || state.notice == Notice.CONFIG_IMPORT_ADDED)) onClose()
     }
     ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState()) {
         Column(
@@ -339,12 +341,13 @@ private fun AddSourceSheet(
                 style = MaterialTheme.typography.titleLarge,
             )
             HydraField(
-                value = link,
-                onValueChange = { link = it },
+                value = input,
+                onValueChange = { input = it },
                 label = stringResource(Res.string.sources_add_field),
                 supporting = stringResource(Res.string.sources_add_hint),
                 singleLine = false,
-                minLines = 2,
+                minLines = 3,
+                maxLines = 6,
             )
             HydraField(
                 value = name,
@@ -354,20 +357,20 @@ private fun AddSourceSheet(
             // The reason the import failed belongs here, next to what was typed, not on the
             // screen behind a sheet the person is still looking at.
             state.notice?.takeIf { it.failure }?.let { failure ->
-                WarningStrip(text = noticeText(failure), actionLabel = null, onAction = null)
+                WarningStrip(text = noticeText(failure, state.sourceOperationError), actionLabel = null, onAction = null)
             }
             ActionRow {
                 PrimaryAction(
                     label = stringResource(Res.string.action_add),
-                    enabled = link.isNotBlank() && !state.busy.source,
+                    enabled = input.isNotBlank() && !state.busy.source,
                     onClick = {
                         submitted = true
-                        actions.onAddSource(name.trim(), link.trim())
+                        actions.onAddImport(name.trim(), input.trim())
                     },
                 )
                 SecondaryAction(
                     label = stringResource(Res.string.action_paste),
-                    onClick = { clipboard.getText()?.text?.let { link = it.trim() } },
+                    onClick = { clipboard.getText()?.text?.let { input = it.trim() } },
                 )
             }
         }

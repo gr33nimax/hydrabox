@@ -320,7 +320,7 @@ data class DiagnosticsSummary(
     val activeServer: String? = null,
     val dnsResolver: String = "",
     val ruleSet: String? = null,
-    val lastError: String? = null,
+    val lastError: ErrorPresentation? = null,
     val journal: List<JournalEntry> = emptyList(),
 )
 
@@ -346,6 +346,12 @@ enum class Notice {
     SOURCE_ADDED,
     SOURCE_UPDATED,
     SOURCE_REMOVED,
+    CONFIG_IMPORT_ADDED,
+    CONFIG_IMPORT_FAILED,
+    CONFIG_UPDATED,
+    CONFIG_UPDATE_FAILED,
+    CONFIG_REMOVED,
+    CONFIG_REMOVE_FAILED,
     SOURCE_FAILED,
     SOURCE_EMPTY,
     SOURCE_UNREACHABLE,
@@ -385,6 +391,9 @@ enum class Notice {
                     SOURCE_ADDED,
                     SOURCE_UPDATED,
                     SOURCE_REMOVED,
+                    CONFIG_IMPORT_ADDED,
+                    CONFIG_UPDATED,
+                    CONFIG_REMOVED,
                     SERVER_SWITCHED,
                     SERVER_SWITCH_RESTARTED,
                     SETTINGS_NEED_RECONNECT,
@@ -410,7 +419,9 @@ data class Busy(
  * runtime phase, an outbound, a lane or a generation.
  */
 data class ScreenState(
+    /** Immediate state for actions and a smoothed label for transient visual changes. */
     val connection: Connection,
+    val displayedConnection: Connection = connection,
     /**
      * False until storage says otherwise. The default used to be true, which meant the very
      * first composition — before the stored model has been read — claimed the terms had been
@@ -437,6 +448,7 @@ data class ScreenState(
     val exit: ExitAddress = ExitAddress(),
     val busy: Busy = Busy(),
     val notice: Notice? = null,
+    val sourceOperationError: String? = null,
 ) {
     val serverCount get() = servers.sumOf { it.servers.size }
 

@@ -10,9 +10,19 @@
     <string name="notification_channel_detail">Shows whether the tunnel is carrying traffic</string>
     <string name="notification_connected">Connected</string>
     <string name="notification_connecting">Connecting…</string>
+    <string name="notification_reconnecting">Restoring connection…</string>
     <string name="notification_disconnecting">Disconnecting…</string>
+    <string name="notification_no_internet">No internet connection</string>
+    <string name="notification_unreachable">Server is not answering</string>
+    <string name="notification_subscription">Subscription unavailable</string>
+    <string name="notification_config">Could not prepare connection</string>
+    <string name="notification_permission">VPN permission required</string>
+    <string name="notification_connection_lost">Connection lost</string>
     <string name="notification_failed">Not connected</string>
     <string name="notification_disconnect">Disconnect</string>
+    <string name="notification_retry">Try again</string>
+    <string name="notification_open">Open HydraBox</string>
+    <string name="diagnostics_copied">Diagnostics copied</string>
     <string name="tile_disconnected">Disconnected</string>
     <!--
       The core's interactive question: VK's captcha, served on this device's loopback. It is

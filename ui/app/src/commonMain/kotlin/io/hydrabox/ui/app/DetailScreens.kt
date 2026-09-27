@@ -25,6 +25,7 @@ import io.hydrabox.core.projection.LogDetail
 import io.hydrabox.core.projection.ScreenState
 import io.hydrabox.ui.app.resources.*
 import io.hydrabox.ui.app.resources.Res
+import io.hydrabox.ui.design.ActionRow
 import io.hydrabox.ui.design.ChoiceDialog
 import io.hydrabox.ui.design.EmptyState
 import io.hydrabox.ui.design.HydraField
@@ -203,7 +204,10 @@ fun DiagnosticsScreen(
                 supporting = diagnostics?.dnsResolver?.takeIf(String::isNotBlank),
             )
             diagnostics?.lastError?.let {
-                HydraRow(title = stringResource(Res.string.diagnostics_error), supporting = it)
+                HydraRow(
+                    title = stringResource(Res.string.diagnostics_error),
+                    supporting = listOfNotNull(errorMessageTitle(it.message), it.detail).joinToString(" · "),
+                )
             }
             ValueRow(
                 title = stringResource(Res.string.journal_title),
@@ -226,7 +230,10 @@ fun DiagnosticsScreen(
                 )
             }
         }
-        SecondaryAction(stringResource(Res.string.diagnostics_export), onClick = actions.onExportDiagnostics)
+        ActionRow {
+            SecondaryAction(stringResource(Res.string.diagnostics_export), onClick = actions.onExportDiagnostics)
+            SecondaryAction(stringResource(Res.string.diagnostics_copy), onClick = actions.onCopyDiagnostics)
+        }
     }
     if (pickingLevel) {
         ChoiceDialog(

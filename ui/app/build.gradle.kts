@@ -25,6 +25,7 @@ dependencies {
     add("commonMainImplementation", compose.ui)
     add("commonMainImplementation", compose.foundation)
     add("commonMainImplementation", compose.material3)
+    add("commonMainImplementation", "org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
     add("commonMainImplementation", compose.components.resources)
     add("commonTestImplementation", "org.jetbrains.kotlin:kotlin-test")
 }

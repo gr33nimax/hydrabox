@@ -99,6 +99,7 @@ fun HydraField(
     supporting: String? = null,
     singleLine: Boolean = true,
     minLines: Int = 1,
+    maxLines: Int = Int.MAX_VALUE,
 ) = OutlinedTextField(
     value = value,
     onValueChange = onValueChange,
@@ -106,6 +107,7 @@ fun HydraField(
     supportingText = supporting?.let { { Text(it) } },
     singleLine = singleLine,
     minLines = minLines,
+    maxLines = maxLines,
     shape = MaterialTheme.shapes.medium,
     modifier = modifier.fillMaxWidth(),
 )
@@ -229,6 +231,8 @@ fun ServerRow(
     measuring: Boolean = false,
     /** The flag the subscription put in front of the name, when it put one there. */
     flag: String? = null,
+    detailsLabel: String? = null,
+    onDetails: (() -> Unit)? = null,
 ) = HydraRow(
     title = name,
     supporting = detail,
@@ -245,6 +249,16 @@ fun ServerRow(
                     strokeWidth = 2.dp,
                     color = MaterialTheme.colorScheme.primary,
                 )
+            }
+            if (onDetails != null) {
+                IconButton(onClick = onDetails) {
+                    Icon(
+                        HydraIcons.Document,
+                        contentDescription = detailsLabel,
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             if (selected) {
                 Icon(

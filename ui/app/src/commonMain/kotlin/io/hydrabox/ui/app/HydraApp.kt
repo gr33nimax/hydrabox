@@ -23,18 +23,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import io.hydrabox.core.projection.Appearance
+import io.hydrabox.core.projection.ConnectionStatusThrottle
+import io.hydrabox.core.projection.Notice
 import io.hydrabox.core.projection.ScreenState
 import io.hydrabox.ui.app.resources.*
 import io.hydrabox.ui.app.resources.Res
 import io.hydrabox.ui.design.AppShell
 import io.hydrabox.ui.design.DetailScreen
+import io.hydrabox.ui.design.EmptyState
 import io.hydrabox.ui.design.HydraIcons
 import io.hydrabox.ui.design.HydraTheme
 import io.hydrabox.ui.design.LoadingRows
 import io.hydrabox.ui.design.ShellDestination
 import io.hydrabox.ui.design.UiTokens
 import io.hydrabox.ui.design.WindowClass
+import kotlinx.coroutines.delay
 import org.jetbrains.compose.resources.stringResource
+import kotlin.time.TimeSource
 
 /** Where the app is. Three tasks in the navigation; everything else is opened from them. */
 enum class Tab { HOME, SERVERS, SETTINGS }
@@ -58,6 +63,10 @@ sealed interface Route {
 
     data class Document(
         val privacy: Boolean,
+    ) : Route
+
+    data class ConfigInspector(
+        val tag: String,
     ) : Route
 }
 
@@ -113,6 +122,17 @@ fun HydraApp(
         // loaded yet, and reading the terms — which composes a detail screen and drops this
         // flow — lost it entirely.
         var welcomeSeen by remember { mutableStateOf(false) }
+        val connectionThrottle = remember { ConnectionStatusThrottle() }
+        var displayedConnection by remember { mutableStateOf(state.displayedConnection) }
+        val statusClock = remember { TimeSource.Monotonic.markNow() }
+        LaunchedEffect(state.connection) {
+            val now = statusClock.elapsedNow().inWholeMilliseconds
+            displayedConnection = connectionThrottle.update(state.connection, now)
+            connectionThrottle.nextTransitionAtMillis?.let { transitionAt ->
+                delay((transitionAt - now).coerceAtLeast(1))
+                displayedConnection = connectionThrottle.update(state.connection, transitionAt)
+            }
+        }
         val onboardingStep =
             when {
                 !state.legalAccepted && !welcomeSeen -> OnboardingStep.WELCOME
@@ -155,7 +175,7 @@ fun HydraApp(
                 // The snackbar lives with its host: showing one where no host is composed —
                 // during the first run, for instance — would swallow the message entirely.
                 NoticeHost(state, actions, snackbar)
-                MainShell(state, actions, navigation, snackbar)
+                MainShell(state.copy(displayedConnection = displayedConnection), actions, navigation, snackbar)
             }
 
             is Route.Document -> {
@@ -166,6 +186,30 @@ fun HydraApp(
                     DocumentText(
                         stringResource(if (route.privacy) Res.string.legal_privacy_body else Res.string.legal_terms_body),
                     )
+                }
+            }
+
+            is Route.ConfigInspector -> {
+                val server =
+                    state.servers
+                        .asSequence()
+                        .flatMap { it.servers.asSequence() }
+                        .firstOrNull { it.id == route.tag }
+                LaunchedEffect(route.tag, state.notice, server == null) {
+                    if (state.notice == Notice.CONFIG_REMOVED && server == null) navigation.back()
+                }
+                Detail(stringResource(Res.string.config_inspector_title), navigation) {
+                    if (server == null) {
+                        EmptyState(
+                            icon = HydraIcons.Server,
+                            title = stringResource(Res.string.config_unavailable),
+                            body = stringResource(Res.string.config_unavailable_body),
+                            primaryLabel = stringResource(Res.string.action_back),
+                            onPrimary = { navigation.back() },
+                        )
+                    } else {
+                        ConfigInspectorScreen(server = server, state = state, actions = actions)
+                    }
                 }
             }
 
@@ -304,6 +348,7 @@ private fun MainShell(
                                 state = state,
                                 actions = actions,
                                 onOpenSources = { navigation.open(Route.Sources) },
+                                onOpenConfig = { tag -> navigation.open(Route.ConfigInspector(tag)) },
                             )
                         }
 
@@ -355,7 +400,10 @@ private fun NoticeHost(
     snackbar: SnackbarHostState,
 ) {
     val notice = state.notice
-    val text = notice?.let { noticeText(it) }
+    val text =
+        notice
+            ?.takeUnless { it == Notice.CONFIG_IMPORT_FAILED }
+            ?.let { noticeText(it, state.sourceOperationError) }
     LaunchedEffect(notice) {
         if (text != null) {
             snackbar.showSnackbar(text)

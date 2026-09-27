@@ -3,6 +3,9 @@ package io.hydrabox.core.projection
 import io.hydrabox.core.contract.HydraCoreErrorCode
 import io.hydrabox.core.contract.RuntimeFailure
 
+/** Stable id of the group holding individually imported configs ("Свои конфиги"). */
+const val MANUAL_SOURCE_ID = "manual"
+
 /**
  * What the last measurement of a server said.
  *
@@ -53,6 +56,10 @@ data class ServerRef(
     val sourceId: String = "",
     /** The protocol this server speaks, as the subscription described it. */
     val type: String? = null,
+    val endpoint: Boolean = false,
+    val selectable: Boolean = true,
+    /** The outbound object projected as text, so an inspector needs no second platform read. */
+    val configJson: String? = null,
     /** What the last measurement said, when there was one. */
     val probe: ProbeState = ProbeState.UNKNOWN,
     val latencyStale: Boolean = false,
@@ -67,33 +74,27 @@ data class ServerRef(
     val measuring: Boolean = false,
 )
 
-/**
- * Why the product is not carrying traffic, in the terms a person can act on. The runtime
- * has thirty-five error codes; a person has six situations. The mapping lives in
- * [Trouble.of] and nowhere else, so no screen ever sees a code.
- */
-enum class Trouble {
-    /** The device itself has no working network. */
+/** One user-facing error vocabulary for the connection and diagnostics surfaces. */
+enum class ErrorMessage {
     NO_INTERNET,
-
-    /** The network works, this server does not answer. */
     SERVER_UNREACHABLE,
-
-    /** The source of servers can no longer be used: expired, revoked, rejected. */
     SUBSCRIPTION_UNAVAILABLE,
-
-    /** The tunnel could not be prepared from what is stored. A bug, not a user error. */
     CONFIG_REJECTED,
-
-    /** The system consent for a VPN is missing. */
     PERMISSION_REQUIRED,
-
-    /** Anything the runtime could not classify. Offers diagnostics, never a code. */
+    CONNECTION_LOST,
     UNKNOWN,
     ;
 
+    val primaryAction: PrimaryAction
+        get() =
+            when (this) {
+                SERVER_UNREACHABLE -> PrimaryAction.CHOOSE_SERVER
+                SUBSCRIPTION_UNAVAILABLE -> PrimaryAction.REFRESH_SOURCE
+                else -> PrimaryAction.RETRY
+            }
+
     companion object {
-        fun of(failure: RuntimeFailure?): Trouble =
+        fun of(failure: RuntimeFailure?): ErrorMessage =
             when (failure?.code) {
                 null -> UNKNOWN
 
@@ -102,6 +103,11 @@ enum class Trouble {
                 HydraCoreErrorCode.NETWORK_GENERATION_STALE,
                 HydraCoreErrorCode.DNS_BOOTSTRAP_TIMEOUT,
                 -> NO_INTERNET
+
+                HydraCoreErrorCode.RUNTIME_CORE_DIED,
+                HydraCoreErrorCode.RUNTIME_IPC_LOST,
+                HydraCoreErrorCode.RUNTIME_IPC_BIND_FAILED,
+                -> CONNECTION_LOST
 
                 HydraCoreErrorCode.QUIC_DIAL_FAILED,
                 HydraCoreErrorCode.QUIC_NO_PATHS,
@@ -115,11 +121,6 @@ enum class Trouble {
                 HydraCoreErrorCode.DNS_UPSTREAM_REFUSED,
                 HydraCoreErrorCode.DNS_NO_ANSWER,
                 HydraCoreErrorCode.PROBE_TIMEOUT,
-                // VK turned this route away — a captcha, a flood limit, its own refusal. The
-                // subscription is not dead and re-downloading it fixes nothing; the actionable
-                // move is another server, which is what this situation offers. It used to read
-                // as "subscription unavailable", whose only action is to refresh the source, and
-                // the screen then had no way to connect at all until the app was restarted.
                 HydraCoreErrorCode.VK_CREDENTIALS_REJECTED,
                 HydraCoreErrorCode.VK_CREDENTIALS_FLOOD,
                 HydraCoreErrorCode.VK_AUTH_TERMINAL,
@@ -137,6 +138,24 @@ enum class Trouble {
 
                 else -> UNKNOWN
             }
+    }
+}
+
+/** Kept as a source-compatible name for existing callers; errors now use [ErrorMessage]. */
+typealias Trouble = ErrorMessage
+
+data class ErrorPresentation(
+    val message: ErrorMessage,
+    val detail: String? = null,
+) {
+    val primaryAction: PrimaryAction get() = message.primaryAction
+
+    companion object {
+        fun of(failure: RuntimeFailure?): ErrorPresentation =
+            ErrorPresentation(
+                message = ErrorMessage.of(failure),
+                detail = failure?.let { "${it.domain.name.lowercase()} / ${it.code.code}" },
+            )
     }
 }
 
@@ -175,10 +194,65 @@ sealed interface Connection {
     data object Disconnecting : Connection
 
     data class Stopped(
-        val cause: Trouble,
+        val presentation: ErrorPresentation,
+        val server: ServerRef?,
+        val retryable: Boolean,
+    ) : Connection {
+        constructor(cause: Trouble, server: ServerRef?, retryable: Boolean) :
+            this(ErrorPresentation(cause), server, retryable)
+
+        val cause: Trouble get() = presentation.message
+    }
+
+    data class Unreachable(
+        val presentation: ErrorPresentation,
         val server: ServerRef?,
         val retryable: Boolean,
     ) : Connection
+}
+
+/** Holds transient connection labels for 700 ms; stable and terminal states pass immediately. */
+class ConnectionStatusThrottle(
+    private val delayMillis: Long = 700,
+) {
+    var nextTransitionAtMillis: Long? = null
+        private set
+
+    private var displayed: Connection? = null
+    private var candidate: Connection? = null
+
+    fun update(
+        connection: Connection,
+        nowMillis: Long,
+    ): Connection {
+        val current = displayed
+        if (current == null || !connection.isTransient()) {
+            displayed = connection
+            candidate = null
+            nextTransitionAtMillis = null
+            return connection
+        }
+        if (connection == current) {
+            candidate = null
+            nextTransitionAtMillis = null
+            return current
+        }
+        if (candidate != connection) {
+            candidate = connection
+            nextTransitionAtMillis =
+                if (nowMillis > Long.MAX_VALUE - delayMillis) Long.MAX_VALUE else nowMillis + delayMillis
+        }
+        if (nowMillis >= (nextTransitionAtMillis ?: Long.MAX_VALUE)) {
+            displayed = connection
+            candidate = null
+            nextTransitionAtMillis = null
+            return connection
+        }
+        return current
+    }
+
+    private fun Connection.isTransient() =
+        this is Connection.Connecting || this is Connection.Reconnecting || this == Connection.Disconnecting
 }
 
 /** The single action the connection state offers. One state, one primary action. */
@@ -216,11 +290,11 @@ val Connection.primaryAction: PrimaryAction
             }
 
             is Connection.Stopped -> {
-                when (cause) {
-                    Trouble.SERVER_UNREACHABLE -> PrimaryAction.CHOOSE_SERVER
-                    Trouble.SUBSCRIPTION_UNAVAILABLE -> PrimaryAction.REFRESH_SOURCE
-                    else -> PrimaryAction.RETRY
-                }
+                presentation.primaryAction
+            }
+
+            is Connection.Unreachable -> {
+                presentation.primaryAction
             }
         }
 
@@ -233,6 +307,7 @@ val Connection.server: ServerRef?
             is Connection.Connected -> server
             is Connection.Reconnecting -> server
             is Connection.Stopped -> server
+            is Connection.Unreachable -> server
             else -> null
         }
 

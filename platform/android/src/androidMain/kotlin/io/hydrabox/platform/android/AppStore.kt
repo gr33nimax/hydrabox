@@ -12,6 +12,7 @@ import io.hydrabox.core.projection.AppsMode
 import io.hydrabox.core.projection.DnsMode
 import io.hydrabox.core.projection.Language
 import io.hydrabox.core.projection.LogDetail
+import io.hydrabox.core.projection.MANUAL_SOURCE_ID
 import io.hydrabox.core.projection.NotificationDetail
 import io.hydrabox.core.projection.ServerGroup
 import io.hydrabox.core.projection.ServerRef
@@ -51,6 +52,7 @@ import io.hydrabox.core.storage.platformSecretFieldCipher
 import io.hydrabox.core.subscription.CatalogOutbound
 import io.hydrabox.core.subscription.HydraSubscriptionUri
 import io.hydrabox.core.subscription.OutboundCatalogParser
+import io.hydrabox.core.subscription.SingleConfigParser
 import io.hydrabox.core.subscription.SourceFailure
 import io.hydrabox.core.subscription.SubscriptionException
 import io.hydrabox.core.subscription.SubscriptionId
@@ -58,6 +60,18 @@ import io.hydrabox.core.subscription.SubscriptionMetadata
 import io.hydrabox.core.subscription.SubscriptionRecord
 import io.hydrabox.core.subscription.SubscriptionRecords
 import io.hydrabox.core.subscription.SubscriptionStore
+import io.nekohasekai.libbox.Libbox
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 
 /**
  * Android-side composition of the core stores. Both processes open the same SQLite
@@ -68,6 +82,13 @@ import io.hydrabox.core.subscription.SubscriptionStore
 class AppStore(
     context: Context,
 ) : AutoCloseable {
+    enum class ImportKind { SUBSCRIPTION, CONFIG }
+
+    class ImportFailure(
+        val kind: ImportKind,
+        cause: Exception,
+    ) : RuntimeException(cause.message, cause)
+
     private val appContext = context.applicationContext
     private val driver = openStorageDriver(StorageContext(context.applicationContext), DATABASE_NAME)
     private val database = StorageDatabase(driver)
@@ -81,13 +102,21 @@ class AppStore(
     private val backups = BackupService(database)
     private val transfer = BackupTransfer(codec, codec)
     private val queries = database.storageDatabaseQueries
+    private val catalogJson = Json { ignoreUnknownKeys = true }
 
     @Volatile private var catalogCache: CatalogCache? = null
 
     private data class CatalogCache(
         val revision: String?,
         val catalogs: List<Pair<SubscriptionRecord, List<CatalogOutbound>>>,
+        val manual: List<CatalogOutbound>,
         val selections: Map<String, ScopedSelection>,
+    )
+
+    private data class OutboundEdit(
+        val sourceId: String,
+        val originalTag: String,
+        val json: JsonObject?,
     )
 
     /** Closes this process's connection; callers must stop its work before invoking this. */
@@ -310,7 +339,7 @@ class AppStore(
     ): String =
         mutate {
             val trimmed = source.trim()
-            val remote = trimmed.startsWith("http://") || trimmed.startsWith("https://")
+            val remote = trimmed.startsWith("http://", ignoreCase = true) || trimmed.startsWith("https://", ignoreCase = true)
             HydraLog.info(AREA, if (remote) "adding a remote source" else "adding an inline source, ${trimmed.length} chars")
             val opened = if (remote) retrieve(trimmed) else Opened(openInline(trimmed), null)
             val catalog = parseCatalog(opened.document)
@@ -329,6 +358,7 @@ class AppStore(
                         ?.takeIf { catalog.selectable.size == 1 }
                     ?: "Subscription ${records().size + 1}"
             database.transaction {
+                clearOutboundEdits(id)
                 subscriptions.save(SubscriptionRecord(id, label, Secret.of(opened.document), System.currentTimeMillis()))
                 if (remote) queries.upsertValue(urlKey(id), HydraSubscriptionUri.withoutSecretFragment(trimmed).encodeToByteArray())
                 rememberMetadata(id, opened.metadata)
@@ -344,6 +374,55 @@ class AppStore(
             }
             id
         }
+
+    fun addConfig(
+        input: String,
+        name: String? = null,
+    ): List<CatalogOutbound> =
+        mutate {
+            val existing = readManualOutbounds()
+            val imported = SingleConfigParser.parse(input, name).map { it.copy(scope = MANUAL_GROUP_ID) }
+            val importedTags = imported.mapTo(mutableSetOf(), CatalogOutbound::tag)
+            val existingTags = existing.mapTo(mutableSetOf(), CatalogOutbound::tag)
+            require(imported.none { it.tag in existingTags }) { "manual group already contains this outbound tag" }
+            val combined = existing + imported
+            validateManualImports(combined, imported)
+            database.transaction {
+                writeManualOutbounds(combined)
+                bumpCatalogRevision()
+            }
+            catalogCache = null
+            val added = manualConfigs().filter { (it.originTag ?: it.tag) in importedTags }
+            if (selectedTag() == null) added.firstOrNull(CatalogOutbound::selectable)?.let { select(it.tag) }
+            added
+        }
+
+    fun addImport(
+        input: String,
+        name: String? = null,
+    ): ImportKind {
+        val body = input.trim()
+        val label = name?.trim()?.takeIf(String::isNotEmpty)
+        val kind =
+            if (
+                body.startsWith("http://", ignoreCase = true) ||
+                body.startsWith("https://", ignoreCase = true) ||
+                SingleConfigParser.isSubscriptionDocument(body)
+            ) {
+                ImportKind.SUBSCRIPTION
+            } else {
+                ImportKind.CONFIG
+            }
+        try {
+            when (kind) {
+                ImportKind.SUBSCRIPTION -> addSubscription(label.orEmpty(), body)
+                ImportKind.CONFIG -> addConfig(body, label)
+            }
+        } catch (failure: Exception) {
+            throw ImportFailure(kind, failure)
+        }
+        return kind
+    }
 
     /**
      * Parses a document and says in the journal what came out of it: the format, how many
@@ -467,6 +546,7 @@ class AppStore(
         parseCatalog(opened.document)
         val current = records().firstOrNull { it.id == id } ?: error("unknown subscription")
         database.transaction {
+            clearOutboundEdits(id)
             rememberMetadata(id, opened.metadata)
             rememberFailure(id, null)
             subscriptions.save(SubscriptionRecord(id, current.name, Secret.of(opened.document), System.currentTimeMillis()))
@@ -499,6 +579,7 @@ class AppStore(
                 catalogs().firstOrNull { it.first.id == id }?.second?.forEach { outbound ->
                     queries.deleteMetadataWithPrefix(turnEdgeKey(outbound.tag))
                 }
+                clearOutboundEdits(id)
                 queries.deleteSubscription(id)
                 queries.deleteMetadataWithPrefix(metadataPrefix(id))
                 queries.deleteSetting(keyKey(id))
@@ -565,6 +646,7 @@ class AppStore(
         val next = SubscriptionId.of(address, records().mapTo(mutableSetOf()) { it.id } - id)
         val enabled = sourceEnabled(id)
         database.transaction {
+            clearOutboundEdits(id)
             subscriptions.save(SubscriptionRecord(next, label, Secret.of(opened.document), System.currentTimeMillis()))
             queries.upsertValue(urlKey(next), HydraSubscriptionUri.withoutSecretFragment(address).encodeToByteArray())
             rememberMetadata(next, opened.metadata)
@@ -659,10 +741,7 @@ class AppStore(
      * is the chosen route, so this is also the answer to "does switching to it need the core
      * started again".
      */
-    fun isCallTransport(tag: String): Boolean =
-        activeCatalogs().any { (_, outbounds) ->
-            outbounds.any { it.tag == tag && it.type.equals(CALL_TYPE, ignoreCase = true) }
-        }
+    fun isCallTransport(tag: String): Boolean = activeOutbounds().any { it.tag == tag && it.type.equals(CALL_TYPE, ignoreCase = true) }
 
     /** Only the sources that are switched on, which is what the configuration may use. */
     private fun activeCatalogs() = catalogs().filter { (record, _) -> sourceEnabled(record.id) }
@@ -678,27 +757,253 @@ class AppStore(
     private fun catalogs(): List<Pair<SubscriptionRecord, List<CatalogOutbound>>> {
         val revision = metadataOf(CATALOG_REVISION_ID, CATALOG_REVISION_FIELD)
         catalogCache?.takeIf { it.revision == revision }?.let { return it.catalogs }
+        val edits = readOutboundEdits().groupBy(OutboundEdit::sourceId)
         val parsed =
             records().map { record ->
                 record to
                     runCatching {
-                        record.source
-                            .use(OutboundCatalogParser::parse)
-                            .outbounds
+                        val original = record.source.use(OutboundCatalogParser::parse).outbounds
+                        applyOutboundEdits(original, record.id, edits[record.id].orEmpty())
                             .map { it.copy(scope = record.id) }
                     }.getOrDefault(emptyList())
             }
-        val originals = parsed.flatMap { it.second }
+        val manual = readManualOutbounds().map { it.copy(scope = MANUAL_GROUP_ID) }
+        val originals = parsed.flatMap { it.second } + manual
         val normalized = OutboundTags.normalize(originals).outbounds
-        val unique =
-            normalized
-                .groupBy(CatalogOutbound::scope)
+        val unique = normalized.groupBy(CatalogOutbound::scope)
         val catalogs = parsed.map { (record, outbounds) -> record to (unique[record.id] ?: outbounds) }
         val selections =
-            normalized.zip(originals).associate { (normalized, original) ->
-                normalized.tag to ScopedSelection(original.scope, original.tag)
+            normalized.zip(originals).associate { (current, original) ->
+                current.tag to ScopedSelection(original.scope, original.tag)
             }
-        return catalogs.also { catalogCache = CatalogCache(revision, it, selections) }
+        return catalogs.also {
+            catalogCache = CatalogCache(revision, it, unique[MANUAL_GROUP_ID].orEmpty(), selections)
+        }
+    }
+
+    fun manualConfigs(): List<CatalogOutbound> {
+        catalogs()
+        return catalogCache?.manual.orEmpty()
+    }
+
+    fun config(tag: String): CatalogOutbound? {
+        catalogs()
+        return (catalogCache?.catalogs.orEmpty().flatMap { it.second } + catalogCache?.manual.orEmpty())
+            .firstOrNull { it.tag == tag }
+    }
+
+    private fun activeOutbounds(): List<CatalogOutbound> = activeCatalogs().flatMap { it.second } + manualConfigs()
+
+    fun updateConfig(
+        tag: String,
+        json: JsonObject,
+    ) = mutate {
+        catalogs()
+        val identity = catalogCache?.selections?.get(tag) ?: error("unknown config tag: $tag")
+        val replacement = SingleConfigParser.parse(json.toString()).single()
+        val replacementTag = json["tag"]?.jsonPrimitive?.contentOrNull ?: replacement.tag
+        require(replacementTag == identity.originalTag || replacementTag == tag) {
+            "config tag cannot be changed by updateConfig"
+        }
+        val storedJson =
+            buildJsonObject {
+                json.forEach { (key, value) -> if (key != "tag") put(key, value) }
+                put("tag", identity.originalTag)
+            }
+        if (identity.sourceId == MANUAL_GROUP_ID) {
+            val current = readManualOutbounds()
+            require(current.any { it.tag == identity.originalTag }) { "unknown manual config tag: $tag" }
+            val updated =
+                current.map { outbound ->
+                    if (outbound.tag != identity.originalTag) {
+                        outbound
+                    } else {
+                        outbound.copy(
+                            type = replacement.type,
+                            json = storedJson,
+                            selectable = replacement.selectable,
+                            endpoint = replacement.endpoint,
+                        )
+                    }
+                }
+            database.transaction {
+                writeManualOutbounds(updated)
+                bumpCatalogRevision()
+            }
+        } else {
+            val edits =
+                readOutboundEdits().filterNot {
+                    it.sourceId == identity.sourceId && it.originalTag == identity.originalTag
+                } + OutboundEdit(identity.sourceId, identity.originalTag, storedJson)
+            database.transaction {
+                writeOutboundEdits(edits)
+                bumpCatalogRevision()
+            }
+        }
+        catalogCache = null
+    }
+
+    fun removeConfig(tag: String) =
+        mutate {
+            catalogs()
+            val identity = catalogCache?.selections?.get(tag) ?: error("unknown config tag: $tag")
+            val wasSelected = selectedTag() == tag
+            if (identity.sourceId == MANUAL_GROUP_ID) {
+                val current = readManualOutbounds()
+                val remaining = withoutDanglingReferences(current.filterNot { it.tag == identity.originalTag })
+                require(remaining.size != current.size) { "unknown manual config tag: $tag" }
+                database.transaction {
+                    writeManualOutbounds(remaining)
+                    bumpCatalogRevision()
+                }
+            } else {
+                val edits =
+                    readOutboundEdits().filterNot {
+                        it.sourceId == identity.sourceId && it.originalTag == identity.originalTag
+                    } + OutboundEdit(identity.sourceId, identity.originalTag, null)
+                database.transaction {
+                    writeOutboundEdits(edits)
+                    bumpCatalogRevision()
+                }
+            }
+            catalogCache = null
+            if (wasSelected) select(AUTO_TAG)
+        }
+
+    private fun validateManualImports(
+        all: List<CatalogOutbound>,
+        imported: List<CatalogOutbound>,
+    ) {
+        val firstTag = imported.first(CatalogOutbound::selectable).tag
+        HydraCoreGate.checkConfig(
+            TunnelConfigGenerator.generate(TunnelInput(outbounds = all, selectedTag = firstTag)),
+        )
+        imported.filter(CatalogOutbound::selectable).forEach { outbound ->
+            val isolated =
+                io.hydrabox.core.config
+                    .isolateOutbound(all, outbound.tag)
+            HydraCoreGate.checkConfig(
+                TunnelConfigGenerator.generate(TunnelInput(outbounds = isolated, selectedTag = outbound.tag)),
+            )
+        }
+    }
+
+    private fun readManualOutbounds(): List<CatalogOutbound> {
+        val encoded = queries.selectSecretValue(MANUAL_OUTBOUNDS_KEY).executeAsOneOrNull()?.secret_value ?: return emptyList()
+        return catalogJson.parseToJsonElement(codec.open(encoded)).jsonArray.map { element ->
+            val stored = element as? JsonObject ?: error("manual config record is not an object")
+            val json = stored["json"] as? JsonObject ?: error("manual config record has no outbound JSON")
+            val type = stored["type"]?.jsonPrimitive?.contentOrNull ?: error("manual config record has no type")
+            CatalogOutbound(
+                tag = stored["tag"]?.jsonPrimitive?.contentOrNull ?: error("manual config record has no tag"),
+                type = type,
+                json = json,
+                scope = MANUAL_GROUP_ID,
+                selectable = stored["selectable"]?.jsonPrimitive?.booleanOrNull ?: type.lowercase() !in META_OUTBOUND_TYPES,
+                endpoint = stored["endpoint"]?.jsonPrimitive?.booleanOrNull ?: type.lowercase() in ENDPOINT_TYPES,
+                label = stored["label"]?.jsonPrimitive?.contentOrNull,
+                originTag = stored["originTag"]?.jsonPrimitive?.contentOrNull,
+            )
+        }
+    }
+
+    private fun writeManualOutbounds(outbounds: List<CatalogOutbound>) {
+        if (outbounds.isEmpty()) {
+            queries.deleteSetting(MANUAL_OUTBOUNDS_KEY)
+            return
+        }
+        val encoded =
+            buildJsonArray {
+                outbounds.forEach { outbound ->
+                    add(
+                        buildJsonObject {
+                            put("tag", outbound.tag)
+                            put("type", outbound.type)
+                            put("json", outbound.json)
+                            put("selectable", outbound.selectable)
+                            put("endpoint", outbound.endpoint)
+                            outbound.label?.let { put("label", it) }
+                            outbound.originTag?.let { put("originTag", it) }
+                        },
+                    )
+                }
+            }
+        queries.upsertSetting(MANUAL_OUTBOUNDS_KEY, MANUAL_GROUP_ID, codec.seal(encoded.toString()))
+    }
+
+    private fun readOutboundEdits(): List<OutboundEdit> {
+        val encoded = queries.selectSecretValue(OUTBOUND_EDITS_KEY).executeAsOneOrNull()?.secret_value ?: return emptyList()
+        return catalogJson.parseToJsonElement(codec.open(encoded)).jsonArray.map { element ->
+            val stored = element as? JsonObject ?: error("outbound edit record is not an object")
+            val removed = stored["deleted"]?.jsonPrimitive?.booleanOrNull == true
+            val json = stored["json"] as? JsonObject
+            require(removed || json != null) { "outbound edit record has no JSON" }
+            OutboundEdit(
+                sourceId = stored["source"]?.jsonPrimitive?.contentOrNull ?: error("outbound edit record has no source"),
+                originalTag = stored["tag"]?.jsonPrimitive?.contentOrNull ?: error("outbound edit record has no tag"),
+                json = if (removed) null else json,
+            )
+        }
+    }
+
+    private fun writeOutboundEdits(edits: List<OutboundEdit>) {
+        if (edits.isEmpty()) {
+            queries.deleteSetting(OUTBOUND_EDITS_KEY)
+            return
+        }
+        val encoded =
+            buildJsonArray {
+                edits.forEach { edit ->
+                    add(
+                        buildJsonObject {
+                            put("source", edit.sourceId)
+                            put("tag", edit.originalTag)
+                            put("deleted", edit.json == null)
+                            edit.json?.let { put("json", it) }
+                        },
+                    )
+                }
+            }
+        queries.upsertSetting(OUTBOUND_EDITS_KEY, "", codec.seal(encoded.toString()))
+    }
+
+    private fun clearOutboundEdits(sourceId: String) {
+        writeOutboundEdits(readOutboundEdits().filterNot { it.sourceId == sourceId })
+    }
+
+    private fun applyOutboundEdits(
+        originals: List<CatalogOutbound>,
+        sourceId: String,
+        edits: List<OutboundEdit>,
+    ): List<CatalogOutbound> {
+        val byTag = edits.associateBy(OutboundEdit::originalTag)
+        val updated =
+            originals.mapNotNull { outbound ->
+                val edit = byTag[outbound.tag] ?: return@mapNotNull outbound
+                val json = edit.json ?: return@mapNotNull null
+                val replacement = SingleConfigParser.parse(json.toString()).single()
+                outbound.copy(json = json, type = replacement.type, selectable = replacement.selectable, endpoint = replacement.endpoint)
+            }
+        return withoutDanglingReferences(updated.map { it.copy(scope = sourceId) })
+    }
+
+    private fun withoutDanglingReferences(outbounds: List<CatalogOutbound>): List<CatalogOutbound> {
+        var remaining = outbounds
+        while (true) {
+            val tags = remaining.mapTo(mutableSetOf(), CatalogOutbound::tag)
+            val broken =
+                remaining.filter { outbound ->
+                    val references =
+                        buildSet {
+                            (outbound.json["detour"] as? JsonPrimitive)?.contentOrNull?.let(::add)
+                            (outbound.json["outbounds"] as? JsonArray)?.forEach { (it as? JsonPrimitive)?.contentOrNull?.let(::add) }
+                            remove(outbound.tag)
+                        }
+                    references.any { it !in tags }
+                }
+            if (broken.isEmpty()) return remaining
+            remaining = remaining - broken.toSet()
+        }
     }
 
     fun summaries(): List<SubscriptionSummary> =
@@ -874,19 +1179,37 @@ class AppStore(
             .readableBytes(value)
 
     /** Servers grouped by the source they came from, which is how a person recognises them. */
-    fun serverGroups(): List<ServerGroup> =
-        activeCatalogs().mapNotNull { (record, outbounds) ->
-            val servers =
-                outbounds.filter(CatalogOutbound::selectable).map { outbound ->
-                    ServerRef(
-                        id = outbound.tag,
-                        displayName = outbound.label ?: outbound.tag,
-                        sourceId = record.id,
-                        type = outbound.type.takeIf(String::isNotBlank),
-                    )
-                }
-            if (servers.isEmpty()) null else ServerGroup(record.id, record.name, servers)
-        }
+    fun serverGroups(): List<ServerGroup> {
+        val subscriptions =
+            activeCatalogs().mapNotNull { (record, outbounds) ->
+                val servers =
+                    outbounds.filter(CatalogOutbound::selectable).map { outbound ->
+                        ServerRef(
+                            id = outbound.tag,
+                            displayName = outbound.label ?: outbound.tag,
+                            sourceId = record.id,
+                            type = outbound.type.takeIf(String::isNotBlank),
+                            endpoint = outbound.endpoint,
+                            selectable = outbound.selectable,
+                            configJson = outbound.json.toString(),
+                        )
+                    }
+                if (servers.isEmpty()) null else ServerGroup(record.id, record.name, servers)
+            }
+        val manual =
+            manualConfigs().filter(CatalogOutbound::selectable).map { outbound ->
+                ServerRef(
+                    id = outbound.tag,
+                    displayName = outbound.label ?: outbound.tag,
+                    sourceId = MANUAL_GROUP_ID,
+                    type = outbound.type.takeIf(String::isNotBlank),
+                    endpoint = outbound.endpoint,
+                    selectable = outbound.selectable,
+                    configJson = outbound.json.toString(),
+                )
+            }
+        return subscriptions + if (manual.isEmpty()) emptyList() else listOf(ServerGroup(MANUAL_GROUP_ID, "Manual", manual))
+    }
 
     /**
      * The automatic choice, offered only when there is more than nothing to choose from.
@@ -960,7 +1283,7 @@ class AppStore(
          */
         only: String? = null,
     ): String? {
-        val all = activeCatalogs().flatMap { it.second }
+        val all = activeOutbounds()
         val outbounds =
             only?.let { tag ->
                 io.hydrabox.core.config
@@ -1238,6 +1561,11 @@ class AppStore(
         const val IMPORT_FAILURE_KEY = "subscription.last.import.failure"
         const val CATALOG_REVISION_ID = "catalog"
         const val CATALOG_REVISION_FIELD = "revision"
+        const val MANUAL_GROUP_ID = MANUAL_SOURCE_ID
+        const val MANUAL_OUTBOUNDS_KEY = "catalog.manual.outbounds"
+        const val OUTBOUND_EDITS_KEY = "catalog.outbound.edits"
+        val META_OUTBOUND_TYPES = setOf("direct", "block", "dns", "selector", "urltest")
+        val ENDPOINT_TYPES = setOf("wireguard", "tailscale")
 
         /** The blob the journal used to live in, kept only so it can be emptied once. */
         const val LEGACY_EVENTS_KEY = "diagnostics.core.events.v2"
