@@ -10,6 +10,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -52,7 +54,7 @@ private val VK_HOSTS = setOf("vk.com", "vk.ru", "ok.ru", "okcdn.ru")
  * the failure message of the one before it.
  */
 @Composable
-fun ChallengeOverlay(
+internal fun ChallengeOverlay(
     challenge: TransportChallenge,
     onDismiss: () -> Unit,
 ) {
@@ -121,13 +123,6 @@ private fun ChallengeOverlayContent(
                 Text(stringResource(R.string.captcha_close))
             }
         }
-        if (loading) {
-            Text(
-                stringResource(R.string.captcha_loading),
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-            )
-        }
         val reason = failure
         if (reason != null) {
             Column(
@@ -161,96 +156,107 @@ private fun ChallengeOverlayContent(
             }
             return@Column
         }
-        key(attempt) {
-            AndroidView(
-                modifier = Modifier.fillMaxSize(),
-                factory = { context ->
-                    WebView(context).apply {
-                        // The page is VK's captcha, proxied through the core; its own scripts are
-                        // what submit the answer and report the token back. A transparent
-                        // background keeps the theme's surface visible instead of a white flash
-                        // while the page paints.
-                        setBackgroundColor(Color.TRANSPARENT)
-                        settings.javaScriptEnabled = true
-                        settings.domStorageEnabled = true
-                        settings.useWideViewPort = true
-                        settings.loadWithOverviewMode = true
-                        settings.builtInZoomControls = true
-                        settings.displayZoomControls = false
-                        settings.mediaPlaybackRequiresUserGesture = false
-                        webViewClient =
-                            object : WebViewClient() {
-                                override fun shouldOverrideUrlLoading(
-                                    view: WebView?,
-                                    request: WebResourceRequest?,
-                                ): Boolean {
-                                    val target = request?.url?.toString() ?: return false
-                                    if (isAllowedNavigation(target, allowedOrigin)) return false
-                                    // A help or privacy link would replace the question with a page
-                                    // that has no way back to it.
-                                    HydraLog.warn(AREA, "the captcha page tried to open $target")
-                                    return true
-                                }
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            key(attempt) {
+                // Loading belongs to factory: recomposition must not undo VK redirects or submits.
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = { context ->
+                        WebView(context).apply {
+                            // The page is VK's captcha, proxied through the core; its own scripts are
+                            // what submit the answer and report the token back. A transparent
+                            // background keeps the theme's surface visible instead of a white flash
+                            // while the page paints.
+                            setBackgroundColor(Color.TRANSPARENT)
+                            settings.javaScriptEnabled = true
+                            settings.domStorageEnabled = true
+                            settings.useWideViewPort = true
+                            settings.loadWithOverviewMode = true
+                            settings.builtInZoomControls = true
+                            settings.displayZoomControls = false
+                            settings.mediaPlaybackRequiresUserGesture = false
+                            webViewClient =
+                                object : WebViewClient() {
+                                    override fun shouldOverrideUrlLoading(
+                                        view: WebView?,
+                                        request: WebResourceRequest?,
+                                    ): Boolean {
+                                        val target = request?.url?.toString() ?: return false
+                                        if (isAllowedNavigation(target, allowedOrigin)) return false
+                                        // A help or privacy link would replace the question with a page
+                                        // that has no way back to it.
+                                        HydraLog.warn(AREA, "the captcha page tried to open $target")
+                                        return true
+                                    }
 
-                                override fun onPageStarted(
-                                    view: WebView?,
-                                    url: String?,
-                                    favicon: Bitmap?,
-                                ) {
-                                    loading = true
-                                    HydraLog.debug(AREA, "the captcha page started loading")
-                                }
+                                    override fun onPageStarted(
+                                        view: WebView?,
+                                        url: String?,
+                                        favicon: Bitmap?,
+                                    ) {
+                                        loading = true
+                                        HydraLog.debug(AREA, "the captcha page started loading")
+                                    }
 
-                                override fun onPageFinished(
-                                    view: WebView?,
-                                    url: String?,
-                                ) {
-                                    loading = false
-                                    HydraLog.info(AREA, "the captcha page finished loading")
-                                }
+                                    override fun onPageFinished(
+                                        view: WebView?,
+                                        url: String?,
+                                    ) {
+                                        loading = false
+                                        HydraLog.info(AREA, "the captcha page finished loading")
+                                    }
 
-                                override fun onReceivedError(
-                                    view: WebView?,
-                                    request: WebResourceRequest?,
-                                    error: WebResourceError?,
-                                ) {
-                                    // Only the page itself: every asset that fails would otherwise
-                                    // replace the one message that explains the screen.
-                                    if (request?.isForMainFrame == false) return
-                                    loading = false
-                                    failure = error?.description?.toString() ?: "страница не открылась"
-                                    HydraLog.warn(AREA, "the captcha page could not be loaded: $failure")
-                                }
+                                    override fun onReceivedError(
+                                        view: WebView?,
+                                        request: WebResourceRequest?,
+                                        error: WebResourceError?,
+                                    ) {
+                                        // Only the page itself: every asset that fails would otherwise
+                                        // replace the one message that explains the screen.
+                                        if (request?.isForMainFrame == false) return
+                                        loading = false
+                                        failure = error?.description?.toString() ?: "страница не открылась"
+                                        HydraLog.warn(AREA, "the captcha page could not be loaded: $failure")
+                                    }
 
-                                override fun onReceivedHttpError(
-                                    view: WebView?,
-                                    request: WebResourceRequest?,
-                                    response: WebResourceResponse?,
-                                ) {
-                                    if (request?.isForMainFrame == false) return
-                                    loading = false
-                                    failure = "HTTP ${response?.statusCode}"
-                                    HydraLog.warn(AREA, "the captcha page answered $failure")
+                                    override fun onReceivedHttpError(
+                                        view: WebView?,
+                                        request: WebResourceRequest?,
+                                        response: WebResourceResponse?,
+                                    ) {
+                                        if (request?.isForMainFrame == false) return
+                                        loading = false
+                                        failure = "HTTP ${response?.statusCode}"
+                                        HydraLog.warn(AREA, "the captcha page answered $failure")
+                                    }
                                 }
-                            }
-                        if (challenge.url.isNotEmpty()) loadUrl(challenge.url)
-                    }
-                },
-                // Nothing may keep loading, scripting or holding the page once the question is
-                // gone: without this the old page outlived its overlay.
-                onRelease = { view ->
-                    view.stopLoading()
-                    view.webViewClient = WebViewClient()
-                    view.loadUrl("about:blank")
-                    view.removeAllViews()
-                    view.destroy()
-                },
-                // A new question in the same overlay: the core mints a new challenge identity and
-                // serves a new page, so pointing the view at it is the whole of the update.
-                update = { view ->
-                    if (challenge.url.isNotEmpty() && view.url != challenge.url) view.loadUrl(challenge.url)
-                },
-            )
+                            if (challenge.url.isNotEmpty()) loadUrl(challenge.url)
+                        }
+                    },
+                    // Nothing may keep loading, scripting or holding the page once the question is
+                    // gone: without this the old page outlived its overlay.
+                    onRelease = { view ->
+                        view.stopLoading()
+                        view.webViewClient = WebViewClient()
+                        view.loadUrl("about:blank")
+                        view.removeAllViews()
+                        view.destroy()
+                    },
+                )
+            }
+            if (loading) {
+                Column(
+                    modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface),
+                    verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    CircularProgressIndicator()
+                    Text(
+                        stringResource(R.string.captcha_loading),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
         }
     }
 }
