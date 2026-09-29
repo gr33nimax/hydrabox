@@ -357,7 +357,7 @@ Logs are stored locally until the user exports or sends them. Review exported fi
     <string name="home_mode_proxy">Proxy</string>
     <string name="home_plan_until">Until %1$s</string>
     <string name="home_plan_refresh_every">Auto-refresh every %1$d h</string>
-    <string name="home_plan_none">not added yet</string>
+    <string name="home_plan_unknown">Unknown until a server is chosen</string>
     <string name="home_exit_unknown">address unknown</string>
     <string name="home_rates">↓ %1$s   ↑ %2$s</string>
     <string name="home_mode_outside">%1$d apps outside</string>

@@ -90,18 +90,24 @@ fun HomeScreen(
                     onPrimary = onAddSource,
                 )
             } else {
+                // With one source the refresh has one possible target; with several, picking the
+                // head of the list would refresh a subscription the person did not name.
+                val only = state.sources.singleOrNull()
                 EmptyState(
                     icon = HydraIcons.Server,
                     title = stringResource(Res.string.home_no_servers_title),
                     body = stringResource(Res.string.home_no_servers_body),
-                    primaryLabel = stringResource(Res.string.action_refresh_subscription),
-                    onPrimary = { state.sources.firstOrNull()?.let { actions.onRefreshSource(it.id) } },
+                    primaryLabel =
+                        stringResource(
+                            if (only == null) Res.string.sources_title else Res.string.action_refresh_subscription,
+                        ),
+                    onPrimary = { if (only == null) onOpenSources() else actions.onRefreshSource(only.id) },
                 )
             }
         }
         return
     }
-    val source = state.sources.firstOrNull()
+    val source = homeSource(state)
     Column(
         modifier =
             Modifier
@@ -167,11 +173,13 @@ private fun PlanHeader(
             )
         }
     }
-    RefreshButton(
-        busy = busy,
-        contentDescription = stringResource(Res.string.action_refresh_subscription),
-        onClick = onRefresh,
-    )
+    source?.let {
+        RefreshButton(
+            busy = busy,
+            contentDescription = stringResource(Res.string.action_refresh_subscription),
+            onClick = onRefresh,
+        )
+    }
 }
 
 /** The aperture and the words that belong inside it, and nothing else in the middle. */
@@ -276,7 +284,7 @@ private fun Readings(
         FactRow(
             label = stringResource(Res.string.home_row_plan),
             value = planAllowance(source),
-            detail = planTerm(source),
+            detail = source?.let { planTerm(it) },
             accent = source?.problem?.let { MaterialTheme.colorScheme.error },
             onClick = onOpenSources,
         )
@@ -386,6 +394,39 @@ private fun SecondaryActionRow(
         }
     }
 }
+
+/**
+ * The subscription the home screen is describing: the one the chosen route belongs to.
+ *
+ * The head of the stored list is not the same thing as the chosen source — that list is ordered
+ * by id, and a person with two subscriptions saw the other one's name, limit and expiry here the
+ * moment they picked a server from the second.
+ *
+ * A lone source needs no resolving: there is nothing else its plan could be, and reading it
+ * through the selection would only blank the header on the frames before the automatic choice
+ * names a leaf.
+ *
+ * An automatic choice names no server until the core reports which leaf it landed on, so with
+ * several sources its source is resolved through that tag and stays unknown until then. An
+ * unknown plan is honest; a plan borrowed from another subscription is not.
+ */
+internal fun homeSource(state: ScreenState): SubscriptionSummary? {
+    state.sources.singleOrNull()?.let { return it }
+    val server = state.connection.server ?: return null
+    val sourceId = server.resolvedTag?.let { tag -> serverSourceId(state, tag) } ?: server.sourceId
+    if (sourceId.isBlank()) return null
+    return state.sources.firstOrNull { it.id == sourceId }
+}
+
+private fun serverSourceId(
+    state: ScreenState,
+    tag: String,
+): String? =
+    state.servers
+        .asSequence()
+        .flatMap { it.servers.asSequence() }
+        .firstOrNull { it.id == tag }
+        ?.sourceId
 
 /**
  * Whether the central control takes a press at all.

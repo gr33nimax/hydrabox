@@ -258,10 +258,13 @@ fun formatDuration(seconds: Int): String {
  * What the plan allows and what has gone, in the form 1.x used: two figures with a slash, and
  * the infinity sign where the provider declared no cap. A figure against ∞ still reads as a
  * measurement; the words "no data cap" read as an apology for not having one.
+ *
+ * A null source is not a subscription that was never added — this screen only asks once one
+ * exists — so it stays unknown rather than borrowing another subscription's figures.
  */
 @Composable
 fun planAllowance(source: SubscriptionSummary?): String {
-    source ?: return stringResource(Res.string.home_plan_none)
+    source ?: return stringResource(Res.string.home_plan_unknown)
     return stringResource(
         Res.string.home_quota,
         source.usedTraffic ?: readableBytes(0),

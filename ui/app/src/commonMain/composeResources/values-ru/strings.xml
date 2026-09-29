@@ -353,7 +353,7 @@ HydraBox предоставляется **как есть**. Мы исправл
     <string name="home_mode_proxy">Прокси</string>
     <string name="home_plan_until">До %1$s</string>
     <string name="home_plan_refresh_every">Автообновление раз в %1$d ч</string>
-    <string name="home_plan_none">пока нет</string>
+    <string name="home_plan_unknown">Неизвестен до выбора сервера</string>
     <string name="home_exit_unknown">адрес неизвестен</string>
     <string name="home_rates">↓ %1$s   ↑ %2$s</string>
     <string name="home_mode_outside">вне туннеля: %1$d</string>
