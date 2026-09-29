@@ -1,11 +1,11 @@
 {
   "schema": 1,
   "channel": "stable",
-  "versionCode": 218,
+  "versionCode": 219,
   "versionName": "2.1.0",
-  "releaseTag": "v2.1.0-stable.7",
-  "apkUrl": "https://github.com/gr33nimax/hydrabox/releases/download/v2.1.0-stable.7/hydrabox-v2.1.0-stable.7-arm64-v8a.apk",
-  "sha256": "588833e09705110fc0d41e0e55caeb458b76c854567ebfc0c32309898565b57e",
+  "releaseTag": "v2.1.0-stable.8",
+  "apkUrl": "https://github.com/gr33nimax/hydrabox/releases/download/v2.1.0-stable.8/hydrabox-v2.1.0-stable.8-arm64-v8a.apk",
+  "sha256": "02bc9310d701ed4f0d80fd2669b85997584d04d25bb4d8d3eb2a06076bea49b1",
   "certificateSha256": "492A8A0FCBF0AA7CE26BEC615394E0C1EB263ED4313F4BF86ED4418D75159601",
   "keyId": "hydrabox-update-1"
 }
