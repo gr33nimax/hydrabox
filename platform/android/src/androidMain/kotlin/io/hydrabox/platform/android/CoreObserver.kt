@@ -65,14 +65,7 @@ class CoreObserver(
      * after paying to carry it across.
      */
     private val onLog: (Int, String) -> Unit = { _, _ -> },
-    /**
-     * Which outbound the core reports as the one in use, per group, whenever that is published.
-     *
-     * The core's own answer is the only trustworthy one. `SelectOutbound` writes the choice into
-     * the cache file, and on the next start `outboundSelect` reads the cache **before** it looks
-     * at the configuration's `default` — so a server chosen once keeps being used after the
-     * person has chosen a different one, while every screen shows the new name.
-     */
+    /** Reports the committed choice so service decisions use the core's actual route. */
     private val onSelected: (String, String) -> Unit = { _, _ -> },
     private val isCallTransport: (String) -> Boolean = { false },
     private val staleAfterMillis: () -> Long = { 0 },

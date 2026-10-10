@@ -199,17 +199,8 @@ class HydraVpnService : VpnService() {
             override fun connectSSHAgent(): Int = 0
         }
 
-    /**
-     * The outbound the person chose, as the tag the core knows it by, and how many times we have
-     * had to tell the core about it since this start.
-     *
-     * Kept here rather than read from the store on the groups callback, and reset on every core
-     * start so a stale intention cannot outlive the configuration it belonged to.
-     */
-    @Volatile private var wantedOutbound: String = io.hydrabox.core.config.AUTO_TAG
-    private val corrections =
-        java.util.concurrent.atomic
-            .AtomicInteger(0)
+    /** The active selector choice, used to decide whether a switch needs a new call transport. */
+    @Volatile private var selectedOutbound: String = io.hydrabox.core.config.AUTO_TAG
 
     /**
      * The workerless edge probes run on their own single thread: one question at a time is
@@ -244,36 +235,6 @@ class HydraVpnService : VpnService() {
      * Selection alone never did.
      */
     @Volatile private var recordedTurnEdge: Triple<String, Long, Long>? = null
-
-    /**
-     * Makes the core route through the server that was actually chosen.
-     *
-     * The core does not take the configuration's word for it. `Selector.outboundSelect` reads its
-     * cache file first and only falls back to `default`, and `SelectOutbound` writes to that cache
-     * on every switch — so once a server has been picked in place, every later start goes back to
-     * it while the screens, which read the app's own store, show the newer choice. That is the
-     * "chose one server, connected to another" report, and nothing in the app could see it before:
-     * the group message carries the core's answer and it was being thrown away.
-     */
-    private fun reconcileSelection(
-        group: String,
-        actual: String,
-    ) {
-        if (group != io.hydrabox.core.config.SELECTOR_TAG) return
-        // A change of selection is not an attribution: after a switch across the VK
-        // boundary the new transport has not allocated yet, and the edge on file still
-        // belongs to the previous one. The edge is filed when the new transport reports
-        // itself ready, not when the selector announces it.
-        val wanted = wantedOutbound
-        if (actual == wanted) return
-        if (corrections.incrementAndGet() > MAX_SELECTION_CORRECTIONS) return
-        HydraLog.warn(AREA, "the core is routing through $actual, not the chosen $wanted")
-        if (observer.select(group, wanted)) {
-            HydraLog.info(AREA, "the core now routes through $wanted")
-        } else {
-            HydraLog.error(AREA, "the core would not switch to $wanted")
-        }
-    }
 
     /**
      * When to read the core's global TURN edge record: only once a call transport of this
@@ -333,7 +294,9 @@ class HydraVpnService : VpnService() {
             CoreObserver(
                 dispatch = { input -> runtime.dispatch(input) },
                 onLog = ::recordCoreLine,
-                onSelected = ::reconcileSelection,
+                onSelected = { group, actual ->
+                    if (group == io.hydrabox.core.config.SELECTOR_TAG) selectedOutbound = actual
+                },
                 staleAfterMillis = { store.settings().urlTestIntervalSeconds * 1000L },
                 isCallTransport = { it in callTransportTags },
             )
@@ -1150,11 +1113,7 @@ class HydraVpnService : VpnService() {
             }
 
             is Effect.SelectCoreOutbound -> {
-                // The intention is recorded before the attempt, so the reconciliation that runs off
-                // the core's own group message knows what to compare against even if this fails.
-                val previous = wantedOutbound
-                wantedOutbound = effect.selection.outboundId
-                corrections.set(0)
+                val previous = selectedOutbound
                 // A switch across the VK boundary cannot happen in place. In one direction the
                 // chosen route is not in the running configuration at all; in the other it is, and
                 // switching away would leave the transport's workers, calls and TURN allocations
@@ -1172,6 +1131,7 @@ class HydraVpnService : VpnService() {
                 } else {
                     // Applied inside the running core; a restart here would drop every connection.
                     val applied = observer.select(effect.selection.groupId, effect.selection.outboundId)
+                    if (applied) selectedOutbound = effect.selection.outboundId
                     // Except for the one server the configuration deliberately does not carry: the VK
                     // transport is left out until it is chosen, so choosing it is the one switch that
                     // cannot happen in place.
@@ -1179,9 +1139,7 @@ class HydraVpnService : VpnService() {
                         if (store.isCallTransport(effect.selection.outboundId)) {
                             restartForSelection()
                         } else {
-                            // Not fatal and not silent: the store now says one thing and the core does
-                            // another, and this is the line that says so. The group message will bring
-                            // the core's answer round and the reconciliation corrects it from there.
+                            // Keep tracking the core's actual route when a requested switch fails.
                             HydraLog.warn(AREA, "the core refused the switch to ${effect.selection.outboundId}")
                         }
                     }
@@ -1278,10 +1236,8 @@ class HydraVpnService : VpnService() {
         HydraLog.info(AREA, "starting the core, command generation $commandGeneration")
         cancelSweep("executing a core start")
         var stage = StartStage.PREPARE
-        // The chosen server, as of this configuration. The core will announce what it actually
-        // picked and the two are compared from there; the cache file makes them disagree.
-        wantedOutbound = store.selectedTag() ?: io.hydrabox.core.config.AUTO_TAG
-        corrections.set(0)
+        // Selection is persisted by AppStore; the core's selector cache is disabled.
+        selectedOutbound = store.selectedTag() ?: io.hydrabox.core.config.AUTO_TAG
         // Taken before the configuration is generated and handed over to the core only once the
         // core is running; on any failure below it is released in the tail of this function.
         var pendingLease: AdBlockRuleSets.Lease? = null
@@ -1707,7 +1663,6 @@ class HydraVpnService : VpnService() {
          * disagreement the core will not take is a fact for the journal, not something to keep
          * retrying at whatever rate it publishes group updates.
          */
-        private const val MAX_SELECTION_CORRECTIONS = 3
 
         /** Terminal colour codes, which a screen shows as square brackets and digits. */
         private val ANSI = Regex(Char(27) + """\[[0-9;]*m""")
