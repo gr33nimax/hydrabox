@@ -199,8 +199,8 @@ class HydraVpnService : VpnService() {
             override fun connectSSHAgent(): Int = 0
         }
 
-    /** The active selector choice, used to decide whether a switch needs a new call transport. */
-    @Volatile private var selectedOutbound: String = io.hydrabox.core.config.AUTO_TAG
+    /** The selector choice applied by this service, used to detect a switch across the call boundary. */
+    @Volatile private var activeOutbound: String = io.hydrabox.core.config.AUTO_TAG
 
     /**
      * The workerless edge probes run on their own single thread: one question at a time is
@@ -294,9 +294,6 @@ class HydraVpnService : VpnService() {
             CoreObserver(
                 dispatch = { input -> runtime.dispatch(input) },
                 onLog = ::recordCoreLine,
-                onSelected = { group, actual ->
-                    if (group == io.hydrabox.core.config.SELECTOR_TAG) selectedOutbound = actual
-                },
                 staleAfterMillis = { store.settings().urlTestIntervalSeconds * 1000L },
                 isCallTransport = { it in callTransportTags },
             )
@@ -1113,7 +1110,7 @@ class HydraVpnService : VpnService() {
             }
 
             is Effect.SelectCoreOutbound -> {
-                val previous = selectedOutbound
+                val previous = activeOutbound
                 // A switch across the VK boundary cannot happen in place. In one direction the
                 // chosen route is not in the running configuration at all; in the other it is, and
                 // switching away would leave the transport's workers, calls and TURN allocations
@@ -1131,7 +1128,7 @@ class HydraVpnService : VpnService() {
                 } else {
                     // Applied inside the running core; a restart here would drop every connection.
                     val applied = observer.select(effect.selection.groupId, effect.selection.outboundId)
-                    if (applied) selectedOutbound = effect.selection.outboundId
+                    if (applied) activeOutbound = effect.selection.outboundId
                     // Except for the one server the configuration deliberately does not carry: the VK
                     // transport is left out until it is chosen, so choosing it is the one switch that
                     // cannot happen in place.
@@ -1237,7 +1234,7 @@ class HydraVpnService : VpnService() {
         cancelSweep("executing a core start")
         var stage = StartStage.PREPARE
         // Selection is persisted by AppStore; the core's selector cache is disabled.
-        selectedOutbound = store.selectedTag() ?: io.hydrabox.core.config.AUTO_TAG
+        activeOutbound = store.selectedTag() ?: io.hydrabox.core.config.AUTO_TAG
         // Taken before the configuration is generated and handed over to the core only once the
         // core is running; on any failure below it is released in the tail of this function.
         var pendingLease: AdBlockRuleSets.Lease? = null

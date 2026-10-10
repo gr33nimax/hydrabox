@@ -65,8 +65,6 @@ class CoreObserver(
      * after paying to carry it across.
      */
     private val onLog: (Int, String) -> Unit = { _, _ -> },
-    /** Reports the committed choice so service decisions use the core's actual route. */
-    private val onSelected: (String, String) -> Unit = { _, _ -> },
     private val isCallTransport: (String) -> Boolean = { false },
     private val staleAfterMillis: () -> Long = { 0 },
 ) {
@@ -444,7 +442,6 @@ class CoreObserver(
             group.selected?.takeIf { it.isNotEmpty() }?.let {
                 if (group.tag == io.hydrabox.core.config.SELECTOR_TAG) current.selectedTag = it
                 if (group.tag == io.hydrabox.core.config.AUTO_TAG) current.autoTag = it
-                onSelected(group.tag.orEmpty(), it)
                 dispatch(
                     RuntimeInput.SelectionObserved(
                         commandGeneration = current.generation,
