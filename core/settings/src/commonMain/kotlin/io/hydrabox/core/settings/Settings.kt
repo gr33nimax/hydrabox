@@ -25,7 +25,7 @@ const val DEFAULT_PROXY_PORT = 2080
 
 enum class PerformanceMode { STANDARD, ECONOMY }
 
-enum class NotificationTrafficDisplayMode { SPEED, TOTAL, BOTH }
+enum class NotificationTrafficDisplayMode { SPEED, TOTAL, BOTH, STATUS }
 
 enum class TlsFragmentationMode { DISABLED, RECORD, FRAGMENT }
 
@@ -256,6 +256,7 @@ class SettingsCodec {
             statusNotificationEnabled = bool(STATUS_NOTIFICATION_ENABLED, true),
             notificationTrafficDisplayMode =
                 when (values[NOTIFICATION_TRAFFIC_DISPLAY_MODE]) {
+                    "status" -> NotificationTrafficDisplayMode.STATUS
                     "total" -> NotificationTrafficDisplayMode.TOTAL
                     "both" -> NotificationTrafficDisplayMode.BOTH
                     else -> NotificationTrafficDisplayMode.SPEED

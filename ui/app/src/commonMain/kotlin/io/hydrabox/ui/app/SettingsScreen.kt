@@ -304,6 +304,7 @@ private fun Asks(
             ChoiceDialog(stringResource(Res.string.settings_notification), cancel, onClose) {
                 listOf(
                     NotificationDetail.OFF to Res.string.notification_off,
+                    NotificationDetail.STATUS to Res.string.notification_status,
                     NotificationDetail.SPEED to Res.string.notification_speed,
                     NotificationDetail.TOTAL to Res.string.notification_total,
                     NotificationDetail.BOTH to Res.string.notification_both,
@@ -680,6 +681,7 @@ private fun notificationLabel(detail: NotificationDetail) =
     stringResource(
         when (detail) {
             NotificationDetail.OFF -> Res.string.notification_off
+            NotificationDetail.STATUS -> Res.string.notification_status
             NotificationDetail.SPEED -> Res.string.notification_speed
             NotificationDetail.TOTAL -> Res.string.notification_total
             NotificationDetail.BOTH -> Res.string.notification_both

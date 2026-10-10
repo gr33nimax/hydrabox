@@ -260,6 +260,7 @@ Logs are stored locally until the user exports or sends them. Review exported fi
     <string name="notice_rules_updated">Blocking list updated</string>
     <string name="notice_rules_failed">Could not update the blocking list</string>
     <string name="notification_off">Off</string>
+    <string name="notification_status">Status and server</string>
     <string name="notification_speed">Current speed</string>
     <string name="notification_total">Total volume</string>
     <string name="notification_both">Speed and volume</string>

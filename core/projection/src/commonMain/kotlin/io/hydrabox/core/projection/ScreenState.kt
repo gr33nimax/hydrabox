@@ -121,7 +121,7 @@ enum class LogDetail { OFF, TRACE, DEBUG, INFO, WARN, ERROR }
 enum class DnsMode { AUTO, IPV4, IPV6 }
 
 /** What the ongoing notification says under the state, if anything. */
-enum class NotificationDetail { OFF, SPEED, TOTAL, BOTH }
+enum class NotificationDetail { OFF, SPEED, TOTAL, BOTH, STATUS }
 
 /** Settings as shown. Only what a screen displays; every value already resolved. */
 

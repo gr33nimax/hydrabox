@@ -32,6 +32,14 @@ class SettingsTest {
         assertEquals("both", codec.encode(state)["notification_traffic_display_mode"])
     }
 
+    @Test fun `status only notification survives restart and backup export`() {
+        val state = codec.decode(mapOf("notification_traffic_display_mode" to "status"))
+        assertTrue(state.statusNotificationEnabled)
+        assertEquals(NotificationTrafficDisplayMode.STATUS, state.notificationTrafficDisplayMode)
+        assertEquals(state, codec.decode(codec.encode(state)))
+        assertEquals("status", codec.safeExport(state)["notification_traffic_display_mode"])
+    }
+
     @Test fun `legacy Google URLTest default migrates to Cloudflare`() {
         assertEquals(DEFAULT_URL_TEST_URL, codec.decode(mapOf("urltest_url" to "https://www.gstatic.com/generate_204")).urlTestUrl)
     }

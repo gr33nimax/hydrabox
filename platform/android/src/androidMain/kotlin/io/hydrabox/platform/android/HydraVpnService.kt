@@ -22,6 +22,7 @@ import io.hydrabox.core.contract.RuntimeMode
 import io.hydrabox.core.contract.RuntimeState
 import io.hydrabox.core.contract.TransportChallenge
 import io.hydrabox.core.contract.TransportHealth
+import io.hydrabox.core.projection.runningOutboundTag
 import io.hydrabox.core.runtime.Effect
 import io.hydrabox.core.runtime.RuntimeInput
 import io.hydrabox.core.settings.LogLevel
@@ -78,12 +79,15 @@ class HydraVpnService : VpnService() {
         java.util.concurrent.atomic
             .AtomicBoolean(false)
 
-    /** The state the notification currently shows, so it is not rewritten for nothing. */
-    private var posted: RuntimeState? = null
+    /** Static content changes still reach the notification when traffic display is off. */
+    private var posted: Triple<RuntimeState, Boolean, String?>? = null
 
     /** Read once per start: what the notification carries under the state, if anything. */
-    private var liveTraffic = true
+    private var notificationEnabled = true
     private var trafficDisplay = NotificationTrafficDisplayMode.SPEED
+    private val liveTraffic: Boolean
+        get() = notificationEnabled && trafficDisplay != NotificationTrafficDisplayMode.STATUS
+    private var notificationServerNames: Map<String, String> = emptyMap()
 
     /** The quietest core line the journal keeps. Read at start, from the chosen log level. */
     private var journalFloor = HydraLog.Level.WARN
@@ -400,9 +404,15 @@ class HydraVpnService : VpnService() {
             syncChallengeNotification(event.snapshot.challenge)
             // The counters tick once a second. Reposting the notification on every tick is
             // what the person turned off when they turned off the traffic display, so with it
-            // off the notification is rewritten only when the tunnel's state changes.
-            val changed = event.snapshot.state != posted
-            posted = event.snapshot.state
+            // off it is rewritten only when the state, readiness or server changes.
+            val content =
+                Triple(
+                    event.snapshot.state,
+                    event.snapshot.transportHealth.isReady,
+                    runningOutboundTag(event.snapshot) ?: event.snapshot.selectedOutbounds.firstOrNull()?.outboundId,
+                )
+            val changed = content != posted
+            posted = content
             if (changed || liveTraffic) startForeground(NOTIFICATION_ID, notification(event.snapshot.state))
         }
         // A network that moves under a running tunnel has to reach the runtime, or the core
@@ -896,8 +906,9 @@ class HydraVpnService : VpnService() {
      */
     private fun refreshSettings() {
         val settings = store.settings()
-        liveTraffic = settings.statusNotificationEnabled
+        notificationEnabled = settings.statusNotificationEnabled
         trafficDisplay = settings.notificationTrafficDisplayMode
+        notificationServerNames = store.serverGroups().flatMap { it.servers }.associate { it.id to it.displayName }
         val level = settings.logLevel
         journalFloor =
             when (level) {
@@ -977,7 +988,7 @@ class HydraVpnService : VpnService() {
                 val state = runtime.snapshot().state
                 if (state == RuntimeState.STOPPED || state == RuntimeState.FAILED) {
                     stopSelfResult(startId)
-                } else if (liveTraffic) {
+                } else if (notificationEnabled) {
                     startForeground(NOTIFICATION_ID, notification(state))
                 }
             }
@@ -1110,8 +1121,9 @@ class HydraVpnService : VpnService() {
         // Proxy-only means no system tunnel: the core opens a local port and nothing else,
         // which is 1.x's `proxy_inbound_enabled` without `vpn_inbound_enabled`.
         val settings = store.settings()
-        liveTraffic = settings.statusNotificationEnabled
+        notificationEnabled = settings.statusNotificationEnabled
         trafficDisplay = settings.notificationTrafficDisplayMode
+        notificationServerNames = store.serverGroups().flatMap { it.servers }.associate { it.id to it.displayName }
         journalFloor =
             when (settings.logLevel) {
                 LogLevel.OFF, LogLevel.ERROR -> HydraLog.Level.ERROR
@@ -1523,6 +1535,7 @@ class HydraVpnService : VpnService() {
                     val speed = "↓ ${rate(snapshot.traffic.downlink)} ↑ ${rate(snapshot.traffic.uplink)}"
                     val total = "Σ ↓ ${size(snapshot.traffic.downlinkTotal)} ↑ ${size(snapshot.traffic.uplinkTotal)}"
                     when (trafficDisplay) {
+                        NotificationTrafficDisplayMode.STATUS -> getString(headline)
                         NotificationTrafficDisplayMode.SPEED -> "${getString(headline)} · $speed"
                         NotificationTrafficDisplayMode.TOTAL -> "${getString(headline)} · $total"
                         NotificationTrafficDisplayMode.BOTH -> "${getString(headline)} · $speed · $total"
@@ -1530,9 +1543,10 @@ class HydraVpnService : VpnService() {
                 } else {
                     getString(headline)
                 }
+            val serverTag = runningOutboundTag(snapshot) ?: snapshot.selectedOutbounds.firstOrNull()?.outboundId
             android.app.Notification
                 .Builder(this, CHANNEL_ID)
-                .setContentTitle(snapshot.selectedOutbounds.firstOrNull()?.outboundId ?: "HydraBox")
+                .setContentTitle(notificationServerNames[serverTag] ?: serverTag ?: "HydraBox")
                 .setContentText(detail)
                 .setSmallIcon(R.drawable.ic_hydrabox_notification)
                 .setOngoing(state != RuntimeState.STOPPED)

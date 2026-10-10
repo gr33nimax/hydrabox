@@ -900,6 +900,7 @@ class RuntimeControlActivity : ComponentActivity() {
                             statusNotificationEnabled = detail != NotificationDetail.OFF,
                             notificationTrafficDisplayMode =
                                 when (detail) {
+                                    NotificationDetail.STATUS -> NotificationTrafficDisplayMode.STATUS
                                     NotificationDetail.TOTAL -> NotificationTrafficDisplayMode.TOTAL
 
                                     NotificationDetail.BOTH -> NotificationTrafficDisplayMode.BOTH

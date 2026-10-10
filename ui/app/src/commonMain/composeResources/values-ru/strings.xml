@@ -256,6 +256,7 @@ HydraBox предоставляется **как есть**. Мы исправл
     <string name="notice_rules_updated">Список блокировки обновлён</string>
     <string name="notice_rules_failed">Не удалось обновить список блокировки</string>
     <string name="notification_off">Выключено</string>
+    <string name="notification_status">Статус и сервер</string>
     <string name="notification_speed">Текущая скорость</string>
     <string name="notification_total">Объём за сеанс</string>
     <string name="notification_both">Скорость и объём</string>

@@ -164,6 +164,7 @@ class AppStore(
                     NotificationDetail.OFF
                 } else {
                     when (settings.notificationTrafficDisplayMode) {
+                        NotificationTrafficDisplayMode.STATUS -> NotificationDetail.STATUS
                         NotificationTrafficDisplayMode.SPEED -> NotificationDetail.SPEED
                         NotificationTrafficDisplayMode.TOTAL -> NotificationDetail.TOTAL
                         NotificationTrafficDisplayMode.BOTH -> NotificationDetail.BOTH
