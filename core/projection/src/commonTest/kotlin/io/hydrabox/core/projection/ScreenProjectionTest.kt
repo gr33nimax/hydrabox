@@ -209,6 +209,21 @@ class ScreenProjectionTest {
     }
 
     @Test
+    fun `an observed automatic route appears without a manual selection or latency measurement`() {
+        val initial = model(RuntimeState.RUNNING, selected = "auto")
+        val unresolved = ScreenProjection.project(initial).connection as Connection.Connected
+        assertNull(unresolved.server?.resolvedTag)
+        val observed = initial.runtime.copy(
+            observedOutbounds = listOf(OutboundSelection("select", "auto"), OutboundSelection("auto", "tokyo")),
+        )
+        val connected = ScreenProjection.project(initial.copy(runtime = observed)).connection as Connection.Connected
+        assertEquals("tokyo", connected.server?.resolvedTag)
+        assertEquals("Tokyo", connected.server?.resolvedLabel)
+        assertEquals("tokyo", runningOutboundTag(observed))
+        assertNull(connected.server?.latencyMillis)
+    }
+
+    @Test
     fun `an automatic choice the catalogue cannot name is not shown as its tag`() {
         val state =
             ScreenProjection.project(
