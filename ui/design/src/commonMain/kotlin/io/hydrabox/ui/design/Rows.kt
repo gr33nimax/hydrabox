@@ -226,6 +226,8 @@ fun FactRow(
     accent: Color? = null,
     trailingIcon: ImageVector = HydraIcons.Chevron,
     modifier: Modifier = Modifier,
+    valueMaxLines: Int = 1,
+    detailMaxLines: Int = 1,
 ) {
     Surface(
         onClick = onClick,
@@ -261,7 +263,7 @@ fun FactRow(
                     value,
                     style = UiTokens.figures(MaterialTheme.typography.bodyMedium),
                     color = accent ?: MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
+                    maxLines = valueMaxLines,
                     overflow = TextOverflow.Ellipsis,
                     textAlign = TextAlign.End,
                 )
@@ -270,7 +272,7 @@ fun FactRow(
                         it,
                         style = UiTokens.figures(MaterialTheme.typography.labelMedium),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
+                        maxLines = detailMaxLines,
                         overflow = TextOverflow.Ellipsis,
                         textAlign = TextAlign.End,
                     )
