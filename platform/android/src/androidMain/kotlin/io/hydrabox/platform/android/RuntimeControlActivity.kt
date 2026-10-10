@@ -590,6 +590,7 @@ class RuntimeControlActivity : ComponentActivity() {
                     }.onFailure {
                         HydraLog.error(AREA, "the read model could not be assembled", it)
                         notice = Notice.OPERATION_FAILED
+                        if (withApps) stored = stored.copy(appsLoaded = true)
                     }
                 if (refreshAgain) {
                     refreshAgain = false
@@ -716,6 +717,7 @@ class RuntimeControlActivity : ComponentActivity() {
             diagnostics = diagnostics(),
             update = updateState,
             apps = if (withApps) store.installedApps() else emptyList(),
+            appsLoaded = withApps,
             ruleSets =
                 store.ruleSetStatus().let { status ->
                     val russia = store.russiaRuleSetStatus()
@@ -1237,6 +1239,7 @@ class RuntimeControlActivity : ComponentActivity() {
             onToggleApp = { packageName -> reconnectAware { store.toggleExcludedApp(packageName) } },
             onLoadApps = {
                 showApps = true
+                store.invalidateInstalledApps()
                 refresh()
             },
             onRefreshExit = ::probeExit,

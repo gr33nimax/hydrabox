@@ -83,6 +83,7 @@ class AppStore(
     private val queries = database.storageDatabaseQueries
 
     @Volatile private var catalogCache: CatalogCache? = null
+    private val installedAppsCache = InstalledAppsCache(::loadInstalledApps)
 
     private data class CatalogCache(
         val revision: String?,
@@ -241,26 +242,33 @@ class AppStore(
         )
 
     /** Launchable apps, with the ones currently kept outside the tunnel marked. */
-    fun installedApps(): List<io.hydrabox.core.projection.InstalledApp> {
-        val excluded = settings().splitRoutingPackages.toSet()
+    fun installedApps(): List<io.hydrabox.core.projection.InstalledApp> =
+        installedAppsCache.read(settings().splitRoutingPackages.toSet())
+
+    fun invalidateInstalledApps() = installedAppsCache.invalidate()
+
+    private fun loadInstalledApps(): List<io.hydrabox.core.projection.InstalledApp> {
         val manager = appContext.packageManager
         val intent =
             android.content
                 .Intent(android.content.Intent.ACTION_MAIN)
                 .addCategory(android.content.Intent.CATEGORY_LAUNCHER)
-        return runCatching {
-            manager
-                .queryIntentActivities(intent, 0)
-                .mapNotNull { resolved ->
-                    val name = resolved.activityInfo?.packageName ?: return@mapNotNull null
-                    if (name == appContext.packageName) return@mapNotNull null
-                    io.hydrabox.core.projection.InstalledApp(
+        return manager
+            .queryIntentActivities(intent, 0)
+            .mapNotNull { resolved ->
+                val activity = resolved.activityInfo ?: return@mapNotNull null
+                val name = activity.packageName
+                if (name == appContext.packageName) return@mapNotNull null
+                io.hydrabox.core.projection.InstalledApp(
+                    packageName = name,
+                    label = installedAppLabel(
+                        application = runCatching { activity.applicationInfo.loadLabel(manager).toString() }.getOrNull(),
+                        launcher = runCatching { resolved.loadLabel(manager).toString() }.getOrNull(),
                         packageName = name,
-                        label = runCatching { resolved.loadLabel(manager).toString() }.getOrDefault(name),
-                        excluded = name in excluded,
-                    )
-                }.distinctBy { it.packageName }
-        }.getOrDefault(emptyList())
+                    ),
+                    excluded = false,
+                )
+            }
     }
 
     fun toggleExcludedApp(packageName: String) {

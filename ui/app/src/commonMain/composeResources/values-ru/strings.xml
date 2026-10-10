@@ -97,9 +97,8 @@
     <string name="settings_diagnostics">Диагностика</string>
     <string name="settings_saved">Сохранено</string>
     <string name="apps_title">Приложения</string>
-    <string name="apps_select_first">Сначала выберите режим</string>
+    <string name="apps_empty">Не найдено приложений с ярлыком запуска.</string>
     <string name="apps_search">Поиск приложений</string>
-    <string name="apps_load">Показать приложения</string>
     <string name="about_version">Версия %1$s</string>
     <string name="about_core">Ядро %1$s</string>
     <string name="about_terms">Пользовательское соглашение</string>

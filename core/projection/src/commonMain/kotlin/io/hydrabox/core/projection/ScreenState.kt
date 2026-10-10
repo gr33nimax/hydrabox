@@ -433,6 +433,7 @@ data class ScreenState(
     val diagnostics: DiagnosticsSummary? = null,
     val update: UpdateSummary = UpdateSummary(),
     val apps: List<InstalledApp> = emptyList(),
+    val appsLoaded: Boolean = false,
     val ruleSets: RuleSetsSummary = RuleSetsSummary(),
     val exit: ExitAddress = ExitAddress(),
     val busy: Busy = Busy(),
@@ -466,6 +467,7 @@ data class AppReadModel(
     val backupOperation: OperationState<Unit> = OperationState.Idle,
     val legalAccepted: Boolean = false,
     val apps: List<InstalledApp> = emptyList(),
+    val appsLoaded: Boolean = false,
     val ruleSets: RuleSetsSummary = RuleSetsSummary(),
     val exit: ExitAddress = ExitAddress(),
     /** The system consent for a VPN was asked for and refused. */

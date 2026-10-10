@@ -80,6 +80,7 @@ fun HydraRow(
     onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     titleMaxLines: Int = 2,
+    leadingContent: @Composable (() -> Unit)? = null,
     trailing: @Composable (() -> Unit)? = null,
 ) {
     Surface(
@@ -98,6 +99,7 @@ fun HydraRow(
                     .padding(horizontal = UiTokens.spacing * 2, vertical = UiTokens.spacing * 1.25f),
         ) {
             when {
+                leadingContent != null -> leadingContent()
                 leadingFlag != null -> {
                     Text(
                         leadingFlag,
@@ -145,11 +147,15 @@ fun ToggleRow(
     onCheckedChange: (Boolean) -> Unit,
     enabled: Boolean = true,
     leading: ImageVector? = null,
+    titleMaxLines: Int = 2,
+    leadingContent: @Composable (() -> Unit)? = null,
 ) {
     HydraRow(
         title = title,
         supporting = supporting,
         leading = leading,
+        titleMaxLines = titleMaxLines,
+        leadingContent = leadingContent,
         onClick = if (enabled) ({ onCheckedChange(!checked) }) else null,
         trailing = { Switch(checked = checked, onCheckedChange = null, enabled = enabled) },
     )

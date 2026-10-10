@@ -48,6 +48,36 @@ class ScreenProjectionTest {
     private val auto = ServerRef(id = "auto", displayName = "Auto", auto = true)
     private val group = ServerGroup("s1", "Source", listOf(ServerRef("tokyo", "Tokyo", sourceId = "s1")))
 
+    @Test
+    fun `choosing an application does not move its row`() {
+        val apps = listOf(
+            InstalledApp("maps", "Яндекс Карты", false),
+            InstalledApp("browser", "Браузер", false),
+            InstalledApp("chat", "Telegram", false),
+        )
+        val initial = model(RuntimeState.STOPPED).copy(apps = apps, appsLoaded = true)
+        val before = ScreenProjection.project(initial).apps
+        val after = ScreenProjection.project(initial.copy(apps = apps.map { it.copy(excluded = it.packageName == "maps") })).apps
+        assertEquals(before.map { it.packageName }, after.map { it.packageName })
+        assertEquals("Яндекс Карты", after.single { it.excluded }.label)
+    }
+
+    @Test
+    fun `applications with the same label retain a deterministic package order`() {
+        val apps = listOf(InstalledApp("b.maps", "Карты", true), InstalledApp("a.maps", "Карты", false))
+        val projected = ScreenProjection.project(model(RuntimeState.STOPPED).copy(apps = apps))
+        assertEquals(listOf("a.maps", "b.maps"), projected.apps.map { it.packageName })
+    }
+
+    @Test
+    fun `an empty loaded inventory is distinguished from a list still loading`() {
+        val initial = model(RuntimeState.STOPPED)
+        assertEquals(false, ScreenProjection.project(initial).appsLoaded)
+        val loaded = ScreenProjection.project(initial.copy(appsLoaded = true))
+        assertTrue(loaded.appsLoaded)
+        assertTrue(loaded.apps.isEmpty())
+    }
+
     private fun model(
         state: RuntimeState,
         failure: RuntimeFailure? = null,

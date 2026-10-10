@@ -5,11 +5,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -17,6 +19,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
 import io.hydrabox.core.projection.Appearance
 import io.hydrabox.core.projection.AppsMode
 import io.hydrabox.core.projection.Connection
@@ -30,6 +33,8 @@ import io.hydrabox.ui.design.EmptyState
 import io.hydrabox.ui.design.HydraField
 import io.hydrabox.ui.design.HydraIcons
 import io.hydrabox.ui.design.HydraRow
+import io.hydrabox.ui.design.InstalledAppIcon
+import io.hydrabox.ui.design.LoadingRows
 import io.hydrabox.ui.design.MetricTile
 import io.hydrabox.ui.design.OptionRow
 import io.hydrabox.ui.design.SecondaryAction
@@ -48,6 +53,7 @@ fun AppsScreen(
     actions: AppActions,
 ) {
     var filter by remember { mutableStateOf("") }
+    LaunchedEffect(Unit) { actions.onLoadApps() }
     val mode = state.settings?.appsMode ?: AppsMode.BYPASS_SELECTED
     Column(
         verticalArrangement = Arrangement.spacedBy(UiTokens.spacing),
@@ -74,13 +80,15 @@ fun AppsScreen(
             )
         }
         if (state.apps.isEmpty()) {
-            EmptyState(
-                icon = HydraIcons.Apps,
-                title = stringResource(Res.string.apps_title),
-                body = stringResource(Res.string.apps_select_first),
-                primaryLabel = stringResource(Res.string.apps_load),
-                onPrimary = actions.onLoadApps,
-            )
+            if (!state.appsLoaded) {
+                LoadingRows()
+            } else {
+                EmptyState(
+                    icon = HydraIcons.Apps,
+                    title = stringResource(Res.string.apps_title),
+                    body = stringResource(Res.string.apps_empty),
+                )
+            }
             return@Column
         }
         HydraField(
@@ -88,7 +96,9 @@ fun AppsScreen(
             onValueChange = { filter = it },
             label = stringResource(Res.string.apps_search),
         )
-        val matching = state.apps.filter { filter.isBlank() || it.label.contains(filter, ignoreCase = true) }
+        val matching = state.apps.filter {
+            filter.isBlank() || it.label.contains(filter, ignoreCase = true) || it.packageName.contains(filter, ignoreCase = true)
+        }
         // The chosen set is bounded by what the tunnel can carry in its package list, and a
         // switch that silently refuses to stick is worse than one that is visibly unavailable.
         val chosen = state.apps.count { it.excluded }
@@ -103,13 +113,17 @@ fun AppsScreen(
         }
         SectionGroup {
             matching.take(APP_LIMIT).forEach { app ->
-                ToggleRow(
-                    title = app.label,
-                    supporting = null,
-                    checked = app.excluded,
-                    enabled = app.excluded || !full,
-                    onCheckedChange = { actions.onToggleApp(app.packageName) },
-                )
+                key(app.packageName) {
+                    ToggleRow(
+                        title = app.label,
+                        supporting = app.packageName,
+                        checked = app.excluded,
+                        enabled = app.excluded || !full,
+                        titleMaxLines = Int.MAX_VALUE,
+                        leadingContent = { InstalledAppIcon(app.packageName, Modifier.size(40.dp)) },
+                        onCheckedChange = { actions.onToggleApp(app.packageName) },
+                    )
+                }
             }
         }
         if (matching.size > APP_LIMIT) {

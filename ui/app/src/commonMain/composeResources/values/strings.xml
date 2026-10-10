@@ -101,9 +101,8 @@
     <string name="settings_diagnostics">Diagnostics</string>
     <string name="settings_saved">Saved</string>
     <string name="apps_title">Apps</string>
-    <string name="apps_select_first">Choose a mode first</string>
+    <string name="apps_empty">No launchable apps found.</string>
     <string name="apps_search">Search apps</string>
-    <string name="apps_load">Show installed apps</string>
     <string name="about_version">Version %1$s</string>
     <string name="about_core">Core %1$s</string>
     <string name="about_terms">Terms of use</string>

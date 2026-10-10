@@ -95,8 +95,9 @@ object ScreenProjection {
             update = model.update,
             apps =
                 model.apps.sortedWith(
-                    compareByDescending<InstalledApp> { it.excluded }.thenBy { it.label.lowercase() },
+                    compareBy<InstalledApp> { it.label.lowercase() }.thenBy { it.packageName },
                 ),
+            appsLoaded = model.appsLoaded,
             busy =
                 Busy(
                     source = model.sourceOperation == OperationState.Running,
