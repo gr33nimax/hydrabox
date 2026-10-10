@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.content.ServiceConnection
-import android.net.VpnService
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
@@ -102,6 +101,7 @@ class RuntimeControlActivity : ComponentActivity() {
     private var exitWatchdog: Runnable? = null
     private var exitRequest = 0L
     private var destroyed = false
+    private var preparingConnection = false
     private var refreshPending = false
     private var refreshAgain = false
     private var journalPending = false
@@ -1418,19 +1418,28 @@ class RuntimeControlActivity : ComponentActivity() {
         }
 
     private fun prepareAndStart() {
+        if (preparingConnection) return
+        preparingConnection = true
         busy = OperationState.Running
         io.execute {
-            val ready = runCatching { store.generateConfig() != null }.getOrDefault(false)
+            val preparation = ConnectionStart.prepare(store)
             main.post {
+                if (destroyed) return@post
+                preparingConnection = false
                 busy = OperationState.Idle
-                if (!ready) {
-                    notice = Notice.SOURCE_EMPTY
-                    return@post
-                }
-                notice = null
-                // The system consent is about a tunnel. A local proxy port does not need
-                // one, so proxy-only starts without asking for it.
-                if (store.proxyOnly()) launch() else VpnService.prepare(this)?.let(permission::launch) ?: launch()
+                preparation.fold(
+                    onSuccess = { ready ->
+                        when (ready) {
+                            ConnectionPreparation.LegalRequired -> Unit
+                            ConnectionPreparation.SourceRequired -> notice = Notice.SOURCE_EMPTY
+                            is ConnectionPreparation.Ready -> {
+                                notice = null
+                                ConnectionStart.permission(this, ready)?.let(permission::launch) ?: launch()
+                            }
+                        }
+                    },
+                    onFailure = { notice = Notice.OPERATION_FAILED },
+                )
             }
         }
     }
@@ -1438,7 +1447,7 @@ class RuntimeControlActivity : ComponentActivity() {
     private fun launch() {
         notice = null
         permissionMissing = false
-        startForegroundService(Intent(this, HydraVpnService::class.java).setAction(HydraVpnService.ACTION_START))
+        ConnectionStart.launch(this)
         // The bind at resume may have found no service to connect to, or it may still belong to
         // the service that just stopped. A dead binding without BIND_AUTO_CREATE is not reconnected
         // when this start creates a new service, so replace it before waiting for the new snapshot.

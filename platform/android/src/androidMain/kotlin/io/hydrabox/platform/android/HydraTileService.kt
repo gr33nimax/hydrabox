@@ -6,7 +6,6 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
-import android.net.VpnService
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -61,12 +60,8 @@ class HydraTileService : TileService() {
 
     private fun bindRuntime(createIfMissing: Boolean) {
         if (!bound) {
-            // Deliberately without BIND_AUTO_CREATE. Pulling down the shade should not start a
-            // second process with the core's native library in it, and it did: `batterystats`
-            // counted nine launches of `HydraVpnService` for one actual start, alongside thirteen
-            // tile bindings. Without the flag the bind succeeds only while the tunnel is already
-            // up, which is the only case where there is any state to read; otherwise there is
-            // nothing running and the tile is inactive, which is the truth.
+            // Opening the shade only observes an existing runtime. Only an explicit
+            // connection request is allowed to create the service.
             val flags = if (createIfMissing) Context.BIND_AUTO_CREATE else 0
             bound = runCatching { bindService(Intent(this, HydraVpnService::class.java), connection, flags) }
                 .getOrDefault(false)
@@ -108,27 +103,26 @@ class HydraTileService : TileService() {
         // Configuration generation reads and decrypts the catalogue, just as the activity's
         // start does. Keep it off the tile's main thread and close its database connection.
         io.execute {
-            val readiness = runCatching {
-                AppStore(this).use { store ->
-                    val settings = store.settings()
-                    val ready = settings.acceptedLegalAtMillis != null && store.generateConfig() != null
-                    ready to store.proxyOnly(settings)
-                }
-            }.getOrDefault(false to false)
+            val preparation = ConnectionStart.prepare(this)
             main.post {
                 if (destroyed) return@post
                 preparingStart = false
-                if (!readiness.first || (!readiness.second && VpnService.prepare(this) != null)) {
-                    openForStart()
-                } else {
-                    startForegroundService(Intent(this, HydraVpnService::class.java).setAction(HydraVpnService.ACTION_START))
-                    // Replace a dead binding from the previous connection. Only a deliberate
-                    // start may create the service; opening the shade still uses flags = 0.
-                    if (listening) {
-                        if (transport == null) unbindRuntime()
-                        bindRuntime(createIfMissing = true)
-                    }
-                }
+                preparation.fold(
+                    onSuccess = { ready ->
+                        if (ready !is ConnectionPreparation.Ready || ConnectionStart.permission(this, ready) != null) {
+                            openForStart()
+                        } else {
+                            ConnectionStart.launch(this)
+                            // Replace a dead binding from the previous connection. Only a deliberate
+                            // start may create the service; opening the shade still uses flags = 0.
+                            if (listening) {
+                                if (transport == null) unbindRuntime()
+                                bindRuntime(createIfMissing = true)
+                            }
+                        }
+                    },
+                    onFailure = { failure -> HydraLog.error("tile", "connection preparation failed: ${failure.message}") },
+                )
                 render()
             }
         }

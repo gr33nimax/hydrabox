@@ -94,8 +94,6 @@ class CoreObserver(
 
         /** Which servers each group holds, so a running measurement can mark exactly those rows. */
         @Volatile var groupMembers: Map<String, Set<String>> = emptyMap()
-
-        var selectionRefresh: SelectionRefresh? = null
     }
 
     /** Replacing this object invalidates every callback that captured the previous session. */
@@ -125,24 +123,7 @@ class CoreObserver(
         }
 
     fun start(commandGeneration: Long = 0) {
-        observation.selectionRefresh?.cancel()
         val current = Observation(commandGeneration)
-        current.selectionRefresh =
-            SelectionRefresh(
-                schedule = { delay, action ->
-                    runCatching {
-                        reconnects.schedule(action, delay, java.util.concurrent.TimeUnit.MILLISECONDS)
-                    }.onFailure { current.selectionRefresh?.cancel() }
-                },
-                refresh = {
-                    if (!isCurrent(current)) {
-                        true
-                    } else {
-                        refresh(current) && current.selectedTag.isNotEmpty() &&
-                            (current.selectedTag != io.hydrabox.core.config.AUTO_TAG || current.autoTag.isNotEmpty())
-                    }
-                },
-            )
         observation = current
         attempts.set(0)
         watching = true
@@ -272,7 +253,6 @@ class CoreObserver(
      */
     fun stop() {
         watching = false
-        observation.selectionRefresh?.cancel()
         logStream.close()
         val runtimeClient =
             synchronized(clientLock) {
@@ -297,10 +277,7 @@ class CoreObserver(
         group: String,
         outbound: String,
     ): Boolean {
-        val active = observation
-        val applied = runCatching { requireNotNull(current()).selectOutbound(group, outbound) }.isSuccess
-        if (applied && isCurrent(active)) active.selectionRefresh?.request()
-        return applied
+        return runCatching { requireNotNull(current()).selectOutbound(group, outbound) }.isSuccess
     }
 
     /** Reads one fresh core snapshot, used after Doze before deciding whether recovery is needed. */
@@ -465,7 +442,6 @@ class CoreObserver(
     private fun handleGroups(
         current: Observation,
         message: OutboundGroupIterator?,
-        followUp: Boolean = true,
     ) {
         if (!isCurrent(current)) return
         val collected = mutableListOf<OutboundLatency>()
@@ -506,7 +482,6 @@ class CoreObserver(
         current.groupMembers = members
         dispatch(RuntimeInput.Latencies(collected, current.generation))
         publishTransport(current)
-        if (followUp) current.selectionRefresh?.request()
     }
 
     /**
@@ -549,11 +524,10 @@ class CoreObserver(
     private fun handleSnapshot(
         current: Observation,
         snapshot: io.nekohasekai.libbox.RuntimeSnapshot,
-        followUp: Boolean = false,
     ) {
         if (!isCurrent(current)) return
         current.coreHealth = snapshot.transportHealth
-        handleGroups(current, snapshot.groups(), followUp)
+        handleGroups(current, snapshot.groups())
         handleStatus(current, snapshot.status)
     }
 
@@ -674,7 +648,7 @@ class CoreObserver(
             override fun writeRuntimeEvents(events: RuntimeEvents?) {
                 if (!isCurrent(current)) return
                 events ?: return
-                events.snapshot?.let { handleSnapshot(current, it, followUp = true) }
+                events.snapshot?.let { handleSnapshot(current, it) }
                 val iterator = events.events()
                 while (iterator.hasNext()) {
                     val event = iterator.next()

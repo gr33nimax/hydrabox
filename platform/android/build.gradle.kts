@@ -219,3 +219,30 @@ tasks.register("verifyLibboxProvenance") {
 
 tasks.named("check") { dependsOn("verifyLibboxProvenance") }
 tasks.named("preBuild") { dependsOn("verifyLibboxProvenance") }
+
+// Debug/test builds may use the preceding published AAR while a core release is pending.
+// Packaging a release must use the core that provides reliable selection events.
+val minimumCoreVersion = providers.gradleProperty("hydraboxMinimumCoreVersion")
+val verifyReleaseCoreVersion = tasks.register("verifyReleaseCoreVersion") {
+    group = "verification"
+    description = "Requires the HydraCore selection event fixes when packaging a release."
+    inputs.property("coreVersion", hydraCoreVersion)
+    inputs.property("minimumCoreVersion", minimumCoreVersion)
+    doLast {
+        fun stableVersion(version: String): List<Long> {
+            val match = Regex("""hydracore-sbe-(\d+)\.(\d+)\.(\d+)(?:-stable-([1-9]\d*))?""").matchEntire(version)
+                ?: error("Expected a stable HydraCore release, got $version")
+            return (1..4).map { index -> match.groupValues[index].ifEmpty { "0" }.toLong() }
+        }
+        val actual = stableVersion(hydraCoreVersion)
+        val required = stableVersion(minimumCoreVersion.get())
+        val difference = actual.zip(required).firstOrNull { (current, minimum) -> current != minimum }
+        check(difference == null || difference.first > difference.second) {
+            "HydraBox requires ${minimumCoreVersion.get()} or newer; publish and repin the fixed core before releasing."
+        }
+    }
+}
+
+tasks.configureEach {
+    if (name == "packageRelease" || name == "bundleRelease") dependsOn(verifyReleaseCoreVersion)
+}
