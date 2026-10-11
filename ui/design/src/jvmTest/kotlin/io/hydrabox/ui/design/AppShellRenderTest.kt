@@ -72,9 +72,9 @@ class AppShellRenderTest {
                                     valueMaxLines = Int.MAX_VALUE,
                                     onClick = {},
                                 )
-                                FactRow("Внешний IP", "130.49.188.54", {}, headerDetail = "🇩🇰 DK")
-                                FactRow("Лимит", "74.1 GiB / ∞", {}, headerDetail = "Осталось 11 дн.")
-                                FactRow("Режим подключения", "VPN", {}, headerDetail = "вне туннеля: 40")
+                                FactRow("Внешний IP", "31.77.203.66", {}, valueDetail = "🇫🇮 FI")
+                                FactRow("Лимит", "629.5 GiB / ∞", {}, valueDetail = "Осталось ∞ дн.")
+                                FactRow("Режим подключения", "VPN", {}, valueDetail = "вне туннеля: 40")
                             }
                         }
                         items(20) { index ->

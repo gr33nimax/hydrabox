@@ -225,6 +225,7 @@ fun FactRow(
     valueMaxLines: Int = 1,
     detailMaxLines: Int = 1,
     secondaryDetail: String? = null,
+    valueDetail: String? = null,
     headerDetail: String? = null,
     headerIcon: ImageVector? = null,
     flag: String? = null,
@@ -246,7 +247,7 @@ fun FactRow(
             ) {
                 FlowRow(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -263,16 +264,45 @@ fun FactRow(
                         }
                     }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Top) {
-                    flag?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
-                    Text(
-                        value,
-                        modifier = Modifier.weight(1f),
-                        style = UiTokens.figures(MaterialTheme.typography.bodyMedium),
-                        color = accent ?: MaterialTheme.colorScheme.onSurface,
-                        maxLines = valueMaxLines,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                // Related values stay together. On narrow screens the extra value moves
+                // below as a whole instead of forming a distant second column.
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    if (flag != null) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Top) {
+                            Text(flag, style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                value,
+                                modifier = Modifier.weight(1f),
+                                style = UiTokens.figures(MaterialTheme.typography.bodyMedium),
+                                color = accent ?: MaterialTheme.colorScheme.onSurface,
+                                maxLines = valueMaxLines,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    } else {
+                        Text(
+                            value,
+                            modifier = Modifier.alignByBaseline(),
+                            style = UiTokens.figures(MaterialTheme.typography.bodyMedium),
+                            color = accent ?: MaterialTheme.colorScheme.onSurface,
+                            maxLines = valueMaxLines,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    valueDetail?.let {
+                        Text(
+                            it,
+                            modifier = Modifier.alignByBaseline(),
+                            style = UiTokens.figures(MaterialTheme.typography.labelMedium),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
                 if (detail != null || secondaryDetail != null) {
                     FlowRow(
