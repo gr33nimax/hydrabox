@@ -1,9 +1,9 @@
 package io.hydrabox.ui.design
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
@@ -25,13 +25,14 @@ class AppShellRenderTest {
                 val (servers, serverMetrics) = render(width, fontScale, dark, selected = 1)
                 assertEquals(homeMetrics, serverMetrics)
                 assertEquals(WindowClass.COMPACT, homeMetrics.width)
-                assertTrue(homeMetrics.height < 760.dp, "the navigation did not reserve a viewport")
+                assertEquals(760.dp, homeMetrics.height, "the capsule must overlay the full viewport")
+                assertTrue(homeMetrics.bottomPadding in 48.dp..100.dp, "the compact capsule needs end-of-list clearance")
                 val changedRows = (0 until home.height).filter { y ->
                     (0 until home.width).any { x -> home.getRGB(x, y) != servers.getRGB(x, y) }
                 }
                 assertTrue(changedRows.isNotEmpty(), "the selected tab has no visible highlight")
                 assertTrue(
-                    changedRows.first() >= (homeMetrics.height.value * 2).toInt(),
+                    changedRows.first() >= ((homeMetrics.height - homeMetrics.bottomPadding).value * 2).toInt(),
                     "the navigation selection changed the screen's content",
                 )
             }
@@ -51,31 +52,41 @@ class AppShellRenderTest {
                     selected = selected,
                     onSelect = {},
                     snackbarHostState = SnackbarHostState(),
-                ) {
-                    metrics = it
-                    Column(
-                        modifier = Modifier.fillMaxSize().padding(16.dp),
-                        verticalArrangement = Arrangement.Bottom,
+                ) { page, shell ->
+                    if (page == selected) metrics = shell
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = shell.bottomPadding + 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        SectionGroup {
-                            FactRow(
-                                label = "Маршрут",
-                                value = "Автовыбор",
-                                detail = "🇩🇰Дания | Trojan VPN#31",
-                                secondaryDetail = "137 мс",
-                                detailMaxLines = Int.MAX_VALUE,
-                                onClick = {},
-                            )
-                            FactRow("Внешний IP", "130.49.188.54", {}, detail = "🇩🇰 DK")
-                            FactRow("Лимит", "74.1 GiB / ∞", {}, detail = "Осталось 11 дн.")
-                            FactRow("Режим подключения", "VPN", {}, detail = "вне туннеля: 40")
+                        item {
+                            SectionGroup {
+                                FactRow(
+                                    label = "Маршрут",
+                                    value = "Автовыбор",
+                                    detail = "🇩🇰Дания | Trojan VPN#31",
+                                    secondaryDetail = "137 мс",
+                                    detailMaxLines = Int.MAX_VALUE,
+                                    onClick = {},
+                                )
+                                FactRow("Внешний IP", "130.49.188.54", {}, detail = "🇩🇰 DK")
+                                FactRow("Лимит", "74.1 GiB / ∞", {}, detail = "Осталось 11 дн.")
+                                FactRow("Режим подключения", "VPN", {}, detail = "вне туннеля: 40")
+                            }
+                        }
+                        items(20) { index ->
+                            SectionGroup {
+                                ServerRow("Сервер ${index + 1}", "VLESS", selected = false, icon = HydraIcons.Server, flag = "🇫🇮", onClick = {})
+                            }
                         }
                     }
                 }
             }
         }
         return try {
-            val bytes = requireNotNull(scene.render().encodeToData()).bytes
+            scene.render(0L).close()
+            scene.render(16_000_000L).close()
+            val bytes = scene.render(32_000_000L).use { requireNotNull(it.encodeToData()).bytes }
             val directory = File(System.getProperty("user.dir"), "build/shell-preview").apply { mkdirs() }
             File(directory, "$width-$fontScale-${if (dark) "dark" else "light"}-$selected.png").writeBytes(bytes)
             ImageIO.read(ByteArrayInputStream(bytes)) to requireNotNull(metrics)

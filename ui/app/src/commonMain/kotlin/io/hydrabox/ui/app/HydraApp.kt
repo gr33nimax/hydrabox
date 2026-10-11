@@ -3,6 +3,7 @@ package io.hydrabox.ui.app
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -257,15 +258,16 @@ private fun MainShell(
         selected = navigation.tab.ordinal,
         onSelect = { navigation.tab = Tab.entries[it] },
         snackbarHostState = snackbar,
-    ) { shell ->
+    ) { page, shell ->
+        val tab = Tab.entries[page]
         // One scroll position per tab. A shared one carried the servers list's offset into
         // settings, which is how a tab could open already scrolled past its own first row.
-        key(navigation.tab) {
+        key(tab) {
             Column(
                 modifier =
                     Modifier
                         .fillMaxSize()
-                        .then(if (navigation.tab == Tab.SERVERS) Modifier else Modifier.verticalScroll(rememberScrollState())),
+                        .then(if (tab == Tab.SERVERS) Modifier else Modifier.verticalScroll(rememberScrollState())),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Column(
@@ -276,15 +278,18 @@ private fun MainShell(
                             } else {
                                 Modifier.widthIn(max = 720.dp).fillMaxWidth()
                             }
-                            // A list needs room to clear the status bar and to end above the
-                            // navigation bar; the home screen centres itself in what is left and
-                            // must not be pushed off centre by either.
+                            // Scrollable content keeps its full viewport behind the capsule.
+                            // Only its end needs clearance, so the last item can be reached.
                         ).padding(
-                            top = if (navigation.tab == Tab.HOME) 0.dp else UiTokens.spacing,
-                            bottom = if (navigation.tab == Tab.HOME) 0.dp else UiTokens.spacing * 3,
+                            top = if (tab == Tab.SETTINGS) UiTokens.spacing else 0.dp,
+                            bottom = when (tab) {
+                                Tab.HOME -> shell.bottomPadding
+                                Tab.SERVERS -> 0.dp
+                                Tab.SETTINGS -> shell.bottomPadding + UiTokens.spacing * 3
+                            },
                         ),
                 ) {
-                    when (navigation.tab) {
+                    when (tab) {
                         Tab.HOME -> {
                             HomeScreen(
                                 state = state,
@@ -295,7 +300,7 @@ private fun MainShell(
                                 onOpenSources = { navigation.open(Route.Sources) },
                                 onOpenMode = { navigation.tab = Tab.SETTINGS },
                                 width = shell.widthDp,
-                                height = shell.height,
+                                height = (shell.height - shell.bottomPadding).coerceAtLeast(0.dp),
                             )
                         }
 
@@ -304,6 +309,7 @@ private fun MainShell(
                                 state = state,
                                 actions = actions,
                                 onOpenSources = { navigation.open(Route.Sources) },
+                                contentPadding = PaddingValues(top = UiTokens.spacing, bottom = shell.bottomPadding + UiTokens.spacing * 3),
                             )
                         }
 
