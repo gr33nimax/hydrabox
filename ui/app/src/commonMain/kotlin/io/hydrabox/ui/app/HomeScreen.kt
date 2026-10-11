@@ -266,7 +266,8 @@ private fun Readings(
         FactRow(
             label = stringResource(Res.string.home_row_route),
             value = server?.let { serverName(it) } ?: stringResource(Res.string.home_server_none),
-            detail = serverSupportingLine(server),
+            detail = serverSupportingKind(server),
+            secondaryDetail = serverSupportingLatency(server),
             onClick = onOpenServers,
             valueMaxLines = Int.MAX_VALUE,
             detailMaxLines = Int.MAX_VALUE,

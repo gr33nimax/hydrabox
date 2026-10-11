@@ -228,6 +228,7 @@ fun FactRow(
     modifier: Modifier = Modifier,
     valueMaxLines: Int = 1,
     detailMaxLines: Int = 1,
+    secondaryDetail: String? = null,
 ) {
     Surface(
         onClick = onClick,
@@ -273,6 +274,17 @@ fun FactRow(
                         style = UiTokens.figures(MaterialTheme.typography.labelMedium),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = detailMaxLines,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.End,
+                    )
+                }
+                secondaryDetail?.let {
+                    Text(
+                        it,
+                        style = UiTokens.figures(MaterialTheme.typography.labelMedium),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        softWrap = false,
                         overflow = TextOverflow.Ellipsis,
                         textAlign = TextAlign.End,
                     )

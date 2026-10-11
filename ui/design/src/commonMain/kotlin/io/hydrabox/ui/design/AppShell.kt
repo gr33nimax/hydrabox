@@ -1,36 +1,56 @@
 package io.hydrabox.ui.design
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.layout.widthIn
 
 enum class WindowClass { COMPACT, MEDIUM, EXPANDED }
 
@@ -95,16 +115,7 @@ fun AppShell(
                 modifier = Modifier.fillMaxSize(),
                 bottomBar = {
                     if (width == WindowClass.COMPACT) {
-                        NavigationBar {
-                            destinations.forEachIndexed { index, destination ->
-                                NavigationBarItem(
-                                    selected = selected == index,
-                                    onClick = { onSelect(index) },
-                                    icon = { DestinationIcon(destination) },
-                                    label = { NavigationLabel(destination.label) },
-                                )
-                            }
-                        }
+                        FloatingNavigationBar(destinations, selected, onSelect)
                     }
                 },
                 snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -113,6 +124,71 @@ fun AppShell(
                 // measure: `maxHeight` below is the viewport itself, not an estimate of it.
                 BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(padding)) {
                     content(ShellMetrics(width = width, height = maxHeight, widthDp = maxWidth))
+                }
+            }
+        }
+    }
+}
+
+/** A floating capsule; its measured height includes the system gesture area and the gap. */
+@Composable
+private fun FloatingNavigationBar(
+    destinations: List<ShellDestination>,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+) {
+    val shape = RoundedCornerShape(percent = 50)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(
+            modifier = Modifier.widthIn(max = 480.dp).fillMaxWidth(),
+            shape = shape,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)),
+            shadowElevation = 4.dp,
+        ) {
+            Row(
+                modifier = Modifier.selectableGroup().padding(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                destinations.forEachIndexed { index, destination ->
+                    val chosen = selected == index
+                    val background by animateColorAsState(
+                        targetValue = if (chosen) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+                        animationSpec = tween(LocalUiMotion.current.standardMillis),
+                    )
+                    val foreground by animateColorAsState(
+                        targetValue = if (chosen) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                        animationSpec = tween(LocalUiMotion.current.standardMillis),
+                    )
+                    CompositionLocalProvider(LocalContentColor provides foreground) {
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(shape)
+                                .background(background)
+                                .selectable(selected = chosen, role = Role.Tab, onClick = { onSelect(index) })
+                                .heightIn(min = 64.dp)
+                                .padding(horizontal = 4.dp, vertical = 10.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
+                        ) {
+                            DestinationIcon(destination)
+                            Text(
+                                destination.label,
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Normal,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
                 }
             }
         }
