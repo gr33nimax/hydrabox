@@ -262,11 +262,20 @@ private fun Readings(
     onOpenMode: () -> Unit,
 ) {
     val server = state.connection.server
+    val routeName = (if (server?.auto == true) server.resolvedLabel else server?.displayName)
+        ?.replace(Regex("\\s+"), " ")?.trim()?.takeIf { it.isNotEmpty() }
+    val routeMark = routeName?.let { serverFlag(it) }
+    val routeServer = if (server?.auto == true) {
+        state.servers.asSequence().flatMap { it.servers.asSequence() }.firstOrNull { it.id == server.resolvedTag }
+    } else server
     SectionGroup {
         FactRow(
             label = stringResource(Res.string.home_row_route),
-            value = server?.let { serverName(it) } ?: stringResource(Res.string.home_server_none),
-            detail = serverSupportingKind(server),
+            value = routeMark?.second ?: routeName ?: stringResource(Res.string.home_value_unknown),
+            flag = routeMark?.first,
+            headerDetail = if (server?.auto == true) stringResource(Res.string.server_auto) else null,
+            headerIcon = HydraIcons.Bolt,
+            detail = serverProtocolLabel(routeServer),
             secondaryDetail = serverSupportingLatency(server),
             onClick = onOpenServers,
             valueMaxLines = Int.MAX_VALUE,
@@ -276,7 +285,7 @@ private fun Readings(
             label = stringResource(Res.string.home_row_exit),
             value = exitValue(state),
             detail =
-                state.exit.countryCode?.let { code ->
+                state.exit.countryCode?.takeIf { state.connection is Connection.Connected && state.exit.address != null }?.let { code ->
                     listOfNotNull(state.exit.flag, code).joinToString(" ")
                 },
             trailingIcon = HydraIcons.Refresh,
@@ -286,7 +295,7 @@ private fun Readings(
         )
         FactRow(
             label = stringResource(Res.string.home_row_plan),
-            value = planAllowance(source),
+            value = source?.let { planAllowance(it) } ?: stringResource(Res.string.home_value_unknown),
             detail = source?.let { planTerm(it) },
             accent = source?.problem?.let { MaterialTheme.colorScheme.error },
             onClick = onOpenSources,
@@ -314,7 +323,7 @@ private fun exitValue(state: ScreenState): String {
         }
 
         else -> {
-            stringResource(Res.string.home_exit_unknown)
+            stringResource(Res.string.home_value_unknown)
         }
     }
 }

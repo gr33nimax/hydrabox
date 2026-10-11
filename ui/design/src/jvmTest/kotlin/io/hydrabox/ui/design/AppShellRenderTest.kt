@@ -63,10 +63,13 @@ class AppShellRenderTest {
                             SectionGroup {
                                 FactRow(
                                     label = "Маршрут",
-                                    value = "Автовыбор",
-                                    detail = "🇩🇰Дания | Trojan VPN#31",
+                                    value = "Финляндия(VPN#52-NoTrigger-Reality ⚡)",
+                                    flag = "🇫🇮",
+                                    headerDetail = "Автовыбор",
+                                    headerIcon = HydraIcons.Bolt,
+                                    detail = "VLESS",
                                     secondaryDetail = "137 мс",
-                                    detailMaxLines = Int.MAX_VALUE,
+                                    valueMaxLines = Int.MAX_VALUE,
                                     onClick = {},
                                 )
                                 FactRow("Внешний IP", "130.49.188.54", {}, detail = "🇩🇰 DK")

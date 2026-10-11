@@ -129,8 +129,13 @@ fun serverSupportingLine(server: ServerRef?): String? {
 @Composable
 fun serverSupportingKind(server: ServerRef?): String? {
     server ?: return null
-    val protocol = server.type?.takeIf { !it.equals(server.displayName, ignoreCase = true) }?.uppercase()
-    return serverDetail(server) ?: protocol
+    return serverDetail(server) ?: serverProtocolLabel(server)
+}
+
+internal fun serverProtocolLabel(server: ServerRef?): String? {
+    server ?: return null
+    if (server.auto) return null
+    return server.type?.takeIf { !it.equals(server.displayName, ignoreCase = true) }?.uppercase()
 }
 
 @Composable

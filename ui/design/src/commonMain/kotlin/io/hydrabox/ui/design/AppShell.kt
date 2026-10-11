@@ -1,9 +1,6 @@
 package io.hydrabox.ui.design
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -47,16 +44,23 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import kotlin.math.abs
 import kotlinx.coroutines.flow.collect
 
 enum class WindowClass { COMPACT, MEDIUM, EXPANDED }
@@ -159,6 +163,7 @@ fun AppShell(
                             destinations,
                             selected,
                             onSelect,
+                            pagePosition = { (pager.currentPage + pager.currentPageOffsetFraction).coerceIn(0f, destinations.lastIndex.toFloat()) },
                             modifier = Modifier.align(Alignment.BottomCenter).onSizeChanged {
                                 navigationHeight = with(density) { it.height.toDp() }
                             },
@@ -176,9 +181,12 @@ private fun FloatingNavigationBar(
     destinations: List<ShellDestination>,
     selected: Int,
     onSelect: (Int) -> Unit,
+    pagePosition: () -> Float,
     modifier: Modifier = Modifier,
 ) {
     val shape = RoundedCornerShape(percent = 50)
+    val colors = MaterialTheme.colorScheme
+    val layoutDirection = LocalLayoutDirection.current
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -193,26 +201,33 @@ private fun FloatingNavigationBar(
             shadowElevation = 4.dp,
         ) {
             Row(
-                modifier = Modifier.selectableGroup().padding(4.dp),
+                modifier = Modifier.selectableGroup().padding(4.dp).drawBehind {
+                    val gap = 2.dp.toPx()
+                    val slotWidth = (size.width - gap * (destinations.size - 1)) / destinations.size
+                    val logicalX = (slotWidth + gap) * pagePosition()
+                    val x = if (layoutDirection == LayoutDirection.Rtl) size.width - slotWidth - logicalX else logicalX
+                    drawRoundRect(
+                        color = colors.secondaryContainer,
+                        topLeft = Offset(x, 0f),
+                        size = Size(slotWidth, size.height),
+                        cornerRadius = CornerRadius(size.height / 2f),
+                    )
+                },
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 destinations.forEachIndexed { index, destination ->
                     val chosen = selected == index
-                    val background by animateColorAsState(
-                        targetValue = if (chosen) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
-                        animationSpec = tween(LocalUiMotion.current.standardMillis),
-                    )
-                    val foreground by animateColorAsState(
-                        targetValue = if (chosen) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                        animationSpec = tween(LocalUiMotion.current.standardMillis),
+                    val foreground = lerp(
+                        colors.onSurfaceVariant,
+                        colors.onSecondaryContainer,
+                        (1f - abs(pagePosition() - index)).coerceIn(0f, 1f),
                     )
                     CompositionLocalProvider(LocalContentColor provides foreground) {
                         Column(
                             modifier = Modifier
                                 .weight(1f)
                                 .clip(shape)
-                                .background(background)
                                 .selectable(selected = chosen, role = Role.Tab, onClick = { onSelect(index) })
                                 .heightIn(min = 48.dp)
                                 .padding(horizontal = 4.dp, vertical = 6.dp),
@@ -223,7 +238,7 @@ private fun FloatingNavigationBar(
                             Text(
                                 destination.label,
                                 style = MaterialTheme.typography.labelMedium,
-                                fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Normal,
+                                fontWeight = FontWeight.Medium,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )

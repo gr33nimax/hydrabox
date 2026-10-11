@@ -35,8 +35,12 @@ class FactRowRenderTest {
             HydraTheme(dark = true) {
                 FactRow(
                     label = "Маршрут",
-                    value = if (detail) "Автовыбор" else name,
-                    detail = if (detail) name else null,
+                    value = name,
+                    flag = "🇬🇧",
+                    headerDetail = if (detail) "Автовыбор" else null,
+                    headerIcon = HydraIcons.Bolt,
+                    detail = "VLESS",
+                    secondaryDetail = "137 мс",
                     onClick = {},
                     valueMaxLines = Int.MAX_VALUE,
                     detailMaxLines = Int.MAX_VALUE,
