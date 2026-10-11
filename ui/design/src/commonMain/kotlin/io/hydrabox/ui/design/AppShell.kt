@@ -51,6 +51,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -107,8 +108,10 @@ fun AppShell(
     val pager = rememberPagerState(initialPage = selected, pageCount = { destinations.size })
     val currentSelection by rememberUpdatedState(selected)
     val currentOnSelect by rememberUpdatedState(onSelect)
+    val focusManager = LocalFocusManager.current
     val motion = LocalUiMotion.current
     LaunchedEffect(selected) {
+        focusManager.clearFocus()
         if (pager.settledPage != selected || pager.currentPageOffsetFraction != 0f) {
             if (motion.standardMillis == 0) pager.scrollToPage(selected) else pager.animateScrollToPage(selected)
         }
