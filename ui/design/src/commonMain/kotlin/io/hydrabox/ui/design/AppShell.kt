@@ -188,7 +188,7 @@ private fun FloatingNavigationBar(
         Surface(
             modifier = Modifier.widthIn(max = 320.dp).fillMaxWidth(),
             shape = shape,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)),
             shadowElevation = 4.dp,
         ) {
