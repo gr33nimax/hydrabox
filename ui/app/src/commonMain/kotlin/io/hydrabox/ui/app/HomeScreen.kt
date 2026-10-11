@@ -284,7 +284,7 @@ private fun Readings(
         FactRow(
             label = stringResource(Res.string.home_row_exit),
             value = exitValue(state),
-            detail =
+            headerDetail =
                 state.exit.countryCode?.takeIf { state.connection is Connection.Connected && state.exit.address != null }?.let { code ->
                     listOfNotNull(state.exit.flag, code).joinToString(" ")
                 },
@@ -296,14 +296,14 @@ private fun Readings(
         FactRow(
             label = stringResource(Res.string.home_row_plan),
             value = source?.let { planAllowance(it) } ?: stringResource(Res.string.home_value_unknown),
-            detail = source?.let { planTerm(it) },
+            headerDetail = source?.let { planTerm(it) },
             accent = source?.problem?.let { MaterialTheme.colorScheme.error },
             onClick = onOpenSources,
         )
         FactRow(
             label = stringResource(Res.string.home_row_mode),
             value = modeValue(state.settings),
-            detail = modeDetail(state.settings),
+            headerDetail = modeDetail(state.settings),
             onClick = onOpenMode,
         )
     }

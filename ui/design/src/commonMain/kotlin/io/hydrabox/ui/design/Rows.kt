@@ -245,7 +245,8 @@ fun FactRow(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -254,7 +255,11 @@ fun FactRow(
                             headerIcon?.let { icon ->
                                 Icon(icon, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
                             }
-                            Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                            Text(
+                                it,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (headerIcon != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
                 }
