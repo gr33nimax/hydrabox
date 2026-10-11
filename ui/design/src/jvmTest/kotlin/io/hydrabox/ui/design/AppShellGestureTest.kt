@@ -1,5 +1,6 @@
 package io.hydrabox.ui.design
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -16,10 +17,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.dp
 import java.io.ByteArrayInputStream
 import java.io.File
 import javax.imageio.ImageIO
+import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -138,4 +142,92 @@ class AppShellGestureTest {
             scene.close()
         }
     }
+
+    @Test fun `a delayed selection report must not interrupt the next swipe`() {
+        val selected = mutableStateOf(0)
+        val reported = mutableListOf<Int>()
+        val pageX = mutableMapOf<Int, Float>()
+        val scene = ImageComposeScene(width = 360, height = 640) {
+            HydraTheme(dark = true) {
+                AppShell(
+                    destinations = listOf(
+                        ShellDestination("Главное", HydraIcons.Shield),
+                        ShellDestination("Серверы", HydraIcons.Server),
+                        ShellDestination("Настройки", HydraIcons.Sliders),
+                    ),
+                    selected = selected.value,
+                    // Deliberately delay the parent's acknowledgement until another drag
+                    // is underway, as can happen between composition frames on a phone.
+                    onSelect = { reported += it },
+                    snackbarHostState = SnackbarHostState(),
+                ) { page, _ ->
+                    Box(Modifier.fillMaxSize().onGloballyPositioned { pageX[page] = it.positionInRoot().x }) {
+                        Text("Page $page")
+                    }
+                }
+            }
+        }
+        var clock = 0L
+        fun frame() {
+            clock += 16L
+            scene.render(clock * 1_000_000L).close()
+        }
+        fun settle() = repeat(120) { frame() }
+        fun pointer(type: PointerEventType, x: Float) = scene.sendPointerEvent(
+            type, Offset(x, 320f), timeMillis = clock, type = PointerType.Touch,
+        )
+        fun drag(start: Float, end: Float) {
+            for (step in 1..6) {
+                frame()
+                pointer(PointerEventType.Move, start + (end - start) * (step / 6f))
+            }
+            frame()
+        }
+        fun delayedEchoSwipe(from: Int, to: Int) {
+            assertEquals(from, reported.last())
+            val start = if (to > from) 300f else 60f
+            val end = if (to > from) 60f else 300f
+            val held = start + (end - start) * 0.3f
+            pointer(PointerEventType.Press, start)
+            drag(start, held)
+            val heldPageX = pageX.getValue(from)
+            assertTrue(abs(heldPageX) > 35f, "the new drag did not move the actual page")
+
+            selected.value = from
+            repeat(12) { frame() }
+            assertTrue(
+                abs(pageX.getValue(from) - heldPageX) < 2f,
+                "acknowledging page $from pulled a held swipe back: $heldPageX -> ${pageX.getValue(from)}",
+            )
+            drag(held, end)
+            pointer(PointerEventType.Release, end)
+            settle()
+            assertEquals(to, reported.last(), "the swipe was cancelled by its predecessor's acknowledgement")
+            assertTrue(abs(pageX.getValue(to)) < 0.5f)
+        }
+        try {
+            settle()
+            pointer(PointerEventType.Press, 300f)
+            drag(300f, 60f)
+            pointer(PointerEventType.Release, 60f)
+            settle()
+            assertEquals(1, reported.last())
+            delayedEchoSwipe(from = 1, to = 2)
+            delayedEchoSwipe(from = 2, to = 1)
+
+            // A real external request still wins, including a request that interrupts
+            // another programmatic transition and returns to the previous page.
+            selected.value = 0
+            settle()
+            assertTrue(abs(pageX.getValue(0)) < 0.5f)
+            selected.value = 2
+            repeat(4) { frame() }
+            selected.value = 0
+            settle()
+            assertTrue(abs(pageX.getValue(0)) < 0.5f)
+        } finally {
+            scene.close()
+        }
+    }
+
 }
