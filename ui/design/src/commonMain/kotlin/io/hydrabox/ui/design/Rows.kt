@@ -3,6 +3,7 @@ package io.hydrabox.ui.design
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -211,6 +212,7 @@ fun MetricTile(
 }
 
 /** A reading uses the full width; its quiet label sits above the value. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun FactRow(
     label: String,
