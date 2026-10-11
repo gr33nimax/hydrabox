@@ -56,6 +56,16 @@ sealed interface ApkState {
     ) : ApkState
 }
 
+/** Identifies the downloaded APK even when several releases share a version name. */
+internal data class ApkDownloadReference(
+    val id: Long,
+    val versionCode: Int,
+    val sha256: String,
+) {
+    fun matches(manifest: UpdateManifest): Boolean =
+        versionCode == manifest.versionCode && sha256.equals(manifest.sha256, ignoreCase = true)
+}
+
 /**
  * The client half of the update path: fetch the signed manifest for a channel, let the core vouch
  * for the exact bytes, and then hand the artifact to Android — the download to the download
@@ -84,7 +94,8 @@ object UpdateClient {
     private const val APK_MIME = "application/vnd.android.package-archive"
     private const val PREFERENCES = "hydrabox-update"
     private const val KEY_DOWNLOAD_ID = "download_id"
-    private const val KEY_DOWNLOAD_VERSION = "download_version"
+    private const val KEY_DOWNLOAD_VERSION_CODE = "download_version_code"
+    private const val KEY_DOWNLOAD_SHA256 = "download_sha256"
 
     fun check(channel: String): UpdateCheck {
         val name = channel.trim().lowercase()
@@ -114,8 +125,11 @@ object UpdateClient {
         )
     }
 
-    /** The name the artifact takes in "Downloads": the version names its own file. */
-    fun fileName(manifest: UpdateManifest): String = "hydrabox-${manifest.versionName.trim()}.apk"
+    /** Distinct builds of the same product version must not share a destination in Downloads. */
+    fun fileName(manifest: UpdateManifest): String {
+        val release = manifest.releaseTag.trim().removePrefix("v").replace(Regex("[^A-Za-z0-9._-]"), "_")
+        return "hydrabox-$release-${manifest.versionCode}.apk"
+    }
 
     /**
      * Starts the system download, the way a browser starts one.
@@ -127,20 +141,27 @@ object UpdateClient {
         context: Context,
         manifest: UpdateManifest,
     ): Long? {
-        val request =
-            DownloadManager
-                .Request(Uri.parse(manifest.apkUrl))
-                .setTitle(fileName(manifest))
-                .setMimeType(APK_MIME)
-                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName(manifest))
-                // An app that finds its own update usually knows the person wants it; roaming is
-                // the one case where the cost is a surprise, so that stays at the default.
-                .setAllowedOverMetered(true)
-                .setAllowedOverRoaming(false)
         return try {
+            val previous = rememberedDownload(context)?.takeIf { it.matches(manifest) }
+            if (previous != null) {
+                // A repeated tap resumes observation of an active download. A failed download
+                // (or a completed file rejected by verification) must release its destination.
+                if (apkState(context, manifest) is ApkState.Downloading) return previous.id
+                manager(context).remove(previous.id)
+            }
+            val request =
+                DownloadManager
+                    .Request(Uri.parse(manifest.apkUrl))
+                    .setTitle(fileName(manifest))
+                    .setMimeType(APK_MIME)
+                    .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                    .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName(manifest))
+                    // An app that finds its own update usually knows the person wants it; roaming is
+                    // the one case where the cost is a surprise, so that stays at the default.
+                    .setAllowedOverMetered(true)
+                    .setAllowedOverRoaming(false)
             val id = manager(context).enqueue(request)
-            remember(context, id, manifest.versionName)
+            remember(context, id, manifest)
             HydraLog.info(AREA, "the system download of ${manifest.versionName} was started")
             id
         } catch (failure: Exception) {
@@ -154,10 +175,10 @@ object UpdateClient {
         context: Context,
         manifest: UpdateManifest,
     ): ApkState {
-        val id = rememberedId(context) ?: return ApkState.Missing
-        // The handle belongs to one version: a newer release must not be reported as the file the
-        // older one left behind.
-        if (rememberedVersion(context) != manifest.versionName) return ApkState.Missing
+        // Version names are reused by stable builds. Legacy records without a build code and
+        // digest cannot prove they belong to this offer and must be treated as missing.
+        val download = rememberedDownload(context)?.takeIf { it.matches(manifest) } ?: return ApkState.Missing
+        val id = download.id
         val query = DownloadManager.Query().setFilterById(id)
         return try {
             manager(context).query(query).use { cursor ->
@@ -225,7 +246,7 @@ object UpdateClient {
         }
     }
 
-/**
+    /**
      * One download row as this application understands it.
      *
      * Android reports three endings — success, failure, and anything else still running — and the
@@ -266,24 +287,27 @@ object UpdateClient {
     private fun remember(
         context: Context,
         id: Long,
-        version: String,
+        manifest: UpdateManifest,
     ) {
         context
             .getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
             .edit()
             .putLong(KEY_DOWNLOAD_ID, id)
-            .putString(KEY_DOWNLOAD_VERSION, version)
+            .putInt(KEY_DOWNLOAD_VERSION_CODE, manifest.versionCode)
+            .putString(KEY_DOWNLOAD_SHA256, manifest.sha256)
+            .remove("download_version")
             .apply()
     }
 
-    private fun rememberedId(context: Context): Long? =
-        context
-            .getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-            .getLong(KEY_DOWNLOAD_ID, 0L)
-            .takeIf { it != 0L }
-
-    private fun rememberedVersion(context: Context): String? =
-        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).getString(KEY_DOWNLOAD_VERSION, null)
+    private fun rememberedDownload(context: Context): ApkDownloadReference? {
+        val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+        val id = preferences.getLong(KEY_DOWNLOAD_ID, 0L).takeIf { it > 0L } ?: return null
+        return ApkDownloadReference(
+            id = id,
+            versionCode = preferences.getInt(KEY_DOWNLOAD_VERSION_CODE, 0),
+            sha256 = preferences.getString(KEY_DOWNLOAD_SHA256, null).orEmpty(),
+        )
+    }
 
     private fun manager(context: Context): DownloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
 
