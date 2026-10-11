@@ -112,17 +112,25 @@ fun AppShell(
     val pager = rememberPagerState(initialPage = selected, pageCount = { destinations.size })
     val currentSelection by rememberUpdatedState(selected)
     val currentOnSelect by rememberUpdatedState(onSelect)
+    var pendingPagerAcknowledgement by remember { mutableStateOf<Int?>(null) }
     val focusManager = LocalFocusManager.current
     val motion = LocalUiMotion.current
     LaunchedEffect(selected) {
+        // A parent echo of our own settled-page report is an acknowledgement, not a
+        // navigation command. Replaying it would cancel a drag that has already started.
+        val acknowledgement = pendingPagerAcknowledgement == selected
+        pendingPagerAcknowledgement = null
         focusManager.clearFocus()
-        if (pager.settledPage != selected || pager.currentPageOffsetFraction != 0f) {
+        if (!acknowledgement && (pager.settledPage != selected || pager.currentPageOffsetFraction != 0f)) {
             if (motion.standardMillis == 0) pager.scrollToPage(selected) else pager.animateScrollToPage(selected)
         }
     }
     LaunchedEffect(pager) {
         snapshotFlow { pager.settledPage }.collect { page ->
-            if (page != currentSelection) currentOnSelect(page)
+            if (page != currentSelection) {
+                pendingPagerAcknowledgement = page
+                currentOnSelect(page)
+            }
         }
     }
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
