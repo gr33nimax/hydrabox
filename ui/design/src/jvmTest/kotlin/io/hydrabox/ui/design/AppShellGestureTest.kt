@@ -143,7 +143,7 @@ class AppShellGestureTest {
         }
     }
 
-    @Test fun `a delayed selection report must not interrupt the next swipe`() {
+    @Test fun `a delayed selection report must not reverse the next fling`() {
         val selected = mutableStateOf(0)
         val reported = mutableListOf<Int>()
         val pageX = mutableMapOf<Int, Float>()
@@ -156,8 +156,8 @@ class AppShellGestureTest {
                         ShellDestination("Настройки", HydraIcons.Sliders),
                     ),
                     selected = selected.value,
-                    // Deliberately delay the parent's acknowledgement until another drag
-                    // is underway, as can happen between composition frames on a phone.
+                    // Deliberately delay the parent's acknowledgement until the next
+                    // swipe is settling, as can happen between composition frames.
                     onSelect = { reported += it },
                     snackbarHostState = SnackbarHostState(),
                 ) { page, _ ->
@@ -193,14 +193,16 @@ class AppShellGestureTest {
             val heldPageX = pageX.getValue(from)
             assertTrue(abs(heldPageX) > 35f, "the new drag did not move the actual page")
 
+            pointer(PointerEventType.Release, held)
+            repeat(2) { frame() }
+            val beforeEchoX = pageX.getValue(from)
             selected.value = from
             repeat(12) { frame() }
+            val afterEchoX = pageX.getValue(from)
             assertTrue(
-                abs(pageX.getValue(from) - heldPageX) < 2f,
-                "acknowledging page $from pulled a held swipe back: $heldPageX -> ${pageX.getValue(from)}",
+                if (to > from) afterEchoX <= beforeEchoX + 2f else afterEchoX >= beforeEchoX - 2f,
+                "acknowledging page $from reversed the new fling: $beforeEchoX -> $afterEchoX",
             )
-            drag(held, end)
-            pointer(PointerEventType.Release, end)
             settle()
             assertEquals(to, reported.last(), "the swipe was cancelled by its predecessor's acknowledgement")
             assertTrue(abs(pageX.getValue(to)) < 0.5f)
