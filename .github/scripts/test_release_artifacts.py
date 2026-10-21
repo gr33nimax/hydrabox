@@ -19,8 +19,8 @@ class ReleaseArtifactsTest(unittest.TestCase):
             filename = abi + '.apk'
             with zipfile.ZipFile(root / filename, 'w') as apk:
                 abis = release.ABIS if abi == 'universal' else [abi]
-                for packaged in abis:
-                    apk.writestr(f'lib/{wrong or packaged}/libbox.so', b'core')
+                for packaged in set([wrong] if wrong else abis):
+                    apk.writestr(f'lib/{packaged}/libbox.so', b'core')
             entries.append({'filters': [] if abi == 'universal' else [{'filterType': 'ABI', 'value': abi}], 'outputFile': filename})
         (root / 'output-metadata.json').write_text(json.dumps({'elements': entries}))
 

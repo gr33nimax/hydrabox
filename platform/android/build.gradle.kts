@@ -106,6 +106,7 @@ extensions.configure<ApplicationExtension> {
             isUniversalApk = true
         }
     }
+    packaging { jniLibs.excludes += "**/x86/**" }
     // Release signing, if this machine has the key. The alpha shipped `-unsigned.apk` and there
     // was no way to sign it from the build at all; the key itself is the owner's and never enters
     // the repository, so it is read from `local.properties` or the environment and simply absent
