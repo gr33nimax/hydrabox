@@ -21,6 +21,13 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -31,11 +38,23 @@ val LocalTvMode = staticCompositionLocalOf { false }
 @Composable
 fun TvPresentation(enabled: Boolean, content: @Composable () -> Unit) {
     val density = LocalDensity.current
+    val focus = LocalFocusManager.current
     CompositionLocalProvider(
         LocalTvMode provides enabled,
         LocalDensity provides if (enabled) Density(density.density * 1.15f, density.fontScale) else density,
     ) {
-        Box(Modifier.fillMaxSize().padding(if (enabled) 24.dp else 0.dp)) { content() }
+        Box(Modifier.fillMaxSize().padding(if (enabled) 24.dp else 0.dp).onKeyEvent { event ->
+            // Bubble after the focused control: text fields keep their cursor keys, while
+            // unconsumed remote arrows always move focus, including on custom TV firmware.
+            val direction = when (event.key) {
+                Key.DirectionUp -> FocusDirection.Up
+                Key.DirectionDown -> FocusDirection.Down
+                Key.DirectionLeft -> FocusDirection.Left
+                Key.DirectionRight -> FocusDirection.Right
+                else -> null
+            }
+            enabled && event.type == KeyEventType.KeyDown && direction != null && focus.moveFocus(direction)
+        }) { content() }
     }
 }
 
