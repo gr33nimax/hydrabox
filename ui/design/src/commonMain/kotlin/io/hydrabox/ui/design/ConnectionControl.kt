@@ -161,7 +161,7 @@ fun ConnectionControl(
             shape = CircleShape,
             color = Color.Transparent,
             contentColor = ink,
-            modifier = Modifier.size(size).semantics {
+            modifier = Modifier.size(size).tvFocusOutline().semantics {
                 this.stateDescription = stateDescription
                 this.contentDescription = contentDescription
             },

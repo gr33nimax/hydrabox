@@ -71,10 +71,13 @@ extensions.configure<ApplicationExtension> {
         targetSdk = 36
         // The release pipeline passes these as Gradle properties so the tag, the artifact name and
         // the APK itself cannot disagree; without them the checked-in values are used.
-        versionCode = (findProperty("hydraboxVersionCode") as String?)?.toIntOrNull() ?: 200
+        versionCode = (findProperty("hydraboxVersionCode") as String?)?.toIntOrNull() ?: 228
         versionName =
-            (findProperty("hydraboxVersionName") as String?)?.takeIf(String::isNotBlank) ?: "2.1.0"
+            (findProperty("hydraboxVersionName") as String?)?.takeIf(String::isNotBlank) ?: "2.1.1"
         buildConfigField("String", "HYDRACORE_VERSION", "\"$hydraCoreVersion\"")
+        val updateChannel = providers.gradleProperty("hydraboxUpdateChannel").getOrElse("stable")
+        check(updateChannel in setOf("stable", "canary"))
+        buildConfigField("String", "UPDATE_CHANNEL", "\"$updateChannel\"")
         // The pinned update keys travel with the build rather than with the update: an updater that
         // could be told which key to trust would only prove that somebody signed the document. No
         // keys leaves the field empty, and an empty key list verifies nothing — which is the
@@ -93,10 +96,17 @@ extensions.configure<ApplicationExtension> {
                 ?.replace("\"", "\\\"")
                 .orEmpty()
         buildConfigField("String", "HYDRABOX_UPDATE_KEY_ID", "\"$updateKeyId\"")
-        // The alpha ships arm64 only: the other ABIs triple the artifact for devices we
-        // are not testing on. Restore them when the alpha becomes a release candidate.
-        ndk { abiFilters += "arm64-v8a" }
+
     }
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86_64")
+            isUniversalApk = true
+        }
+    }
+    packaging { jniLibs.excludes += "**/x86/**" }
     // Release signing, if this machine has the key. The alpha shipped `-unsigned.apk` and there
     // was no way to sign it from the build at all; the key itself is the owner's and never enters
     // the repository, so it is read from `local.properties` or the environment and simply absent
@@ -219,3 +229,30 @@ tasks.register("verifyLibboxProvenance") {
 
 tasks.named("check") { dependsOn("verifyLibboxProvenance") }
 tasks.named("preBuild") { dependsOn("verifyLibboxProvenance") }
+
+// Debug/test builds may use the preceding published AAR while a core release is pending.
+// Packaging a release must use the core that provides reliable selection events.
+val minimumCoreVersion = providers.gradleProperty("hydraboxMinimumCoreVersion")
+val verifyReleaseCoreVersion = tasks.register("verifyReleaseCoreVersion") {
+    group = "verification"
+    description = "Requires the HydraCore selection event fixes when packaging a release."
+    inputs.property("coreVersion", hydraCoreVersion)
+    inputs.property("minimumCoreVersion", minimumCoreVersion)
+    doLast {
+        fun coreVersion(version: String): List<Long> {
+            val match = Regex("""hydracore-sbe-(\d+)\.(\d+)\.(\d+)(?:-(?:stable|debug)-([1-9]\d*))?""").matchEntire(version)
+                ?: error("Expected a HydraCore release, got $version")
+            return (1..4).map { index -> match.groupValues[index].ifEmpty { "0" }.toLong() }
+        }
+        val actual = coreVersion(hydraCoreVersion)
+        val required = coreVersion(minimumCoreVersion.get())
+        val difference = actual.zip(required).firstOrNull { (current, minimum) -> current != minimum }
+        check(difference == null || difference.first > difference.second) {
+            "HydraBox requires ${minimumCoreVersion.get()} or newer; publish and repin the fixed core before releasing."
+        }
+    }
+}
+
+tasks.configureEach {
+    if (name == "packageRelease" || name == "bundleRelease") dependsOn(verifyReleaseCoreVersion)
+}

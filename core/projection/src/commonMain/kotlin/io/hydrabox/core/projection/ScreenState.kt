@@ -121,7 +121,7 @@ enum class LogDetail { OFF, TRACE, DEBUG, INFO, WARN, ERROR }
 enum class DnsMode { AUTO, IPV4, IPV6 }
 
 /** What the ongoing notification says under the state, if anything. */
-enum class NotificationDetail { OFF, SPEED, TOTAL, BOTH }
+enum class NotificationDetail { OFF, SPEED, TOTAL, BOTH, STATUS }
 
 /** Settings as shown. Only what a screen displays; every value already resolved. */
 
@@ -157,6 +157,7 @@ data class UpdateSummary(
     val reachable: Boolean = true,
     /** The version a verified manifest offers, or null when there is nothing to install. */
     val availableVersion: String? = null,
+    val availableReleaseTag: String? = null,
     /**
      * Whether the verified file is already on the device. Checking never fetches anything, so a
      * release found now and one fetched in an earlier visit are the same offer until this says
@@ -214,6 +215,8 @@ data class SettingsSummary(
     val bypassLocalNetwork: Boolean = true,
     val appsMode: AppsMode = AppsMode.BYPASS_SELECTED,
     val appearance: Appearance = Appearance.SYSTEM,
+    val tvModeOverride: Boolean? = null,
+    val tvDetected: Boolean = false,
     val language: Language = Language.SYSTEM,
     /** The local proxy replaces the system tunnel: 1.x called it proxy-only. */
     val proxyOnly: Boolean = false,
@@ -433,6 +436,7 @@ data class ScreenState(
     val diagnostics: DiagnosticsSummary? = null,
     val update: UpdateSummary = UpdateSummary(),
     val apps: List<InstalledApp> = emptyList(),
+    val appsLoaded: Boolean = false,
     val ruleSets: RuleSetsSummary = RuleSetsSummary(),
     val exit: ExitAddress = ExitAddress(),
     val busy: Busy = Busy(),
@@ -466,6 +470,7 @@ data class AppReadModel(
     val backupOperation: OperationState<Unit> = OperationState.Idle,
     val legalAccepted: Boolean = false,
     val apps: List<InstalledApp> = emptyList(),
+    val appsLoaded: Boolean = false,
     val ruleSets: RuleSetsSummary = RuleSetsSummary(),
     val exit: ExitAddress = ExitAddress(),
     /** The system consent for a VPN was asked for and refused. */

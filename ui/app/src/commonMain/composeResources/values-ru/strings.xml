@@ -97,9 +97,8 @@
     <string name="settings_diagnostics">Диагностика</string>
     <string name="settings_saved">Сохранено</string>
     <string name="apps_title">Приложения</string>
-    <string name="apps_select_first">Сначала выберите режим</string>
+    <string name="apps_empty">Не найдено приложений с ярлыком запуска.</string>
     <string name="apps_search">Поиск приложений</string>
-    <string name="apps_load">Показать приложения</string>
     <string name="about_version">Версия %1$s</string>
     <string name="about_core">Ядро %1$s</string>
     <string name="about_terms">Пользовательское соглашение</string>
@@ -256,6 +255,7 @@ HydraBox предоставляется **как есть**. Мы исправл
     <string name="notice_rules_updated">Список блокировки обновлён</string>
     <string name="notice_rules_failed">Не удалось обновить список блокировки</string>
     <string name="notification_off">Выключено</string>
+    <string name="notification_status">Статус и сервер</string>
     <string name="notification_speed">Текущая скорость</string>
     <string name="notification_total">Объём за сеанс</string>
     <string name="notification_both">Скорость и объём</string>
@@ -353,8 +353,8 @@ HydraBox предоставляется **как есть**. Мы исправл
     <string name="home_mode_proxy">Прокси</string>
     <string name="home_plan_until">До %1$s</string>
     <string name="home_plan_refresh_every">Автообновление раз в %1$d ч</string>
-    <string name="home_plan_none">пока нет</string>
-    <string name="home_exit_unknown">адрес неизвестен</string>
+    <string name="home_plan_unknown">Неизвестен до выбора сервера</string>
+    <string name="home_value_unknown">—</string>
     <string name="home_rates">↓ %1$s   ↑ %2$s</string>
     <string name="home_mode_outside">вне туннеля: %1$d</string>
     <string name="state_short_reconnecting">Восстановление</string>
@@ -374,4 +374,12 @@ HydraBox предоставляется **как есть**. Мы исправл
     <string name="latency_no_edge">TURN edge неизвестен</string>
     <string name="latency_edge_unsupported">edge не по UDP</string>
     <string name="latency_not_measured">не измерено</string>
+    <string name="settings_tv_mode">Режим TV</string>
+    <string name="settings_tv_auto">Определяется автоматически для этого устройства</string>
+    <string name="settings_tv_manual">Выбран вручную</string>
+    <string name="settings_tv_reset">Вернуть автоопределение</string>
+    <string name="update_available_title">Доступно обновление</string>
+    <string name="update_available_body">Вышел HydraBox %1$s. Откройте настройки, чтобы скачать и установить обновление.</string>
+    <string name="update_open_settings">К обновлениям</string>
+    <string name="update_later">Позже</string>
 </resources>

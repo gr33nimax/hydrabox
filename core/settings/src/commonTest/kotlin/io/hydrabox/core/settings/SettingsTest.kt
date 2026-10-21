@@ -8,6 +8,23 @@ import kotlin.test.assertTrue
 class SettingsTest {
     private val codec = SettingsCodec()
 
+    @Test fun `TV defaults to detection and manual choices survive storage and reset`() {
+        val automatic = codec.decode(emptyMap())
+        assertEquals(null, automatic.tvModeOverride)
+        for (override in listOf(true, false, null)) {
+            val state = automatic.copy(tvModeOverride = override)
+            assertEquals(override, codec.decode(codec.encode(state)).tvModeOverride)
+        }
+        assertEquals(null, codec.decode(mapOf("tv_mode" to "unknown")).tvModeOverride)
+    }
+
+    @Test fun `fresh installs follow their build channel while an explicit choice wins`() {
+        val canary = SettingsCodec(UpdateChannel.CANARY)
+        assertEquals(UpdateChannel.CANARY, canary.decode(emptyMap()).updateChannel)
+        assertEquals(UpdateChannel.STABLE, canary.decode(mapOf("update_channel" to "stable")).updateChannel)
+        assertEquals(UpdateChannel.STABLE, canary.decode(mapOf("update_channel" to "invalid")).updateChannel)
+    }
+
     @Test fun `defaults use standard cold runtime values`() {
         val state = codec.decode(emptyMap())
         assertEquals(PerformanceMode.STANDARD, state.performanceMode)
@@ -30,6 +47,14 @@ class SettingsTest {
         val state = codec.decode(mapOf("notification_traffic_display_mode" to "both"))
         assertEquals(NotificationTrafficDisplayMode.BOTH, state.notificationTrafficDisplayMode)
         assertEquals("both", codec.encode(state)["notification_traffic_display_mode"])
+    }
+
+    @Test fun `status only notification survives restart and backup export`() {
+        val state = codec.decode(mapOf("notification_traffic_display_mode" to "status"))
+        assertTrue(state.statusNotificationEnabled)
+        assertEquals(NotificationTrafficDisplayMode.STATUS, state.notificationTrafficDisplayMode)
+        assertEquals(state, codec.decode(codec.encode(state)))
+        assertEquals("status", codec.safeExport(state)["notification_traffic_display_mode"])
     }
 
     @Test fun `legacy Google URLTest default migrates to Cloudflare`() {

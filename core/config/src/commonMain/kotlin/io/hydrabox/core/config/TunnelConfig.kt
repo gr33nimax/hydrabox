@@ -357,6 +357,9 @@ object TunnelConfigGenerator {
             putJsonObject("experimental") {
                 putJsonObject("cache_file") {
                     put("enabled", true)
+                    // AppStore owns selection persistence; an older core choice must not
+                    // override the selected default in this connection's configuration.
+                    put("store_selected", false)
                     put("store_rdrc", true)
                     // A fake address that changes on every start is a stale mapping in every
                     // application that cached it, so the table outlives the process.

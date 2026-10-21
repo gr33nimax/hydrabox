@@ -7,10 +7,14 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
+import io.hydrabox.core.contract.RuntimeEvent
 import io.hydrabox.core.contract.RuntimeState
+import java.util.concurrent.Executors
 
 /**
  * Quick Settings tile. It reflects the runtime rather than its own idea of state: the tile
@@ -19,14 +23,29 @@ import io.hydrabox.core.contract.RuntimeState
 class HydraTileService : TileService() {
     private var transport: BinderRuntimeTransport? = null
     private var bound = false
+    private var subscription: AutoCloseable? = null
+    private val main = Handler(Looper.getMainLooper())
+    private val io = Executors.newSingleThreadExecutor()
+    private var listening = false
+    private var preparingStart = false
+    private var destroyed = false
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-            transport = binder?.let(::BinderRuntimeTransport)
+            val connected = binder?.let(::BinderRuntimeTransport)
+            transport = connected
+            subscription = runCatching { connected?.subscribe { event ->
+                if (event is RuntimeEvent.Snapshot) {
+                    main.post {
+                        if (transport === connected) render(event.snapshot.state)
+                    }
+                }
+            } }.getOrNull()
             render()
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
+            subscription = null
             transport = null
             render()
         }
@@ -34,61 +53,109 @@ class HydraTileService : TileService() {
 
     override fun onStartListening() {
         super.onStartListening()
+        listening = true
+        bindRuntime(createIfMissing = false)
+        render()
+    }
+
+    private fun bindRuntime(createIfMissing: Boolean) {
         if (!bound) {
-            // Deliberately without BIND_AUTO_CREATE. Pulling down the shade should not start a
-            // second process with the core's native library in it, and it did: `batterystats`
-            // counted nine launches of `HydraVpnService` for one actual start, alongside thirteen
-            // tile bindings. Without the flag the bind succeeds only while the tunnel is already
-            // up, which is the only case where there is any state to read; otherwise there is
-            // nothing running and the tile is inactive, which is the truth.
-            bound = runCatching { bindService(Intent(this, HydraVpnService::class.java), connection, 0) }
+            // Opening the shade only observes an existing runtime. Only an explicit
+            // connection request is allowed to create the service.
+            val flags = if (createIfMissing) Context.BIND_AUTO_CREATE else 0
+            bound = runCatching { bindService(Intent(this, HydraVpnService::class.java), connection, flags) }
                 .getOrDefault(false)
             // A bind that found nothing still leaves the connection registered.
             if (!bound) runCatching { unbindService(connection) }
         }
-        render()
     }
 
     override fun onStopListening() {
+        listening = false
+        unbindRuntime()
+        super.onStopListening()
+    }
+
+    private fun unbindRuntime() {
+        runCatching { subscription?.close() }
+        subscription = null
         if (bound) {
             runCatching { unbindService(connection) }
             bound = false
             transport = null
         }
-        super.onStopListening()
     }
 
-    // The pre-34 overload is the only way to start an activity from a tile on those
-    // versions, and minSdk is 26. The modern overload is used wherever it exists.
-    @SuppressLint("StartActivityAndCollapseDeprecated")
     override fun onClick() {
         super.onClick()
-        if (state() == RuntimeState.RUNNING || state() == RuntimeState.STARTING) {
-            startService(Intent(this, HydraVpnService::class.java).setAction(HydraVpnService.ACTION_STOP))
-        } else {
-            // Starting can need the system VPN consent dialog, which a tile cannot show,
-            // so the activity is asked to start instead of the service directly. The
-            // PendingIntent overload only exists from API 34; below that the deprecated
-            // Intent overload is the only way.
-            val target = Intent(this, RuntimeControlActivity::class.java)
-                .setAction(RuntimeControlActivity.ACTION_REQUEST_START)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                startActivityAndCollapse(
-                    PendingIntent.getActivity(this, 0, target, PendingIntent.FLAG_IMMUTABLE),
-                )
-            } else {
-                @Suppress("DEPRECATION")
-                startActivityAndCollapse(target)
-            }
+        if (preparingStart) return
+        when (state()) {
+            RuntimeState.RUNNING, RuntimeState.STARTING, RuntimeState.RECOVERING ->
+                startService(Intent(this, HydraVpnService::class.java).setAction(HydraVpnService.ACTION_STOP))
+            RuntimeState.STOPPING -> return
+            else -> prepareStart()
         }
         render()
     }
 
-    private fun render() {
-        val current = state()
+    private fun prepareStart() {
+        preparingStart = true
+        // Configuration generation reads and decrypts the catalogue, just as the activity's
+        // start does. Keep it off the tile's main thread and close its database connection.
+        io.execute {
+            val preparation = ConnectionStart.prepare(this)
+            main.post {
+                if (destroyed) return@post
+                preparingStart = false
+                preparation.fold(
+                    onSuccess = { ready ->
+                        if (ready !is ConnectionPreparation.Ready || ConnectionStart.permission(this, ready) != null) {
+                            openForStart()
+                        } else {
+                            ConnectionStart.launch(this)
+                            // Replace a dead binding from the previous connection. Only a deliberate
+                            // start may create the service; opening the shade still uses flags = 0.
+                            if (listening) {
+                                if (transport == null) unbindRuntime()
+                                bindRuntime(createIfMissing = true)
+                            }
+                        }
+                    },
+                    onFailure = { failure -> HydraLog.error("tile", "connection preparation failed: ${failure.message}") },
+                )
+                render()
+            }
+        }
+    }
+
+    // A tile cannot present VPN consent itself. Open the activity only when consent or
+    // initial setup is required; an already configured connection stays in the shade.
+    @SuppressLint("StartActivityAndCollapseDeprecated")
+    private fun openForStart() {
+        val target = Intent(this, RuntimeControlActivity::class.java)
+            .setAction(RuntimeControlActivity.ACTION_REQUEST_START)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startActivityAndCollapse(
+                PendingIntent.getActivity(this, 0, target, PendingIntent.FLAG_IMMUTABLE),
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            startActivityAndCollapse(target)
+        }
+    }
+
+    override fun onDestroy() {
+        destroyed = true
+        io.shutdownNow()
+        main.removeCallbacksAndMessages(null)
+        unbindRuntime()
+        super.onDestroy()
+    }
+
+    private fun render(current: RuntimeState? = state()) {
         qsTile?.apply {
-            state = when (current) {
+            state = if (preparingStart) Tile.STATE_UNAVAILABLE else when (current) {
                 RuntimeState.RUNNING -> Tile.STATE_ACTIVE
                 null, RuntimeState.STOPPED, RuntimeState.FAILED -> Tile.STATE_INACTIVE
                 else -> Tile.STATE_UNAVAILABLE
@@ -97,7 +164,7 @@ class HydraTileService : TileService() {
                 // The words the product uses, not the reducer's state names: the tile used to
                 // read `running` and `stopping` in English under a Russian interface.
                 subtitle = getString(
-                    when (current) {
+                    when (if (preparingStart) RuntimeState.STARTING else current) {
                         RuntimeState.RUNNING -> R.string.notification_connected
                         RuntimeState.STOPPING -> R.string.notification_disconnecting
                         RuntimeState.FAILED -> R.string.notification_failed

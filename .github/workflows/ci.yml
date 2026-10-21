@@ -4,6 +4,10 @@ on:
   push:
   pull_request:
 
+concurrency:
+  group: hydrabox-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -27,12 +31,23 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - run: python3 .github/scripts/test_hydrate_libbox.py
+      - run: python3 -m unittest discover -s .github/scripts -p "test_*.py"
       - run: python3 .github/scripts/hydrate_libbox.py
-      - run: ./gradlew ciCheck --stacktrace
+      - name: Verify TV remote navigation
+        run: ./gradlew :ui:design:jvmTest --stacktrace
+      - run: ./gradlew ciCheck :platform:android:assembleRelease --stacktrace
+      - name: Verify all packaged architectures
+        run: TAG=ci python3 .github/scripts/release_artifacts.py collect
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: verification-artifacts
-          path: '**/build/**'
+          path: |
+            **/build/reports/**
+            **/build/test-results/**
+            **/build/*-preview/**
+            platform/android/build/outputs/apk/release/*.apk
+            platform/android/build/outputs/mapping/release/**
+            release/SHA256SUMS
+            release/artifacts.json
           if-no-files-found: error

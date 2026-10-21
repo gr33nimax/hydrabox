@@ -1,0 +1,100 @@
+package io.hydrabox.ui.design
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.ui.ImageComposeScene
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
+import java.awt.image.BufferedImage
+import java.io.ByteArrayInputStream
+import java.io.File
+import javax.imageio.ImageIO
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+
+class AppShellRenderTest {
+    @Test fun `switching the capsule selection leaves the content viewport unchanged`() {
+        for ((width, fontScale) in listOf(360 to 1f, 320 to 1.3f)) {
+            for (dark in listOf(true, false)) {
+                val (home, homeMetrics) = render(width, fontScale, dark, selected = 0)
+                val (servers, serverMetrics) = render(width, fontScale, dark, selected = 1)
+                assertEquals(homeMetrics, serverMetrics)
+                assertEquals(WindowClass.COMPACT, homeMetrics.width)
+                assertEquals(760.dp, homeMetrics.height, "the capsule must overlay the full viewport")
+                assertTrue(homeMetrics.bottomPadding in 48.dp..100.dp, "the compact capsule needs end-of-list clearance")
+                val changedRows = (0 until home.height).filter { y ->
+                    (0 until home.width).any { x -> home.getRGB(x, y) != servers.getRGB(x, y) }
+                }
+                assertTrue(changedRows.isNotEmpty(), "the selected tab has no visible highlight")
+                assertTrue(
+                    changedRows.first() >= ((homeMetrics.height - homeMetrics.bottomPadding).value * 2).toInt(),
+                    "the navigation selection changed the screen's content",
+                )
+            }
+        }
+    }
+
+    private fun render(width: Int, fontScale: Float, dark: Boolean, selected: Int): Pair<BufferedImage, ShellMetrics> {
+        var metrics: ShellMetrics? = null
+        val scene = ImageComposeScene(width = width * 2, height = 1520, density = Density(2f, fontScale)) {
+            HydraTheme(dark = dark) {
+                AppShell(
+                    destinations = listOf(
+                        ShellDestination("Главное", HydraIcons.Shield),
+                        ShellDestination("Серверы", HydraIcons.Server, attention = true),
+                        ShellDestination("Настройки", HydraIcons.Sliders),
+                    ),
+                    selected = selected,
+                    onSelect = {},
+                    snackbarHostState = SnackbarHostState(),
+                ) { page, shell ->
+                    if (page == selected) metrics = shell
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = shell.bottomPadding + 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        item {
+                            SectionGroup {
+                                FactRow(
+                                    label = "Маршрут",
+                                    value = "Финляндия(VPN#52-NoTrigger-Reality ⚡)",
+                                    flag = "🇫🇮",
+                                    headerDetail = "Автовыбор",
+                                    headerIcon = HydraIcons.Bolt,
+                                    detail = "VLESS",
+                                    secondaryDetail = "137 мс",
+                                    valueMaxLines = Int.MAX_VALUE,
+                                    onClick = {},
+                                )
+                                FactRow("Внешний IP", "31.77.203.66", {}, valueDetail = "🇫🇮 FI")
+                                FactRow("Лимит", "629.5 GiB / ∞", {}, valueDetail = "Осталось ∞ дн.")
+                                FactRow("Режим подключения", "VPN", {}, valueDetail = "вне туннеля: 40")
+                            }
+                        }
+                        items(20) { index ->
+                            SectionGroup {
+                                ServerRow("Сервер ${index + 1}", "VLESS", selected = false, icon = HydraIcons.Server, flag = "🇫🇮", onClick = {})
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return try {
+            scene.render(0L).close()
+            scene.render(16_000_000L).close()
+            val bytes = scene.render(32_000_000L).use { requireNotNull(it.encodeToData()).bytes }
+            val directory = File(System.getProperty("user.dir"), "build/shell-preview").apply { mkdirs() }
+            File(directory, "$width-$fontScale-${if (dark) "dark" else "light"}-$selected.png").writeBytes(bytes)
+            ImageIO.read(ByteArrayInputStream(bytes)) to requireNotNull(metrics)
+        } finally {
+            scene.close()
+        }
+    }
+}
