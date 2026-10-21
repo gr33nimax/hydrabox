@@ -18,6 +18,13 @@ class SettingsTest {
         assertEquals(null, codec.decode(mapOf("tv_mode" to "unknown")).tvModeOverride)
     }
 
+    @Test fun `fresh installs follow their build channel while an explicit choice wins`() {
+        val canary = SettingsCodec(UpdateChannel.CANARY)
+        assertEquals(UpdateChannel.CANARY, canary.decode(emptyMap()).updateChannel)
+        assertEquals(UpdateChannel.STABLE, canary.decode(mapOf("update_channel" to "stable")).updateChannel)
+        assertEquals(UpdateChannel.STABLE, canary.decode(mapOf("update_channel" to "invalid")).updateChannel)
+    }
+
     @Test fun `defaults use standard cold runtime values`() {
         val state = codec.decode(emptyMap())
         assertEquals(PerformanceMode.STANDARD, state.performanceMode)

@@ -353,6 +353,8 @@ object UpdateClient {
                 readTimeout = TIMEOUT_MILLIS
                 instanceFollowRedirects = true
                 requestMethod = "GET"
+                useCaches = false
+                setRequestProperty("Cache-Control", "no-cache")
             }
         } catch (failure: Exception) {
             HydraLog.warn(AREA, "an update address could not be opened", failure)

@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -44,7 +45,7 @@ internal fun TvShell(
     }
     Row(modifier.fillMaxSize()) {
         Column(
-            Modifier.width(168.dp).fillMaxHeight().focusGroup().padding(end = 16.dp),
+            Modifier.width(208.dp).fillMaxHeight().focusGroup().padding(end = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             destinations.forEachIndexed { index, destination ->
@@ -52,7 +53,7 @@ internal fun TvShell(
                     onClick = { onSelect(index) },
                     color = if (selected == index) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface,
                     shape = MaterialTheme.shapes.medium,
-                    modifier = Modifier.focusRequester(navigation[index]).focusProperties { right = page }.tvFocusOutline(),
+                    modifier = Modifier.fillMaxWidth().focusRequester(navigation[index]).focusProperties { right = page }.tvFocusOutline(),
                 ) {
                     Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Icon(destination.icon, contentDescription = null)
