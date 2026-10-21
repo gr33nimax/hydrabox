@@ -39,7 +39,8 @@ class TvNavigationTest {
         var time = 0L
         fun frames() = repeat(8) { time += 16_000_000; scene.render(time).close() }
         fun key(code: Key) {
-            scene.sendKeyEvent(KeyEvent(code, KeyEventType.KeyDown))
+            val consumed = scene.sendKeyEvent(KeyEvent(code, KeyEventType.KeyDown))
+            println("TV key $code consumed=$consumed selected=${selected.value} presses=$presses")
             scene.sendKeyEvent(KeyEvent(code, KeyEventType.KeyUp))
             frames()
         }
@@ -47,10 +48,10 @@ class TvNavigationTest {
             frames()
             key(Key.DirectionDown)
             key(Key.Enter)
-            assertEquals(1, selected.value)
+            assertEquals(1, selected.value, "D-pad Down + OK must select Servers")
             key(Key.DirectionRight)
             key(Key.Enter)
-            assertEquals(1, presses)
+            assertEquals(1, presses, "D-pad Right + OK must activate page content")
             key(Key.DirectionLeft)
             key(Key.DirectionDown)
             key(Key.Enter)
@@ -60,6 +61,10 @@ class TvNavigationTest {
                 File(directory, "tv-navigation.png").writeBytes(requireNotNull(image.encodeToData()).bytes)
             }
         } finally {
+            val directory = File("build/tv-preview").apply { mkdirs() }
+            scene.render(time + 32_000_000).use { image ->
+                File(directory, "tv-last-frame.png").writeBytes(requireNotNull(image.encodeToData()).bytes)
+            }
             scene.close()
         }
     }

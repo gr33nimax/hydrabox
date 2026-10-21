@@ -25,6 +25,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalInputModeManager
+import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.unit.dp
 
 /** TV pages are selected with the remote; they do not share the phone's swipe pager. */
@@ -39,7 +41,9 @@ internal fun TvShell(
 ) {
     val navigation = remember(destinations.size) { List(destinations.size) { FocusRequester() } }
     val page = remember { FocusRequester() }
+    val input = LocalInputModeManager.current
     LaunchedEffect(Unit) {
+        input.requestInputMode(InputMode.Keyboard)
         withFrameNanos { }
         navigation[selected].requestFocus()
     }
@@ -53,7 +57,12 @@ internal fun TvShell(
                     onClick = { onSelect(index) },
                     color = if (selected == index) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface,
                     shape = MaterialTheme.shapes.medium,
-                    modifier = Modifier.fillMaxWidth().focusRequester(navigation[index]).focusProperties { right = page }.tvFocusOutline(),
+                    modifier = Modifier.fillMaxWidth().focusRequester(navigation[index]).focusProperties {
+                        canFocus = true
+                        up = navigation[(index - 1).coerceAtLeast(0)]
+                        down = navigation[(index + 1).coerceAtMost(destinations.lastIndex)]
+                        right = page
+                    }.tvFocusOutline(),
                 ) {
                     Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Icon(destination.icon, contentDescription = null)
