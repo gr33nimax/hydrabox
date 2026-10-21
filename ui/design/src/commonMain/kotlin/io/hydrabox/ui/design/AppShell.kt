@@ -109,6 +109,10 @@ fun AppShell(
     modifier: Modifier = Modifier,
     content: @Composable (Int, ShellMetrics) -> Unit,
 ) {
+    if (LocalTvMode.current) {
+        TvShell(destinations, selected, onSelect, snackbarHostState, modifier, content)
+        return
+    }
     val pager = rememberPagerState(initialPage = selected, pageCount = { destinations.size })
     val currentSelection by rememberUpdatedState(selected)
     val currentOnSelect by rememberUpdatedState(onSelect)
@@ -295,13 +299,14 @@ fun DetailScreen(
     actions: @Composable () -> Unit = {},
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    TvFocusRoot(title, Modifier.fillMaxSize()) {
     Scaffold(
         modifier = modifier.fillMaxSize(),
         topBar = {
             TopAppBar(
                 title = { Text(title, style = MaterialTheme.typography.titleLarge) },
                 navigationIcon = {
-                    androidx.compose.material3.IconButton(onClick = onBack) {
+                    androidx.compose.material3.IconButton(onClick = onBack, modifier = Modifier.tvFocusOutline()) {
                         Icon(HydraIcons.Back, contentDescription = backLabel)
                     }
                 },
@@ -324,4 +329,6 @@ fun DetailScreen(
             )
         }
     }
+}
+
 }

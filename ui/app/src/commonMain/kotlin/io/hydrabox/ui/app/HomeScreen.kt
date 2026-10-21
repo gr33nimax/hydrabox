@@ -1,5 +1,6 @@
 ﻿package io.hydrabox.ui.app
 
+import io.hydrabox.ui.design.tvFocusOutline
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -155,7 +156,7 @@ private fun PlanHeader(
     horizontalArrangement = Arrangement.spacedBy(UiTokens.spacing),
 ) {
     Column(
-        modifier = Modifier.weight(1f).clickable(onClick = onOpen).padding(vertical = UiTokens.spacing / 2),
+        modifier = Modifier.weight(1f).tvFocusOutline().clickable(onClick = onOpen).padding(vertical = UiTokens.spacing / 2),
         verticalArrangement = Arrangement.spacedBy(1.dp),
     ) {
         Text(
@@ -230,7 +231,7 @@ private fun Instrument(
                 stringResource(Res.string.home_rates, it.downlink, it.uplink),
                 style = UiTokens.figures(MaterialTheme.typography.bodyMedium),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.clickable(onClick = onOpenTraffic),
+                modifier = Modifier.tvFocusOutline().clickable(onClick = onOpenTraffic),
             )
         }
         connectionHint(connection)?.let {

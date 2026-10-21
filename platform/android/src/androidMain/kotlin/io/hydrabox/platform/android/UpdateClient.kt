@@ -121,6 +121,7 @@ object UpdateClient {
                 signatureVerified = verified,
                 selectedChannel = name,
                 installedVersionCode = BuildConfig.VERSION_CODE,
+                supportedAbis = Build.SUPPORTED_ABIS.toList(),
             ),
         )
     }
@@ -128,7 +129,7 @@ object UpdateClient {
     /** Distinct builds of the same product version must not share a destination in Downloads. */
     fun fileName(manifest: UpdateManifest): String {
         val release = manifest.releaseTag.trim().removePrefix("v").replace(Regex("[^A-Za-z0-9._-]"), "_")
-        return "hydrabox-$release-${manifest.versionCode}.apk"
+        return "hydrabox-$release-${manifest.versionCode}-${manifest.sha256.take(12)}.apk"
     }
 
     /**
@@ -352,6 +353,8 @@ object UpdateClient {
                 readTimeout = TIMEOUT_MILLIS
                 instanceFollowRedirects = true
                 requestMethod = "GET"
+                useCaches = false
+                setRequestProperty("Cache-Control", "no-cache")
             }
         } catch (failure: Exception) {
             HydraLog.warn(AREA, "an update address could not be opened", failure)

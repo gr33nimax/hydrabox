@@ -378,4 +378,12 @@ Logs are stored locally until the user exports or sends them. Review exported fi
     <string name="latency_no_edge">no TURN edge yet</string>
     <string name="latency_edge_unsupported">edge is not UDP</string>
     <string name="latency_not_measured">not measured</string>
+    <string name="settings_tv_mode">TV mode</string>
+    <string name="settings_tv_auto">Detected automatically for this device</string>
+    <string name="settings_tv_manual">Manual selection</string>
+    <string name="settings_tv_reset">Use automatic detection</string>
+    <string name="update_available_title">Update available</string>
+    <string name="update_available_body">HydraBox %1$s is available. Open settings to download and install it.</string>
+    <string name="update_open_settings">Open updates</string>
+    <string name="update_later">Later</string>
 </resources>

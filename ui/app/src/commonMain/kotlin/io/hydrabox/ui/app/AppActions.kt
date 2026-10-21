@@ -63,6 +63,7 @@ data class AppActions(
     val onDownloadUpdate: () -> Unit = {},
     val onInstallUpdate: () -> Unit = {},
     val onSetAppearance: (Appearance) -> Unit = {},
+    val onSetTvMode: (Boolean?) -> Unit = {},
     val onSetLanguage: (Language) -> Unit = {},
     val onToggleApp: (String) -> Unit = {},
     val onLoadApps: () -> Unit = {},

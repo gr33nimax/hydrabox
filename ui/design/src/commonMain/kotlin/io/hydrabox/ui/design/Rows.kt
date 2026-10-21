@@ -90,14 +90,14 @@ fun HydraRow(
         enabled = onClick != null,
         shape = MaterialTheme.shapes.small,
         color = tone,
-        modifier = modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
+        modifier = modifier.fillMaxWidth().tvFocusOutline().semantics(mergeDescendants = true) {},
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(UiTokens.spacing * 1.5f),
             modifier =
                 Modifier
-                    .heightIn(min = 48.dp)
+                    .heightIn(min = if (LocalTvMode.current) 60.dp else 48.dp)
                     .padding(horizontal = UiTokens.spacing * 2, vertical = UiTokens.spacing * 1.25f),
         ) {
             when {
@@ -234,12 +234,12 @@ fun FactRow(
         onClick = onClick,
         shape = MaterialTheme.shapes.small,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
-        modifier = modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
+        modifier = modifier.fillMaxWidth().tvFocusOutline().semantics(mergeDescendants = true) {},
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.heightIn(min = 48.dp).padding(start = 16.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
+            modifier = Modifier.heightIn(min = if (LocalTvMode.current) 60.dp else 48.dp).padding(start = 16.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
         ) {
             Column(
                 modifier = Modifier.weight(1f),

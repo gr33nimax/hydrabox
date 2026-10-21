@@ -36,7 +36,7 @@ class UpdateDownloadTest {
 
     @Test
     fun `the release and build code name the file in Downloads`() {
-        assertEquals("hydrabox-2.0.0-canary.5-209.apk", UpdateClient.fileName(manifest("2.0.0-canary.5")))
+        assertEquals("hydrabox-2.0.0-canary.5-209-000000000000.apk", UpdateClient.fileName(manifest("2.0.0-canary.5")))
     }
 
     @Test
@@ -48,6 +48,14 @@ class UpdateDownloadTest {
         assertTrue(downloaded.matches(previous))
         assertFalse(downloaded.matches(offered))
         assertNotEquals(UpdateClient.fileName(previous), UpdateClient.fileName(offered))
+    }
+
+    @Test
+    fun `different ABI artifacts of the same release have separate destinations`() {
+        val universal = manifest("2.1.1", 228, "v2.1.1-stable.1", "aa".repeat(32))
+        val arm = universal.copy(apkUrl = "https://example.invalid/arm.apk", sha256 = "bb".repeat(32))
+        assertNotEquals(UpdateClient.fileName(universal), UpdateClient.fileName(arm))
+        assertFalse(ApkDownloadReference(7L, 228, universal.sha256).matches(arm))
     }
 
     @Test
@@ -68,7 +76,7 @@ class UpdateDownloadTest {
         val file = UpdateClient.fileName(manifest("2.1.0", releaseTag = "v../outside\\apk"))
         assertFalse(file.contains('/'))
         assertFalse(file.contains('\\'))
-        assertTrue(file.endsWith("-209.apk"))
+        assertTrue(file.endsWith("-209-000000000000.apk"))
     }
 
     @Test

@@ -157,6 +157,7 @@ data class UpdateSummary(
     val reachable: Boolean = true,
     /** The version a verified manifest offers, or null when there is nothing to install. */
     val availableVersion: String? = null,
+    val availableReleaseTag: String? = null,
     /**
      * Whether the verified file is already on the device. Checking never fetches anything, so a
      * release found now and one fetched in an earlier visit are the same offer until this says
@@ -214,6 +215,8 @@ data class SettingsSummary(
     val bypassLocalNetwork: Boolean = true,
     val appsMode: AppsMode = AppsMode.BYPASS_SELECTED,
     val appearance: Appearance = Appearance.SYSTEM,
+    val tvModeOverride: Boolean? = null,
+    val tvDetected: Boolean = false,
     val language: Language = Language.SYSTEM,
     /** The local proxy replaces the system tunnel: 1.x called it proxy-only. */
     val proxyOnly: Boolean = false,

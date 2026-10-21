@@ -249,6 +249,19 @@ fun SettingsScreen(
             }
         }
         SectionGroup(stringResource(Res.string.settings_interface)) {
+            ToggleRow(
+                title = stringResource(Res.string.settings_tv_mode),
+                supporting = stringResource(if (settings?.tvModeOverride == null) Res.string.settings_tv_auto else Res.string.settings_tv_manual),
+                checked = settings?.tvModeOverride ?: (settings?.tvDetected == true),
+                onCheckedChange = { actions.onSetTvMode(it) },
+            )
+            if (settings?.tvModeOverride != null) {
+                ValueRow(
+                    title = stringResource(Res.string.settings_tv_reset),
+                    value = null,
+                    onClick = { actions.onSetTvMode(null) },
+                )
+            }
             ValueRow(stringResource(Res.string.settings_appearance), null, onClick = onOpenAppearance)
         }
         SectionGroup(stringResource(Res.string.settings_support)) {

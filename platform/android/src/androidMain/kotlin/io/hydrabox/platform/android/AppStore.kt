@@ -77,7 +77,7 @@ class AppStore(
 
     /** Whether the pre-4 journal blob has already been emptied in this process. */
     @Volatile private var legacyJournalDropped = false
-    private val settingsStore = SettingsStore(database, codec, codec)
+    private val settingsStore = SettingsStore(database, codec, codec, defaultUpdateChannel())
     private val backups = BackupService(database)
     private val transfer = BackupTransfer(codec, codec)
     private val queries = database.storageDatabaseQueries
@@ -194,6 +194,8 @@ class AppStore(
                     SplitRoutingMode.BYPASS_SELECTED -> AppsMode.BYPASS_SELECTED
                     SplitRoutingMode.ONLY_SELECTED -> AppsMode.ONLY_SELECTED
                 },
+            tvModeOverride = settings.tvModeOverride,
+            tvDetected = isTelevision(appContext),
             appearance =
                 when (settings.themeMode) {
                     ThemeMode.SYSTEM -> Appearance.SYSTEM
@@ -249,12 +251,13 @@ class AppStore(
 
     private fun loadInstalledApps(): List<io.hydrabox.core.projection.InstalledApp> {
         val manager = appContext.packageManager
-        val intent =
-            android.content
-                .Intent(android.content.Intent.ACTION_MAIN)
-                .addCategory(android.content.Intent.CATEGORY_LAUNCHER)
-        return manager
-            .queryIntentActivities(intent, 0)
+        val activities = listOf(
+            android.content.Intent.CATEGORY_LAUNCHER,
+            android.content.Intent.CATEGORY_LEANBACK_LAUNCHER,
+        ).flatMap { category ->
+            manager.queryIntentActivities(android.content.Intent(android.content.Intent.ACTION_MAIN).addCategory(category), 0)
+        }
+        return activities
             .mapNotNull { resolved ->
                 val activity = resolved.activityInfo ?: return@mapNotNull null
                 val name = activity.packageName
@@ -1234,7 +1237,7 @@ class AppStore(
      * and changed the location-lookup budget, so "reset" produced a device that had never been
      * possible and a database error quietly changed the routing policy.
      */
-    private fun defaultSettings() = SettingsCodec().decode(emptyMap())
+    private fun defaultSettings() = SettingsCodec(defaultUpdateChannel()).decode(emptyMap())
 
     private companion object {
         const val AREA = "sources"
@@ -1280,3 +1283,5 @@ class AppStore(
  */
 internal fun RuleSetPaths?.toRouteData(): RouteData =
     this?.let { RouteData(adBlockPath = it.block, adBlockAllowPath = it.allow) } ?: RouteData.None
+
+private fun defaultUpdateChannel() = if (BuildConfig.UPDATE_CHANNEL == "canary") SettingsUpdateChannel.CANARY else SettingsUpdateChannel.STABLE

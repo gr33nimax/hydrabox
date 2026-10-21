@@ -1,11 +1,6 @@
 name: HydraBox 2 · Android release
 
-# Cuts a signed APK of the Kotlin client from the current branch.
-#
-# Its own pipeline, separate from the Flutter 1.x line: those releases still exist and still have
-# their own update channel, and 1.x clients read the newest release to find it. A 2.x release is
-# therefore published as a prerelease and carries no update manifest, so nothing about it can be
-# mistaken for the older line's channel.
+# Builds signed universal and ABI-specific APKs with one backwards-compatible update manifest.
 
 on:
   # The core publishes a release and dispatches this event to build the matching client channel:
@@ -42,14 +37,13 @@ permissions:
   contents: write
 
 concurrency:
-  # Keyed by the channel a dispatch asked for, so a canary build and a stable build queue behind
-  # each other instead of sharing one slot (a dispatch's github.ref is always the default branch).
-  group: hydrabox2-release-${{ github.event.client_payload.channel || github.ref }}
+  # Serialize channel releases so the shared versionCode counter cannot race.
+  group: hydrabox2-release
   cancel-in-progress: false
 
 jobs:
   release:
-    name: Build the signed APK
+    name: Build and verify universal and ABI APKs
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -158,6 +152,19 @@ jobs:
             echo "::error title=Version not resolved::ни hydraboxVersionName, ни hydraboxVersionCode не найдены в $properties"
             exit 1
           fi
+          # Every published build must be offered to existing installs, including recuts.
+          if ! [[ "$code" =~ ^[1-9][0-9]*$ ]]; then echo "::error::Invalid versionCode"; exit 1; fi
+          highest=$((code - 1))
+          for line in stable canary; do
+            document=$(gh api "repos/$GITHUB_REPOSITORY/contents/update/$line.json?ref=$line" --jq .content)
+            published=$(printf '%s' "$document" | base64 -d | python3 -c 'import json,sys; print(json.load(sys.stdin)["versionCode"])')
+            if [ "$published" -gt "$highest" ]; then highest=$published; fi
+          done
+          if [ -z "${INPUT_CODE:-}" ]; then code=$((highest + 1)); fi
+          if ! [[ "$code" =~ ^[1-9][0-9]*$ ]] || [ "$code" -le "$highest" ]; then
+            echo "::error::versionCode must exceed every published channel build ($highest)"
+            exit 1
+          fi
           # The version name is the product's semver and carries no channel; the channel was decided
           # before checkout. What is verified here is the branch actually on disk: a dispatch's event
           # ref is the default branch, so comparing against GITHUB_REF would refuse every dispatch.
@@ -179,6 +186,7 @@ jobs:
           counter="${INPUT_COUNTER:-}"
           if [ -z "$counter" ]; then
             highest=0
+            release_tags=$(gh release list --limit 100 --json tagName --jq '.[].tagName')
             while read -r tag; do
               case "$tag" in
                 *-"$channel".*)
@@ -189,7 +197,7 @@ jobs:
                   esac
                   ;;
               esac
-            done < <(gh release list --limit 100 --json tagName --jq '.[].tagName')
+            done <<< "$release_tags"
             counter=$((highest + 1))
           fi
           if ! [[ "$counter" =~ ^[1-9][0-9]*$ ]]; then
@@ -244,7 +252,9 @@ jobs:
           chmod 600 local.properties
 
       - name: Run the client checks
-        run: ./gradlew ciCheck --stacktrace
+        run: |
+          python3 -m unittest discover -s .github/scripts -p "test_*.py"
+          ./gradlew ciCheck --stacktrace
 
       - name: Build the release APK
         env:
@@ -271,7 +281,7 @@ jobs:
           set -euo pipefail
           build_tools=$(find "${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools" -maxdepth 2 -name apksigner | sort | tail -1)
           aapt=$(find "${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools" -maxdepth 2 -name aapt2 | sort | tail -1)
-          apk=$(find platform/android/build/outputs/apk/release -name '*.apk' | head -1)
+          for apk in platform/android/build/outputs/apk/release/*.apk; do
           if [ -z "$apk" ]; then
             echo "::error title=No APK::сборка не оставила артефакта"
             exit 1
@@ -291,6 +301,7 @@ jobs:
           echo "APK: $apk, версия $reported_name ($reported_code), сертификат совпадает"
           # The channel manifest has to name the certificate that signed this artifact, and the
           # figure is already in hand here.
+          done
           echo "cert=$digest" >> "$GITHUB_OUTPUT"
 
       - name: Collect the artifacts
@@ -299,15 +310,9 @@ jobs:
           TAG: ${{ steps.version.outputs.tag }}
         run: |
           set -euo pipefail
-          apk=$(find platform/android/build/outputs/apk/release -name '*.apk' | head -1)
-          mkdir -p release
-          cp "$apk" "release/hydrabox-$TAG-arm64-v8a.apk"
-          # The mapping file is what makes a crash report readable; it stays in the run's
-          # artifacts rather than in the release, where it would help nobody but a reader.
+          python3 .github/scripts/release_artifacts.py collect
           mapping=platform/android/build/outputs/mapping/release/mapping.txt
           if [ -f "$mapping" ]; then cp "$mapping" release/mapping.txt; fi
-          sha256sum "release/hydrabox-$TAG-arm64-v8a.apk" > release/SHA256SUMS
-          echo "sha256=$(cut -d' ' -f1 release/SHA256SUMS)" >> "$GITHUB_OUTPUT"
           cat release/SHA256SUMS
 
       - name: Upload the artifacts
@@ -324,7 +329,6 @@ jobs:
           CHANNEL: ${{ steps.version.outputs.channel }}
           TAG: ${{ steps.version.outputs.tag }}
           NAME: ${{ steps.version.outputs.name }}
-          SHA: ${{ steps.collect.outputs.sha256 }}
         run: |
           set -euo pipefail
           notes=$(mktemp)
@@ -333,7 +337,7 @@ jobs:
             echo
             echo "- коммит приложения: $(git rev-parse HEAD)"
             echo "- коммит ядра: $(git -C hydracore rev-parse HEAD)"
-            echo "- APK SHA-256: $SHA"
+            echo "- universal, arm64-v8a, armeabi-v7a, x86_64; контрольные суммы — в SHA256SUMS"
           } > "$notes"
           # The 1.x Flutter line is retired (owner decision), so a stable 2.x release is a real
           # release, marked latest. canary stays a prerelease: it is a prerelease by nature, and
@@ -367,7 +371,6 @@ jobs:
           NAME: ${{ steps.version.outputs.name }}
           TAG: ${{ steps.version.outputs.tag }}
           CODE: ${{ steps.version.outputs.code }}
-          SHA: ${{ steps.collect.outputs.sha256 }}
           CERT: ${{ steps.verify.outputs.cert }}
           KEY_ID: ${{ vars.HYDRABOX_UPDATE_KEY_ID }}
           PRIVATE_KEY: ${{ secrets.HYDRABOX_UPDATE_ED25519_PRIVATE_KEY }}
@@ -385,7 +388,7 @@ jobs:
             echo "::error title=Channel and branch disagree::канал $CHANNEL публикуется только из ветки $CHANNEL, а собран '$actual_branch'"
             exit 1
           fi
-          for value in KEY_ID PRIVATE_KEY SHA CERT; do
+          for value in KEY_ID PRIVATE_KEY CERT; do
             if [ -z "${!value:-}" ]; then
               echo "::error title=Missing update signing material::$value не задан"
               exit 1
@@ -394,19 +397,7 @@ jobs:
 
           mkdir -p update
           manifest="update/$CHANNEL.json"
-          {
-            printf '{\n'
-            printf '  "schema": 1,\n'
-            printf '  "channel": "%s",\n' "$CHANNEL"
-            printf '  "versionCode": %s,\n' "$CODE"
-            printf '  "versionName": "%s",\n' "$NAME"
-            printf '  "releaseTag": "%s",\n' "$TAG"
-            printf '  "apkUrl": "https://github.com/%s/releases/download/%s/hydrabox-%s-arm64-v8a.apk",\n' "$GITHUB_REPOSITORY" "$TAG" "$TAG"
-            printf '  "sha256": "%s",\n' "$SHA"
-            printf '  "certificateSha256": "%s",\n' "$CERT"
-            printf '  "keyId": "%s"\n' "$KEY_ID"
-            printf '}\n'
-          } > "$manifest"
+          python3 .github/scripts/release_artifacts.py manifest
 
           # The signature is detached and lives beside the document. A signature inside the bytes it
           # signs cannot be checked without re-serialising them, and re-serialising is how two
