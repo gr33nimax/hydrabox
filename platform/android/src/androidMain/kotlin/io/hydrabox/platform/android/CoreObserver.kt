@@ -65,15 +65,6 @@ class CoreObserver(
      * after paying to carry it across.
      */
     private val onLog: (Int, String) -> Unit = { _, _ -> },
-    /**
-     * Which outbound the core reports as the one in use, per group, whenever that is published.
-     *
-     * The core's own answer is the only trustworthy one. `SelectOutbound` writes the choice into
-     * the cache file, and on the next start `outboundSelect` reads the cache **before** it looks
-     * at the configuration's `default` — so a server chosen once keeps being used after the
-     * person has chosen a different one, while every screen shows the new name.
-     */
-    private val onSelected: (String, String) -> Unit = { _, _ -> },
     private val isCallTransport: (String) -> Boolean = { false },
     private val staleAfterMillis: () -> Long = { 0 },
 ) {
@@ -276,14 +267,18 @@ class CoreObserver(
     fun select(
         group: String,
         outbound: String,
-    ): Boolean = runCatching { requireNotNull(current()).selectOutbound(group, outbound) }.isSuccess
+    ): Boolean {
+        return runCatching { requireNotNull(current()).selectOutbound(group, outbound) }.isSuccess
+    }
 
     /** Reads one fresh core snapshot, used after Doze before deciding whether recovery is needed. */
-    fun refresh(): Boolean {
-        val active = observation
+    fun refresh(): Boolean = refresh(observation)
+
+    private fun refresh(active: Observation): Boolean {
+        if (!isCurrent(active)) return false
         val snapshot = runCatching { requireNotNull(current()).getRuntimeSnapshot() }.getOrNull() ?: return false
         handleSnapshot(active, snapshot)
-        return true
+        return isCurrent(active)
     }
 
     private fun current(): CommandClient? = synchronized(clientLock) { client }
@@ -447,7 +442,6 @@ class CoreObserver(
             group.selected?.takeIf { it.isNotEmpty() }?.let {
                 if (group.tag == io.hydrabox.core.config.SELECTOR_TAG) current.selectedTag = it
                 if (group.tag == io.hydrabox.core.config.AUTO_TAG) current.autoTag = it
-                onSelected(group.tag.orEmpty(), it)
                 dispatch(
                     RuntimeInput.SelectionObserved(
                         commandGeneration = current.generation,

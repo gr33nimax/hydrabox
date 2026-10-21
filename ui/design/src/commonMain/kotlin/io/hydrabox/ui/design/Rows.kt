@@ -3,6 +3,8 @@ package io.hydrabox.ui.design
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -80,6 +82,7 @@ fun HydraRow(
     onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     titleMaxLines: Int = 2,
+    leadingContent: @Composable (() -> Unit)? = null,
     trailing: @Composable (() -> Unit)? = null,
 ) {
     Surface(
@@ -87,17 +90,18 @@ fun HydraRow(
         enabled = onClick != null,
         shape = MaterialTheme.shapes.small,
         color = tone,
-        modifier = modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
+        modifier = modifier.fillMaxWidth().tvFocusOutline().semantics(mergeDescendants = true) {},
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(UiTokens.spacing * 1.5f),
             modifier =
                 Modifier
-                    .heightIn(min = 48.dp)
+                    .heightIn(min = if (LocalTvMode.current) 60.dp else 48.dp)
                     .padding(horizontal = UiTokens.spacing * 2, vertical = UiTokens.spacing * 1.25f),
         ) {
             when {
+                leadingContent != null -> leadingContent()
                 leadingFlag != null -> {
                     Text(
                         leadingFlag,
@@ -145,11 +149,15 @@ fun ToggleRow(
     onCheckedChange: (Boolean) -> Unit,
     enabled: Boolean = true,
     leading: ImageVector? = null,
+    titleMaxLines: Int = 2,
+    leadingContent: @Composable (() -> Unit)? = null,
 ) {
     HydraRow(
         title = title,
         supporting = supporting,
         leading = leading,
+        titleMaxLines = titleMaxLines,
+        leadingContent = leadingContent,
         onClick = if (enabled) ({ onCheckedChange(!checked) }) else null,
         trailing = { Switch(checked = checked, onCheckedChange = null, enabled = enabled) },
     )
@@ -203,14 +211,8 @@ fun MetricTile(
     }
 }
 
-/**
- * One fact and its value on a single line, with the screen it belongs to behind the chevron.
- *
- * A [ValueRow] stacks its value under its name, which is right for a setting whose name is
- * the subject. An instrument is the other way round: the name is a label a person reads
- * once and the value is what they came for, so the two share a line and the value takes the
- * right edge, where the eye can run down a column of them.
- */
+/** A reading uses the full width; its quiet label sits above the value. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun FactRow(
     label: String,
@@ -220,62 +222,116 @@ fun FactRow(
     accent: Color? = null,
     trailingIcon: ImageVector = HydraIcons.Chevron,
     modifier: Modifier = Modifier,
+    valueMaxLines: Int = 1,
+    detailMaxLines: Int = 1,
+    secondaryDetail: String? = null,
+    valueDetail: String? = null,
+    headerDetail: String? = null,
+    headerIcon: ImageVector? = null,
+    flag: String? = null,
 ) {
     Surface(
         onClick = onClick,
         shape = MaterialTheme.shapes.small,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
-        modifier = modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
+        modifier = modifier.fillMaxWidth().tvFocusOutline().semantics(mergeDescendants = true) {},
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(UiTokens.spacing * 1.5f),
-            modifier =
-                Modifier
-                    .heightIn(min = 48.dp)
-                    .padding(
-                        start = UiTokens.spacing * 2,
-                        end = UiTokens.spacing * 1.5f,
-                        top = UiTokens.spacing * 1.25f,
-                        bottom = UiTokens.spacing * 1.25f,
-                    ),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.heightIn(min = if (LocalTvMode.current) 60.dp else 48.dp).padding(start = 16.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
         ) {
-            Text(
-                label,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-            )
             Column(
                 modifier = Modifier.weight(1f),
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(1.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Text(
-                    value,
-                    style = UiTokens.figures(MaterialTheme.typography.bodyMedium),
-                    color = accent ?: MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.End,
-                )
-                detail?.let {
-                    Text(
-                        it,
-                        style = UiTokens.figures(MaterialTheme.typography.labelMedium),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.End,
-                    )
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    headerDetail?.let {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                            headerIcon?.let { icon ->
+                                Icon(icon, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                            }
+                            Text(
+                                it,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (headerIcon != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+                // Related values stay together. On narrow screens the extra value moves
+                // below as a whole instead of forming a distant second column.
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    if (flag != null) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Top) {
+                            Text(flag, style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                value,
+                                modifier = Modifier.weight(1f),
+                                style = UiTokens.figures(MaterialTheme.typography.bodyMedium),
+                                color = accent ?: MaterialTheme.colorScheme.onSurface,
+                                maxLines = valueMaxLines,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    } else {
+                        Text(
+                            value,
+                            modifier = Modifier.alignByBaseline(),
+                            style = UiTokens.figures(MaterialTheme.typography.bodyMedium),
+                            color = accent ?: MaterialTheme.colorScheme.onSurface,
+                            maxLines = valueMaxLines,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    valueDetail?.let {
+                        Text(
+                            it,
+                            modifier = Modifier.alignByBaseline(),
+                            style = UiTokens.figures(MaterialTheme.typography.labelMedium),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                if (detail != null || secondaryDetail != null) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        detail?.let {
+                            Text(
+                                it,
+                                style = UiTokens.figures(MaterialTheme.typography.labelMedium),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = detailMaxLines,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        secondaryDetail?.let {
+                            Text(
+                                it,
+                                style = UiTokens.figures(MaterialTheme.typography.labelMedium),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
                 }
             }
-            Icon(
-                trailingIcon,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Icon(trailingIcon, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

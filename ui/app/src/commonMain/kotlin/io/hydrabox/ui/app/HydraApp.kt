@@ -3,6 +3,7 @@ package io.hydrabox.ui.app
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -29,6 +30,8 @@ import io.hydrabox.ui.app.resources.Res
 import io.hydrabox.ui.design.AppShell
 import io.hydrabox.ui.design.DetailScreen
 import io.hydrabox.ui.design.HydraIcons
+import io.hydrabox.ui.design.ConfirmDialog
+import io.hydrabox.ui.design.TvPresentation
 import io.hydrabox.ui.design.HydraTheme
 import io.hydrabox.ui.design.LoadingRows
 import io.hydrabox.ui.design.ShellDestination
@@ -86,7 +89,7 @@ class AppNavigation {
 }
 
 @Composable
-fun HydraApp(
+private fun HydraAppContent(
     state: ScreenState,
     actions: AppActions = AppActions(),
     navigation: AppNavigation = remember { AppNavigation() },
@@ -104,6 +107,23 @@ fun HydraApp(
     // colours, or one of the two fixed Material ones.
     HydraTheme(dark = dark, platformColours = appearance == Appearance.SYSTEM) {
         val snackbar = remember { SnackbarHostState() }
+        var dismissedUpdate by remember { mutableStateOf<String?>(null) }
+        val offered = state.update.availableReleaseTag ?: state.update.availableVersion
+        if (offered != null && offered != dismissedUpdate &&
+            (navigation.route != Route.Main || navigation.tab != Tab.SETTINGS)) {
+            ConfirmDialog(
+                title = stringResource(Res.string.update_available_title),
+                body = stringResource(Res.string.update_available_body, state.update.availableVersion.orEmpty()),
+                confirmLabel = stringResource(Res.string.update_open_settings),
+                dismissLabel = stringResource(Res.string.update_later),
+                onConfirm = {
+                    dismissedUpdate = offered
+                    while (navigation.back()) { }
+                    navigation.tab = Tab.SETTINGS
+                },
+                onDismiss = { dismissedUpdate = offered },
+            )
+        }
         // "I will do this later" has to lead somewhere: the flow steps aside for this run,
         // and the home screen then asks for a subscription in its own words.
         var postponed by remember { mutableStateOf(false) }
@@ -257,15 +277,16 @@ private fun MainShell(
         selected = navigation.tab.ordinal,
         onSelect = { navigation.tab = Tab.entries[it] },
         snackbarHostState = snackbar,
-    ) { shell ->
+    ) { page, shell ->
+        val tab = Tab.entries[page]
         // One scroll position per tab. A shared one carried the servers list's offset into
         // settings, which is how a tab could open already scrolled past its own first row.
-        key(navigation.tab) {
+        key(tab) {
             Column(
                 modifier =
                     Modifier
                         .fillMaxSize()
-                        .then(if (navigation.tab == Tab.SERVERS) Modifier else Modifier.verticalScroll(rememberScrollState())),
+                        .then(if (tab == Tab.SERVERS) Modifier else Modifier.verticalScroll(rememberScrollState())),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Column(
@@ -276,15 +297,18 @@ private fun MainShell(
                             } else {
                                 Modifier.widthIn(max = 720.dp).fillMaxWidth()
                             }
-                            // A list needs room to clear the status bar and to end above the
-                            // navigation bar; the home screen centres itself in what is left and
-                            // must not be pushed off centre by either.
+                            // Scrollable content keeps its full viewport behind the capsule.
+                            // Only its end needs clearance, so the last item can be reached.
                         ).padding(
-                            top = if (navigation.tab == Tab.HOME) 0.dp else UiTokens.spacing,
-                            bottom = if (navigation.tab == Tab.HOME) 0.dp else UiTokens.spacing * 3,
+                            top = if (tab == Tab.SETTINGS) UiTokens.spacing else 0.dp,
+                            bottom = when (tab) {
+                                Tab.HOME -> shell.bottomPadding
+                                Tab.SERVERS -> 0.dp
+                                Tab.SETTINGS -> shell.bottomPadding + UiTokens.spacing * 3
+                            },
                         ),
                 ) {
-                    when (navigation.tab) {
+                    when (tab) {
                         Tab.HOME -> {
                             HomeScreen(
                                 state = state,
@@ -295,7 +319,7 @@ private fun MainShell(
                                 onOpenSources = { navigation.open(Route.Sources) },
                                 onOpenMode = { navigation.tab = Tab.SETTINGS },
                                 width = shell.widthDp,
-                                height = shell.height,
+                                height = (shell.height - shell.bottomPadding).coerceAtLeast(0.dp),
                             )
                         }
 
@@ -304,6 +328,7 @@ private fun MainShell(
                                 state = state,
                                 actions = actions,
                                 onOpenSources = { navigation.open(Route.Sources) },
+                                contentPadding = PaddingValues(top = UiTokens.spacing, bottom = shell.bottomPadding + UiTokens.spacing * 3),
                             )
                         }
 
@@ -362,4 +387,17 @@ private fun NoticeHost(
             actions.onNoticeShown()
         }
     }
+}
+
+
+@Composable
+fun HydraApp(
+    state: ScreenState,
+    actions: AppActions = AppActions(),
+    navigation: AppNavigation = remember { AppNavigation() },
+    versionName: String = "",
+    coreVersion: String = "",
+) {
+    val tv = state.settings?.let { it.tvModeOverride ?: it.tvDetected } == true
+    TvPresentation(tv) { HydraAppContent(state, actions, navigation, versionName, coreVersion) }
 }

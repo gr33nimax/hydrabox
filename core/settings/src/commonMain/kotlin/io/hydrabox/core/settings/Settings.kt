@@ -25,7 +25,7 @@ const val DEFAULT_PROXY_PORT = 2080
 
 enum class PerformanceMode { STANDARD, ECONOMY }
 
-enum class NotificationTrafficDisplayMode { SPEED, TOTAL, BOTH }
+enum class NotificationTrafficDisplayMode { SPEED, TOTAL, BOTH, STATUS }
 
 enum class TlsFragmentationMode { DISABLED, RECORD, FRAGMENT }
 
@@ -101,6 +101,8 @@ data class Settings(
      * between any more — see [DYNAMIC_COLOUR] for what that costs an old setting.
      */
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    /** Null follows the device; a manual choice survives restarts. */
+    val tvModeOverride: Boolean? = null,
     val language: AppLanguage = AppLanguage.SYSTEM,
     /** Rejects packets that would leave the tunnel behind its back. Stricter, and noisier. */
     val vpnStrictRoute: Boolean = false,
@@ -142,8 +144,9 @@ class SettingsStore(
     private val database: StorageDatabase,
     private val secretSealer: SecretSealer,
     private val secretOpener: SecretOpener,
+    defaultUpdateChannel: UpdateChannel = UpdateChannel.STABLE,
 ) {
-    private val codec = SettingsCodec()
+    private val codec = SettingsCodec(defaultUpdateChannel)
 
     fun load(): Settings {
         val rows = database.storageDatabaseQueries.selectAll().executeAsList()
@@ -162,7 +165,7 @@ class SettingsStore(
     }
 }
 
-class SettingsCodec {
+class SettingsCodec(private val defaultUpdateChannel: UpdateChannel = UpdateChannel.STABLE) {
     fun decode(
         values: Map<String, String>,
         proxyPassword: Secret? = null,
@@ -256,6 +259,7 @@ class SettingsCodec {
             statusNotificationEnabled = bool(STATUS_NOTIFICATION_ENABLED, true),
             notificationTrafficDisplayMode =
                 when (values[NOTIFICATION_TRAFFIC_DISPLAY_MODE]) {
+                    "status" -> NotificationTrafficDisplayMode.STATUS
                     "total" -> NotificationTrafficDisplayMode.TOTAL
                     "both" -> NotificationTrafficDisplayMode.BOTH
                     else -> NotificationTrafficDisplayMode.SPEED
@@ -332,8 +336,10 @@ class SettingsCodec {
             updateChannel =
                 when (values[UPDATE_CHANNEL]) {
                     "canary" -> UpdateChannel.CANARY
+                    null -> defaultUpdateChannel
                     else -> UpdateChannel.STABLE
                 },
+            tvModeOverride = when (values[TV_MODE]) { "1" -> true; "0" -> false; else -> null },
             pprofEnabled = bool(PPROF_ENABLED, false),
             dnsStrategy =
                 when (values[DNS_STRATEGY]) {
@@ -374,6 +380,7 @@ class SettingsCodec {
             BYPASS_LOCAL_NETWORK to flag(settings.bypassLocalNetwork),
             SPLIT_ROUTING_MODE to settings.splitRoutingMode.name.lowercase(),
             THEME_MODE to settings.themeMode.name.lowercase(),
+            TV_MODE to (settings.tvModeOverride?.let(::flag) ?: "auto"),
             LANGUAGE to settings.language.name.lowercase(),
             VPN_STRICT_ROUTE to flag(settings.vpnStrictRoute),
             VPN_TUN_IMPLEMENTATION to settings.vpnTunStack.name.lowercase(),
@@ -529,6 +536,7 @@ private const val BLOCK_LEAKS = "block_leaks"
 private const val BYPASS_LOCAL_NETWORK = "bypass_local_network"
 private const val SPLIT_ROUTING_MODE = "split_routing_mode"
 private const val THEME_MODE = "theme_mode"
+private const val TV_MODE = "tv_mode"
 private const val LANGUAGE = "app_language"
 private const val VPN_STRICT_ROUTE = "vpn_strict_route"
 private const val VPN_TUN_IMPLEMENTATION = "vpn_tun_implementation"

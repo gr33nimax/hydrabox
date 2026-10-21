@@ -72,6 +72,7 @@ fun decideUpdate(
     signatureVerified: Boolean,
     selectedChannel: String,
     installedVersionCode: Int,
+    supportedAbis: List<String> = emptyList(),
 ): UpdateDecision {
     if (!signatureVerified) return UpdateDecision.Refused(UpdateFault.UNVERIFIED)
     if (manifestBody.isBlank()) return UpdateDecision.Refused(UpdateFault.MALFORMED)
@@ -84,7 +85,7 @@ fun decideUpdate(
     // A document that is not newer is not a failure worth showing: switching release lines
     // legitimately points at an older build, and an equal version code is a reinstall Android
     // would refuse anyway.
-    return if (manifest.isNewerThan(installedVersionCode)) UpdateDecision.Available(manifest) else UpdateDecision.NoUpdate
+    return if (manifest.isNewerThan(installedVersionCode)) UpdateDecision.Available(manifest.forAbis(supportedAbis)) else UpdateDecision.NoUpdate
 }
 
 private fun ManifestFault.toUpdateFault(): UpdateFault =

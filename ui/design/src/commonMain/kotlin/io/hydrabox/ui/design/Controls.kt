@@ -45,7 +45,7 @@ fun PrimaryAction(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Button(onClick = onClick, enabled = enabled, modifier = modifier) {
+    Button(onClick = onClick, enabled = enabled, modifier = modifier.tvFocusOutline()) {
         Text(label, style = MaterialTheme.typography.labelLarge)
     }
 }
@@ -57,7 +57,7 @@ fun SecondaryAction(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    TextButton(onClick = onClick, enabled = enabled, modifier = modifier) { Text(label) }
+    TextButton(onClick = onClick, enabled = enabled, modifier = modifier.tvFocusOutline()) { Text(label) }
 }
 
 @Composable
@@ -67,7 +67,7 @@ fun TonalAction(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    FilledTonalButton(onClick = onClick, enabled = enabled, modifier = modifier) { Text(label) }
+    FilledTonalButton(onClick = onClick, enabled = enabled, modifier = modifier.tvFocusOutline()) { Text(label) }
 }
 
 /**
@@ -107,7 +107,7 @@ fun HydraField(
     singleLine = singleLine,
     minLines = minLines,
     shape = MaterialTheme.shapes.medium,
-    modifier = modifier.fillMaxWidth(),
+    modifier = modifier.fillMaxWidth().tvFocusOutline(),
 )
 
 /**
@@ -294,7 +294,7 @@ fun RefreshButton(
             IconButtonDefaults.iconButtonColors(
                 disabledContentColor = MaterialTheme.colorScheme.primary,
             ),
-        modifier = modifier,
+        modifier = modifier.tvFocusOutline(),
     ) {
         Icon(
             HydraIcons.Refresh,

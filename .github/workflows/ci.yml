@@ -27,9 +27,9 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - run: python3 .github/scripts/test_hydrate_libbox.py
+      - run: python3 -m unittest discover -s .github/scripts -p "test_*.py"
       - run: python3 .github/scripts/hydrate_libbox.py
-      - run: ./gradlew ciCheck --stacktrace
+      - run: ./gradlew ciCheck :platform:android:assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
         if: always()
         with:

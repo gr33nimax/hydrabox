@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.content.ServiceConnection
-import android.net.VpnService
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
@@ -102,6 +101,7 @@ class RuntimeControlActivity : ComponentActivity() {
     private var exitWatchdog: Runnable? = null
     private var exitRequest = 0L
     private var destroyed = false
+    private var preparingConnection = false
     private var refreshPending = false
     private var refreshAgain = false
     private var journalPending = false
@@ -135,6 +135,9 @@ class RuntimeControlActivity : ComponentActivity() {
      * rather than only the version a person sees.
      */
     private var pendingUpdate by mutableStateOf<UpdateManifest?>(null)
+    private val updateIo = Executors.newSingleThreadExecutor()
+    private var updateCheckGeneration = 0L
+    private val updateEntries by lazy { androidx.lifecycle.ViewModelProvider(this)[UpdateEntryState::class.java] }
 
     /**
      * Where the tunnel comes out. Probed once per connection and on demand, never on the main
@@ -245,6 +248,7 @@ class RuntimeControlActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         started = true
+        if (updateEntries.entry.enter()) checkForUpdates()
         bind()
         // What happened while nobody was looking arrives in one read, before the stream resumes.
         transport?.let { bound -> runCatching { bound.snapshot() }.getOrNull()?.let(::observe) }
@@ -261,6 +265,7 @@ class RuntimeControlActivity : ComponentActivity() {
 
     override fun onStop() {
         started = false
+        updateEntries.entry.leave(isChangingConfigurations)
         if (exit.checking) exitProbeHidden = true
         stopExitProbe()
         detach()
@@ -518,6 +523,8 @@ class RuntimeControlActivity : ComponentActivity() {
         destroyed = true
         stopExitProbe()
         exitReader.shutdownNow()
+        updateIo.shutdownNow()
+        updateCheckGeneration++
         detach()
         // The screens let go of the service through the same flag the release is tracked by, so
         // `onDestroy` after `onStop` is a no-op rather than a second unbind of a connection that
@@ -590,6 +597,7 @@ class RuntimeControlActivity : ComponentActivity() {
                     }.onFailure {
                         HydraLog.error(AREA, "the read model could not be assembled", it)
                         notice = Notice.OPERATION_FAILED
+                        if (withApps) stored = stored.copy(appsLoaded = true)
                     }
                 if (refreshAgain) {
                     refreshAgain = false
@@ -704,6 +712,70 @@ class RuntimeControlActivity : ComponentActivity() {
         exitWatchdog = watchdog
     }
 
+    private fun checkForUpdates() {
+        if (destroyed || updateState.checking) return
+        val request = ++updateCheckGeneration
+        // Read the chosen channel in order with settings writes, then leave the store executor free.
+        updateState = updateState.copy(checking = true)
+        io.execute {
+            val channel = runCatching { store.settings().updateChannel.name.lowercase() }.getOrDefault("stable")
+            main.post {
+                if (destroyed || request != updateCheckGeneration) return@post
+                updateState = UpdateSummary(checking = true)
+                pendingUpdate = null
+                // The screen reads the update state out of the read model, so the model has to be
+                // rebuilt for anything to appear at all. Assigning the field alone left the row
+                // unchanged, which made a running check look like a button that does nothing.
+                refresh()
+                updateIo.execute {
+                    val result = runCatching { UpdateClient.check(channel) }.getOrElse { UpdateCheck.Unreachable }
+                    // A check is not a fetch. The verified release is reported, and what is asked
+                    // here is only what is already on the device: a file fetched in an earlier
+                    // visit can be installed at once, and one that is not here waits for its own
+                    // press. Downloading on the check's own initiative took the choice away.
+                    val offered = (result as? UpdateCheck.Decided)?.decision as? UpdateDecision.Available
+                    val state =
+                        offered?.let { decision ->
+                            UpdateClient.apkState(this@RuntimeControlActivity, decision.manifest)
+                        }
+                    main.post result@{
+                        if (destroyed || request != updateCheckGeneration) return@result
+                        when (result) {
+                            UpdateCheck.Unreachable -> {
+                                updateState = UpdateSummary(reachable = false)
+                            }
+
+                            is UpdateCheck.Decided -> {
+                                when (val decision = result.decision) {
+                                    is UpdateDecision.Available -> {
+                                        pendingUpdate = decision.manifest
+                                        updateState =
+                                            UpdateSummary(
+                                                availableVersion = decision.manifest.versionName,
+                                                availableReleaseTag = decision.manifest.releaseTag,
+                                                checked = true,
+                                                downloading = state is ApkState.Downloading,
+                                                ready = state is ApkState.Ready,
+                                            )
+                                    }
+
+                                    UpdateDecision.NoUpdate -> {
+                                        updateState = UpdateSummary(checked = true)
+                                    }
+
+                                    is UpdateDecision.Refused -> {
+                                        updateState = UpdateSummary(fault = decision.fault)
+                                    }
+                                }
+                            }
+                        }
+                        refresh()
+                    }
+                }
+            }
+        }
+    }
+
     private fun load(withApps: Boolean = false): AppReadModel {
         val settings = store.settings()
         return AppReadModel(
@@ -716,6 +788,7 @@ class RuntimeControlActivity : ComponentActivity() {
             diagnostics = diagnostics(),
             update = updateState,
             apps = if (withApps) store.installedApps() else emptyList(),
+            appsLoaded = withApps,
             ruleSets =
                 store.ruleSetStatus().let { status ->
                     val russia = store.russiaRuleSetStatus()
@@ -900,6 +973,7 @@ class RuntimeControlActivity : ComponentActivity() {
                             statusNotificationEnabled = detail != NotificationDetail.OFF,
                             notificationTrafficDisplayMode =
                                 when (detail) {
+                                    NotificationDetail.STATUS -> NotificationTrafficDisplayMode.STATUS
                                     NotificationDetail.TOTAL -> NotificationTrafficDisplayMode.TOTAL
 
                                     NotificationDetail.BOTH -> NotificationTrafficDisplayMode.BOTH
@@ -1059,6 +1133,7 @@ class RuntimeControlActivity : ComponentActivity() {
                 reconnectAware { store.saveSettings(store.settings().copy(pprofEnabled = enabled)) }
             },
             onSetUpdateChannel = { channel ->
+                updateCheckGeneration++
                 background(null) {
                     store.saveSettings(
                         store.settings().copy(
@@ -1074,62 +1149,7 @@ class RuntimeControlActivity : ComponentActivity() {
                 updateState = UpdateSummary()
                 pendingUpdate = null
             },
-            onCheckUpdate = {
-                val channel =
-                    store
-                        .settings()
-                        .updateChannel.name
-                        .lowercase()
-                updateState = UpdateSummary(checking = true)
-                pendingUpdate = null
-                // The screen reads the update state out of the read model, so the model has to be
-                // rebuilt for anything to appear at all. Assigning the field alone left the row
-                // unchanged, which made a running check look like a button that does nothing.
-                refresh()
-                io.execute {
-                    val result = runCatching { UpdateClient.check(channel) }.getOrElse { UpdateCheck.Unreachable }
-                    // A check is not a fetch. The verified release is reported, and what is asked
-                    // here is only what is already on the device: a file fetched in an earlier
-                    // visit can be installed at once, and one that is not here waits for its own
-                    // press. Downloading on the check's own initiative took the choice away.
-                    val offered = (result as? UpdateCheck.Decided)?.decision as? UpdateDecision.Available
-                    val state =
-                        offered?.let { decision ->
-                            UpdateClient.apkState(this@RuntimeControlActivity, decision.manifest)
-                        }
-                    main.post {
-                        when (result) {
-                            UpdateCheck.Unreachable -> {
-                                updateState = UpdateSummary(reachable = false)
-                            }
-
-                            is UpdateCheck.Decided -> {
-                                when (val decision = result.decision) {
-                                    is UpdateDecision.Available -> {
-                                        pendingUpdate = decision.manifest
-                                        updateState =
-                                            UpdateSummary(
-                                                availableVersion = decision.manifest.versionName,
-                                                checked = true,
-                                                downloading = state is ApkState.Downloading,
-                                                ready = state is ApkState.Ready,
-                                            )
-                                    }
-
-                                    UpdateDecision.NoUpdate -> {
-                                        updateState = UpdateSummary(checked = true)
-                                    }
-
-                                    is UpdateDecision.Refused -> {
-                                        updateState = UpdateSummary(fault = decision.fault)
-                                    }
-                                }
-                            }
-                        }
-                        refresh()
-                    }
-                }
-            },
+            onCheckUpdate = ::checkForUpdates,
             onDownloadUpdate = {
                 val manifest = pendingUpdate ?: return@AppActions
                 updateState = updateState.copy(downloading = true, installFault = null)
@@ -1188,6 +1208,9 @@ class RuntimeControlActivity : ComponentActivity() {
                     }
                 }
             },
+            onSetTvMode = { override ->
+                background(null) { store.saveSettings(store.settings().copy(tvModeOverride = override)) }
+            },
             onSetAppearance = { appearance ->
                 background(null) {
                     store.saveSettings(
@@ -1236,6 +1259,7 @@ class RuntimeControlActivity : ComponentActivity() {
             onToggleApp = { packageName -> reconnectAware { store.toggleExcludedApp(packageName) } },
             onLoadApps = {
                 showApps = true
+                store.invalidateInstalledApps()
                 refresh()
             },
             onRefreshExit = ::probeExit,
@@ -1414,19 +1438,28 @@ class RuntimeControlActivity : ComponentActivity() {
         }
 
     private fun prepareAndStart() {
+        if (preparingConnection) return
+        preparingConnection = true
         busy = OperationState.Running
         io.execute {
-            val ready = runCatching { store.generateConfig() != null }.getOrDefault(false)
+            val preparation = ConnectionStart.prepare(store)
             main.post {
+                if (destroyed) return@post
+                preparingConnection = false
                 busy = OperationState.Idle
-                if (!ready) {
-                    notice = Notice.SOURCE_EMPTY
-                    return@post
-                }
-                notice = null
-                // The system consent is about a tunnel. A local proxy port does not need
-                // one, so proxy-only starts without asking for it.
-                if (store.proxyOnly()) launch() else VpnService.prepare(this)?.let(permission::launch) ?: launch()
+                preparation.fold(
+                    onSuccess = { ready ->
+                        when (ready) {
+                            ConnectionPreparation.LegalRequired -> Unit
+                            ConnectionPreparation.SourceRequired -> notice = Notice.SOURCE_EMPTY
+                            is ConnectionPreparation.Ready -> {
+                                notice = null
+                                ConnectionStart.permission(this, ready)?.let(permission::launch) ?: launch()
+                            }
+                        }
+                    },
+                    onFailure = { notice = Notice.OPERATION_FAILED },
+                )
             }
         }
     }
@@ -1434,7 +1467,7 @@ class RuntimeControlActivity : ComponentActivity() {
     private fun launch() {
         notice = null
         permissionMissing = false
-        startForegroundService(Intent(this, HydraVpnService::class.java).setAction(HydraVpnService.ACTION_START))
+        ConnectionStart.launch(this)
         // The bind at resume may have found no service to connect to, or it may still belong to
         // the service that just stopped. A dead binding without BIND_AUTO_CREATE is not reconnected
         // when this start creates a new service, so replace it before waiting for the new snapshot.

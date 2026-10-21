@@ -101,9 +101,8 @@
     <string name="settings_diagnostics">Diagnostics</string>
     <string name="settings_saved">Saved</string>
     <string name="apps_title">Apps</string>
-    <string name="apps_select_first">Choose a mode first</string>
+    <string name="apps_empty">No launchable apps found.</string>
     <string name="apps_search">Search apps</string>
-    <string name="apps_load">Show installed apps</string>
     <string name="about_version">Version %1$s</string>
     <string name="about_core">Core %1$s</string>
     <string name="about_terms">Terms of use</string>
@@ -260,6 +259,7 @@ Logs are stored locally until the user exports or sends them. Review exported fi
     <string name="notice_rules_updated">Blocking list updated</string>
     <string name="notice_rules_failed">Could not update the blocking list</string>
     <string name="notification_off">Off</string>
+    <string name="notification_status">Status and server</string>
     <string name="notification_speed">Current speed</string>
     <string name="notification_total">Total volume</string>
     <string name="notification_both">Speed and volume</string>
@@ -357,8 +357,8 @@ Logs are stored locally until the user exports or sends them. Review exported fi
     <string name="home_mode_proxy">Proxy</string>
     <string name="home_plan_until">Until %1$s</string>
     <string name="home_plan_refresh_every">Auto-refresh every %1$d h</string>
-    <string name="home_plan_none">not added yet</string>
-    <string name="home_exit_unknown">address unknown</string>
+    <string name="home_plan_unknown">Unknown until a server is chosen</string>
+    <string name="home_value_unknown">—</string>
     <string name="home_rates">↓ %1$s   ↑ %2$s</string>
     <string name="home_mode_outside">%1$d apps outside</string>
     <string name="state_short_reconnecting">Restoring</string>
@@ -378,4 +378,12 @@ Logs are stored locally until the user exports or sends them. Review exported fi
     <string name="latency_no_edge">no TURN edge yet</string>
     <string name="latency_edge_unsupported">edge is not UDP</string>
     <string name="latency_not_measured">not measured</string>
+    <string name="settings_tv_mode">TV mode</string>
+    <string name="settings_tv_auto">Detected automatically for this device</string>
+    <string name="settings_tv_manual">Manual selection</string>
+    <string name="settings_tv_reset">Use automatic detection</string>
+    <string name="update_available_title">Update available</string>
+    <string name="update_available_body">HydraBox %1$s is available. Open settings to download and install it.</string>
+    <string name="update_open_settings">Open updates</string>
+    <string name="update_later">Later</string>
 </resources>

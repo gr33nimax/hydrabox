@@ -22,6 +22,7 @@ import io.hydrabox.core.contract.RuntimeMode
 import io.hydrabox.core.contract.RuntimeState
 import io.hydrabox.core.contract.TransportChallenge
 import io.hydrabox.core.contract.TransportHealth
+import io.hydrabox.core.projection.runningOutboundTag
 import io.hydrabox.core.runtime.Effect
 import io.hydrabox.core.runtime.RuntimeInput
 import io.hydrabox.core.settings.LogLevel
@@ -78,12 +79,15 @@ class HydraVpnService : VpnService() {
         java.util.concurrent.atomic
             .AtomicBoolean(false)
 
-    /** The state the notification currently shows, so it is not rewritten for nothing. */
-    private var posted: RuntimeState? = null
+    /** Static content changes still reach the notification when traffic display is off. */
+    private var posted: Triple<RuntimeState, Boolean, String?>? = null
 
     /** Read once per start: what the notification carries under the state, if anything. */
-    private var liveTraffic = true
+    private var notificationEnabled = true
     private var trafficDisplay = NotificationTrafficDisplayMode.SPEED
+    private val liveTraffic: Boolean
+        get() = notificationEnabled && trafficDisplay != NotificationTrafficDisplayMode.STATUS
+    private var notificationServerNames: Map<String, String> = emptyMap()
 
     /** The quietest core line the journal keeps. Read at start, from the chosen log level. */
     private var journalFloor = HydraLog.Level.WARN
@@ -195,17 +199,8 @@ class HydraVpnService : VpnService() {
             override fun connectSSHAgent(): Int = 0
         }
 
-    /**
-     * The outbound the person chose, as the tag the core knows it by, and how many times we have
-     * had to tell the core about it since this start.
-     *
-     * Kept here rather than read from the store on the groups callback, and reset on every core
-     * start so a stale intention cannot outlive the configuration it belonged to.
-     */
-    @Volatile private var wantedOutbound: String = io.hydrabox.core.config.AUTO_TAG
-    private val corrections =
-        java.util.concurrent.atomic
-            .AtomicInteger(0)
+    /** The selector choice applied by this service, used to detect a switch across the call boundary. */
+    @Volatile private var activeOutbound: String = io.hydrabox.core.config.AUTO_TAG
 
     /**
      * The workerless edge probes run on their own single thread: one question at a time is
@@ -240,36 +235,6 @@ class HydraVpnService : VpnService() {
      * Selection alone never did.
      */
     @Volatile private var recordedTurnEdge: Triple<String, Long, Long>? = null
-
-    /**
-     * Makes the core route through the server that was actually chosen.
-     *
-     * The core does not take the configuration's word for it. `Selector.outboundSelect` reads its
-     * cache file first and only falls back to `default`, and `SelectOutbound` writes to that cache
-     * on every switch — so once a server has been picked in place, every later start goes back to
-     * it while the screens, which read the app's own store, show the newer choice. That is the
-     * "chose one server, connected to another" report, and nothing in the app could see it before:
-     * the group message carries the core's answer and it was being thrown away.
-     */
-    private fun reconcileSelection(
-        group: String,
-        actual: String,
-    ) {
-        if (group != io.hydrabox.core.config.SELECTOR_TAG) return
-        // A change of selection is not an attribution: after a switch across the VK
-        // boundary the new transport has not allocated yet, and the edge on file still
-        // belongs to the previous one. The edge is filed when the new transport reports
-        // itself ready, not when the selector announces it.
-        val wanted = wantedOutbound
-        if (actual == wanted) return
-        if (corrections.incrementAndGet() > MAX_SELECTION_CORRECTIONS) return
-        HydraLog.warn(AREA, "the core is routing through $actual, not the chosen $wanted")
-        if (observer.select(group, wanted)) {
-            HydraLog.info(AREA, "the core now routes through $wanted")
-        } else {
-            HydraLog.error(AREA, "the core would not switch to $wanted")
-        }
-    }
 
     /**
      * When to read the core's global TURN edge record: only once a call transport of this
@@ -329,7 +294,6 @@ class HydraVpnService : VpnService() {
             CoreObserver(
                 dispatch = { input -> runtime.dispatch(input) },
                 onLog = ::recordCoreLine,
-                onSelected = ::reconcileSelection,
                 staleAfterMillis = { store.settings().urlTestIntervalSeconds * 1000L },
                 isCallTransport = { it in callTransportTags },
             )
@@ -400,9 +364,15 @@ class HydraVpnService : VpnService() {
             syncChallengeNotification(event.snapshot.challenge)
             // The counters tick once a second. Reposting the notification on every tick is
             // what the person turned off when they turned off the traffic display, so with it
-            // off the notification is rewritten only when the tunnel's state changes.
-            val changed = event.snapshot.state != posted
-            posted = event.snapshot.state
+            // off it is rewritten only when the state, readiness or server changes.
+            val content =
+                Triple(
+                    event.snapshot.state,
+                    event.snapshot.transportHealth.isReady,
+                    runningOutboundTag(event.snapshot) ?: event.snapshot.selectedOutbounds.firstOrNull()?.outboundId,
+                )
+            val changed = content != posted
+            posted = content
             if (changed || liveTraffic) startForeground(NOTIFICATION_ID, notification(event.snapshot.state))
         }
         // A network that moves under a running tunnel has to reach the runtime, or the core
@@ -896,8 +866,9 @@ class HydraVpnService : VpnService() {
      */
     private fun refreshSettings() {
         val settings = store.settings()
-        liveTraffic = settings.statusNotificationEnabled
+        notificationEnabled = settings.statusNotificationEnabled
         trafficDisplay = settings.notificationTrafficDisplayMode
+        notificationServerNames = store.serverGroups().flatMap { it.servers }.associate { it.id to it.displayName }
         val level = settings.logLevel
         journalFloor =
             when (level) {
@@ -977,7 +948,7 @@ class HydraVpnService : VpnService() {
                 val state = runtime.snapshot().state
                 if (state == RuntimeState.STOPPED || state == RuntimeState.FAILED) {
                     stopSelfResult(startId)
-                } else if (liveTraffic) {
+                } else if (notificationEnabled) {
                     startForeground(NOTIFICATION_ID, notification(state))
                 }
             }
@@ -1110,8 +1081,9 @@ class HydraVpnService : VpnService() {
         // Proxy-only means no system tunnel: the core opens a local port and nothing else,
         // which is 1.x's `proxy_inbound_enabled` without `vpn_inbound_enabled`.
         val settings = store.settings()
-        liveTraffic = settings.statusNotificationEnabled
+        notificationEnabled = settings.statusNotificationEnabled
         trafficDisplay = settings.notificationTrafficDisplayMode
+        notificationServerNames = store.serverGroups().flatMap { it.servers }.associate { it.id to it.displayName }
         journalFloor =
             when (settings.logLevel) {
                 LogLevel.OFF, LogLevel.ERROR -> HydraLog.Level.ERROR
@@ -1138,11 +1110,7 @@ class HydraVpnService : VpnService() {
             }
 
             is Effect.SelectCoreOutbound -> {
-                // The intention is recorded before the attempt, so the reconciliation that runs off
-                // the core's own group message knows what to compare against even if this fails.
-                val previous = wantedOutbound
-                wantedOutbound = effect.selection.outboundId
-                corrections.set(0)
+                val previous = activeOutbound
                 // A switch across the VK boundary cannot happen in place. In one direction the
                 // chosen route is not in the running configuration at all; in the other it is, and
                 // switching away would leave the transport's workers, calls and TURN allocations
@@ -1160,6 +1128,7 @@ class HydraVpnService : VpnService() {
                 } else {
                     // Applied inside the running core; a restart here would drop every connection.
                     val applied = observer.select(effect.selection.groupId, effect.selection.outboundId)
+                    if (applied) activeOutbound = effect.selection.outboundId
                     // Except for the one server the configuration deliberately does not carry: the VK
                     // transport is left out until it is chosen, so choosing it is the one switch that
                     // cannot happen in place.
@@ -1167,9 +1136,7 @@ class HydraVpnService : VpnService() {
                         if (store.isCallTransport(effect.selection.outboundId)) {
                             restartForSelection()
                         } else {
-                            // Not fatal and not silent: the store now says one thing and the core does
-                            // another, and this is the line that says so. The group message will bring
-                            // the core's answer round and the reconciliation corrects it from there.
+                            // Keep tracking the core's actual route when a requested switch fails.
                             HydraLog.warn(AREA, "the core refused the switch to ${effect.selection.outboundId}")
                         }
                     }
@@ -1266,10 +1233,8 @@ class HydraVpnService : VpnService() {
         HydraLog.info(AREA, "starting the core, command generation $commandGeneration")
         cancelSweep("executing a core start")
         var stage = StartStage.PREPARE
-        // The chosen server, as of this configuration. The core will announce what it actually
-        // picked and the two are compared from there; the cache file makes them disagree.
-        wantedOutbound = store.selectedTag() ?: io.hydrabox.core.config.AUTO_TAG
-        corrections.set(0)
+        // Selection is persisted by AppStore; the core's selector cache is disabled.
+        activeOutbound = store.selectedTag() ?: io.hydrabox.core.config.AUTO_TAG
         // Taken before the configuration is generated and handed over to the core only once the
         // core is running; on any failure below it is released in the tail of this function.
         var pendingLease: AdBlockRuleSets.Lease? = null
@@ -1523,6 +1488,7 @@ class HydraVpnService : VpnService() {
                     val speed = "↓ ${rate(snapshot.traffic.downlink)} ↑ ${rate(snapshot.traffic.uplink)}"
                     val total = "Σ ↓ ${size(snapshot.traffic.downlinkTotal)} ↑ ${size(snapshot.traffic.uplinkTotal)}"
                     when (trafficDisplay) {
+                        NotificationTrafficDisplayMode.STATUS -> getString(headline)
                         NotificationTrafficDisplayMode.SPEED -> "${getString(headline)} · $speed"
                         NotificationTrafficDisplayMode.TOTAL -> "${getString(headline)} · $total"
                         NotificationTrafficDisplayMode.BOTH -> "${getString(headline)} · $speed · $total"
@@ -1530,9 +1496,10 @@ class HydraVpnService : VpnService() {
                 } else {
                     getString(headline)
                 }
+            val serverTag = runningOutboundTag(snapshot) ?: snapshot.selectedOutbounds.firstOrNull()?.outboundId
             android.app.Notification
                 .Builder(this, CHANNEL_ID)
-                .setContentTitle(snapshot.selectedOutbounds.firstOrNull()?.outboundId ?: "HydraBox")
+                .setContentTitle(notificationServerNames[serverTag] ?: serverTag ?: "HydraBox")
                 .setContentText(detail)
                 .setSmallIcon(R.drawable.ic_hydrabox_notification)
                 .setOngoing(state != RuntimeState.STOPPED)
@@ -1693,7 +1660,6 @@ class HydraVpnService : VpnService() {
          * disagreement the core will not take is a fact for the journal, not something to keep
          * retrying at whatever rate it publishes group updates.
          */
-        private const val MAX_SELECTION_CORRECTIONS = 3
 
         /** Terminal colour codes, which a screen shows as square brackets and digits. */
         private val ANSI = Regex(Char(27) + """\[[0-9;]*m""")

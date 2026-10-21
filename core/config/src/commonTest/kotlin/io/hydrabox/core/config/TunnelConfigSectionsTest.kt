@@ -156,6 +156,7 @@ class TunnelConfigSectionsTest {
     @Test fun `the core is given a cache file so it does not relearn everything on each start`() {
         val cache = document(proxy("tokyo"))["experimental"]!!.jsonObject["cache_file"]!!.jsonObject
         assertEquals("true", cache["enabled"]!!.jsonPrimitive.content)
+        assertEquals("false", cache["store_selected"]!!.jsonPrimitive.content)
         assertEquals("true", cache["store_rdrc"]!!.jsonPrimitive.content)
     }
 

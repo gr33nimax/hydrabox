@@ -2,6 +2,7 @@ package io.hydrabox.ui.app
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -15,6 +16,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import io.hydrabox.core.projection.Connection
 import io.hydrabox.core.projection.ScreenState
 import io.hydrabox.core.projection.ServerRef
@@ -43,6 +45,7 @@ fun ServersScreen(
     state: ScreenState,
     actions: AppActions,
     onOpenSources: () -> Unit,
+    contentPadding: PaddingValues = PaddingValues(0.dp),
 ) {
     if (state.sources.isEmpty() && state.autoServer == null) {
         EmptyState(
@@ -73,6 +76,7 @@ fun ServersScreen(
                 }.filter { it.second.isNotEmpty() }
         }
     LazyColumn(
+        contentPadding = contentPadding,
         verticalArrangement = Arrangement.spacedBy(UiTokens.spacing),
         modifier = Modifier.fillMaxWidth().padding(horizontal = UiTokens.spacing * 2),
     ) {

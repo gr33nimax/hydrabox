@@ -249,6 +249,19 @@ fun SettingsScreen(
             }
         }
         SectionGroup(stringResource(Res.string.settings_interface)) {
+            ToggleRow(
+                title = stringResource(Res.string.settings_tv_mode),
+                supporting = stringResource(if (settings?.tvModeOverride == null) Res.string.settings_tv_auto else Res.string.settings_tv_manual),
+                checked = settings?.tvModeOverride ?: (settings?.tvDetected == true),
+                onCheckedChange = { actions.onSetTvMode(it) },
+            )
+            if (settings?.tvModeOverride != null) {
+                ValueRow(
+                    title = stringResource(Res.string.settings_tv_reset),
+                    value = null,
+                    onClick = { actions.onSetTvMode(null) },
+                )
+            }
             ValueRow(stringResource(Res.string.settings_appearance), null, onClick = onOpenAppearance)
         }
         SectionGroup(stringResource(Res.string.settings_support)) {
@@ -304,6 +317,7 @@ private fun Asks(
             ChoiceDialog(stringResource(Res.string.settings_notification), cancel, onClose) {
                 listOf(
                     NotificationDetail.OFF to Res.string.notification_off,
+                    NotificationDetail.STATUS to Res.string.notification_status,
                     NotificationDetail.SPEED to Res.string.notification_speed,
                     NotificationDetail.TOTAL to Res.string.notification_total,
                     NotificationDetail.BOTH to Res.string.notification_both,
@@ -680,6 +694,7 @@ private fun notificationLabel(detail: NotificationDetail) =
     stringResource(
         when (detail) {
             NotificationDetail.OFF -> Res.string.notification_off
+            NotificationDetail.STATUS -> Res.string.notification_status
             NotificationDetail.SPEED -> Res.string.notification_speed
             NotificationDetail.TOTAL -> Res.string.notification_total
             NotificationDetail.BOTH -> Res.string.notification_both
