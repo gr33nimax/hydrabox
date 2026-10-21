@@ -378,7 +378,6 @@ Logs are stored locally until the user exports or sends them. Review exported fi
     <string name="latency_no_edge">no TURN edge yet</string>
     <string name="latency_edge_unsupported">edge is not UDP</string>
     <string name="latency_not_measured">not measured</string>
-    <string name="settings_interface">Interface</string>
     <string name="settings_tv_mode">TV mode</string>
     <string name="settings_tv_auto">Detected automatically for this device</string>
     <string name="settings_tv_manual">Manual selection</string>
