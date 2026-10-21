@@ -4,6 +4,10 @@ on:
   push:
   pull_request:
 
+concurrency:
+  group: hydrabox-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -36,5 +40,12 @@ jobs:
         if: always()
         with:
           name: verification-artifacts
-          path: '**/build/**'
+          path: |
+            **/build/reports/**
+            **/build/test-results/**
+            **/build/*-preview/**
+            platform/android/build/outputs/apk/release/*.apk
+            platform/android/build/outputs/mapping/release/**
+            release/SHA256SUMS
+            release/artifacts.json
           if-no-files-found: error

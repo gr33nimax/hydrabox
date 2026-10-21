@@ -130,6 +130,7 @@ fun ConfirmDialog(
     confirmButton = {
         TextButton(
             onClick = onConfirm,
+            modifier = Modifier.tvFocusOutline(),
             colors =
                 if (destructive) {
                     ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
@@ -138,7 +139,7 @@ fun ConfirmDialog(
                 },
         ) { Text(confirmLabel) }
     },
-    dismissButton = { TextButton(onClick = onDismiss) { Text(dismissLabel) } },
+    dismissButton = { TextButton(onClick = onDismiss, modifier = Modifier.tvFocusOutline()) { Text(dismissLabel) } },
     shape = MaterialTheme.shapes.extraLarge,
 )
 
@@ -183,7 +184,7 @@ fun ChoiceDialog(
             content = content,
         )
     },
-    confirmButton = { TextButton(onClick = onDismiss) { Text(dismissLabel) } },
+    confirmButton = { TextButton(onClick = onDismiss, modifier = Modifier.tvFocusOutline()) { Text(dismissLabel) } },
     shape = MaterialTheme.shapes.extraLarge,
 )
 
@@ -203,9 +204,9 @@ fun InputDialog(
     title = { Text(title) },
     text = { HydraField(value = value, onValueChange = onValueChange, label = label) },
     confirmButton = {
-        TextButton(onClick = onConfirm, enabled = value.isNotBlank()) { Text(confirmLabel) }
+        TextButton(onClick = onConfirm, enabled = value.isNotBlank(), modifier = Modifier.tvFocusOutline()) { Text(confirmLabel) }
     },
-    dismissButton = { TextButton(onClick = onDismiss) { Text(dismissLabel) } },
+    dismissButton = { TextButton(onClick = onDismiss, modifier = Modifier.tvFocusOutline()) { Text(dismissLabel) } },
     shape = MaterialTheme.shapes.extraLarge,
 )
 
