@@ -374,4 +374,13 @@ HydraBox предоставляется **как есть**. Мы исправл
     <string name="latency_no_edge">TURN edge неизвестен</string>
     <string name="latency_edge_unsupported">edge не по UDP</string>
     <string name="latency_not_measured">не измерено</string>
+    <string name="settings_interface">Интерфейс</string>
+    <string name="settings_tv_mode">Режим TV</string>
+    <string name="settings_tv_auto">Определяется автоматически для этого устройства</string>
+    <string name="settings_tv_manual">Выбран вручную</string>
+    <string name="settings_tv_reset">Вернуть автоопределение</string>
+    <string name="update_available_title">Доступно обновление</string>
+    <string name="update_available_body">Вышел HydraBox %1$s. Откройте настройки, чтобы скачать и установить обновление.</string>
+    <string name="update_open_settings">К обновлениям</string>
+    <string name="update_later">Позже</string>
 </resources>

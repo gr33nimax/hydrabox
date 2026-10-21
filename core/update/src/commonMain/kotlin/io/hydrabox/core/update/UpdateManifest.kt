@@ -2,6 +2,7 @@ package io.hydrabox.core.update
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
@@ -27,7 +28,14 @@ data class UpdateManifest(
     val sha256: String,
     val certificateSha256: String,
     val keyId: String,
+    val artifacts: Map<String, UpdateArtifact> = emptyMap(),
 ) {
+    /** Device order matters: prefer its first supported ABI, then the universal APK. */
+    fun forAbis(supportedAbis: List<String>): UpdateManifest {
+        val artifact = supportedAbis.firstNotNullOfOrNull { artifacts[it] } ?: return this
+        return copy(apkUrl = artifact.apkUrl, sha256 = artifact.sha256)
+    }
+
     /**
      * Whether this release is newer than the installed build. Equal is not newer: an update
      * that installs the same version code is a reinstall, and Android refuses it anyway.
@@ -37,6 +45,8 @@ data class UpdateManifest(
     /** Whether the manifest names the release line a person selected. */
     fun matchesChannel(selected: String): Boolean = channel.equals(selected.trim(), ignoreCase = true)
 }
+
+data class UpdateArtifact(val apkUrl: String, val sha256: String)
 
 /** Why a manifest cannot be used. One reason, so a caller can say something specific. */
 enum class ManifestFault {
@@ -93,6 +103,18 @@ object UpdateManifestParser {
         if (!digest.matches(sha256) || !digest.matches(certificateSha256)) {
             return ManifestOutcome.Rejected(ManifestFault.BAD_DIGEST)
         }
+        val artifacts = mutableMapOf<String, UpdateArtifact>()
+        root["artifacts"]?.let { element ->
+            val entries = element as? JsonObject ?: return ManifestOutcome.Rejected(ManifestFault.MALFORMED)
+            for ((abi, value) in entries) {
+                val artifact = value as? JsonObject ?: return ManifestOutcome.Rejected(ManifestFault.MALFORMED)
+                val url = artifact.text("apkUrl") ?: return ManifestOutcome.Rejected(ManifestFault.EMPTY_FIELD)
+                val hash = artifact.text("sha256") ?: return ManifestOutcome.Rejected(ManifestFault.EMPTY_FIELD)
+                if (!url.startsWith(HTTPS_PREFIX)) return ManifestOutcome.Rejected(ManifestFault.INSECURE_URL)
+                if (!digest.matches(hash)) return ManifestOutcome.Rejected(ManifestFault.BAD_DIGEST)
+                artifacts[abi] = UpdateArtifact(url, hash.lowercase())
+            }
+        }
         return ManifestOutcome.Accepted(
             UpdateManifest(
                 schema = schema,
@@ -106,11 +128,12 @@ object UpdateManifestParser {
                 sha256 = sha256.lowercase(),
                 certificateSha256 = certificateSha256.uppercase(),
                 keyId = fields.getValue("keyId")!!.trim(),
+                artifacts = artifacts,
             ),
         )
     }
 
-    private fun JsonObject.number(name: String): Int? = this[name]?.jsonPrimitive?.intOrNull
+    private fun JsonObject.number(name: String): Int? = (this[name] as? JsonPrimitive)?.intOrNull
 
-    private fun JsonObject.text(name: String): String? = this[name]?.jsonPrimitive?.contentOrNull
+    private fun JsonObject.text(name: String): String? = (this[name] as? JsonPrimitive)?.contentOrNull
 }

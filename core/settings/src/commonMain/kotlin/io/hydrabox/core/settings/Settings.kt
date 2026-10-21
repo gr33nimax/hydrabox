@@ -101,6 +101,8 @@ data class Settings(
      * between any more — see [DYNAMIC_COLOUR] for what that costs an old setting.
      */
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    /** Null follows the device; a manual choice survives restarts. */
+    val tvModeOverride: Boolean? = null,
     val language: AppLanguage = AppLanguage.SYSTEM,
     /** Rejects packets that would leave the tunnel behind its back. Stricter, and noisier. */
     val vpnStrictRoute: Boolean = false,
@@ -335,6 +337,7 @@ class SettingsCodec {
                     "canary" -> UpdateChannel.CANARY
                     else -> UpdateChannel.STABLE
                 },
+            tvModeOverride = when (values[TV_MODE]) { "1" -> true; "0" -> false; else -> null },
             pprofEnabled = bool(PPROF_ENABLED, false),
             dnsStrategy =
                 when (values[DNS_STRATEGY]) {
@@ -375,6 +378,7 @@ class SettingsCodec {
             BYPASS_LOCAL_NETWORK to flag(settings.bypassLocalNetwork),
             SPLIT_ROUTING_MODE to settings.splitRoutingMode.name.lowercase(),
             THEME_MODE to settings.themeMode.name.lowercase(),
+            TV_MODE to (settings.tvModeOverride?.let(::flag) ?: "auto"),
             LANGUAGE to settings.language.name.lowercase(),
             VPN_STRICT_ROUTE to flag(settings.vpnStrictRoute),
             VPN_TUN_IMPLEMENTATION to settings.vpnTunStack.name.lowercase(),
@@ -530,6 +534,7 @@ private const val BLOCK_LEAKS = "block_leaks"
 private const val BYPASS_LOCAL_NETWORK = "bypass_local_network"
 private const val SPLIT_ROUTING_MODE = "split_routing_mode"
 private const val THEME_MODE = "theme_mode"
+private const val TV_MODE = "tv_mode"
 private const val LANGUAGE = "app_language"
 private const val VPN_STRICT_ROUTE = "vpn_strict_route"
 private const val VPN_TUN_IMPLEMENTATION = "vpn_tun_implementation"

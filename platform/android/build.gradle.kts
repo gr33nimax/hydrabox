@@ -71,9 +71,9 @@ extensions.configure<ApplicationExtension> {
         targetSdk = 36
         // The release pipeline passes these as Gradle properties so the tag, the artifact name and
         // the APK itself cannot disagree; without them the checked-in values are used.
-        versionCode = (findProperty("hydraboxVersionCode") as String?)?.toIntOrNull() ?: 200
+        versionCode = (findProperty("hydraboxVersionCode") as String?)?.toIntOrNull() ?: 228
         versionName =
-            (findProperty("hydraboxVersionName") as String?)?.takeIf(String::isNotBlank) ?: "2.1.0"
+            (findProperty("hydraboxVersionName") as String?)?.takeIf(String::isNotBlank) ?: "2.1.1"
         buildConfigField("String", "HYDRACORE_VERSION", "\"$hydraCoreVersion\"")
         // The pinned update keys travel with the build rather than with the update: an updater that
         // could be told which key to trust would only prove that somebody signed the document. No
@@ -93,9 +93,15 @@ extensions.configure<ApplicationExtension> {
                 ?.replace("\"", "\\\"")
                 .orEmpty()
         buildConfigField("String", "HYDRABOX_UPDATE_KEY_ID", "\"$updateKeyId\"")
-        // The alpha ships arm64 only: the other ABIs triple the artifact for devices we
-        // are not testing on. Restore them when the alpha becomes a release candidate.
-        ndk { abiFilters += "arm64-v8a" }
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
+    }
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86_64")
+            isUniversalApk = true
+        }
     }
     // Release signing, if this machine has the key. The alpha shipped `-unsigned.apk` and there
     // was no way to sign it from the build at all; the key itself is the owner's and never enters

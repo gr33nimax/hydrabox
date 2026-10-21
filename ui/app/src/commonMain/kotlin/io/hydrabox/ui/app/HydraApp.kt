@@ -30,6 +30,8 @@ import io.hydrabox.ui.app.resources.Res
 import io.hydrabox.ui.design.AppShell
 import io.hydrabox.ui.design.DetailScreen
 import io.hydrabox.ui.design.HydraIcons
+import io.hydrabox.ui.design.ConfirmDialog
+import io.hydrabox.ui.design.TvPresentation
 import io.hydrabox.ui.design.HydraTheme
 import io.hydrabox.ui.design.LoadingRows
 import io.hydrabox.ui.design.ShellDestination
@@ -87,7 +89,7 @@ class AppNavigation {
 }
 
 @Composable
-fun HydraApp(
+private fun HydraAppContent(
     state: ScreenState,
     actions: AppActions = AppActions(),
     navigation: AppNavigation = remember { AppNavigation() },
@@ -105,6 +107,23 @@ fun HydraApp(
     // colours, or one of the two fixed Material ones.
     HydraTheme(dark = dark, platformColours = appearance == Appearance.SYSTEM) {
         val snackbar = remember { SnackbarHostState() }
+        var dismissedUpdate by remember { mutableStateOf<String?>(null) }
+        val offered = state.update.availableReleaseTag ?: state.update.availableVersion
+        if (offered != null && offered != dismissedUpdate &&
+            (navigation.route != Route.Main || navigation.tab != Tab.SETTINGS)) {
+            ConfirmDialog(
+                title = stringResource(Res.string.update_available_title),
+                body = stringResource(Res.string.update_available_body, state.update.availableVersion.orEmpty()),
+                confirmLabel = stringResource(Res.string.update_open_settings),
+                dismissLabel = stringResource(Res.string.update_later),
+                onConfirm = {
+                    dismissedUpdate = offered
+                    while (navigation.back()) { }
+                    navigation.tab = Tab.SETTINGS
+                },
+                onDismiss = { dismissedUpdate = offered },
+            )
+        }
         // "I will do this later" has to lead somewhere: the flow steps aside for this run,
         // and the home screen then asks for a subscription in its own words.
         var postponed by remember { mutableStateOf(false) }
@@ -368,4 +387,17 @@ private fun NoticeHost(
             actions.onNoticeShown()
         }
     }
+}
+
+
+@Composable
+fun HydraApp(
+    state: ScreenState,
+    actions: AppActions = AppActions(),
+    navigation: AppNavigation = remember { AppNavigation() },
+    versionName: String = "",
+    coreVersion: String = "",
+) {
+    val tv = state.settings?.let { it.tvModeOverride ?: it.tvDetected } == true
+    TvPresentation(tv) { HydraAppContent(state, actions, navigation, versionName, coreVersion) }
 }

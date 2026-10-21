@@ -1,5 +1,6 @@
 package io.hydrabox.ui.app
 
+import io.hydrabox.ui.design.tvFocusOutline
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -217,7 +218,7 @@ private fun SourceCard(
                 fraction = source.quota,
                 label = planAllowance(source),
                 caption = planValidity(source),
-                modifier = Modifier.clickable(onClick = onRefreshUsage),
+                modifier = Modifier.tvFocusOutline().clickable(onClick = onRefreshUsage),
             )
             source.updateIntervalHours?.let { hours ->
                 Text(

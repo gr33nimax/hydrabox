@@ -37,6 +37,7 @@ import io.hydrabox.ui.design.HydraIcons
 import io.hydrabox.ui.design.PrimaryAction
 import io.hydrabox.ui.design.SecondaryAction
 import io.hydrabox.ui.design.SectionGroup
+import io.hydrabox.ui.design.TvFocusRoot
 import io.hydrabox.ui.design.UiTokens
 import io.hydrabox.ui.design.ValueRow
 import io.hydrabox.ui.design.WarningStrip
@@ -68,6 +69,7 @@ fun OnboardingFlow(
     onOpenPrivacy: () -> Unit,
     onFinish: () -> Unit,
 ) {
+    TvFocusRoot(step, Modifier.fillMaxSize()) {
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
         Column(
             modifier =
@@ -113,6 +115,8 @@ fun OnboardingFlow(
             }
         }
     }
+}
+
 }
 
 @Composable

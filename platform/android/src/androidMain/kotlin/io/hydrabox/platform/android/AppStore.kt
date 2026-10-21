@@ -194,6 +194,8 @@ class AppStore(
                     SplitRoutingMode.BYPASS_SELECTED -> AppsMode.BYPASS_SELECTED
                     SplitRoutingMode.ONLY_SELECTED -> AppsMode.ONLY_SELECTED
                 },
+            tvModeOverride = settings.tvModeOverride,
+            tvDetected = isTelevision(appContext),
             appearance =
                 when (settings.themeMode) {
                     ThemeMode.SYSTEM -> Appearance.SYSTEM
@@ -249,12 +251,13 @@ class AppStore(
 
     private fun loadInstalledApps(): List<io.hydrabox.core.projection.InstalledApp> {
         val manager = appContext.packageManager
-        val intent =
-            android.content
-                .Intent(android.content.Intent.ACTION_MAIN)
-                .addCategory(android.content.Intent.CATEGORY_LAUNCHER)
-        return manager
-            .queryIntentActivities(intent, 0)
+        val activities = listOf(
+            android.content.Intent.CATEGORY_LAUNCHER,
+            android.content.Intent.CATEGORY_LEANBACK_LAUNCHER,
+        ).flatMap { category ->
+            manager.queryIntentActivities(android.content.Intent(android.content.Intent.ACTION_MAIN).addCategory(category), 0)
+        }
+        return activities
             .mapNotNull { resolved ->
                 val activity = resolved.activityInfo ?: return@mapNotNull null
                 val name = activity.packageName

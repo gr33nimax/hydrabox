@@ -8,6 +8,16 @@ import kotlin.test.assertTrue
 class SettingsTest {
     private val codec = SettingsCodec()
 
+    @Test fun `TV defaults to detection and manual choices survive storage and reset`() {
+        val automatic = codec.decode(emptyMap())
+        assertEquals(null, automatic.tvModeOverride)
+        for (override in listOf(true, false, null)) {
+            val state = automatic.copy(tvModeOverride = override)
+            assertEquals(override, codec.decode(codec.encode(state)).tvModeOverride)
+        }
+        assertEquals(null, codec.decode(mapOf("tv_mode" to "unknown")).tvModeOverride)
+    }
+
     @Test fun `defaults use standard cold runtime values`() {
         val state = codec.decode(emptyMap())
         assertEquals(PerformanceMode.STANDARD, state.performanceMode)
