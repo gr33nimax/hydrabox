@@ -156,10 +156,9 @@ jobs:
           if ! [[ "$code" =~ ^[1-9][0-9]*$ ]]; then echo "::error::Invalid versionCode"; exit 1; fi
           highest=$((code - 1))
           for line in stable canary; do
-            if document=$(gh api "repos/$GITHUB_REPOSITORY/contents/update/$line.json?ref=$line" --jq .content); then
-              published=$(printf '%s' "$document" | base64 -d | python3 -c 'import json,sys; print(json.load(sys.stdin)["versionCode"])')
-              if [ "$published" -gt "$highest" ]; then highest=$published; fi
-            fi
+            document=$(gh api "repos/$GITHUB_REPOSITORY/contents/update/$line.json?ref=$line" --jq .content)
+            published=$(printf '%s' "$document" | base64 -d | python3 -c 'import json,sys; print(json.load(sys.stdin)["versionCode"])')
+            if [ "$published" -gt "$highest" ]; then highest=$published; fi
           done
           if [ -z "${INPUT_CODE:-}" ]; then code=$((highest + 1)); fi
           if ! [[ "$code" =~ ^[1-9][0-9]*$ ]] || [ "$code" -le "$highest" ]; then
@@ -187,6 +186,7 @@ jobs:
           counter="${INPUT_COUNTER:-}"
           if [ -z "$counter" ]; then
             highest=0
+            release_tags=$(gh release list --limit 100 --json tagName --jq '.[].tagName')
             while read -r tag; do
               case "$tag" in
                 *-"$channel".*)
@@ -197,7 +197,7 @@ jobs:
                   esac
                   ;;
               esac
-            done < <(gh release list --limit 100 --json tagName --jq '.[].tagName')
+            done <<< "$release_tags"
             counter=$((highest + 1))
           fi
           if ! [[ "$counter" =~ ^[1-9][0-9]*$ ]]; then
