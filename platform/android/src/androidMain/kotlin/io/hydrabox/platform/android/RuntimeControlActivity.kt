@@ -1152,12 +1152,14 @@ class RuntimeControlActivity : ComponentActivity() {
             onCheckUpdate = ::checkForUpdates,
             onDownloadUpdate = {
                 val manifest = pendingUpdate ?: return@AppActions
+                val request = updateCheckGeneration
                 updateState = updateState.copy(downloading = true, installFault = null)
                 // The same read model as the check: nothing reaches the screen until it is rebuilt.
                 refresh()
                 io.execute {
                     val started = UpdateClient.startDownload(this@RuntimeControlActivity, manifest) != null
                     main.post {
+                        if (destroyed || request != updateCheckGeneration) return@post
                         // The shade carries the progress from here; the row says so and waits.
                         // A download that could not start leaves the offer standing, so it can
                         // be asked for again instead of disappearing.
@@ -1172,6 +1174,7 @@ class RuntimeControlActivity : ComponentActivity() {
             },
             onInstallUpdate = {
                 val manifest = pendingUpdate ?: return@AppActions
+                val request = updateCheckGeneration
                 updateState = updateState.copy(installing = true, installFault = null)
                 // The same read model as the check: nothing reaches the screen until it is rebuilt.
                 refresh()
@@ -1193,6 +1196,7 @@ class RuntimeControlActivity : ComponentActivity() {
                             null
                         }
                     main.post {
+                        if (destroyed || request != updateCheckGeneration) return@post
                         if (intent == null) {
                             updateState =
                                 UpdateSummary(
@@ -1202,7 +1206,10 @@ class RuntimeControlActivity : ComponentActivity() {
                         } else {
                             updateState = UpdateSummary(availableVersion = manifest.versionName, installing = true)
                             runCatching { startActivity(intent) }
-                                .onFailure { HydraLog.warn("update", "the installer could not be opened", it) }
+                                .onFailure {
+                                    HydraLog.warn("update", "the installer could not be opened", it)
+                                    updateState = updateState.copy(installing = false, installFault = InstallFault.NO_INSTALLER)
+                                }
                         }
                         refresh()
                     }
