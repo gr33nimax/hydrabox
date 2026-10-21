@@ -86,7 +86,7 @@ fun ActionRow(
 ) = FlowRow(
     horizontalArrangement = Arrangement.spacedBy(UiTokens.spacing),
     verticalArrangement = Arrangement.spacedBy(UiTokens.spacing / 2),
-    modifier = modifier.fillMaxWidth().tvFocusOutline(),
+    modifier = modifier.fillMaxWidth(),
 ) { content() }
 
 /** A single-line or multi-line input. Labels say what goes in, not which format parses. */
@@ -294,7 +294,7 @@ fun RefreshButton(
             IconButtonDefaults.iconButtonColors(
                 disabledContentColor = MaterialTheme.colorScheme.primary,
             ),
-        modifier = modifier,
+        modifier = modifier.tvFocusOutline(),
     ) {
         Icon(
             HydraIcons.Refresh,

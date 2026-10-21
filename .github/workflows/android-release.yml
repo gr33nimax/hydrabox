@@ -153,6 +153,7 @@ jobs:
             exit 1
           fi
           # Every published build must be offered to existing installs, including recuts.
+          if ! [[ "$code" =~ ^[1-9][0-9]*$ ]]; then echo "::error::Invalid versionCode"; exit 1; fi
           highest=$((code - 1))
           for line in stable canary; do
             if document=$(gh api "repos/$GITHUB_REPOSITORY/contents/update/$line.json?ref=$line" --jq .content); then

@@ -63,7 +63,7 @@ internal fun TvShell(
         }
         Scaffold(Modifier.weight(1f), snackbarHost = { SnackbarHost(snackbar) }) { padding ->
             BoxWithConstraints(
-                Modifier.fillMaxSize().padding(padding).focusRequester(page).focusGroup(),
+                Modifier.fillMaxSize().padding(padding).focusRequester(page).focusProperties { left = navigation[selected] }.focusGroup(),
             ) {
                 content(selected, ShellMetrics(WindowClass.EXPANDED, maxHeight, maxWidth))
             }

@@ -38,7 +38,6 @@ class UpdateAbiTest {
     }
 
     @Test fun `legacy manifests still offer their original APK`() {
-        val legacy = body().substringBefore(",\n        \"artifacts\"") + "}"
         // Use a manifest without the optional map, as published by 2.1.0.
         val parsed = assertIs<ManifestOutcome.Accepted>(UpdateManifestParser.parse(body())).manifest
         assertEquals(parsed.apkUrl, parsed.copy(artifacts = emptyMap()).forAbis(listOf("armeabi-v7a")).apkUrl)

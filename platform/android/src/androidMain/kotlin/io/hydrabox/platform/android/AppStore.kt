@@ -77,7 +77,7 @@ class AppStore(
 
     /** Whether the pre-4 journal blob has already been emptied in this process. */
     @Volatile private var legacyJournalDropped = false
-    private val settingsStore = SettingsStore(database, codec, codec)
+    private val settingsStore = SettingsStore(database, codec, codec, defaultUpdateChannel())
     private val backups = BackupService(database)
     private val transfer = BackupTransfer(codec, codec)
     private val queries = database.storageDatabaseQueries
@@ -1237,7 +1237,7 @@ class AppStore(
      * and changed the location-lookup budget, so "reset" produced a device that had never been
      * possible and a database error quietly changed the routing policy.
      */
-    private fun defaultSettings() = SettingsCodec().decode(emptyMap())
+    private fun defaultSettings() = SettingsCodec(defaultUpdateChannel()).decode(emptyMap())
 
     private companion object {
         const val AREA = "sources"
@@ -1283,3 +1283,5 @@ class AppStore(
  */
 internal fun RuleSetPaths?.toRouteData(): RouteData =
     this?.let { RouteData(adBlockPath = it.block, adBlockAllowPath = it.allow) } ?: RouteData.None
+
+private fun defaultUpdateChannel() = if (BuildConfig.UPDATE_CHANNEL == "canary") SettingsUpdateChannel.CANARY else SettingsUpdateChannel.STABLE

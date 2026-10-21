@@ -75,6 +75,9 @@ extensions.configure<ApplicationExtension> {
         versionName =
             (findProperty("hydraboxVersionName") as String?)?.takeIf(String::isNotBlank) ?: "2.1.1"
         buildConfigField("String", "HYDRACORE_VERSION", "\"$hydraCoreVersion\"")
+        val updateChannel = providers.gradleProperty("hydraboxUpdateChannel").getOrElse("stable")
+        check(updateChannel in setOf("stable", "canary"))
+        buildConfigField("String", "UPDATE_CHANNEL", "\"$updateChannel\"")
         // The pinned update keys travel with the build rather than with the update: an updater that
         // could be told which key to trust would only prove that somebody signed the document. No
         // keys leaves the field empty, and an empty key list verifies nothing — which is the
@@ -93,7 +96,7 @@ extensions.configure<ApplicationExtension> {
                 ?.replace("\"", "\\\"")
                 .orEmpty()
         buildConfigField("String", "HYDRABOX_UPDATE_KEY_ID", "\"$updateKeyId\"")
-        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
+
     }
     splits {
         abi {
@@ -235,13 +238,13 @@ val verifyReleaseCoreVersion = tasks.register("verifyReleaseCoreVersion") {
     inputs.property("coreVersion", hydraCoreVersion)
     inputs.property("minimumCoreVersion", minimumCoreVersion)
     doLast {
-        fun stableVersion(version: String): List<Long> {
-            val match = Regex("""hydracore-sbe-(\d+)\.(\d+)\.(\d+)(?:-stable-([1-9]\d*))?""").matchEntire(version)
-                ?: error("Expected a stable HydraCore release, got $version")
+        fun coreVersion(version: String): List<Long> {
+            val match = Regex("""hydracore-sbe-(\d+)\.(\d+)\.(\d+)(?:-(?:stable|debug)-([1-9]\d*))?""").matchEntire(version)
+                ?: error("Expected a HydraCore release, got $version")
             return (1..4).map { index -> match.groupValues[index].ifEmpty { "0" }.toLong() }
         }
-        val actual = stableVersion(hydraCoreVersion)
-        val required = stableVersion(minimumCoreVersion.get())
+        val actual = coreVersion(hydraCoreVersion)
+        val required = coreVersion(minimumCoreVersion.get())
         val difference = actual.zip(required).firstOrNull { (current, minimum) -> current != minimum }
         check(difference == null || difference.first > difference.second) {
             "HydraBox requires ${minimumCoreVersion.get()} or newer; publish and repin the fixed core before releasing."

@@ -144,8 +144,9 @@ class SettingsStore(
     private val database: StorageDatabase,
     private val secretSealer: SecretSealer,
     private val secretOpener: SecretOpener,
+    defaultUpdateChannel: UpdateChannel = UpdateChannel.STABLE,
 ) {
-    private val codec = SettingsCodec()
+    private val codec = SettingsCodec(defaultUpdateChannel)
 
     fun load(): Settings {
         val rows = database.storageDatabaseQueries.selectAll().executeAsList()
@@ -164,7 +165,7 @@ class SettingsStore(
     }
 }
 
-class SettingsCodec {
+class SettingsCodec(private val defaultUpdateChannel: UpdateChannel = UpdateChannel.STABLE) {
     fun decode(
         values: Map<String, String>,
         proxyPassword: Secret? = null,
@@ -335,6 +336,7 @@ class SettingsCodec {
             updateChannel =
                 when (values[UPDATE_CHANNEL]) {
                     "canary" -> UpdateChannel.CANARY
+                    null -> defaultUpdateChannel
                     else -> UpdateChannel.STABLE
                 },
             tvModeOverride = when (values[TV_MODE]) { "1" -> true; "0" -> false; else -> null },
