@@ -19,6 +19,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
@@ -44,7 +45,7 @@ fun Modifier.tvFocusOutline(): Modifier {
     if (!LocalTvMode.current) return this
     var focused by remember { mutableStateOf(false) }
     val colour = if (focused) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color.Transparent
-    return onFocusChanged { focused = it.hasFocus }
+    return focusProperties { canFocus = true }.onFocusChanged { focused = it.hasFocus }
         .border(3.dp, colour, RoundedCornerShape(12.dp))
 }
 
