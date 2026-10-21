@@ -6,12 +6,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.KeyEvent
-import java.awt.Canvas
-import java.awt.event.KeyEvent as AwtKeyEvent
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
+@OptIn(androidx.compose.ui.InternalComposeUiApi::class)
 class TvNavigationTest {
     @Test fun `remote selects pages activates content and returns to navigation`() {
         val selected = mutableStateOf(0)
@@ -37,23 +38,22 @@ class TvNavigationTest {
         }
         var time = 0L
         fun frames() = repeat(8) { time += 16_000_000; scene.render(time).close() }
-        fun key(code: Int) {
-            val source = Canvas()
-            scene.sendKeyEvent(KeyEvent(AwtKeyEvent(source, AwtKeyEvent.KEY_PRESSED, 0L, 0, code, AwtKeyEvent.CHAR_UNDEFINED)))
-            scene.sendKeyEvent(KeyEvent(AwtKeyEvent(source, AwtKeyEvent.KEY_RELEASED, 0L, 0, code, AwtKeyEvent.CHAR_UNDEFINED)))
+        fun key(code: Key) {
+            scene.sendKeyEvent(KeyEvent(code, KeyEventType.KeyDown))
+            scene.sendKeyEvent(KeyEvent(code, KeyEventType.KeyUp))
             frames()
         }
         try {
             frames()
-            key(AwtKeyEvent.VK_DOWN)
-            key(AwtKeyEvent.VK_ENTER)
+            key(Key.DirectionDown)
+            key(Key.Enter)
             assertEquals(1, selected.value)
-            key(AwtKeyEvent.VK_RIGHT)
-            key(AwtKeyEvent.VK_ENTER)
+            key(Key.DirectionRight)
+            key(Key.Enter)
             assertEquals(1, presses)
-            key(AwtKeyEvent.VK_LEFT)
-            key(AwtKeyEvent.VK_DOWN)
-            key(AwtKeyEvent.VK_ENTER)
+            key(Key.DirectionLeft)
+            key(Key.DirectionDown)
+            key(Key.Enter)
             assertEquals(2, selected.value)
             val directory = File("build/tv-preview").apply { mkdirs() }
             scene.render(time + 16_000_000).use { image ->
