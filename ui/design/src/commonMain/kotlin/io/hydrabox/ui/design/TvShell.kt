@@ -27,6 +27,11 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.unit.dp
 
 /** TV pages are selected with the remote; they do not share the phone's swipe pager. */
@@ -73,7 +78,12 @@ internal fun TvShell(
         }
         Scaffold(Modifier.weight(1f), snackbarHost = { SnackbarHost(snackbar) }) { padding ->
             BoxWithConstraints(
-                Modifier.fillMaxSize().padding(padding).focusRequester(page).focusProperties { left = navigation[selected] }.focusGroup(),
+                Modifier.fillMaxSize().padding(padding).onKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionLeft) {
+                        navigation[selected].requestFocus()
+                        true
+                    } else false
+                }.focusRequester(page).focusGroup(),
             ) {
                 content(selected, ShellMetrics(WindowClass.EXPANDED, maxHeight, maxWidth))
             }
